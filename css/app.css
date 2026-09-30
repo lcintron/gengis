@@ -448,3 +448,9 @@ button.link:hover { text-decoration: underline; }
 
 .measure-box .alt { color: var(--text-dim); font-size: 11px; margin-left: 6px; }
 .measure-box div span:last-child { text-align: right; }
+
+/* ---------- busy indicator (under the coordinates readout) ---------- */
+.mb-busy { display: flex; align-items: center; gap: 6px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.mb-busy.hidden { display: none; }
+.mb-busy .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid rgba(29,179,169,.25); border-top-color: var(--accent); animation: mb-spin .8s linear infinite; flex: 0 0 auto; }
+@keyframes mb-spin { to { transform: rotate(360deg); } }

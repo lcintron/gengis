@@ -34,6 +34,7 @@ window.MB = window.MB || {};
       if (this.index) { this.maybeCheck(); return this.index; }
       if (this.loading) return this.loading;
       this.loading = (async () => {
+        MB.emit('data'); // lets the busy indicator show the download
         try {
           const db = this.db();
           const meta = db ? await db.get('meta', META_KEY) : null;
