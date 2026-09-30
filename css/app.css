@@ -436,5 +436,15 @@ button.link:hover { text-decoration: underline; }
 #splash.hide { opacity: 0; pointer-events: none; }
 .about-logo { width: 72px; height: auto; float: right; margin: 0 0 8px 12px; }
 
+/* ---------- airport frequencies in popups ---------- */
+.mb-freqs { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.mb-freq-table { border-collapse: collapse; font-size: 12px; width: 100%; font-variant-numeric: tabular-nums; }
+.mb-freq-table td { padding: 2px 6px 2px 0; vertical-align: top; }
+.mb-freq-table .ft { color: var(--text-dim); white-space: nowrap; }
+.mb-freq-table .fd { color: var(--text); }
+.mb-freq-table .fm { text-align: right; font-weight: 600; color: var(--accent-strong); white-space: nowrap; }
+.mb-freq-foot { color: var(--text-dim); font-size: 10.5px; margin-top: 4px; line-height: 1.35; }
+.mb-extra { margin-top: 8px; font-size: 12px; }
+
 .measure-box .alt { color: var(--text-dim); font-size: 11px; margin-left: 6px; }
 .measure-box div span:last-child { text-align: right; }
