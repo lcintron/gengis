@@ -1,5 +1,7 @@
 # GenGIS (G²)
 
+![GenGIS](branding/png/gengis-banner-1200x300.png)
+
 Version 0.0.1-Beta
 
 A standalone map building tool built on web technologies. Runs as a **Progressive Web App** (installable, works offline for the app itself and tiles you have viewed) or as an **Electron** desktop app. No paid map APIs: it uses OpenStreetMap-based tiles, Nominatim for address search, the Overpass API for points of interest, and public FAA and Esri feature services. It works without any API key; optional free keys (for example CARTO) unlock extra base maps.
@@ -103,6 +105,17 @@ vendor/               Leaflet 1.9.4, Leaflet-Geoman 2.20 (bundled, no CDN needed
 - Points of interest: [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) public instance – light use only.
 
 For heavy or commercial use, point `js/search.js` and `js/store.js` at your own Nominatim/Overpass/tile servers.
+
+## Branding
+
+`branding/` holds the identity assets:
+
+- `svg/`: vector mark (`gengis-mark.svg`) and wordmarks (horizontal, stacked) in color, on-dark, white and black variants
+- `png/`: transparent PNG marks and wordmarks, 1024 px app icon, social preview (1280×640) and README banner
+- `splash/`: dark launch screens for desktop, iPhone and iPad sizes
+- `source/`: the original artwork
+
+`icons/` contains the files the app itself uses (favicons, PWA icons including maskable variants, Apple touch icon, Electron `.ico`).
 
 ## License
 

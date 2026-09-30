@@ -5,20 +5,38 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>GenGIS (G²)</title>
 <meta name="description" content="Draw shapes, place SVGs, organize layers and measure on OpenStreetMap-based maps.">
-<meta name="theme-color" content="#1b1f27">
+<meta name="theme-color" content="#0b1118">
+<meta name="color-scheme" content="dark">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/favicon.ico" sizes="16x16 32x32 48x48 64x64">
+<link rel="icon" href="icons/logo.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" sizes="180x180">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GenGIS">
+<link rel="apple-touch-startup-image" href="branding/splash/splash-1290x2796-iphone.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)">
+<link rel="apple-touch-startup-image" href="branding/splash/splash-1179x2556-iphone.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)">
+<link rel="apple-touch-startup-image" href="branding/splash/splash-1170x2532-iphone.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
+<link rel="apple-touch-startup-image" href="branding/splash/splash-1125x2436-iphone.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)">
+<link rel="apple-touch-startup-image" href="branding/splash/splash-828x1792-iphone.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)">
+<link rel="apple-touch-startup-image" href="branding/splash/splash-750x1334-iphone.png" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)">
+<link rel="apple-touch-startup-image" href="branding/splash/splash-2048x2732-ipad.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)">
+<meta property="og:title" content="GenGIS (G²)">
+<meta property="og:description" content="Free, offline-capable map builder with live airspace and boundary data.">
+<meta property="og:image" content="branding/png/gengis-social-1280x640.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="vendor/geoman/leaflet-geoman.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<div id="splash" aria-hidden="true"><img src="icons/splash-wordmark.png" alt=""><div class="ver">Version 0.0.1-Beta</div></div>
 <div id="app">
   <header id="topbar">
     <div class="brand">
-      <svg class="logo" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 3v15M15 6v15" stroke="currentColor" stroke-width="1.6"/></svg>
-      <span class="brand-name" title="GenGIS (G²)">G<sup>2</sup></span>
+      <img class="logo" src="icons/logo-on-dark.svg" alt="GenGIS" title="GenGIS (G²)">
+      <span class="brand-name" title="GenGIS (G²)">GenGIS</span>
       <input id="projectName" class="project-name" value="Untitled map" title="Project name" spellcheck="false">
     </div>
 
@@ -104,6 +122,7 @@
 
 <div id="aboutDialog" class="modal hidden">
   <div class="modal-box">
+    <img class="about-logo" src="icons/logo-on-dark.svg" alt="">
     <h2>GenGIS <span class="dim">(G<sup>2</sup>)</span></h2>
     <p class="dim" style="margin-top:-4px">Version <span id="aboutVersion"></span></p>
     <p>A standalone map building tool. Works offline as an installed Progressive Web App (map tiles you have viewed are cached) or inside Electron.</p>

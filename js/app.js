@@ -59,6 +59,8 @@
     window.addEventListener('offline', () => MB.toast('Offline: cached map tiles only, search unavailable'));
     window.addEventListener('resize', () => MB.map.invalidateSize());
     window.addEventListener('pagehide', () => MB.saveNow());
+    const splash = document.getElementById('splash');
+    if (splash) setTimeout(() => { splash.classList.add('hide'); setTimeout(() => splash.remove(), 400); }, 350);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') MB.saveNow(); });
   }
 
