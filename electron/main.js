@@ -19,8 +19,8 @@ function parseArgs() {
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 800, minHeight: 500,
-    title: 'GenGIS', backgroundColor: '#1b1f27', autoHideMenuBar: true,
-    icon: path.join(__dirname, '..', 'icons', 'icon-512.png'),
+    title: 'GenGIS', backgroundColor: '#0b1118', autoHideMenuBar: true,
+    icon: path.join(__dirname, '..', 'icons', process.platform === 'win32' ? 'icon.ico' : 'icon-512.png'),
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false }
   });
   win.loadFile(path.join(__dirname, '..', 'index.html'), { query: parseArgs() });

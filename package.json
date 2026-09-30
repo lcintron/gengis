@@ -12,8 +12,9 @@
   "build": {
     "appId": "local.gengis",
     "productName": "GenGIS",
-    "files": ["index.html", "sw.js", "manifest.webmanifest", "css/**", "js/**", "vendor/**", "icons/**", "electron/**"],
-    "win": { "target": "nsis" },
+    "files": ["index.html", "sw.js", "manifest.webmanifest", "css/**", "js/**", "vendor/**", "icons/**", "branding/splash/**", "electron/**"],
+    "icon": "icons/icon-512.png",
+    "win": { "target": "nsis", "icon": "icons/icon.ico" },
     "mac": { "target": "dmg" },
     "linux": { "target": "AppImage" }
   },

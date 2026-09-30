@@ -97,6 +97,7 @@ window.MB = window.MB || {};
 
     // About dialog
     const av = $('#aboutVersion'); if (av) av.textContent = MB.APP.version;
+    const sv = $('#splash .ver'); if (sv) sv.textContent = 'Version ' + MB.APP.version;
     $('#aboutDialog').addEventListener('click', e => {
       if (e.target.id === 'aboutDialog' || e.target.dataset.act === 'close') $('#aboutDialog').classList.add('hidden');
     });

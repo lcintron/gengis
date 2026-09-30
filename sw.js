@@ -1,5 +1,5 @@
 /* GenGIS service worker: offline app shell + cached map tiles */
-const VERSION = 'map-builder-v8'; // app 0.0.1-Beta
+const VERSION = 'map-builder-v9'; // app 0.0.1-Beta, GenGIS branding
 const OFFLINE_CACHE = 'map-builder-offline'; // filled by the app's "Download area" feature; never trimmed or versioned
 const SHELL_CACHE = VERSION + '-shell';
 const TILE_CACHE = VERSION + '-tiles';
@@ -14,7 +14,9 @@ const SHELL = [
   './vendor/leaflet/images/marker-icon.png', './vendor/leaflet/images/marker-icon-2x.png', './vendor/leaflet/images/marker-shadow.png',
   './vendor/leaflet/images/layers.png', './vendor/leaflet/images/layers-2x.png',
   './vendor/geoman/leaflet-geoman.min.js', './vendor/geoman/leaflet-geoman.css',
-  './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'
+  './icons/icon.svg', './icons/logo.svg', './icons/logo-on-dark.svg', './icons/favicon.ico', './icons/favicon-32.png',
+  './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
+  './icons/apple-touch-icon.png', './icons/splash-wordmark.png'
 ];
 
 const TILE_HOSTS = /(^|\.)(tile\.openstreetmap\.org|tile\.openstreetmap\.fr|opentopomap\.org|basemaps\.cartocdn\.com|arcgisonline\.com|tile-cyclosm\.openstreetmap\.fr)$/;
