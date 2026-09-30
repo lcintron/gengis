@@ -81,7 +81,7 @@ window.MB = window.MB || {};
         <div class="tabs" style="margin:10px 0 14px"><button data-t="providers" class="active">Map providers</button><button data-t="search">Search services</button></div>
         <div data-panel="providers"></div>
         <div data-panel="search" class="hidden"></div>
-        <p class="note" style="margin-top:14px">Keys are stored only in this browser (local storage) on this device and are sent solely to the provider you configured. Each service has its own terms and usage limits.</p>
+        <p class="note" style="margin-top:14px">Keys stay in this browser and go only to their provider.</p>
       </div>`;
       el.addEventListener('click', e => {
         if (e.target === el || (e.target.dataset && e.target.dataset.act === 'close')) this.close();
@@ -111,10 +111,10 @@ window.MB = window.MB || {};
             <label>${esc(g.name)}</label>
             <div class="row" style="margin:0"><input name="key" type="text" value="${esc(cur)}" placeholder="paste your ${esc(g.name)} key" autocomplete="off" spellcheck="false"><button class="btn small primary" type="submit">Save</button></div>
             ${(g.options || []).map(o => `<label>${esc(o.label)}</label><select name="opt_${o.key}">${o.choices.map(c => `<option value="${c[0]}"${MB.builtinOption(o.key, o.choices[0][0]) === c[0] ? ' selected' : ''}>${esc(c[1])}</option>`).join('')}</select>`).join('')}
-            <span></span><p class="note" style="margin:0">${esc(g.note)} <a href="${g.signup}" target="_blank" rel="noopener">Get a key</a>. Status: <b>${cur ? 'key set' : 'no key'}</b>. Used by: ${Object.keys(MB.basemaps).filter(k => MB.basemaps[k].keyGroup === gk).map(k => esc(MB.basemaps[k].name)).join(', ')}.</p>
+            <span></span><p class="note" style="margin:0">${esc(g.note)} <a href="${g.signup}" target="_blank" rel="noopener">Get a key</a> · <b>${cur ? 'key set' : 'no key'}</b></p>
           </form>`; }).join('')}
         </div>
-        <p class="note">Add tile services that need an API key, your own tile server, or a WMS server. Supported protocols: <b>XYZ / slippy-map tiles</b> (URL with <code>{z}/{x}/{y}</code>, optional <code>{s}</code> subdomain, <code>{r}</code> retina, <code>{key}</code>) and <b>WMS</b> (GetMap, 1.1.1 or 1.3.0).</p>
+        <p class="note">XYZ tiles (<code>{z}/{x}/{y}</code>, optional <code>{s}</code>, <code>{r}</code>, <code>{key}</code>) or WMS.</p>
         <div class="section"><h3>Configured providers</h3>
           ${list.length ? '<div class="prov-list">' + list.map(x => `<div class="prov-item"><span class="pname">${esc(x.name)}</span><span class="badge">${x.type.toUpperCase()}</span>${x.url.includes('{key}') ? `<span class="badge${x.key ? '' : ' warn'}">${x.key ? 'key set' : 'needs key'}</span>` : ''}
             <span class="grow"></span><button class="btn small" data-use="${x.id}">Use</button><button class="btn small" data-edit="${x.id}">Edit</button><button class="btn small danger" data-del="${x.id}">Remove</button></div>`).join('') + '</div>'
@@ -194,7 +194,7 @@ window.MB = window.MB || {};
       const d = MB.defaultSearchSettings, s = MB.settings.search;
       const v = k => s[k] != null ? s[k] : d[k];
       panel.innerHTML = `
-        <p class="note">The geocoder must speak the <b>Nominatim protocol</b> (<code>/search?q=…&amp;format=json</code> and <code>/reverse?lat=…&amp;lon=…</code>). Points of interest use the <b>Overpass API</b>; list several endpoints and they are tried in order.</p>
+        <p class="note">Nominatim-compatible geocoder; Overpass endpoints are tried in order.</p>
         <form id="searchForm" class="form-grid">
           <label>Preset</label><select name="preset"><option value="">— choose —</option>${MB.geocoderPresets.map((x, i) => `<option value="${i}">${esc(x.name)}</option>`).join('')}</select>
           <label>Search URL</label><input name="geocoderSearchUrl" type="text" value="${esc(v('geocoderSearchUrl'))}">

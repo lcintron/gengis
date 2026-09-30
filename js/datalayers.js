@@ -58,26 +58,26 @@ window.MB = window.MB || {};
     { id: 'countries', group: 'Boundaries', name: 'Country boundaries', minZoom: 0, defaultOn: true,
       levels: [{ maxZoom: 4, whole: true, offset: 0.05 }, { maxZoom: 7, cellSize: 20, offset: 0.01 }, { cellSize: 10, offset: 0 }],
       url: ESRI + 'World_Countries_(Generalized)/FeatureServer/0', style: boundaryStyle('#1b1f27', 1.6),
-      label: p => p.COUNTRY || '', fields: ['COUNTRY', 'ISO', 'COUNTRYAFF'], legend: [['Country', '#1b1f27']], desc: 'Generalized world country outlines (Esri Living Atlas).' },
+      label: p => p.COUNTRY || '', fields: ['COUNTRY', 'ISO', 'COUNTRYAFF'], legend: [['Country', '#1b1f27']], desc: 'Esri Living Atlas.' },
     { id: 'admin1', group: 'Boundaries', name: 'State / province boundaries', minZoom: 0, defaultOn: true,
       levels: [{ maxZoom: 3, whole: true, offset: 0.3 }, { maxZoom: 5, cellSize: 20, offset: 0.05 }, { maxZoom: 7, cellSize: 10, offset: 0.01 }, { cellSize: 5, offset: 0 }],
       url: ESRI + 'World_Administrative_Divisions/FeatureServer/0', style: boundaryStyle('#4a4f5c', 1.1, '5,4'),
       label: p => `${p.NAME || ''}${p.COUNTRY ? ', ' + p.COUNTRY : ''}`, fields: ['NAME', 'COUNTRY', 'ADMINTYPE', 'ISO_CODE', 'AUTONOMOUS', 'DISPUTED'], legend: [['State / province (dashed)', '#4a4f5c']],
-      desc: 'First-level administrative divisions worldwide (states, provinces, regions). Generalized when zoomed out, full detail from zoom 8.' },
+      desc: 'States, provinces, regions. Full detail from zoom 8.' },
     { id: 'fria', group: 'Remote ID', name: 'FAA-Recognized Identification Areas (FRIA)', minZoom: 7,
       url: FAA + 'FAA_Recognized_Identification_Areas/FeatureServer/0', style: solid('#2ecc71', .25),
       label: p => p.title || p.orgName || 'FRIA', fields: ['title', 'orgName', 'address1', 'city', 'state', 'zipcode', 'startDate', 'endDate', 'refNumber'],
-      legend: [['FRIA', '#2ecc71']], desc: 'Drones without Remote ID may fly here (within visual line of sight).' },
+      legend: [['FRIA', '#2ecc71']], desc: 'Fly without Remote ID (VLOS).' },
     { id: 'uasfm', group: 'LAANC', name: 'UAS Facility Map (LAANC ceilings)', minZoom: 10,
       url: FAA + 'FAA_UAS_FacilityMap_Data/FeatureServer/0', style: ceilingStyle,
       label: p => `Ceiling ${p.CEILING} ${p.UNIT || 'ft'} AGL${p.APT1_NAME ? ' · ' + p.APT1_NAME : ''}`,
       fields: ['CEILING', 'UNIT', 'APT1_NAME', 'APT1_FAAID', 'APT1_LAANC', 'APT2_NAME', 'APT2_FAAID', 'AIRSPACE_1', 'AIRSPACE_2', 'MAP_EFF', 'LAST_EDIT'],
-      legend: CEIL.map(([v, c]) => [v + ' ft', c]), desc: 'Maximum altitudes (AGL) available through LAANC in controlled airspace. Grid cells at 0 ft need further coordination.',
+      legend: CEIL.map(([v, c]) => [v + ' ft', c]), desc: 'LAANC ceilings, ft AGL. 0 ft: coordination required.',
       subsets: { key: p => String(ceilingBucket(p.CEILING)), items: CEIL.map(([v, c]) => [String(v), v + ' ft', c]) } },
     { id: 'classAirspace', group: 'Airspace', name: 'Class B / C / D / E airspace', minZoom: 7,
       url: FAA + 'Class_Airspace/FeatureServer/0', style: classStyle,
       label: p => `Class ${p.CLASS} · ${p.NAME || ''} ${feetDesc(p)}`, fields: ['NAME', 'CLASS', 'LOCAL_TYPE', 'LOWER_DESC', 'UPPER_DESC', 'ICAO_ID', 'COMM_NAME', 'WKHR_RMK'],
-      legend: [['Class B', '#1f5fd6'], ['Class C', '#a12fb5'], ['Class D (dashed)', '#1f5fd6'], ['Class E (dotted)', '#b76ad6']], desc: 'Controlled airspace with floor and ceiling altitudes.',
+      legend: [['Class B', '#1f5fd6'], ['Class C', '#a12fb5'], ['Class D (dashed)', '#1f5fd6'], ['Class E (dotted)', '#b76ad6']], desc: '',
       subsets: { key: p => (p.CLASS || '').trim().toUpperCase(), items: [['B', 'Class B', '#1f5fd6'], ['C', 'Class C', '#a12fb5'], ['D', 'Class D (dashed)', '#1f5fd6'], ['E', 'Class E (dotted)', '#b76ad6']], other: 'Other classes' } },
     { id: 'sua', group: 'Airspace', name: 'Special Use Airspace (R, W, MOA, A, NSA)', minZoom: 6,
       url: FAA + 'Special_Use_Airspace/FeatureServer/0', style: suaStyle,
@@ -90,11 +90,11 @@ window.MB = window.MB || {};
     { id: 'nsufr', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (full-time)', minZoom: 7,
       url: FAA + 'DoD_Mar_13/FeatureServer/0', style: hatched('#e53935'),
       label: p => `${p.Facility || p.Base || 'NSUFR'} · ${p.Floor || 'SFC'}–${p.Ceiling || '400 ft'}`, fields: ['Facility', 'Base', 'Branch', 'Proponent', 'Reason', 'Floor', 'Ceiling', 'FAA_ID', 'State', 'POC'],
-      legend: [['NSUFR 24/7', '#e53935']], desc: 'No UAS flights, surface to 400 ft AGL, 24/7 (14 CFR 99.7).' },
+      legend: [['NSUFR 24/7', '#e53935']], desc: 'No UAS, surface to 400 ft AGL, 24/7.' },
     { id: 'nsufrPart', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (part-time)', minZoom: 7,
       url: FAA + 'Part_Time_National_Security_UAS_Flight_Restrictions/FeatureServer/0', style: hatched('#fb8c00'),
       label: p => `${p.Facility || p.Base || 'Part-time NSUFR'} · ${p.ALERTYPE || ''}`, fields: ['Facility', 'Base', 'Reason', 'Floor', 'Ceiling', 'ALERTYPE', 'ACTIVETIME', 'ENDTIME', 'ADVISENOTE', 'FAA_ID'],
-      legend: [['Part-time NSUFR', '#fb8c00']], desc: 'Active only during announced periods; check the popup for times.',
+      legend: [['Part-time NSUFR', '#fb8c00']], desc: 'Active during announced periods.',
       subsets: { key: p => (p.ALERTYPE || '').trim() ? 'alert' : 'none', items: [['alert', 'With an active alert / schedule', '#fb8c00'], ['none', 'No current alert', '#fb8c00']] } },
     { id: 'nsufrPending', group: 'UAS restrictions', name: 'Pending National Security UAS Flight Restrictions', minZoom: 7,
       url: FAA + 'UAS_NSR_Pending/FeatureServer/0', style: hatched('#8e24aa'),
@@ -107,7 +107,7 @@ window.MB = window.MB || {};
       label: p => `${p.SITE_NAME || 'Fixed site'} · ceiling ${p.CEILING || '?'} ${p.UNIT || 'ft'}`, fields: ['SITE_NAME', 'SITE_ID', 'CEILING', 'UNIT', 'CITY', 'STATE', 'POC'], legend: [['Fixed site', '#00897b']] },
     { id: 'stadiums', group: 'Sites', name: 'Stadiums (3 NM TFR during events)', minZoom: 7, point: true,
       url: FAA + 'Stadiums/FeatureServer/0', style: () => ({ radius: 6, color: '#fff', weight: 1.5, fillColor: '#ef6c00', fillOpacity: .95 }),
-      label: p => p.NAME || 'Stadium', fields: ['NAME', 'CITY', 'STATE', 'STATUS_CODE'], legend: [['Stadium', '#ef6c00']], desc: 'TFR within 3 NM up to 3,000 ft AGL from one hour before to one hour after major events.' },
+      label: p => p.NAME || 'Stadium', fields: ['NAME', 'CITY', 'STATE', 'STATUS_CODE'], legend: [['Stadium', '#ef6c00']], desc: '3 NM TFR during major events.' },
     { id: 'airports', group: 'Sites', name: 'Airports', minZoom: 9, point: true,
       url: FAA + 'US_Airport/FeatureServer/0',
       style: p => {
@@ -120,7 +120,7 @@ window.MB = window.MB || {};
       subsets: { key: p => (p.PRIVATEUSE === 'Y' || p.PRIVATEUSE === 1 || p.PRIVATEUSE === '1') ? 'private' : 'public', items: [['public', 'Public use', '#37474f'], ['private', 'Private use', '#78909c']] },
       popupExtra: p => MB.freqs.ensure().then(() => MB.freqs.popupHtml(p)),
       onEnable: () => MB.freqs.ensure(), extraStatus: () => MB.freqs.statusLine(),
-      desc: 'Click an airport for its radio frequencies (tower, ground, ATIS, CTAF, approach…). Teal dots have a control tower.' }
+      desc: 'Click for radio frequencies. Teal = towered.' }
   ];
 
   /* ---------- IndexedDB (with in-memory fallback) ---------- */
@@ -565,7 +565,7 @@ window.MB = window.MB || {};
     const anyOn = this.catalog().some(ds => ds.enabled);
     const s = this.settings;
     let html = `<div class="panel-head"><h3>FAA airspace &amp; UAS data</h3><span class="badge">zoom ${zoom.toFixed(0)}</span></div>
-      <p class="note">Live layers from the <a href="https://udds-faa.opendata.arcgis.com/" target="_blank" rel="noopener">FAA UAS Data Delivery System</a>. Data for the visible area is downloaded on demand, cached on this device, and re-downloaded automatically when the FAA publishes a change. Informational only: confirm with an FAA-approved LAANC provider before flying.</p>
+      <p class="note">Live <a href="https://udds-faa.opendata.arcgis.com/" target="_blank" rel="noopener">FAA UDDS</a> data for the visible area, cached on this device. Informational only.</p>
       <div class="btn-row" style="margin:0 0 10px"><button class="btn small" data-act="check">Check for updates now</button><button class="btn small ghost" data-act="clear">Clear cached data</button></div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px"></div>`;
     Object.keys(groups).forEach(g => {
@@ -599,17 +599,15 @@ window.MB = window.MB || {};
     });
     html += `<div class="section"><h3>Options</h3>
       <div class="row"><label>Data opacity</label><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div>
-      <div class="row"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
-      <div class="row"><label>Keep cache</label><select id="dataMaxAge">${[1, 3, 7, 14, 30].map(dd => `<option value="${dd}"${+s.maxAgeDays === dd ? ' selected' : ''}>${dd} day${dd > 1 ? 's' : ''}</option>`).join('')}</select></div>
-      <p class="note">Each FAA service reports when its data last changed. The app compares that stamp on every check and throws away the cached areas of a dataset as soon as it changes. Cached areas also expire after the "keep cache" period.</p>
+      <div class="row" title="How often each service's last-edit stamp is compared; changed datasets are re-downloaded"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
+      <div class="row" title="Cached areas older than this are refreshed"><label>Keep cache</label><select id="dataMaxAge">${[1, 3, 7, 14, 30].map(dd => `<option value="${dd}"${+s.maxAgeDays === dd ? ' selected' : ''}>${dd} day${dd > 1 ? 's' : ''}</option>`).join('')}</select></div>
     </div>
-    <div class="section"><h3>Add an ArcGIS Feature Service layer</h3>
-      <p class="note">Any public ArcGIS Feature Service layer works (URL ending in <code>/FeatureServer/&lt;layer&gt;</code>), for example other datasets on the FAA portal.</p>
+    <div class="section"><h3>Add ArcGIS layer</h3>
       <form id="dataCustomForm">
-        <div class="row"><label>Name</label><input type="text" name="name" required placeholder="e.g. Military Training Routes"></div>
-        <div class="row"><label>Layer URL</label><input type="text" name="url" required placeholder="https://…/FeatureServer/0"></div>
+        <div class="row"><label>Name</label><input type="text" name="name" required placeholder="Layer name"></div>
+        <div class="row"><label>URL</label><input type="text" name="url" required placeholder="https://…/FeatureServer/0" title="Any public ArcGIS Feature Service layer"></div>
         <div class="row"><label>Color</label><input type="color" name="color" value="#4f8cff"><label style="flex:0 0 auto">Min zoom</label><input type="number" name="minZoom" class="narrow" min="3" max="16" value="8"></div>
-        <label class="check"><input type="checkbox" name="point"> Point layer (draw as dots)</label>
+        <label class="check"><input type="checkbox" name="point"> Points</label>
         <div class="btn-row"><button class="btn small primary" type="submit">Add layer</button></div>
       </form>
     </div>`;
