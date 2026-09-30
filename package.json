@@ -1,0 +1,24 @@
+{
+  "name": "gengis",
+  "version": "0.0.1-Beta",
+  "description": "Standalone map building tool: draw shapes, place SVGs, layers, measurement, search. PWA + Electron.",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "serve": "node serve.js 8080",
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "local.gengis",
+    "productName": "GenGIS",
+    "files": ["index.html", "sw.js", "manifest.webmanifest", "css/**", "js/**", "vendor/**", "icons/**", "electron/**"],
+    "win": { "target": "nsis" },
+    "mac": { "target": "dmg" },
+    "linux": { "target": "AppImage" }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
