@@ -778,6 +778,8 @@ window.MB = window.MB || {};
       <div class="section"><h3>Interface</h3>
         <div class="row"><label>Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
         <p class="note">Hover labels on objects, data layers and search results appear only after the pointer has rested this long.</p>
+        <div class="row"><label>Preload tiles</label><select id="setPrefetch">${[['auto', 'Automatic (not on volunteer-run servers)'], ['on', 'Always'], ['off', 'Never']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+        <p class="note">Quietly fetches the next and previous zoom level of the current view so zooming shows tiles immediately. OpenStreetMap's volunteer servers ask apps not to do this, so it stays off for those unless you force it.</p>
       </div>
       <div class="section"><h3>Drawing</h3>
         <label class="check"><input type="checkbox" id="setMeasure"${s.showMeasurements ? ' checked' : ''}> Show length / area labels on shapes</label>
@@ -802,6 +804,7 @@ window.MB = window.MB || {};
     $('#setShortUnit', panel).addEventListener('change', e => MB.setShortUnit(e.target.value));
     $('#setMeasure', panel).addEventListener('change', e => { s.showMeasurements = e.target.checked; MB.refreshAllTooltips(); MB.autosave(); });
     $('#setTipDelay', panel).addEventListener('change', e => { MB.settings.tooltipDelayMs = +e.target.value; MB.saveSettings(); });
+    $('#setPrefetch', panel).addEventListener('change', e => { MB.settings.prefetchTiles = e.target.value; MB.saveSettings(); MB.tilePrefetch.lastKey = ''; MB.tilePrefetch.schedule(); });
     $('#setContinue', panel).addEventListener('change', e => { s.continueDrawing = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setSnap', panel).addEventListener('change', e => { s.snapping = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $$('[data-act]', panel).forEach(b => b.addEventListener('click', () => MB.ui.menuAction(b.dataset.act)));

@@ -59,7 +59,7 @@ window.MB = window.MB || {};
       const p = MB.getProvider && MB.getProvider(key.slice(7));
       if (!p) return null;
       const url = p.url.replace(/\{key\}/g, encodeURIComponent(p.key || ''));
-      const common = { attribution: p.attribution || '', maxZoom: +p.maxZoom || 19, subdomains: p.subdomains || 'abc', crossOrigin: true };
+      const common = { attribution: p.attribution || '', maxZoom: +p.maxZoom || 19, subdomains: p.subdomains || 'abc', crossOrigin: true, keepBuffer: 4, updateInterval: 120 };
       if (p.type === 'wms') {
         return L.tileLayer.wms(url, Object.assign(common, { layers: p.layers || '', format: p.format || 'image/png', transparent: false, version: p.version || '1.1.1' }));
       }
@@ -78,7 +78,9 @@ window.MB = window.MB || {};
       const k = MB.builtinKey(def.keyGroup), grp = MB.builtinKeyGroups[def.keyGroup];
       if (k && grp) url += (url.includes('?') ? '&' : '?') + grp.param + '=' + encodeURIComponent(k);
     }
-    return L.tileLayer(url, { maxZoom: def.maxZoom, attribution: def.attribution, crossOrigin: true });
+    // keepBuffer keeps a ring of already-loaded tiles around the view so small pans never reload; updateInterval
+    // makes new tiles appear sooner while dragging.
+    return L.tileLayer(url, { maxZoom: def.maxZoom, attribution: def.attribution, crossOrigin: true, keepBuffer: 4, updateInterval: 120 });
   };
 
   MB.setBasemap = function (key) {

@@ -517,12 +517,21 @@ window.MB = window.MB || {};
     return layer;
   }
 
+  // One shared Canvas renderer for every data layer: thousands of features become a single bitmap instead of
+  // thousands of SVG nodes, which roughly halves paint and zoom cost and keeps the DOM small.
+  function dataRenderer() {
+    if (!MB.data.renderer) MB.data.renderer = L.canvas({ pane: 'mb-data', padding: 0.5, tolerance: 3 });
+    return MB.data.renderer;
+  }
+  MB.data.dataRenderer = dataRenderer;
+
   function buildGeoJson(ds, geojson) {
     const def = ds.def;
+    const renderer = dataRenderer();
     return L.geoJSON(geojson, {
-      pane: 'mb-data', pmIgnore: true,
+      pane: 'mb-data', pmIgnore: true, renderer,
       style: f => def.style(f.properties || {}),
-      pointToLayer: (f, ll) => L.circleMarker(ll, Object.assign({ pane: 'mb-data', pmIgnore: true }, def.style(f.properties || {}))),
+      pointToLayer: (f, ll) => L.circleMarker(ll, Object.assign({ pane: 'mb-data', pmIgnore: true, renderer }, def.style(f.properties || {}))),
       onEachFeature: (f, layer) => {
         const p = f.properties || {};
         layer.options.pmIgnore = true;
