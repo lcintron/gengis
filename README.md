@@ -18,8 +18,8 @@ A standalone map building tool built on web technologies. Runs as a **Progressiv
 - **SVG images**: upload your own SVGs, then place them as fixed-size symbols ("fixed pixels") or anchored to the ground in real-world units ("scale with map"), with rotation and opacity.
 - **Layers**: a tree of named layers with their objects. Layers and individual objects each have show/hide, lock, move up/down (draw order), rename and delete; layer-level actions apply to every object in the layer. Objects can be moved between layers.
 - **Measurement**: distance and area tools with live readouts. Finished measurements are objects on the active layer (stylable, editable, movable between layers) with segment and total labels; optional length/area labels on every other shape too.
-- **Metric or imperial** units everywhere (m/km/ha or ft/mi/acres).
-- **Scale bar** always shown in the bottom-right corner: two blocks (0, half, full) in the selected unit system.
+- **Metric, imperial or nautical** units everywhere: m/km and m²/km²; ft/mi and ft²/mi²; or nautical miles (with feet or meters for short distances) and ft²/mi². The measurement box also shows each value in the other systems.
+- **Scale bar** always shown in the bottom-right corner: two blocks (0, half, full) in the selected unit system (m/km, ft/mi or ft/NM).
 - **Search** by address, place name or coordinates (decimal `48.858, 2.294` or DMS `48°51'30"N 2°17'40"E`).
 - **Points of interest** by category (cafés, hospitals, parking, ...) or any OpenStreetMap tag, within the current view; add them as markers.
 - **URL parameters** to open the app centered on a location: `?q=Eiffel+Tower`, `?lat=48.858&lon=2.294&zoom=16`, `?center=48.858,2.294`, `?poi=cafe`.
