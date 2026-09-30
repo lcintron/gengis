@@ -244,14 +244,13 @@ window.MB = window.MB || {};
     const layers = MB.state.layers.slice().reverse(); // top first
     const active = MB.activeLayer();
     let html = `<div class="panel-head"><h3>Layers</h3><button class="btn small" data-act="add-layer">+ Add layer</button></div>
-      <p class="note" style="margin:0 0 8px">Layer buttons apply to every object in the layer. Click a layer to make it the target for new objects; click an object to select it, shift-click to select several.</p>
       <div class="layer-tree">`;
     layers.forEach((l, idx) => {
       const isActive = active && active.id === l.id;
       const feats = MB.layerFeatures(l.id).reverse(); // top-most first
       const collapsed = MB.ui.collapsed.has(l.id);
       html += `<div class="layer-node${isActive ? ' active' : ''}${l.visible ? '' : ' hidden-layer'}" data-id="${l.id}">
-        <div class="layer-item" title="Click to make active. Double-click the name to rename.">
+        <div class="layer-item" title="Click: draw here · double-click name: rename · buttons apply to all objects">
           <button class="chev${collapsed ? ' closed' : ''}" data-act="toggle" title="${collapsed ? 'Expand' : 'Collapse'}">&#9662;</button>
           <span class="active-dot"></span>
           <span class="layer-name" data-act="rename">${esc(l.name)}</span>
@@ -373,10 +372,9 @@ window.MB = window.MB || {};
         <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><input type="range" data-k="textSize" min="8" max="64" step="1" value="${st.textSize}"><span class="val" data-val="textSize">${st.textSize}px</span></div>
         <div class="row"><label>Format</label><div class="tog-group">${tog('textBold', '<b>B</b>', 'Bold')}${tog('textItalic', '<i>I</i>', 'Italic')}${tog('textUnderline', '<u>U</u>', 'Underline')}${tog('textStrike', '<s>S</s>', 'Strikethrough')}</div></div>
         <div class="row"><label>Align</label>${seg('textAlign', [['left', '&#8676;', 'Left'], ['center', '&#8801;', 'Center'], ['right', '&#8677;', 'Right']])}</div>
-        <div class="row"><label>Anchor H</label>${seg('textHAnchor', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
-        <div class="row"><label>Anchor V</label>${seg('textVAnchor', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
+        <div class="row" title="Which side of the text sits on its map point"><label>Anchor H</label>${seg('textHAnchor', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
+        <div class="row" title="Which side of the text sits on its map point"><label>Anchor V</label>${seg('textVAnchor', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
         <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}"><span class="grow"></span></div>
-        <p class="note">Anchor sets which side of the text sits on its map point (e.g. bottom-center puts the label above the point).</p>
       </div>`;
     }
     const wrap = document.createElement('div');
@@ -419,13 +417,12 @@ window.MB = window.MB || {};
       <div class="feature-list" style="max-height:180px">${list.map(l => `<div class="feature-item"><span class="swatch" style="background:${l.mb.type === 'svg' ? 'transparent' : l.mb.style.color}"></span><span class="fname">${esc(l.mb.name || MB.typeLabels[l.mb.type])}</span><span class="ftype">${MB.typeLabels[l.mb.type]}</span></div>`).join('')}</div>
       <div class="section" style="margin-top:12px"><h3>Lines (${lines.length})</h3>
         <div class="btn-row"><button class="btn small primary" data-act="join"${lines.length < 1 ? ' disabled' : ''}>Join lines</button><button class="btn small" data-act="poly"${lines.length < 1 ? ' disabled' : ''}>Polygon from lines (keep lines)</button></div>
-        <p class="note">Lines are joined where their ends touch (within snapping distance). A chain that ends where it starts becomes a polygon with an area.</p>
+        <p class="note">Ends must touch. A closed chain becomes a polygon.</p>
       </div>
       <div class="section"><h3>All selected</h3>
         <div class="row"><label>Move to layer</label><select id="multiLayer"><option value="">— choose —</option>${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div>
         <div class="btn-row"><button class="btn small danger" data-act="delete">Delete ${list.length} objects</button></div>
-      </div>
-      <p class="note">Shift-click objects (on the map or in the Layers list) to add or remove them from the selection.</p>`;
+      </div>`;
     $$('[data-act]', panel).forEach(btn => btn.addEventListener('click', () => {
       const act = btn.dataset.act;
       if (act === 'clear') MB.deselect();
@@ -442,14 +439,13 @@ window.MB = window.MB || {};
     panel.innerHTML = '';
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
     if (!f) {
-      panel.innerHTML = `<div class="panel-head"><h3>Default style for new shapes</h3></div>
-        <p class="note">Select an object on the map to edit it. These settings apply to shapes you draw next.</p>`;
+      panel.innerHTML = `<div class="panel-head"><h3>New shapes</h3><span class="badge" title="Select an object to edit its own style">defaults</span></div>`;
       panel.appendChild(styleForm(['stroke', 'fill', 'text'], () => MB.currentStyle, patch => {
         Object.assign(MB.currentStyle, patch);
         MB.tools.refreshDraw();
       }));
       const mh = document.createElement('div');
-      mh.innerHTML = '<hr><div class="panel-head" style="margin-top:12px"><h3>Default style for measurements</h3></div><p class="note">Used by the distance and area tools. Finished measurements are objects on the active layer and can be restyled individually.</p>';
+      mh.innerHTML = '<hr><div class="panel-head" style="margin-top:12px"><h3>New measurements</h3><span class="badge">defaults</span></div>';
       panel.appendChild(mh);
       panel.appendChild(styleForm(['stroke', 'fill'], () => MB.measureStyle, patch => {
         Object.assign(MB.measureStyle, patch);
@@ -531,7 +527,7 @@ window.MB = window.MB || {};
       <div class="row"><label>Horizontal</label>${seg('h', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
       <div class="row"><label>Text</label><input type="color" data-lk="color" value="${lb.color}"><input type="range" data-lk="size" min="9" max="36" step="1" value="${lb.size}"><span class="val" data-lv="size">${lb.size}px</span></div>
       <label class="check"><input type="checkbox" data-lk="bg"${lb.bg ? ' checked' : ''}> Label background</label>
-      <p class="note" data-note>${f.mb.name ? 'Position is relative to the object: top / bottom / left / right place the label just outside that edge.' : 'Enter a name above to show a label.'}</p>
+      ${f.mb.name ? '' : '<p class="note" data-note>Enter a name above to show a label.</p>'}
     </div>`;
     $$('[data-lk]', wrap).forEach(inp => {
       const handler = () => {
@@ -632,13 +628,12 @@ window.MB = window.MB || {};
     panel.innerHTML = `<div class="panel-head"><h3>SVG library</h3><button class="btn small" data-act="upload">+ Upload SVG</button></div>
       <div class="drop-zone" id="svgDrop">Drop .svg files here or click to upload</div>
       ${lib.length ? '<div class="svg-grid">' + lib.map(l => `<div class="svg-card${MB.svgPlace.svgId === l.id && MB.tools.current === 'svg' ? ' active' : ''}" data-id="${l.id}" title="Click to place on the map"><button class="del" title="Remove from library">×</button><img src="${l.dataUrl}" alt=""><div class="name">${esc(l.name)}</div></div>`).join('') + '</div>'
-        : '<p class="note">No SVGs yet. Upload one, then click it to place copies on the map.</p>'}
+        : '<p class="note">Upload an SVG, then click it to place it.</p>'}
       <div class="section" style="margin-top:16px"><h3>Placement defaults</h3>
-        <div class="row"><label>Sizing</label><div class="seg small"><button data-mode="pin"${!isGround ? ' class="active"' : ''}>Fixed pixels</button><button data-mode="ground"${isGround ? ' class="active"' : ''}>Scale with map</button></div></div>
+        <div class="row"><label>Sizing</label><div class="seg small"><button data-mode="pin"${!isGround ? ' class="active"' : ''} title="Same size at every zoom (symbols)">Fixed pixels</button><button data-mode="ground"${isGround ? ' class="active"' : ''} title="Real-world size on the ground (site plans)">Scale with map</button></div></div>
         <div class="row"><label>Width</label><input type="number" id="svgDefWidth" min="1" step="any" value="${isGround ? +MB.fromMeters(d.widthM).toFixed(2) : d.widthPx}"><span class="unit">${isGround ? MB.lengthUnitLabel() : 'px'}</span></div>
         <div class="row"><label>Rotation</label><input type="range" id="svgDefRot" min="0" max="360" value="${d.rotation}"><span class="val" id="svgDefRotVal">${d.rotation}°</span></div>
         <div class="row"><label>Opacity</label><input type="range" id="svgDefOp" min="0" max="1" step="0.05" value="${d.opacity}"><span class="val" id="svgDefOpVal">${Math.round(d.opacity * 100)}%</span></div>
-        <p class="note">"Fixed pixels" keeps the icon the same size at any zoom (good for symbols). "Scale with map" anchors it to the ground in real-world units (good for floor plans, site layouts).</p>
       </div>`;
     const upload = () => $('#svgUpload').click();
     $('[data-act="upload"]', panel).addEventListener('click', upload);
@@ -681,9 +676,9 @@ window.MB = window.MB || {};
   MB.ui.renderPlaces = function () {
     const panel = $('#tab-places');
     panel.innerHTML = `<div class="panel-head"><h3>Points of interest</h3></div>
-      <p class="note">Finds places from OpenStreetMap inside the current map view (Overpass API). Zoom in for faster, more focused results.</p>
+      <p class="note">Searches OpenStreetMap within the current view.</p>
       <div class="row"><label>Category</label><select id="poiCat"><option value="">— choose —</option>${MB.poiCategories.map((c, i) => `<option value="${i}">${c[0]}</option>`).join('')}</select></div>
-      <div class="row"><label>or OSM tag</label><input type="text" id="poiTag" placeholder="e.g. amenity=cafe or shop=*"></div>
+      <div class="row"><label>OSM tag</label><input type="text" id="poiTag" placeholder="amenity=cafe, shop=*"></div>
       <div class="row"><label>Name contains</label><input type="text" id="poiName" placeholder="optional"></div>
       <div class="btn-row"><button class="btn primary" id="poiSearch">Search in current view</button><button class="btn ghost" id="poiClear">Clear</button></div>
       <div id="poiStatus" class="note" style="margin-top:10px"></div>
@@ -768,35 +763,31 @@ window.MB = window.MB || {};
     const panel = $('#tab-settings');
     const s = MB.state;
     panel.innerHTML = `<div class="panel-head"><h3>Settings</h3></div>
-      <div class="section"><h3>Map overlays</h3><div id="overlaySection"></div><p class="note">Boundary data &copy; Esri (Living Atlas). Downloaded for the visible area and cached on this device; the FAA tab's "Clear cached data" button also clears it.</p></div>
-      <div class="section"><h3>Offline areas</h3><div id="offlineSection"></div><p class="note">The app itself already works offline once installed; this pre-downloads map tiles (and data) for a region so it is available without a connection.</p></div>
+      <div class="section"><h3>Map overlays</h3><div id="overlaySection"></div></div>
+      <div class="section"><h3>Offline areas</h3><div id="offlineSection"></div></div>
       <div class="section"><h3>Units</h3>
-        <div class="seg" id="unitsSeg2"><button data-units="metric"${s.units === 'metric' ? ' class="active"' : ''}>Metric</button><button data-units="imperial"${s.units === 'imperial' ? ' class="active"' : ''}>Imperial</button><button data-units="nautical"${s.units === 'nautical' ? ' class="active"' : ''}>Nautical</button></div>
-        <p class="note" style="margin-top:6px">Metric: m, km · m², km². Imperial: ft, mi · ft², mi². Nautical: nautical miles (NM) beyond 0.1 NM, with ft or m below that · ft², mi².</p>
+        <div class="seg" id="unitsSeg2"><button data-units="metric"${s.units === 'metric' ? ' class="active"' : ''} title="m, km · m², km²">Metric</button><button data-units="imperial"${s.units === 'imperial' ? ' class="active"' : ''} title="ft, mi · ft², mi²">Imperial</button><button data-units="nautical"${s.units === 'nautical' ? ' class="active"' : ''} title="NM (ft or m below 0.1 NM) · ft², mi²">Nautical</button></div>
         <div class="row"${s.units === 'nautical' ? '' : ' style="display:none"'}><label>Short distances</label><select id="setShortUnit"><option value="ft"${s.shortUnit !== 'm' ? ' selected' : ''}>feet</option><option value="m"${s.shortUnit === 'm' ? ' selected' : ''}>meters</option></select></div>
       </div>
       <div class="section"><h3>Interface</h3>
         <div class="row"><label>Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
-        <p class="note">Hover labels on objects, data layers and search results appear only after the pointer has rested this long.</p>
-        <div class="row"><label>Preload tiles</label><select id="setPrefetch">${[['auto', 'Automatic (not on volunteer-run servers)'], ['on', 'Always'], ['off', 'Never']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
-        <p class="note">Quietly fetches the next and previous zoom level of the current view so zooming shows tiles immediately. OpenStreetMap's volunteer servers ask apps not to do this, so it stays off for those unless you force it.</p>
+        <div class="row"><label>Preload tiles</label><select id="setPrefetch">${[['auto', 'Automatic (off on volunteer servers)'], ['on', 'Always'], ['off', 'Never']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
       </div>
       <div class="section"><h3>Drawing</h3>
-        <label class="check"><input type="checkbox" id="setMeasure"${s.showMeasurements ? ' checked' : ''}> Show length / area labels on shapes</label>
-        <label class="check"><input type="checkbox" id="setContinue"${s.continueDrawing ? ' checked' : ''}> Stay in the drawing tool after finishing a shape</label>
-        <label class="check"><input type="checkbox" id="setSnap"${s.snapping ? ' checked' : ''}> Snap to other shapes while drawing / editing</label>
+        <label class="check"><input type="checkbox" id="setMeasure"${s.showMeasurements ? ' checked' : ''}> Measurement labels on shapes</label>
+        <label class="check"><input type="checkbox" id="setContinue"${s.continueDrawing ? ' checked' : ''}> Keep drawing tool active</label>
+        <label class="check"><input type="checkbox" id="setSnap"${s.snapping ? ' checked' : ''}> Snap to other shapes</label>
       </div>
       <div class="section"><h3>Project</h3>
         <div class="btn-row"><button class="btn small" data-act="save">Save to file</button><button class="btn small" data-act="open">Open file</button><button class="btn small" data-act="geojson">Export GeoJSON</button></div>
-        <p class="note" style="margin-top:8px">Your work is saved automatically in this browser. Use "Save to file" to keep a copy or move it to another device.</p>
+        <p class="note" style="margin-top:8px">Autosaved in this browser.</p>
         <div class="btn-row"><button class="btn small danger" id="setReset">Reset everything</button><button class="btn small ghost" data-act="about">About</button></div>
       </div>
       <div class="section"><h3>About</h3>
         <div class="measure-box"><div><span>Application</span><span>${esc(MB.APP.name)} (${esc(MB.APP.aka)})</span></div><div><span>Version</span><span id="appVersion">${esc(MB.APP.version)}</span></div></div>
       </div>
-      <div class="section"><h3>Map &amp; search services</h3>
-        <p class="note">Add tile providers that need an API key (MapTiler, Thunderforest, Mapbox, Stadia, Geoapify), your own XYZ or WMS servers, or a different geocoder / Overpass endpoint.</p>
-        <div class="btn-row"><button class="btn small" data-act="apis">Configure map &amp; search APIs…</button><button class="btn small" data-act="present">Presenter mode</button></div>
+      <div class="section"><h3>Services</h3>
+        <div class="btn-row"><button class="btn small" data-act="apis" title="Tile providers, API keys, geocoder and Overpass endpoints">Map &amp; search APIs…</button><button class="btn small" data-act="present">Presenter mode</button></div>
       </div>`;
     if (MB.data && MB.data.renderOverlays) MB.data.renderOverlays();
     if (MB.offline && MB.offline.renderSection) MB.offline.renderSection();
