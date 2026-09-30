@@ -109,9 +109,18 @@ window.MB = window.MB || {};
       url: FAA + 'Stadiums/FeatureServer/0', style: () => ({ radius: 6, color: '#fff', weight: 1.5, fillColor: '#ef6c00', fillOpacity: .95 }),
       label: p => p.NAME || 'Stadium', fields: ['NAME', 'CITY', 'STATE', 'STATUS_CODE'], legend: [['Stadium', '#ef6c00']], desc: 'TFR within 3 NM up to 3,000 ft AGL from one hour before to one hour after major events.' },
     { id: 'airports', group: 'Sites', name: 'Airports', minZoom: 9, point: true,
-      url: FAA + 'US_Airport/FeatureServer/0', style: p => ({ radius: 5, color: '#fff', weight: 1.2, fillColor: p.PRIVATEUSE === 'Y' || p.PRIVATEUSE === 1 ? '#78909c' : '#37474f', fillOpacity: .95 }),
-      label: p => `${p.NAME || ''} (${p.IDENT || p.ICAO_ID || ''})`, fields: ['NAME', 'IDENT', 'ICAO_ID', 'TYPE_CODE', 'ELEVATION', 'PRIVATEUSE', 'OPERSTATUS', 'SERVCITY', 'STATE'], legend: [['Public', '#37474f'], ['Private', '#78909c']],
-      subsets: { key: p => (p.PRIVATEUSE === 'Y' || p.PRIVATEUSE === 1 || p.PRIVATEUSE === '1') ? 'private' : 'public', items: [['public', 'Public use', '#37474f'], ['private', 'Private use', '#78909c']] } }
+      url: FAA + 'US_Airport/FeatureServer/0',
+      style: p => {
+        const priv = p.PRIVATEUSE === 'Y' || p.PRIVATEUSE === 1 || p.PRIVATEUSE === '1';
+        const towered = !priv && MB.freqs && MB.freqs.index && MB.freqs.hasTower(p);
+        return { radius: towered ? 6 : 5, color: '#fff', weight: 1.2, fillColor: priv ? '#78909c' : (towered ? '#1db3a9' : '#37474f'), fillOpacity: .95 };
+      },
+      label: p => `${p.NAME || ''} (${p.IDENT || p.ICAO_ID || ''})`, fields: ['NAME', 'IDENT', 'ICAO_ID', 'TYPE_CODE', 'ELEVATION', 'PRIVATEUSE', 'OPERSTATUS', 'SERVCITY', 'STATE'],
+      legend: [['Towered', '#1db3a9'], ['Public', '#37474f'], ['Private', '#78909c']],
+      subsets: { key: p => (p.PRIVATEUSE === 'Y' || p.PRIVATEUSE === 1 || p.PRIVATEUSE === '1') ? 'private' : 'public', items: [['public', 'Public use', '#37474f'], ['private', 'Private use', '#78909c']] },
+      popupExtra: p => MB.freqs.ensure().then(() => MB.freqs.popupHtml(p)),
+      onEnable: () => MB.freqs.ensure(), extraStatus: () => MB.freqs.statusLine(),
+      desc: 'Click an airport for its radio frequencies (tower, ground, ATIS, CTAF, approach…). Teal dots have a control tower.' }
   ];
 
   /* ---------- IndexedDB (with in-memory fallback) ---------- */
@@ -225,6 +234,7 @@ window.MB = window.MB || {};
       ds.status = 'Checking for updates…';
       MB.emit('data');
       MB.autosave();
+      if (ds.def.onEnable) { try { ds.def.onEnable(ds); } catch (e) { /* ignore */ } }
       if (MB.map.attributionControl) MB.map.attributionControl.addAttribution(ds.def.group === 'Boundaries' ? 'Boundaries &copy; Esri' : '<a href="https://udds-faa.opendata.arcgis.com/" target="_blank" rel="noopener">FAA UDDS</a>');
       await this.checkUpdates(ds, false);
       this.refresh();
@@ -322,6 +332,7 @@ window.MB = window.MB || {};
     async clearCache() {
       for (const ds of this.catalog()) { ds.cells.forEach(c => { if (ds.group && c.layer) ds.group.removeLayer(c.layer); }); ds.cells.clear(); ds.meta = null; }
       await DB.clear('cells'); await DB.clear('meta');
+      if (MB.freqs) { MB.freqs.index = null; MB.freqs.meta = null; }
       MB.emit('data');
       await this.checkAll(true); // re-read each service's update stamp before caching anything again
     },
@@ -419,6 +430,14 @@ window.MB = window.MB || {};
   };
   MB.data.refreshSoon = MB.debounce(() => MB.data.refresh(), 350);
   MB.data.cellsFor = cellsFor;
+  MB.data.db = DB;
+
+  // Re-style every loaded feature of a dataset (used when derived info such as frequencies arrives later).
+  MB.data.restyle = function (id) {
+    const ds = MB.data.sets[id];
+    if (!ds || !ds.def.style) return;
+    ds.cells.forEach(c => { if (c.layer) c.layer.eachLayer(l => { if (l.setStyle && l.feature) l.setStyle(ds.def.style(l.feature.properties || {})); }); });
+  };
 
   function cellsFor(bounds, size) {
     size = size || CELL;
@@ -513,7 +532,15 @@ window.MB = window.MB || {};
           const t = MB.tools.current;
           if (t !== 'select' && t !== 'move' && t !== 'present') return;
           L.DomEvent.stopPropagation(e);
-          L.popup({ maxWidth: 360, className: 'mb-data-popup' }).setLatLng(e.latlng).setContent(popupHtml(ds, p)).openOn(MB.map);
+          const popup = L.popup({ maxWidth: 380, className: 'mb-data-popup' }).setLatLng(e.latlng);
+          const base = popupHtml(ds, p);
+          if (def.popupExtra) {
+            popup.setContent(base + '<div class="mb-extra dim">Loading frequencies…</div>').openOn(MB.map);
+            Promise.resolve().then(() => def.popupExtra(p)).then(html => {
+              if (!popup.isOpen()) return;
+              popup.setContent(base + html);
+            }).catch(err => { if (popup.isOpen()) popup.setContent(base + '<div class="mb-extra dim">Frequencies unavailable: ' + esc(err.message) + '</div>'); });
+          } else popup.setContent(base).openOn(MB.map);
         });
       }
     });
@@ -545,8 +572,9 @@ window.MB = window.MB || {};
           if (!ds.loading.size && !ds.status) bits.push(shown + ' features in view');
           if (ds.meta && ds.meta.lastEdit && ds.meta.lastEdit !== 'offline') bits.push('FAA updated ' + new Date(ds.meta.lastEdit).toLocaleDateString());
           if (ds.meta && ds.meta.checkedAt) bits.push('checked ' + ago(ds.meta.checkedAt));
-          statusLine = bits.join(' · ');
-        } else statusLine = d.minZoom ? 'zoom ' + d.minZoom + '+' : 'any zoom';
+          statusLine = esc(bits.join(' · '));
+          if (d.extraStatus) { try { statusLine += '<br>' + esc(d.extraStatus()); } catch (e) { /* ignore */ } }
+        } else statusLine = esc(d.minZoom ? 'zoom ' + d.minZoom + '+' : 'any zoom');
         html += `<div class="data-item${ds.enabled ? ' on' : ''}" data-id="${d.id}">
           <label class="check" style="margin:0"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>
           ${d.custom ? `<button class="icon-btn mini danger" data-act="remove" title="Remove this service">${trashIcon}</button>` : ''}
@@ -555,7 +583,7 @@ window.MB = window.MB || {};
                <span class="sub-actions"><button type="button" class="link" data-act="sub-all">all</button> · <button type="button" class="link" data-act="sub-none">none</button></span></div>`
             : `<div class="legend">${(d.legend || []).map(([t, c]) => `<span><i style="background:${c}"></i>${esc(t)}</span>`).join('')}</div>`}
           ${d.desc ? `<div class="note">${esc(d.desc)}</div>` : ''}
-          <div class="dstatus${ds.error ? ' err' : ''}">${esc(ds.error || statusLine)}</div>
+          <div class="dstatus${ds.error ? ' err' : ''}">${ds.error ? esc(ds.error) : statusLine}</div>
         </div>`;
       });
       html += '</div>';

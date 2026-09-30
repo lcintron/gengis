@@ -33,6 +33,7 @@
     MB.data.applyState();
     MB.data.renderPanel();
     MB.on('data', () => { MB.data.renderPanelSoon(); MB.data.renderOverlaysSoon(); });
+    MB.freqs.onReady(() => MB.data.restyle('airports')); // towered airports get their color once frequencies are known
     MB.ui.renderSettings();
     MB.on('project', () => MB.data.applyState());
     if (window.innerWidth < 640) document.getElementById('sidebar').classList.add('collapsed');
