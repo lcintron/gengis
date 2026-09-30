@@ -41,6 +41,8 @@ window.MB = window.MB || {};
       MB.ui.setupScale();
       MB.refreshAllTooltips();
       MB.ui.renderProps();
+      if (MB.ui.renderSettings) MB.ui.renderSettings();
+      if (MB.measure && MB.measure.active && MB.measure.pts.length) MB.measure._redraw(MB.measure.pts[MB.measure.pts.length - 1]);
     });
 
     const bm = $('#basemapSelect');
@@ -495,10 +497,11 @@ window.MB = window.MB || {};
 
     if (m.type === 'circle') {
       const r = document.createElement('div');
-      const val = MB.fromMeters(f.getRadius());
-      r.innerHTML = `<div class="row"><label>Radius</label><input type="number" id="propRadius" min="0.1" step="any" value="${+val.toFixed(2)}"><span class="unit">${MB.lengthUnitLabel()}</span></div>`;
+      const iu = MB.inputUnit('radius');
+      const val = iu.fromMeters(f.getRadius());
+      r.innerHTML = `<div class="row"><label>Radius</label><input type="number" id="propRadius" min="0.0001" step="any" value="${+val.toFixed(iu.label === 'NM' ? 3 : 2)}"><span class="unit">${iu.label}</span></div>`;
       panel.appendChild(r);
-      $('#propRadius', panel).addEventListener('change', e => { const v = MB.toMeters(+e.target.value); if (v > 0) { f.setRadius(v); MB.updateTooltip(f); MB.ui.renderMeasureBox(); MB.commit('radius'); } });
+      $('#propRadius', panel).addEventListener('change', e => { const v = iu.toMeters(+e.target.value); if (v > 0) { f.setRadius(v); MB.updateTooltip(f); MB.ui.renderMeasureBox(); MB.commit('radius'); } });
     }
 
     const actions = document.createElement('div');
@@ -568,10 +571,11 @@ window.MB = window.MB || {};
     if (!box || !f) return;
     const mm = MB.featureMeasure(f);
     const rows = [];
-    if (mm.length != null) rows.push(['Length', MB.formatDistance(mm.length)]);
-    if (mm.perimeter != null) rows.push(['Perimeter', MB.formatDistance(mm.perimeter)]);
-    if (mm.area != null) rows.push(['Area', MB.formatArea(mm.area)]);
-    if (mm.radius != null) rows.push(['Radius', MB.formatDistance(mm.radius)]);
+    const dist = v => MB.formatDistance(v) + ` <span class="alt">${MB.formatDistanceAlt(v)}</span>`;
+    if (mm.length != null) rows.push(['Length', dist(mm.length)]);
+    if (mm.perimeter != null) rows.push(['Perimeter', dist(mm.perimeter)]);
+    if (mm.area != null) rows.push(['Area', MB.formatArea(mm.area) + ` <span class="alt">${MB.formatAreaAlt(mm.area)}</span>`]);
+    if (mm.radius != null) rows.push(['Radius', dist(mm.radius)]);
     if (mm.width != null) rows.push(['Size', MB.formatDistance(mm.width) + ' × ' + MB.formatDistance(mm.height)]);
     const c = MB.svgCenter(f);
     rows.push(['Position', MB.formatLatLng(f.getLatLng ? f.getLatLng() : (f.getBounds ? f.getBounds().getCenter() : c))]);
@@ -766,7 +770,11 @@ window.MB = window.MB || {};
     panel.innerHTML = `<div class="panel-head"><h3>Settings</h3></div>
       <div class="section"><h3>Map overlays</h3><div id="overlaySection"></div><p class="note">Boundary data &copy; Esri (Living Atlas). Downloaded for the visible area and cached on this device; the FAA tab's "Clear cached data" button also clears it.</p></div>
       <div class="section"><h3>Offline areas</h3><div id="offlineSection"></div><p class="note">The app itself already works offline once installed; this pre-downloads map tiles (and data) for a region so it is available without a connection.</p></div>
-      <div class="section"><h3>Units</h3><div class="seg" id="unitsSeg2"><button data-units="metric"${s.units === 'metric' ? ' class="active"' : ''}>Metric (m, km, ha)</button><button data-units="imperial"${s.units === 'imperial' ? ' class="active"' : ''}>Imperial (ft, mi, ac)</button></div></div>
+      <div class="section"><h3>Units</h3>
+        <div class="seg" id="unitsSeg2"><button data-units="metric"${s.units === 'metric' ? ' class="active"' : ''}>Metric</button><button data-units="imperial"${s.units === 'imperial' ? ' class="active"' : ''}>Imperial</button><button data-units="nautical"${s.units === 'nautical' ? ' class="active"' : ''}>Nautical</button></div>
+        <p class="note" style="margin-top:6px">Metric: m, km · m², km². Imperial: ft, mi · ft², mi². Nautical: nautical miles (NM) beyond 0.1 NM, with ft or m below that · ft², mi².</p>
+        <div class="row"${s.units === 'nautical' ? '' : ' style="display:none"'}><label>Short distances</label><select id="setShortUnit"><option value="ft"${s.shortUnit !== 'm' ? ' selected' : ''}>feet</option><option value="m"${s.shortUnit === 'm' ? ' selected' : ''}>meters</option></select></div>
+      </div>
       <div class="section"><h3>Interface</h3>
         <div class="row"><label>Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
         <p class="note">Hover labels on objects, data layers and search results appear only after the pointer has rested this long.</p>
@@ -791,6 +799,7 @@ window.MB = window.MB || {};
     if (MB.data && MB.data.renderOverlays) MB.data.renderOverlays();
     if (MB.offline && MB.offline.renderSection) MB.offline.renderSection();
     $$('#unitsSeg2 button', panel).forEach(b => b.addEventListener('click', () => MB.setUnits(b.dataset.units)));
+    $('#setShortUnit', panel).addEventListener('change', e => MB.setShortUnit(e.target.value));
     $('#setMeasure', panel).addEventListener('change', e => { s.showMeasurements = e.target.checked; MB.refreshAllTooltips(); MB.autosave(); });
     $('#setTipDelay', panel).addEventListener('change', e => { MB.settings.tooltipDelayMs = +e.target.value; MB.saveSettings(); });
     $('#setContinue', panel).addEventListener('change', e => { s.continueDrawing = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });

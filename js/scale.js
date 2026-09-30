@@ -34,12 +34,8 @@ window.MB = window.MB || {};
       const y = map.getSize().y / 2;
       const maxMeters = map.distance(map.containerPointToLatLng([0, y]), map.containerPointToLatLng([this.options.maxWidth, y]));
       if (!(maxMeters > 0)) return;
-      const imperial = MB.state.units === 'imperial';
       const half = maxMeters / 2;
-      let perMeter, unit;
-      if (imperial) {
-        if (half >= 1609.344) { perMeter = 1 / 1609.344; unit = 'mi'; } else { perMeter = 3.2808399; unit = 'ft'; }
-      } else if (half >= 1000) { perMeter = 0.001; unit = 'km'; } else { perMeter = 1; unit = 'm'; }
+      const { perMeter, unit } = MB.scaleUnit(half);
       const block = roundNum(half * perMeter);
       const total = block * 2;
       const width = Math.round(this.options.maxWidth * total / (maxMeters * perMeter));

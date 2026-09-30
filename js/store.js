@@ -5,7 +5,8 @@ window.MB = window.MB || {};
 
   MB.state = {
     projectName: 'Untitled map',
-    units: 'metric',
+    units: 'metric',        // metric | imperial | nautical
+    shortUnit: 'ft',        // nautical only: unit for distances under 0.1 NM (ft | m)
     basemap: 'osm',
     showMeasurements: false,
     continueDrawing: true,
@@ -193,7 +194,12 @@ window.MB = window.MB || {};
 
   /* ---------- units ---------- */
   MB.setUnits = function (units) {
-    MB.state.units = units === 'imperial' ? 'imperial' : 'metric';
+    MB.state.units = MB.unitSystems[units] ? units : 'metric';
+    MB.emit('units', MB.state.units);
+    MB.autosave();
+  };
+  MB.setShortUnit = function (u) {
+    MB.state.shortUnit = u === 'm' ? 'm' : 'ft';
     MB.emit('units', MB.state.units);
     MB.autosave();
   };
