@@ -152,7 +152,7 @@ window.MB = window.MB || {};
       results.innerHTML = '<div class="result-item empty">Searching…</div>';
       results.classList.remove('hidden');
       try {
-        items = await MB.search.resolve(q);
+        items = await MB.busy.track('search', 'search results', MB.search.resolve(q));
         activeIdx = -1;
         if (items.length === 1 && items[0].type === 'coordinates') { choose(items[0]); return; }
         render();
@@ -715,7 +715,7 @@ window.MB = window.MB || {};
     if (!key && !name) { status.textContent = 'Choose a category, type an OSM tag, or a name.'; return; }
     status.textContent = 'Searching…'; out.innerHTML = '';
     try {
-      const pois = await MB.search.findPois(key, value, name, MB.map.getBounds(), 150);
+      const pois = await MB.busy.track('poi', 'points of interest', MB.search.findPois(key, value, name, MB.map.getBounds(), 150));
       MB.ui.showPois(pois);
       status.textContent = pois.length ? `${pois.length} result${pois.length > 1 ? 's' : ''} in view` : 'Nothing found in the current view. Try zooming out or another category.';
     } catch (e) { status.textContent = 'Search failed: ' + e.message; }
@@ -827,9 +827,11 @@ window.MB = window.MB || {};
       }
     });
     const ctl = new Status({ position: 'bottomleft' }).addTo(MB.map);
+    MB.statusControl = ctl;
+    ctl._div.innerHTML = '<div class="coords"></div>';
     const upd = ll => {
       const z = MB.map.getZoom();
-      ctl._div.textContent = (ll ? MB.formatLatLng(ll) : MB.formatLatLng(MB.map.getCenter())) + '  ·  zoom ' + z.toFixed(1).replace(/\.0$/, '');
+      ctl._div.querySelector('.coords').textContent = (ll ? MB.formatLatLng(ll) : MB.formatLatLng(MB.map.getCenter())) + '  ·  zoom ' + z.toFixed(1).replace(/\.0$/, '');
     };
     MB.map.on('mousemove', e => upd(e.latlng));
     MB.map.on('moveend zoomend', () => upd());

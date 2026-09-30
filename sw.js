@@ -1,5 +1,5 @@
 /* GenGIS service worker: offline app shell + cached map tiles */
-const VERSION = 'map-builder-v10'; // app 0.0.1-Beta, airport frequencies
+const VERSION = 'map-builder-v12'; // app 0.0.1-Beta, busy indicator
 const OFFLINE_CACHE = 'map-builder-offline'; // filled by the app's "Download area" feature; never trimmed or versioned
 const SHELL_CACHE = VERSION + '-shell';
 const TILE_CACHE = VERSION + '-tiles';
@@ -9,7 +9,7 @@ const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './css/app.css',
   './js/util.js', './js/tooltipdelay.js', './js/store.js', './js/features.js', './js/tools.js', './js/geometry.js', './js/search.js', './js/storage.js',
-  './js/scale.js', './js/settings.js', './js/contextmenu.js', './js/presenter.js', './js/datalayers.js', './js/frequencies.js', './js/offline.js', './js/ui.js', './js/app.js',
+  './js/scale.js', './js/settings.js', './js/contextmenu.js', './js/presenter.js', './js/datalayers.js', './js/frequencies.js', './js/offline.js', './js/busy.js', './js/ui.js', './js/app.js',
   './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css',
   './vendor/leaflet/images/marker-icon.png', './vendor/leaflet/images/marker-icon-2x.png', './vendor/leaflet/images/marker-shadow.png',
   './vendor/leaflet/images/layers.png', './vendor/leaflet/images/layers-2x.png',
