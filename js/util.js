@@ -90,13 +90,27 @@ window.MB = window.MB || {};
   }
   MB.fmtNum = fmt;
 
+  /* Unit systems:
+   *   metric   - m / km, m² / km²
+   *   imperial - ft / mi, ft² / mi²
+   *   nautical - ft (or m) for short distances, nautical miles beyond 0.1 NM, ft² / mi² for areas
+   */
+  MB.unitSystems = { metric: 'Metric', imperial: 'Imperial', nautical: 'Nautical' };
+  const FT = 3.2808399, MI = 1609.344, NM = 1852, MI2 = 2589988.11, FT2 = 10.7639104;
+  const shortUnit = () => (MB.state.shortUnit === 'm' ? 'm' : 'ft');
+
   MB.formatDistance = function (m, units) {
     units = units || MB.state.units;
     if (units === 'imperial') {
-      const ft = m * 3.28084;
+      const ft = m * FT;
       if (ft < 1000) return fmt(ft, 1) + ' ft';
-      const mi = m / 1609.344;
+      const mi = m / MI;
       return fmt(mi, mi < 10 ? 2 : 1) + ' mi';
+    }
+    if (units === 'nautical') {
+      const nm = m / NM;
+      if (nm >= 0.1) return fmt(nm, nm < 10 ? 2 : 1) + ' NM';
+      return shortUnit() === 'm' ? fmt(m, 1) + ' m' : fmt(m * FT, 1) + ' ft';
     }
     if (m < 1000) return fmt(m, 1) + ' m';
     const km = m / 1000;
@@ -105,28 +119,50 @@ window.MB = window.MB || {};
 
   MB.formatArea = function (m2, units) {
     units = units || MB.state.units;
-    if (units === 'imperial') {
-      const ft2 = m2 * 10.7639;
-      if (ft2 < 21780) return fmt(ft2, 0) + ' ft²';
-      const ac = m2 / 4046.8564;
-      if (ac < 640) return fmt(ac, 2) + ' ac';
-      return fmt(m2 / 2589988.11, 2) + ' mi²';
+    if (units === 'imperial' || units === 'nautical') {
+      const mi2 = m2 / MI2;
+      if (mi2 >= 0.1) return fmt(mi2, mi2 < 10 ? 2 : 1) + ' mi²';
+      return fmt(m2 * FT2, 0) + ' ft²';
     }
-    if (m2 < 10000) return fmt(m2, 1) + ' m²';
-    if (m2 < 1e6) return fmt(m2 / 10000, 2) + ' ha';
+    if (m2 < 1e6) return fmt(m2, m2 < 100 ? 1 : 0) + ' m²';
     return fmt(m2 / 1e6, 2) + ' km²';
   };
 
-  // Convert a user-entered length in the current units to meters, and back.
-  MB.toMeters = function (v, units) {
+  // The same value in the other unit systems (for the secondary line in the measurement box).
+  MB.formatDistanceAlt = function (m, units) {
     units = units || MB.state.units;
-    return units === 'imperial' ? v / 3.28084 : v;
+    return Object.keys(MB.unitSystems).filter(u => u !== units).map(u => MB.formatDistance(m, u)).join(' · ');
   };
-  MB.fromMeters = function (m, units) {
+  MB.formatAreaAlt = function (m2, units) {
     units = units || MB.state.units;
-    return units === 'imperial' ? m * 3.28084 : m;
+    return units === 'metric' ? MB.formatArea(m2, 'imperial') : MB.formatArea(m2, 'metric');
   };
-  MB.lengthUnitLabel = units => (units || MB.state.units) === 'imperial' ? 'ft' : 'm';
+
+  // Unit used for typed-in lengths. kind: 'radius' (nautical → NM) or 'size' (nautical → short unit).
+  MB.inputUnit = function (kind, units) {
+    units = units || MB.state.units;
+    if (units === 'imperial') return { label: 'ft', toMeters: v => v / FT, fromMeters: m => m * FT };
+    if (units === 'nautical') {
+      if (kind === 'radius') return { label: 'NM', toMeters: v => v * NM, fromMeters: m => m / NM };
+      return shortUnit() === 'm' ? { label: 'm', toMeters: v => v, fromMeters: m => m } : { label: 'ft', toMeters: v => v / FT, fromMeters: m => m * FT };
+    }
+    return { label: 'm', toMeters: v => v, fromMeters: m => m };
+  };
+  // Backwards-compatible helpers (size semantics).
+  MB.toMeters = (v, units) => MB.inputUnit('size', units).toMeters(v);
+  MB.fromMeters = (m, units) => MB.inputUnit('size', units).fromMeters(m);
+  MB.lengthUnitLabel = units => MB.inputUnit('size', units).label;
+
+  // Scale-bar unit for a bar whose half length is `halfMeters`.
+  MB.scaleUnit = function (halfMeters, units) {
+    units = units || MB.state.units;
+    if (units === 'imperial') return halfMeters >= MI ? { perMeter: 1 / MI, unit: 'mi' } : { perMeter: FT, unit: 'ft' };
+    if (units === 'nautical') {
+      if (halfMeters >= NM * 0.1) return { perMeter: 1 / NM, unit: 'NM' };
+      return shortUnit() === 'm' ? { perMeter: 1, unit: 'm' } : { perMeter: FT, unit: 'ft' };
+    }
+    return halfMeters >= 1000 ? { perMeter: 0.001, unit: 'km' } : { perMeter: 1, unit: 'm' };
+  };
 
   MB.formatLatLng = function (ll, digits) {
     digits = digits == null ? 5 : digits;

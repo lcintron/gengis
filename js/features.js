@@ -628,7 +628,7 @@ window.MB = window.MB || {};
     const s = MB.state;
     const p = {
       app: 'map-builder', version: 1, appName: MB.APP.name, appVersion: MB.APP.version, // `app` is the file-format id and stays stable
-      projectName: s.projectName, units: s.units, basemap: s.basemap,
+      projectName: s.projectName, units: s.units, shortUnit: s.shortUnit, basemap: s.basemap,
       showMeasurements: s.showMeasurements, continueDrawing: s.continueDrawing, snapping: s.snapping,
       layers: MB.deepClone(s.layers), activeLayerId: s.activeLayerId,
       svgLibrary: MB.deepClone(s.svgLibrary), dataLayers: MB.deepClone(s.dataLayers || {}),
@@ -655,7 +655,8 @@ window.MB = window.MB || {};
     MB.clearAll();
     Object.assign(MB.state, {
       projectName: p.projectName || 'Untitled map',
-      units: p.units === 'imperial' ? 'imperial' : 'metric',
+      units: MB.unitSystems[p.units] ? p.units : 'metric',
+      shortUnit: p.shortUnit === 'm' ? 'm' : 'ft',
       showMeasurements: !!p.showMeasurements,
       continueDrawing: p.continueDrawing !== false,
       snapping: p.snapping !== false,
