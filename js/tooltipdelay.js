@@ -80,6 +80,21 @@ window.MB = window.MB || {};
     return origClose.call(this);
   };
 
+  // Leaflet opens a tooltip when the layer's element receives focus, and its handler throws once the tooltip
+  // has been unbound (the listener is never removed). Guard it, and only open for keyboard focus so a mouse
+  // click does not bypass the hover delay.
+  proto._addFocusListenersOnLayer = function (layer) {
+    const el = typeof layer.getElement === 'function' && layer.getElement();
+    if (!el) return;
+    L.DomEvent.on(el, 'focus', function () {
+      if (!this._tooltip || this._tooltip.options.permanent) return;
+      try { if (el.matches && !el.matches(':focus-visible')) return; } catch (e) { /* older engines: fall through */ }
+      this._tooltip._source = layer;
+      this.openTooltip();
+    }, this);
+    L.DomEvent.on(el, 'blur', function () { if (this._tooltip && !this._tooltip.options.permanent) this.closeTooltip(); }, this);
+  };
+
   // Non-sticky tooltips (markers) receive no mousemove from Leaflet; watch the map so movement still resets them.
   MB.initTooltipDelay = function (map) {
     map.on('mousemove', e => {
