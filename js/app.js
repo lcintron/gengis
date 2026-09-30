@@ -30,6 +30,7 @@
     MB.data.init();
     MB.offline.init();
     MB.busy.init();
+    MB.tilePrefetch.init();
     MB.on('offline', () => MB.offline.renderSection());
     MB.data.applyState();
     MB.data.renderPanel();
