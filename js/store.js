@@ -48,7 +48,7 @@ window.MB = window.MB || {};
   // Built-in providers that need (free) API keys. The key is entered once in the Map & search APIs dialog.
   MB.builtinKeyGroups = {
     carto: { name: 'CARTO Basemaps', param: 'key', signup: 'https://carto.com/basemaps/apikey/',
-      note: 'Free key, no account needed. Required since Sept 2026; without it tiles are watermarked "API KEY REQUIRED".',
+      note: 'Free key required (tiles are watermarked without one).',
       options: [{ key: 'cartoLabels', label: 'Labels', choices: [['all', 'With labels'], ['nolabels', 'No labels'], ['labels_under', 'Labels under roads (Voyager only)']] }] }
   };
   MB.builtinOption = (k, dflt) => (MB.settings && MB.settings.keys && MB.settings.keys[k]) || dflt;

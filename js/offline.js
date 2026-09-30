@@ -166,7 +166,7 @@ window.MB = window.MB || {};
           <div class="area-head"><span class="aname">${esc(a.name)}</span><span class="badge">${esc(a.basemapName || a.basemap)}</span></div>
           <div class="note">zoom ${a.zMin}–${a.zMax} · ${a.tiles.toLocaleString()} tiles · ${(a.bytes / 1048576).toFixed(1)} MB${a.dataCells ? ' · ' + a.dataCells + ' data cells' : ''}${a.failed ? ' · <span class="warn">' + a.failed + ' failed</span>' : ''} · ${new Date(a.created).toLocaleDateString()}</div>
           <div class="btn-row" style="margin-top:6px"><button class="btn small" data-act="goto">Go to</button><button class="btn small" data-act="refresh">Re-download</button><button class="btn small danger" data-act="delete">Delete</button></div>
-        </div>`).join('') : '<p class="note">No offline areas yet. Downloaded areas keep their map tiles available without a connection; data layers you had enabled can be included too.</p>'}
+        </div>`).join('') : '<p class="note">Map tiles for a region, usable offline.</p>'}
         <div id="offlineStats" class="note" style="margin-top:6px"></div>`;
       box.querySelector('[data-act="new"]').addEventListener('click', () => this.openDialog());
       box.querySelectorAll('.area-item').forEach(item => {
@@ -192,11 +192,11 @@ window.MB = window.MB || {};
       el.className = 'modal';
       el.innerHTML = `<div class="modal-box">
         <div class="panel-head"><h2 style="margin:0">Download area for offline use</h2><button class="icon-btn" data-act="close" title="Close">✕</button></div>
-        <p class="note">Tiles of the current view are downloaded for the zoom levels you choose using the current base map (<b>${esc(currentBasemapName())}</b>).${community ? ' This is a volunteer-run tile server: downloads are capped at ' + cap.toLocaleString() + ' tiles per area, and its usage policy asks for light use only. For bigger areas, add a provider with your own key (MapTiler, Stadia, Thunderforest) in the Map &amp; search APIs dialog.' : ''}</p>
+        <p class="note">Current view, <b>${esc(currentBasemapName())}</b>.${community ? ' Volunteer-run server: capped at ' + cap.toLocaleString() + ' tiles; use a keyed provider for large areas.' : ''}</p>
         <div class="row"><label>Name</label><input type="text" id="oaName" value="${esc(existing ? existing.name : 'Area ' + (this.areas.length + 1))}"></div>
         <div class="row"><label>Min zoom</label><input type="range" id="oaMin" min="${Math.max(2, zNow - 6)}" max="${maxZ}" value="${existing ? existing.zMin : Math.max(2, zNow - 2)}"><span class="val" id="oaMinVal"></span></div>
         <div class="row"><label>Max zoom</label><input type="range" id="oaMax" min="${Math.max(2, zNow - 6)}" max="${maxZ}" value="${existing ? existing.zMax : Math.min(maxZ, zNow + 3)}"><span class="val" id="oaMaxVal"></span></div>
-        ${anyData ? '<label class="check"><input type="checkbox" id="oaData" checked> Also pre-load the enabled data layers (FAA, boundaries) for this area</label>' : ''}
+        ${anyData ? '<label class="check"><input type="checkbox" id="oaData" checked> Include enabled data layers</label>' : ''}
         <div class="measure-box" id="oaEstimate"></div>
         <div id="oaProgress" class="hidden"><div class="progress"><div class="bar" id="oaBar"></div></div><div class="note" id="oaStatus"></div></div>
         <div class="row right"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" id="oaStart">Download</button></div>
