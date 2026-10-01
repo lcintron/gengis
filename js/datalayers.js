@@ -687,7 +687,8 @@ window.MB = window.MB || {};
     const panel = document.getElementById('tab-data');
     if (!panel) return;
     // Don't rebuild while the user is typing in the search box; a later 'data' event will catch up.
-    if (document.activeElement && document.activeElement.id === 'dsSearch') { clearTimeout(this._deferred); this._deferred = setTimeout(() => this.renderPanel(), 1500); return; }
+    const focused = document.activeElement;
+    if (focused && panel.contains(focused) && (focused.id === 'dsSearch' || focused.hasAttribute('data-keep-focus'))) { clearTimeout(this._deferred); this._deferred = setTimeout(() => this.renderPanel(), 1500); return; }
     const ui = this.ui;
     const q = ui.q.trim().toLowerCase();
     const matches = ds => {
@@ -706,11 +707,13 @@ window.MB = window.MB || {};
     const zoom = MB.map.getZoom();
     const anyOn = this.catalog().some(ds => ds.enabled);
     const s = this.settings;
-    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length;
+    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0);
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${zoom.toFixed(0)}</span></div>
       <div class="row ds-tools"><input type="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" autocomplete="off"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
       <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px"></div>`;
+    const adsbHtml = MB.adsb ? MB.adsb.panelHtml(q, ui.filter) : ''; // live air traffic: its own block, same search and filter
+    html += adsbHtml;
     let shownTotal = 0;
     Object.keys(bySource).forEach(srcKey => {
       const src = MB.dataSources[srcKey] || { name: srcKey, url: '', note: '' };
@@ -751,7 +754,7 @@ window.MB = window.MB || {};
     });
       html += '</div>';
     });
-    if (!shownTotal) html += '<p class="note">No datasets match.</p>';
+    if (!shownTotal && !adsbHtml) html += '<p class="note">No datasets match.</p>';
     html += `<div class="section"><h3>Options</h3>
       <div class="row"><label>Data opacity</label><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div>
       <div class="row" title="How often each service's last-edit stamp is compared; changed datasets are re-downloaded"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
@@ -773,7 +776,8 @@ window.MB = window.MB || {};
     panel.querySelector('#dsFilter').addEventListener('change', e => { ui.filter = e.target.value; this.renderPanel(); });
     panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!anyOn) { MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
     panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
-    panel.querySelectorAll('.data-item').forEach(item => {
+    if (MB.adsb) MB.adsb.bindPanel(panel);
+    panel.querySelectorAll('.data-item[data-id]').forEach(item => {
       const id = item.dataset.id;
       item.querySelector('[data-act="toggle"]').addEventListener('change', () => this.toggle(id));
       item.querySelectorAll('input[data-sub]').forEach(cb => cb.addEventListener('change', () => this.setSubset(id, cb.dataset.sub, cb.checked)));
