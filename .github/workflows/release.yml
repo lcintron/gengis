@@ -70,10 +70,12 @@ jobs:
             *) echo "::error::Unknown bump '$BUMP'."; exit 1 ;;
           esac
           # Dot-separated identifiers of letters, digits and dashes (the semver pre-release form): no "..",
-          # no leading or trailing dot. git has the last word, so the tag is a valid ref before anything is committed.
+          # no leading or trailing dot, no all-digit identifier with a leading zero ("01"). git has the last
+          # word, so the tag is a valid ref before anything is committed.
           if [ "${#PRE}" -gt 30 ] || [[ ! "$PRE" =~ ^([0-9A-Za-z][0-9A-Za-z-]*(\.[0-9A-Za-z][0-9A-Za-z-]*)*)?$ ]] \
+             || [[ "$PRE" =~ (^|\.)0[0-9]+(\.|$) ]] \
              || ! git check-ref-format "refs/tags/v0.0.0${PRE:+-$PRE}"; then
-            echo "::error::Pre-release label must be dot-separated groups of letters, digits or dashes, e.g. Beta or rc.1 (got '$PRE')."
+            echo "::error::Pre-release label must be dot-separated groups of letters, digits or dashes, with no leading zeros in numeric groups, e.g. Beta or rc.1 (got '$PRE')."
             exit 1
           fi
       - name: Bump version, commit, tag and push

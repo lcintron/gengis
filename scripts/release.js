@@ -88,8 +88,9 @@ if (bumpArg === 'auto' && !auto) {
 const kind = bumpArg === 'auto' ? auto : bumpArg;
 if (!['major', 'minor', 'patch', 'prerelease'].includes(kind)) { console.error('Unknown bump: ' + kind); process.exit(1); }
 const pre = opt('pre');
-// semver pre-release form: dot-separated groups of letters, digits and dashes (no "..", no leading or trailing dot)
-if (pre && !/^[0-9A-Za-z][0-9A-Za-z-]*(\.[0-9A-Za-z][0-9A-Za-z-]*)*$/.test(pre)) { console.error('Invalid pre-release label: ' + pre); process.exit(1); }
+// semver pre-release form: dot-separated groups of letters, digits and dashes (no "..", no leading or trailing
+// dot, no all-digit group with a leading zero such as "01")
+if (pre && (!/^[0-9A-Za-z][0-9A-Za-z-]*(\.[0-9A-Za-z][0-9A-Za-z-]*)*$/.test(pre) || /(^|\.)0\d+(\.|$)/.test(pre))) { console.error('Invalid pre-release label: ' + pre); process.exit(1); }
 const next = format(bump(parse(current), kind, pre));
 const tag = 'v' + next;
 // the tag must be a valid git ref before anything is written or committed
