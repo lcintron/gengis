@@ -1,8 +1,9 @@
 /* GenGIS service worker: offline app shell + cached map tiles */
-const VERSION = 'gengis-0.0.1-Beta'; // app version; bump via scripts/release.js
+const VERSION = 'gengis-0.0.1-Beta'; // app version; bumped by scripts/release.js
 const OFFLINE_CACHE = 'map-builder-offline'; // filled by the app's "Download area" feature; never trimmed or versioned
 const SHELL_CACHE = VERSION + '-shell';
 const TILE_CACHE = 'map-builder-tiles'; // not versioned: cached tiles survive app updates
+const STAMP_CACHE = 'map-builder-tile-stamps'; // when each tile was fetched (opaque responses expose no Date header)
 const TILE_MAX_AGE = 7 * 24 * 3600 * 1000; // re-fetch a cached tile only after this long
 const MAX_TILES = 6000;
 
@@ -26,10 +27,31 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 
+async function migrateOldTileCaches(keys) {
+  // Earlier versions kept tiles in "<version>-tiles"; carry them over so an update never empties the cache.
+  const dest = await caches.open(TILE_CACHE);
+  const stamps = await caches.open(STAMP_CACHE);
+  for (const k of keys.filter(k => /-tiles$/.test(k) && k !== TILE_CACHE)) {
+    try {
+      const old = await caches.open(k);
+      const reqs = await old.keys();
+      for (const req of reqs) {
+        if (await dest.match(req.url)) continue;
+        const res = await old.match(req);
+        if (res) { await dest.put(req.url, res); await stamps.put(req.url, new Response(String(Date.now()))); }
+      }
+    } catch (err) { /* best effort */ }
+    await caches.delete(k);
+  }
+}
+
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k => k !== SHELL_CACHE && k !== TILE_CACHE && k !== OFFLINE_CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
+    caches.keys().then(async keys => {
+      await migrateOldTileCaches(keys);
+      const keep = [SHELL_CACHE, TILE_CACHE, OFFLINE_CACHE, STAMP_CACHE];
+      await Promise.all(keys.filter(k => !keep.includes(k) && !/-tiles$/.test(k)).map(k => caches.delete(k)));
+    }).then(() => self.clients.claim())
   );
 });
 
@@ -39,7 +61,8 @@ async function trimTiles() {
   const keys = await cache.keys();
   if (keys.length > MAX_TILES) {
     const remove = keys.slice(0, keys.length - MAX_TILES);
-    await Promise.all(remove.map(k => cache.delete(k)));
+    const stamps = await caches.open(STAMP_CACHE);
+    await Promise.all(remove.map(k => Promise.all([cache.delete(k), stamps.delete(k.url)])));
   }
 }
 
@@ -70,20 +93,19 @@ self.addEventListener('fetch', e => {
       const cached = await cache.match(req);
       const refresh = () => fetch(req).then(res => {
         if (res && (res.ok || res.type === 'opaque')) {
-          let stored = res.clone();
-          if (res.type !== 'opaque' && !res.headers.get('date')) {
-            const h = new Headers(res.headers); h.set('date', new Date().toUTCString());
-            stored = new Response(stored.body, { status: res.status, statusText: res.statusText, headers: h });
-          }
-          cache.put(req, stored);
+          cache.put(req, res.clone());
+          caches.open(STAMP_CACHE).then(c => c.put(req.url, new Response(String(Date.now()))));
           if (++putCount % 100 === 0) trimTiles();
         }
         return res;
       });
       if (cached) {
-        // Serve from cache; only go to the network when the cached copy is older than TILE_MAX_AGE.
-        const dated = Date.parse(cached.headers.get('date') || '') || 0;
-        if (!dated || Date.now() - dated > TILE_MAX_AGE) e.waitUntil(refresh().catch(() => {}));
+        // Serve from cache; go to the network only when the stored copy is older than TILE_MAX_AGE.
+        const stamps = await caches.open(STAMP_CACHE);
+        const st = await stamps.match(req.url);
+        let fetchedAt = st ? +(await st.text()) : 0;
+        if (!fetchedAt) { fetchedAt = Date.now(); e.waitUntil(stamps.put(req.url, new Response(String(fetchedAt)))); } // legacy entry: stamp it now
+        if (Date.now() - fetchedAt > TILE_MAX_AGE) e.waitUntil(refresh().catch(() => {}));
         return cached;
       }
       try { return await refresh(); } catch (err) { return new Response('', { status: 504, statusText: 'offline' }); }

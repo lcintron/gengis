@@ -278,8 +278,7 @@ window.MB = window.MB || {};
     },
 
     applyOpacity() {
-      const pane = MB.map.getPane('mb-data');
-      if (pane) pane.style.opacity = this.settings.opacity;
+      ['mb-data', 'mb-data-markers'].forEach(name => { const pane = MB.map.getPane(name); if (pane) pane.style.opacity = this.settings.opacity; });
     },
 
     saveSettings() {
