@@ -106,10 +106,11 @@ window.MB = window.MB || {};
 
   /* ---------- parsing ---------- */
   const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const str = v => (typeof v === 'string' ? v : (typeof v === 'number' ? String(v) : ''));
 
   // One record per aircraft from dump1090 / readsb / tar1090 JSON (current and legacy field names).
   function normalize(a, now) {
-    if (!a || typeof a.hex !== 'string') return null;
+    if (!a || typeof a.hex !== 'string' || !/^~?[0-9a-f]{6}$/i.test(a.hex)) return null; // the address goes into links
     let lat = num(a.lat), lon = num(a.lon), seenPos = num(a.seen_pos);
     if (lat == null && a.lastPosition) { lat = num(a.lastPosition.lat); lon = num(a.lastPosition.lon); seenPos = num(a.lastPosition.seen_pos); }
     const altRaw = a.alt_baro != null ? a.alt_baro : (a.altitude != null ? a.altitude : a.alt_geom);
@@ -117,15 +118,15 @@ window.MB = window.MB || {};
     const hex = a.hex.replace(/^~/, '').toLowerCase();
     const rec = {
       hex, nonIcao: a.hex[0] === '~',
-      flight: (a.flight || '').trim(), r: a.r || '', t: a.t || '', desc: a.desc || '', ownOp: a.ownOp || '',
-      category: (a.category || '').toUpperCase(), dbFlags: a.dbFlags | 0,
+      flight: str(a.flight).trim(), r: str(a.r), t: str(a.t), desc: str(a.desc), ownOp: str(a.ownOp),
+      category: str(a.category).toUpperCase(), dbFlags: a.dbFlags | 0,
       lat, lon, hasPos: lat != null && lon != null,
       alt: ground ? 'ground' : num(altRaw), altGeom: num(a.alt_geom),
       gs: num(a.gs != null ? a.gs : a.speed),
       track: num(a.track != null ? a.track : (a.true_heading != null ? a.true_heading : a.mag_heading)),
       rate: num(a.baro_rate != null ? a.baro_rate : (a.geom_rate != null ? a.geom_rate : a.vert_rate)),
-      squawk: a.squawk || '', emergency: (a.emergency && a.emergency !== 'none') ? a.emergency : '',
-      via: /mlat/.test(a.type || '') || (a.mlat && a.mlat.length) ? 'MLAT' : (/tisb/.test(a.type || '') || (a.tisb && a.tisb.length) ? 'TIS-B' : (/adsr/.test(a.type || '') ? 'ADS-R' : (/mode_s|other/.test(a.type || '') ? 'Mode S' : 'ADS-B'))),
+      squawk: str(a.squawk), emergency: (a.emergency && a.emergency !== 'none') ? str(a.emergency) : '',
+      via: /mlat/.test(str(a.type)) || (a.mlat && a.mlat.length) ? 'MLAT' : (/tisb/.test(str(a.type)) || (a.tisb && a.tisb.length) ? 'TIS-B' : (/adsr/.test(str(a.type)) ? 'ADS-R' : (/mode_s|other/.test(str(a.type)) ? 'Mode S' : 'ADS-B'))),
       rssi: num(a.rssi),
       seen: num(a.seen) || 0,
       posTime: now - (seenPos || 0) * 1000
