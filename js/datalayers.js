@@ -81,7 +81,7 @@ window.MB = window.MB || {};
       subsets: { key: p => String(ceilingBucket(p.CEILING)), items: CEIL.map(([v, c]) => [String(v), v + ' ft', c]) } },
     { id: 'classAirspace', group: 'Airspace', name: 'Class B / C / D / E airspace', minZoom: 7,
       source: 'faa', url: FAA + 'Class_Airspace/FeatureServer/0', style: classStyle,
-      label: p => `Class ${p.CLASS} · ${p.NAME || ''} ${feetDesc(p)}`, fields: ['NAME', 'CLASS', 'LOCAL_TYPE', 'LOWER_DESC', 'UPPER_DESC', 'ICAO_ID', 'COMM_NAME', 'WKHR_RMK'],
+      label: p => `${p.CLASS ? 'Class ' + p.CLASS : (p.LOCAL_TYPE || 'Airspace')} · ${p.NAME || ''} ${feetDesc(p)}`, fields: ['NAME', 'CLASS', 'LOCAL_TYPE', 'LOWER_DESC', 'UPPER_DESC', 'ICAO_ID', 'COMM_NAME', 'WKHR_RMK'],
       legend: [['Class B', '#1f5fd6'], ['Class C', '#a12fb5'], ['Class D (dashed)', '#1f5fd6'], ['Class E (dotted)', '#b76ad6']], desc: '',
       subsets: { key: p => (p.CLASS || '').trim().toUpperCase(), items: [['B', 'Class B', '#1f5fd6'], ['C', 'Class C', '#a12fb5'], ['D', 'Class D (dashed)', '#1f5fd6'], ['E', 'Class E (dotted)', '#b76ad6']], other: 'Other classes' } },
     { id: 'sua', group: 'Airspace', name: 'Special Use Airspace (R, W, MOA, A, NSA)', minZoom: 6,
@@ -578,19 +578,107 @@ window.MB = window.MB || {};
           const t = MB.tools.current;
           if (t !== 'select' && t !== 'move' && t !== 'present') return;
           L.DomEvent.stopPropagation(e);
-          const popup = L.popup({ maxWidth: 380, className: 'mb-data-popup' }).setLatLng(e.latlng);
-          const base = popupHtml(ds, p);
-          if (def.popupExtra) {
-            popup.setContent(base + '<div class="mb-extra dim">Loading frequencies…</div>').openOn(MB.map);
-            Promise.resolve().then(() => def.popupExtra(p)).then(html => {
-              if (!popup.isOpen()) return;
-              popup.setContent(base + html);
-            }).catch(err => { if (popup.isOpen()) popup.setContent(base + '<div class="mb-extra dim">Frequencies unavailable: ' + esc(err.message) + '</div>'); });
-          } else popup.setContent(base).openOn(MB.map);
+          MB.data.identify(e.latlng, e.containerPoint, layer);
         });
       }
     });
   }
+
+  /* ---------- identify: everything under a click in one popup ---------- */
+
+  // Features of every enabled dataset at this point (polygons containing it, lines/points within a few pixels), top-most first.
+  MB.data.featuresAt = function (latlng, containerPoint) {
+    const map = MB.map;
+    const lp = map.latLngToLayerPoint(latlng);
+    const cp = containerPoint || map.latLngToContainerPoint(latlng);
+    const hits = [];
+    const sets = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').reverse(); // later datasets draw on top
+    sets.forEach(ds => {
+      ds.cells.forEach(c => {
+        if (!c.shown || !c.layer) return;
+        c.layer.eachLayer(l => {
+          if (!l.feature) return;
+          let hit = false;
+          try {
+            if (l.getLatLng) hit = map.latLngToContainerPoint(l.getLatLng()).distanceTo(cp) <= 14;
+            else if (l._containsPoint && l._pxBounds) hit = l._pxBounds.contains(lp) && l._containsPoint(lp);
+          } catch (err) { /* ignore */ }
+          if (hit) hits.push({ ds, layer: l, props: l.feature.properties || {} });
+        });
+      });
+    });
+    // de-duplicate features that appear in two cells
+    const seen = new Set();
+    return hits.filter(h => { const k = h.ds.def.id + '|' + (h.props.OBJECTID || h.props.GLOBAL_ID || h.props.ObjectId || JSON.stringify(h.props).slice(0, 80)); if (seen.has(k)) return false; seen.add(k); return true; });
+  };
+
+  let identifyPopup = null, highlighted = null;
+  function clearHighlight() {
+    if (!highlighted) return;
+    const { layer, ds } = highlighted;
+    try {
+      if (layer.setStyle && layer.feature) layer.setStyle(ds.def.style(layer.feature.properties || {}));
+      else if (layer.getElement && layer.getElement()) L.DomUtil.removeClass(layer.getElement(), 'mb-data-hl');
+    } catch (e) { /* ignore */ }
+    highlighted = null;
+  }
+  function highlight(h) {
+    clearHighlight();
+    const { layer, ds } = h;
+    try {
+      if (layer.setStyle && layer.feature) { layer.setStyle({ weight: 4, color: '#ffd166', opacity: 1, fillOpacity: Math.min(0.5, (ds.def.style(layer.feature.properties || {}).fillOpacity || 0) + 0.25) }); if (layer.bringToFront) layer.bringToFront(); }
+      else if (layer.getElement && layer.getElement()) L.DomUtil.addClass(layer.getElement(), 'mb-data-hl');
+      highlighted = h;
+    } catch (e) { /* ignore */ }
+  }
+
+  MB.data.identify = function (latlng, containerPoint, clicked) {
+    let hits = this.featuresAt(latlng, containerPoint);
+    if (clicked && clicked.feature && !hits.some(h => h.layer === clicked)) {
+      const ds = this.catalog().find(d => d.cells && Array.from(d.cells.values()).some(c => c.layer && c.layer.hasLayer(clicked)));
+      if (ds) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
+    }
+    if (!hits.length) return;
+    const total = hits.length;
+    hits = hits.slice(0, 15);
+    const label = h => { const d = h.ds.def; try { return d.label ? String(d.label(h.props)) : firstText(h.props); } catch (e) { return ''; } };
+    const sections = hits.map((h, i) => {
+      const body = popupHtml(h.ds, h.props).replace(/^<div class="mb-popup"><div class="mb-popup-title">[^<]*<\/div>/, '').replace(/<\/div>$/, '');
+      const extra = h.ds.def.popupExtra ? `<div class="mb-extra dim" data-extra="${i}">Loading frequencies…</div>` : '';
+      return `<details class="mb-ident" data-i="${i}"${i === 0 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
+    }).join('');
+    // No header: each entry names its dataset and feature. Only a truncated list gets a note.
+    const more = total > hits.length ? `<div class="mb-ident-more dim">Showing ${hits.length} of ${total}</div>` : '';
+    const html = `<div class="mb-popup mb-identify">${sections}${more}</div>`;
+    if (identifyPopup && identifyPopup.isOpen()) MB.map.closePopup(identifyPopup);
+    // Hand Leaflet a DOM node, not the HTML string: popup.update() (called when frequencies arrive) re-renders
+    // string content from scratch, which would wipe the loaded frequencies, the listeners and the expanded state.
+    const content = document.createElement('div'); content.innerHTML = html;
+    const popup = identifyPopup = L.popup({ maxWidth: 400, maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
+    let pinned = hits[0]; // the first entry opens expanded; the expanded entry stays highlighted when the pointer leaves the list
+    popup.on('remove', () => { pinned = null; clearHighlight(); });
+    const root = popup.getElement();
+    root.querySelectorAll('details.mb-ident').forEach(d => {
+      const h = hits[+d.dataset.i];
+      d.addEventListener('mouseenter', () => highlight(h));
+      d.addEventListener('mouseleave', () => { if (pinned) highlight(pinned); else clearHighlight(); });
+      d.addEventListener('toggle', () => {
+        if (d.open) { pinned = h; highlight(h); return; }
+        if (pinned !== h) return;
+        const still = Array.from(root.querySelectorAll('details.mb-ident[open]')).pop(); // fall back to another entry that is still expanded
+        pinned = still ? hits[+still.dataset.i] : null;
+        if (d.matches(':hover')) return; // keep the hovered entry lit until the pointer leaves
+        if (pinned) highlight(pinned); else clearHighlight();
+      });
+    });
+    hits.forEach((h, i) => {
+      if (!h.ds.def.popupExtra) return;
+      Promise.resolve().then(() => h.ds.def.popupExtra(h.props)).then(extraHtml => {
+        const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.outerHTML = extraHtml; if (popup.isOpen()) popup.update(); }
+      }).catch(err => { const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.textContent = 'Frequencies unavailable: ' + err.message; if (popup.isOpen()) popup.update(); } });
+    });
+    if (pinned) highlight(pinned);
+  };
 
   /* ---------- panel ---------- */
   MB.data.ui = { q: '', filter: 'all' };
