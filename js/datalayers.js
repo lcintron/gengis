@@ -658,7 +658,14 @@ window.MB = window.MB || {};
       const h = hits[+d.dataset.i];
       d.addEventListener('mouseenter', () => highlight(h));
       d.addEventListener('mouseleave', () => { if (pinned) highlight(pinned); else clearHighlight(); });
-      d.addEventListener('toggle', () => { if (d.open) { pinned = h; highlight(h); } else if (pinned === h) { pinned = null; clearHighlight(); } });
+      d.addEventListener('toggle', () => {
+        if (d.open) { pinned = h; highlight(h); return; }
+        if (pinned !== h) return;
+        const still = Array.from(root.querySelectorAll('details.mb-ident[open]')).pop(); // fall back to another entry that is still expanded
+        pinned = still ? hits[+still.dataset.i] : null;
+        if (d.matches(':hover')) return; // keep the hovered entry lit until the pointer leaves
+        if (pinned) highlight(pinned); else clearHighlight();
+      });
     });
     hits.forEach((h, i) => {
       if (!h.ds.def.popupExtra) return;
