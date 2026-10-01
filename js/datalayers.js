@@ -651,7 +651,7 @@ window.MB = window.MB || {};
     const html = `<div class="mb-popup mb-identify"><div class="mb-popup-title">${title}${hits.length > 1 ? '<span class="dim"> · hover to highlight</span>' : ''}</div>${sections}</div>`;
     if (identifyPopup && identifyPopup.isOpen()) MB.map.closePopup(identifyPopup);
     const popup = identifyPopup = L.popup({ maxWidth: 400, maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(html).openOn(MB.map);
-    let pinned = hits.length === 1 ? hits[0] : null; // stays highlighted when the pointer leaves the list
+    let pinned = hits[0]; // the first entry opens expanded; the expanded entry stays highlighted when the pointer leaves the list
     popup.on('remove', () => { pinned = null; clearHighlight(); });
     const root = popup.getElement();
     root.querySelectorAll('details.mb-ident').forEach(d => {
