@@ -511,6 +511,7 @@ button.link:hover { text-decoration: underline; }
 /* ---------- identify popup (all features under a click) ---------- */
 .mb-identify details.mb-ident { border-top: 1px solid var(--border); padding: 4px 0; }
 .mb-identify details.mb-ident:first-of-type { border-top: 0; }
+.mb-identify details.mb-ident:first-of-type > summary { margin-right: 14px; } /* clear the popup's close button */
 .mb-identify summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; padding: 3px 4px; border-radius: 4px; }
 .mb-identify summary::-webkit-details-marker { display: none; }
 .mb-identify summary::before { content: '▸'; color: var(--text-dim); font-size: 10px; flex: 0 0 auto; }

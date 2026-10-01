@@ -675,7 +675,7 @@ window.MB = window.MB || {};
       if (!h.ds.def.popupExtra) return;
       Promise.resolve().then(() => h.ds.def.popupExtra(h.props)).then(extraHtml => {
         const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.outerHTML = extraHtml; if (popup.isOpen()) popup.update(); }
-      }).catch(err => { const el = root.querySelector(`[data-extra="${i}"]`); if (el) el.textContent = 'Frequencies unavailable: ' + err.message; });
+      }).catch(err => { const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.textContent = 'Frequencies unavailable: ' + err.message; if (popup.isOpen()) popup.update(); } });
     });
     if (pinned) highlight(pinned);
   };
