@@ -6,16 +6,17 @@
 #   make build-mac    build the macOS disk image (needs macOS)
 #   make build-linux  build the Linux AppImage and .deb
 #   make dist-all     build all three on one machine (fully supported only on macOS)
-#   make release      bump the version from the conventional commits since the last tag, update the version
-#                     shown in the app, commit, tag and push. GitHub Actions then builds installers for
-#                     Windows, macOS and Linux and deploys GitHub Pages from the release.
-#                     Options: BUMP=major|minor|patch|prerelease (default auto), PRE=Beta, DRY=1
+#   make release      used by the Release workflow (CI=1): bump the version from the conventional commits
+#                     since the last tag, update the version shown in the app, commit, tag and push. The
+#                     workflow then builds the installers and deploys GitHub Pages. Releases happen
+#                     automatically on every merge to main; run the workflow manually to force a bump.
+#                     Local use (needs permission to push main): BUMP=major|minor|patch|prerelease, PRE=Beta, DRY=1
 #   make version      print the current version
 
 NPX ?= npx
 BUMP ?= auto
 PRE ?=
-RELEASE_FLAGS := $(if $(PRE),--pre=$(PRE),) $(if $(DRY),--dry,)
+RELEASE_FLAGS := $(if $(PRE),--pre=$(PRE),) $(if $(DRY),--dry,) $(if $(CI),--ci,)
 
 .PHONY: help serve install build build-win build-mac build-linux dist-all release version clean
 

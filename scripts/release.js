@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /* GenGIS release helper (no dependencies).
  *
- *   node scripts/release.js [auto|major|minor|patch|prerelease] [--pre=Beta] [--dry] [--no-push] [--show]
+ *   node scripts/release.js [auto|major|minor|patch|prerelease] [--pre=Beta] [--dry] [--no-push] [--ci] [--show]
  *
  * - Picks the semantic-version bump from the conventional commits since the last tag when "auto" (default):
- *     "BREAKING CHANGE" / "type!:"  -> major,   feat: -> minor,   anything else -> patch
+ *     "BREAKING CHANGE" / "type!:" -> major,  feat: -> minor,  fix: / perf: / revert: -> patch,
+ *     only chore/docs/ci/style/refactor/test/build commits -> no release (exit 0, released=false)
+ * - --ci: non-interactive mode for GitHub Actions; writes released/tag/version to $GITHUB_OUTPUT
  * - Writes the new version everywhere it is displayed: package.json, js/util.js (MB.APP.version, shown in
  *   Settings and About), sw.js (cache name), index.html (splash) and README.md
  * - Commits "chore(release): vX.Y.Z", tags vX.Y.Z and pushes. The GitHub "Release" workflow then builds the
@@ -43,7 +45,13 @@ function autoBump() {
   if (!log.trim()) return null;
   if (/BREAKING CHANGE|^[a-z]+(\([^)]*\))?!:/m.test(log)) return 'major';
   if (/^feat(\([^)]*\))?:/m.test(log)) return 'minor';
-  return 'patch';
+  if (/^(fix|perf|revert)(\([^)]*\))?:/m.test(log)) return 'patch';
+  return null; // nothing user-facing since the last release
+}
+
+function output(obj) {
+  if (!process.env.GITHUB_OUTPUT) return;
+  fs.appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(obj).map(([k, v]) => `${k}=${v}\n`).join(''));
 }
 
 function bump(v, kind, pre) {
@@ -70,7 +78,13 @@ function bump(v, kind, pre) {
 
 if (flag('show')) { console.log(current); process.exit(0); }
 
-const kind = bumpArg === 'auto' ? (autoBump() || 'patch') : bumpArg;
+const auto = bumpArg === 'auto' ? autoBump() : null;
+if (bumpArg === 'auto' && !auto) {
+  console.log(`No release needed: no feat/fix/perf commits since ${lastTag() || 'the first commit'}.`);
+  output({ released: 'false', tag: '', version: current });
+  process.exit(0);
+}
+const kind = bumpArg === 'auto' ? auto : bumpArg;
 if (!['major', 'minor', 'patch', 'prerelease'].includes(kind)) { console.error('Unknown bump: ' + kind); process.exit(1); }
 const next = format(bump(parse(current), kind, opt('pre')));
 const tag = 'v' + next;
@@ -96,7 +110,7 @@ for (const [file, fn] of edits) {
   else { console.log('  updated ' + file); if (!flag('dry')) write(file, after); }
 }
 
-if (flag('dry')) { console.log('Dry run: nothing written, committed or tagged.'); process.exit(0); }
+if (flag('dry')) { console.log('Dry run: nothing written, committed or tagged.'); output({ released: 'false', tag, version: next }); process.exit(0); }
 
 sh('git add package.json js/util.js sw.js index.html README.md');
 sh(`git commit -q -m "chore(release): ${tag}"`);
@@ -104,7 +118,8 @@ sh(`git tag -a ${tag} -m "GenGIS ${tag}"`);
 console.log('Committed and tagged ' + tag);
 if (!flag('no-push')) {
   const branch = sh('git rev-parse --abbrev-ref HEAD', true);
-  sh(`git push origin ${branch}`);
+  sh(`git push origin HEAD:${branch === 'HEAD' ? 'main' : branch}`);
   sh(`git push origin ${tag}`);
-  console.log(`Pushed ${branch} and ${tag}. GitHub Actions will build the installers and deploy the site.`);
-} else console.log('Not pushed (--no-push). Push the branch and the tag to trigger the release workflows.');
+  console.log(`Pushed ${branch} and ${tag}.` + (flag('ci') ? '' : ' The Release workflow builds the installers and deploys the site.'));
+} else console.log('Not pushed (--no-push).');
+output({ released: 'true', tag, version: next });
