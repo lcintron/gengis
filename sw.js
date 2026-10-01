@@ -1,8 +1,9 @@
 /* GenGIS service worker: offline app shell + cached map tiles */
-const VERSION = 'map-builder-v13'; // app 0.0.1-Beta, faster tiles + busy indicator
+const VERSION = 'gengis-0.0.1-Beta'; // app version; bump via scripts/release.js
 const OFFLINE_CACHE = 'map-builder-offline'; // filled by the app's "Download area" feature; never trimmed or versioned
 const SHELL_CACHE = VERSION + '-shell';
-const TILE_CACHE = VERSION + '-tiles';
+const TILE_CACHE = 'map-builder-tiles'; // not versioned: cached tiles survive app updates
+const TILE_MAX_AGE = 7 * 24 * 3600 * 1000; // re-fetch a cached tile only after this long
 const MAX_TILES = 6000;
 
 const SHELL = [
@@ -69,13 +70,20 @@ self.addEventListener('fetch', e => {
       const cached = await cache.match(req);
       const refresh = () => fetch(req).then(res => {
         if (res && (res.ok || res.type === 'opaque')) {
-          cache.put(req, res.clone());
+          let stored = res.clone();
+          if (res.type !== 'opaque' && !res.headers.get('date')) {
+            const h = new Headers(res.headers); h.set('date', new Date().toUTCString());
+            stored = new Response(stored.body, { status: res.status, statusText: res.statusText, headers: h });
+          }
+          cache.put(req, stored);
           if (++putCount % 100 === 0) trimTiles();
         }
         return res;
       });
       if (cached) {
-        e.waitUntil(refresh().catch(() => {}));
+        // Serve from cache; only go to the network when the cached copy is older than TILE_MAX_AGE.
+        const dated = Date.parse(cached.headers.get('date') || '') || 0;
+        if (!dated || Date.now() - dated > TILE_MAX_AGE) e.waitUntil(refresh().catch(() => {}));
         return cached;
       }
       try { return await refresh(); } catch (err) { return new Response('', { status: 504, statusText: 'offline' }); }
