@@ -60,14 +60,25 @@ Build installers with `npm run dist` (electron-builder; produces NSIS/DMG/AppIma
 
 ## Building, releasing and deploying
 
+Releases are fully automated. Every merge to `main` runs the **Release** workflow, which:
+
+1. derives the semantic-version bump from the conventional commits since the last tag (`feat:` minor, `fix:`/`perf:` patch, `BREAKING CHANGE` major; only `chore:`/`docs:`/`ci:` commits mean no release),
+2. updates the version everywhere it is shown (package.json, Settings/About, splash, README, service-worker cache name), commits `chore(release): vX.Y.Z`, tags and pushes,
+3. builds the Windows (NSIS), macOS (DMG, zip) and Linux (AppImage, deb) installers on their own runners,
+4. publishes a GitHub Release with the installers and generated notes,
+5. deploys GitHub Pages from that tag, so the live site always matches a release.
+
+To force a bump or a pre-release, run the workflow manually (Actions, Release, Run workflow) and choose the bump and an optional pre-release label. The Pages source must be set to "GitHub Actions" once in the repository settings.
+
 | Command | What it does |
 | --- | --- |
 | `make serve` | Run locally at <http://localhost:8080> |
 | `make build` | Desktop installer for this machine's OS (`dist/`) |
 | `make build-win` / `build-mac` / `build-linux` | One platform (macOS builds need a Mac) |
-| `make release` | Bump the version from the conventional commits since the last tag (`feat:` → minor, `fix:` → patch, `BREAKING CHANGE` → major; `BUMP=` to override, `PRE=Beta` for a pre-release, `DRY=1` to preview), update the version shown in the app, commit, tag and push |
+| `make release DRY=1` | Preview the bump the workflow would make |
+| `make version` | Print the current version |
 
-Pushing the tag triggers two GitHub Actions workflows: **Release** builds the Windows (NSIS), macOS (DMG, zip) and Linux (AppImage, deb) installers on their own runners and attaches them to a GitHub Release; **Deploy site** publishes GitHub Pages from that tag, so the live site always matches a release rather than whatever is on `main`. The Pages source must be set to "GitHub Actions" once in the repository settings. Without `make`, the same commands are available as `npm run dist`, `npm run dist:win|mac|linux` and `npm run release`.
+`make release` is what the workflow runs (with `CI=1`); running it locally also pushes `main`, so it is normally left to CI. Without `make`, the same commands exist as `npm run dist`, `npm run dist:win|mac|linux` and `npm run release`.
 
 Installers are unsigned; macOS and Windows show a warning on first launch until signing certificates are added to the Release workflow.
 

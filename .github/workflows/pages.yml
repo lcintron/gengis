@@ -1,13 +1,9 @@
 name: Deploy site
 
-# Publishes GitHub Pages from a release tag (not from whatever is on main).
-# Triggered by the version tag that "make release" pushes, by a published release, or manually.
+# Publishes GitHub Pages from a tag or branch on demand. The Release workflow already deploys the site
+# for every automated release; use this to redeploy an older tag or to deploy manually.
 # Repository setting required once: Settings -> Pages -> Source: "GitHub Actions".
 on:
-  push:
-    tags: ['v*']
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       ref:

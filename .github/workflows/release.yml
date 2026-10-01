@@ -1,18 +1,88 @@
 name: Release
 
-# Runs when a version tag is pushed (make release). Builds the desktop installers on each OS and
-# attaches them to a GitHub Release for the tag.
+# Fully automated release:
+#   1. "version": on every push to main (a merged PR), work out the semantic-version bump from the
+#      conventional commits since the last tag, update the version shown in the app, commit, tag and push.
+#      Nothing to release (only chore/docs/ci commits) means the run stops here.
+#   2. "build": build the Windows, macOS and Linux installers from that tag.
+#   3. "publish": create the GitHub Release with the installers and generated notes.
+#   4. "deploy-pages": publish GitHub Pages from the release tag.
+# Run it manually (Actions -> Release -> Run workflow, on main) to force a bump or a pre-release.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        default: auto
+        options: [auto, patch, minor, major, prerelease]
+      prerelease:
+        description: Pre-release label (e.g. Beta); empty for a normal release
+        type: string
+        default: ''
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  version:
+    name: Bump version and tag
+    # skip the push that the release itself creates
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Check manual inputs
+        if: github.event_name == 'workflow_dispatch'
+        # Inputs reach the shell only through env vars (never interpolated into the script) and are
+        # allowlisted here; manual runs are also refused from any ref other than main.
+        env:
+          REF: ${{ github.ref }}
+          BUMP: ${{ inputs.bump }}
+          PRE: ${{ inputs.prerelease }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Releases are cut from main only; run the workflow on main (got $REF)."
+            exit 1
+          fi
+          case "$BUMP" in auto|patch|minor|major|prerelease) ;;
+            *) echo "::error::Unknown bump '$BUMP'."; exit 1 ;;
+          esac
+          if [[ ! "$PRE" =~ ^([0-9A-Za-z][0-9A-Za-z.-]{0,30})?$ ]]; then
+            echo "::error::Pre-release label must be letters, digits, dots or dashes (got '$PRE')."
+            exit 1
+          fi
+      - name: Bump version, commit, tag and push
+        id: release
+        env:
+          BUMP: ${{ inputs.bump || 'auto' }}
+          PRE: ${{ inputs.prerelease }}
+        run: make release CI=1 BUMP="$BUMP" PRE="$PRE"
+
   build:
     name: Build (${{ matrix.os }})
+    needs: version
+    if: needs.version.outputs.released == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -20,6 +90,8 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -28,8 +100,7 @@ jobs:
       - name: Build installers
         run: npx electron-builder --publish never
         env:
-          # unsigned builds; add signing secrets here when available
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned builds; add signing secrets here when available
       - name: Collect artifacts
         shell: bash
         run: |
@@ -44,19 +115,46 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: installers
           merge-multiple: true
-      - name: List files
-        run: ls -la installers
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: GenGIS ${{ github.ref_name }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: GenGIS ${{ needs.version.outputs.tag }}
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(needs.version.outputs.tag, '-') }}
           files: installers/*
+
+  deploy-pages:
+    name: Deploy site from ${{ needs.version.outputs.tag }}
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - name: Assemble site
+        run: |
+          mkdir -p site
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'node_modules' --exclude 'dist' --exclude 'electron' \
+                   --exclude 'scripts' --exclude 'branding/source' --exclude 'Makefile' --exclude 'package.json' \
+                   --exclude 'package-lock.json' --exclude 'serve.js' --exclude '.claude' ./ site/
+          echo "${{ needs.version.outputs.tag }} deployed $(date -u +%FT%TZ)" > site/VERSION.txt
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
