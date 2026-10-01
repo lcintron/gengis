@@ -1,5 +1,5 @@
 /* GenGIS service worker: offline app shell + cached map tiles */
-const VERSION = 'gengis-0.0.1-Beta'; // app version; bumped by scripts/release.js
+const VERSION = 'gengis-0.1.0'; // app version; bump via scripts/release.js
 const OFFLINE_CACHE = 'map-builder-offline'; // filled by the app's "Download area" feature; never trimmed or versioned
 const SHELL_CACHE = VERSION + '-shell';
 const TILE_CACHE = 'map-builder-tiles'; // not versioned: cached tiles survive app updates
