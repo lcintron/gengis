@@ -60,15 +60,15 @@ Build installers with `npm run dist` (electron-builder; produces NSIS/DMG/AppIma
 
 ## Building, releasing and deploying
 
-Releases are fully automated. Every merge to `main` runs the **Release** workflow, which:
+Releases are made on demand and run entirely in CI. Merging to `main` releases nothing; to cut a release, open **Actions, Release, Run workflow** (on `main`), choose the bump and press the button (or run `gh workflow run release.yml -f bump=auto`). The workflow then:
 
-1. derives the semantic-version bump from the conventional commits since the last tag (`feat:` minor, `fix:`/`perf:` patch, `BREAKING CHANGE` major; only `chore:`/`docs:`/`ci:` commits mean no release),
+1. with bump `auto`, derives the semantic-version bump from the conventional commits since the last tag (`feat:` minor, `fix:`/`perf:` patch, `BREAKING CHANGE` major; only `chore:`/`docs:`/`ci:` commits mean nothing to release), or uses the bump chosen in the form,
 2. updates the version everywhere it is shown (package.json, Settings/About, splash, README, service-worker cache name), commits `chore(release): vX.Y.Z`, tags and pushes,
 3. builds the Windows (NSIS), macOS (DMG, zip) and Linux (AppImage, deb) installers on their own runners,
 4. publishes a GitHub Release with the installers and generated notes,
 5. deploys GitHub Pages from that tag, so the live site always matches a release.
 
-To force a bump or a pre-release, run the workflow manually (Actions, Release, Run workflow) and choose the bump and an optional pre-release label. The Pages source must be set to "GitHub Actions" once in the repository settings.
+The form also takes an optional pre-release label (e.g. `Beta`) and a **Dry run** box that only reports the version a run would release. The Pages source must be set to "GitHub Actions" once in the repository settings.
 
 | Command | What it does |
 | --- | --- |

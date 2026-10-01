@@ -1,7 +1,7 @@
 name: Deploy site
 
 # Publishes GitHub Pages from a tag or branch on demand. The Release workflow already deploys the site
-# for every automated release; use this to redeploy an older tag or to deploy manually.
+# for every release; use this to redeploy an older tag or to deploy without releasing.
 # Repository setting required once: Settings -> Pages -> Source: "GitHub Actions".
 on:
   workflow_dispatch:
