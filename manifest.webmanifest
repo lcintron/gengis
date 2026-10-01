@@ -1,7 +1,7 @@
 {
   "name": "GenGIS (G²)",
   "short_name": "GenGIS",
-  "description": "Draw shapes, place SVGs, organize layers and measure on OpenStreetMap-based maps.",
+  "description": "GenGIS (G²) is a free, offline-capable GIS map builder: draw and style features, organize them in layers, measure in metric, imperial or nautical units, place SVG symbols, and overlay live airspace, boundary and point-of-interest data from open sources.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -7,19 +7,27 @@
   "scripts": {
     "serve": "node serve.js 8080",
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "release": "node scripts/release.js",
+    "version:show": "node scripts/release.js --show"
   },
   "build": {
     "appId": "local.gengis",
     "productName": "GenGIS",
     "files": ["index.html", "sw.js", "manifest.webmanifest", "css/**", "js/**", "vendor/**", "icons/**", "branding/splash/**", "electron/**"],
+    "directories": { "output": "dist" },
+    "artifactName": "GenGIS-${version}-${os}-${arch}.${ext}",
     "icon": "icons/icon-512.png",
-    "win": { "target": "nsis", "icon": "icons/icon.ico" },
-    "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "icons/icon.ico" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
+    "mac": { "target": ["dmg", "zip"], "category": "public.app-category.productivity" },
+    "linux": { "target": ["AppImage", "deb"], "category": "Science", "maintainer": "Luis Cintron" }
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^26.0.0"
   }
 }

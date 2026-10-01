@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <title>GenGIS (G²)</title>
-<meta name="description" content="Draw shapes, place SVGs, organize layers and measure on OpenStreetMap-based maps.">
+<meta name="description" content="GenGIS (G²) is a free, offline-capable GIS map builder: draw and style features, organize them in layers, measure in metric, imperial or nautical units, place SVG symbols, and overlay live airspace, boundary and point-of-interest data from open sources.">
 <meta name="theme-color" content="#0b1118">
 <meta name="color-scheme" content="dark">
 <link rel="manifest" href="manifest.webmanifest">
@@ -23,7 +23,7 @@
 <link rel="apple-touch-startup-image" href="branding/splash/splash-750x1334-iphone.png" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)">
 <link rel="apple-touch-startup-image" href="branding/splash/splash-2048x2732-ipad.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)">
 <meta property="og:title" content="GenGIS (G²)">
-<meta property="og:description" content="Free, offline-capable map builder with live airspace and boundary data.">
+<meta property="og:description" content="Free, offline-capable GIS map builder with live airspace, boundary and point-of-interest data.">
 <meta property="og:image" content="branding/png/gengis-social-1280x640.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
@@ -99,11 +99,12 @@
 
     <aside id="sidebar">
       <div class="tabs" role="tablist">
+        <button class="sheet-close" id="sheetClose" title="Hide panel" aria-label="Hide panel">✕</button>
         <button data-tab="layers" class="active">Layers</button>
         <button data-tab="props">Properties</button>
         <button data-tab="svg">SVG</button>
         <button data-tab="places">Places</button>
-        <button data-tab="data">FAA</button>
+        <button data-tab="data">Data</button>
         <button data-tab="settings">Settings</button>
       </div>
       <div class="tab-panels">
