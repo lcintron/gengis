@@ -7,7 +7,7 @@ name: Release
 #   2. "build": build the Windows, macOS and Linux installers from that tag.
 #   3. "publish": create the GitHub Release with the installers and generated notes.
 #   4. "deploy-pages": publish GitHub Pages from the release tag.
-# Run it manually (Actions -> Release -> Run workflow) to force a bump or a pre-release.
+# Run it manually (Actions -> Release -> Run workflow, on main) to force a bump or a pre-release.
 on:
   push:
     branches: [main]
@@ -52,9 +52,32 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Check manual inputs
+        if: github.event_name == 'workflow_dispatch'
+        # Inputs reach the shell only through env vars (never interpolated into the script) and are
+        # allowlisted here; manual runs are also refused from any ref other than main.
+        env:
+          REF: ${{ github.ref }}
+          BUMP: ${{ inputs.bump }}
+          PRE: ${{ inputs.prerelease }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Releases are cut from main only; run the workflow on main (got $REF)."
+            exit 1
+          fi
+          case "$BUMP" in auto|patch|minor|major|prerelease) ;;
+            *) echo "::error::Unknown bump '$BUMP'."; exit 1 ;;
+          esac
+          if [[ ! "$PRE" =~ ^([0-9A-Za-z][0-9A-Za-z.-]{0,30})?$ ]]; then
+            echo "::error::Pre-release label must be letters, digits, dots or dashes (got '$PRE')."
+            exit 1
+          fi
       - name: Bump version, commit, tag and push
         id: release
-        run: make release CI=1 BUMP="${{ inputs.bump || 'auto' }}" PRE="${{ inputs.prerelease }}"
+        env:
+          BUMP: ${{ inputs.bump || 'auto' }}
+          PRE: ${{ inputs.prerelease }}
+        run: make release CI=1 BUMP="$BUMP" PRE="$PRE"
 
   build:
     name: Build (${{ matrix.os }})
