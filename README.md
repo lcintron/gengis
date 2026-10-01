@@ -2,7 +2,7 @@
 
 ![GenGIS](branding/png/gengis-banner-1200x300.png)
 
-Version 0.1.1
+Version 0.2.0
 
 A standalone map building tool built on web technologies. Runs as a **Progressive Web App** (installable, works offline for the app itself and tiles you have viewed) or as an **Electron** desktop app. No paid map APIs: it uses OpenStreetMap-based tiles, Nominatim for address search, the Overpass API for points of interest, and public FAA and Esri feature services. It works without any API key; optional free keys (for example CARTO) unlock extra base maps.
 
