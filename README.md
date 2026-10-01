@@ -28,6 +28,12 @@ A standalone map building tool built on web technologies. Runs as a **Progressiv
 - **Projects**: autosaved in the browser, save/open as `.mapproject.json`, export/import GeoJSON (styles preserved), undo/redo.
 - 8 free base maps (OpenStreetMap, Humanitarian, OpenTopoMap, CyclOSM, CARTO light/dark/voyager, Esri imagery). CARTO needs a free key (Map & search APIs dialog), where you can also pick its label variant.
 - **Country and state/province boundaries** (on by default, Settings tab → Map overlays): world country outlines and first-level administrative divisions from Esri's public Living Atlas services. Generalized when zoomed out, full detail when zoomed in, cached like the FAA data.
+- **Live air traffic (ADS-B)** (Data tab → ADS-B live air traffic): aircraft positions drawn as they are received, one icon per aircraft.
+  - **dump1090**: connect to your own receiver (dump1090, dump1090-fa / SkyAware, readsb or tar1090) by entering the address its map opens at; the `aircraft.json` location is found automatically. Refreshes every second.
+  - **Community networks**: [adsb.fi](https://adsb.fi) (about every 2 s) and [adsb.lol](https://adsb.lol) (every 5 to 10 s, which is what its rate limit sustains), for the area in view. These services do not accept requests from web pages, so they work in the **desktop app** only; see [Live air traffic: where it works](#live-air-traffic-where-it-works).
+  - Icons by aircraft type (helicopter, light aircraft, airliner / heavy, military, other), turned to the aircraft's track and **colored by altitude**, with an altitude legend on the map. Military aircraft are recognised from the network's own flag or, on a bare receiver, from the well-known military address blocks (a heuristic). Types, aircraft on the ground and callsign labels can be switched off individually.
+  - Click an aircraft for live details (callsign, altitude, vertical rate, speed, track, squawk, source); the popup follows it. **Look up aircraft details** adds registration, type, owner and, for airline callsigns, the route from the open [adsbdb.com](https://www.adsbdb.com) and [hexdb.io](https://hexdb.io) databases. **Find** locates a tracked callsign, registration or ICAO address on the map, or looks up an address or registration that is not currently tracked.
+  - The same aircraft reported by several sources is merged into one icon. Positions older than 20 s fade and are removed after 60 s; a receiver that stops updating is reported as such instead of looking live. Nothing is recorded: positions are kept in memory only. Informational only, not for navigation.
 - **Data sources** (Data tab, with search and an enabled/disabled filter) — **FAA airspace & UAS data**: live layers from the FAA UAS Data Delivery System: FAA-Recognized Identification Areas, UAS Facility Map (LAANC ceilings, colored by altitude), Class B/C/D/E airspace, Special Use Airspace, Prohibited Areas, National Security UAS Flight Restrictions (full-time, part-time, pending), National Defense Airspace TFR areas, recreational fixed sites, stadiums and airports. Data is fetched for the visible area (0.5° cells, paged), cached in IndexedDB, and re-downloaded when the service's last-edit stamp changes (checked on a schedule you choose). Hover for labels, click for details. Airports and stadiums use chart-style icons (blue towered, magenta non-towered, grey private, H for heliports). Clicking an airport shows its radio frequencies (tower, ground, ATIS, CTAF, approach, departure) from the OurAirports republication of FAA NASR data, downloaded once and refreshed only when the source changes; towered airports are drawn in teal. Datasets with sub-elements (airspace classes, special-use types, LAANC ceiling altitudes, public/private airports, part-time NSUFR alert state) have per-element toggles. Any other public ArcGIS Feature Service layer can be added by URL.
 - **Map & search APIs dialog** (Project menu): add tile providers that need an API key (presets for MapTiler, Thunderforest, Stadia, Mapbox, Geoapify), any XYZ tile server or WMS server, and point the geocoder at any Nominatim-compatible service (LocationIQ, geocode.maps.co, self-hosted) or your own Overpass endpoints. Keys stay in the browser's local storage.
 
@@ -57,6 +63,18 @@ npm start -- --center=37.8199,-122.4783 --poi=cafe
 ```
 
 Build installers with `npm run dist` (electron-builder; produces NSIS/DMG/AppImage).
+
+### Live air traffic: where it works
+
+Browsers only let a web page read another server's data when that server allows it (CORS), and they block plain-HTTP requests from an HTTPS page. That decides where each traffic source can be used:
+
+| Source | Desktop app | Web app over `http://` (e.g. `make serve`) | Web app over HTTPS |
+| --- | --- | --- | --- |
+| dump1090 receiver that sends CORS headers (dump1090-fa and tar1090 do by default) | yes | yes | only a receiver on `localhost` or one reachable over HTTPS |
+| dump1090 receiver without CORS headers | yes | no | no |
+| adsb.fi, adsb.lol | yes | no | no |
+
+The desktop app adds the missing header itself for these feeds, so it has none of these limits. When a source cannot be read, its status line in the Data tab says why.
 
 ## Building, releasing and deploying
 
@@ -118,6 +136,7 @@ js/contextmenu.js     right-click menus
 js/presenter.js       presenter mode
 js/datalayers.js      FAA / ArcGIS feature-service data layers with IndexedDB cache
 js/frequencies.js     airport radio frequencies (OurAirports / FAA NASR), cached with change detection
+js/adsb.js            live air traffic: dump1090 receivers and open ADS-B networks, type icons, altitude colors, look-up
 js/offline.js         offline areas: tile pre-download into a dedicated cache
 js/tooltipdelay.js    hover-tooltip rest delay
 js/ui.js              panels, toolbar, keyboard
@@ -133,6 +152,7 @@ vendor/               Leaflet 1.9.4, Leaflet-Geoman 2.20 (bundled, no CDN needed
 - Tiles: each provider has its own usage policy (OpenStreetMap's tile policy forbids heavy or bulk use). Attribution is shown on the map.
 - Geocoding: [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) – max 1 request/second, no bulk geocoding. The app only queries when you press Enter.
 - Points of interest: [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) public instance – light use only.
+- Live air traffic: [adsb.fi](https://github.com/adsbfi/opendata) open data is for personal, non-commercial use at no more than one request per second; [adsb.lol](https://adsb.lol) data is published under the ODbL and is rate-limited. The app polls no faster than each service sustains and backs off when it is told to slow down. Aircraft look-ups go to adsbdb.com and hexdb.io only when you ask for one.
 
 For heavy or commercial use, point `js/search.js` and `js/store.js` at your own Nominatim/Overpass/tile servers.
 

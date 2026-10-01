@@ -28,6 +28,7 @@
 
     MB.ui.init();
     MB.data.init();
+    MB.adsb.init();
     MB.offline.init();
     MB.busy.init();
     MB.tilePrefetch.init();

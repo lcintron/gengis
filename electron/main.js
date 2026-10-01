@@ -37,6 +37,16 @@ app.whenReady().then(() => {
       callback({ requestHeaders: details.requestHeaders });
     }
   );
+  // Live air traffic: the open ADS-B networks, and receivers set up without it, send no CORS header, and the
+  // page needs one to read their JSON. Add it to those responses only (aircraft.json feeds and the two APIs).
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['https://api.adsb.lol/*', 'https://opendata.adsb.fi/*', '*://*/*aircraft.json*'] },
+    (details, callback) => {
+      const headers = details.responseHeaders || {};
+      if (!Object.keys(headers).some(h => h.toLowerCase() === 'access-control-allow-origin')) headers['Access-Control-Allow-Origin'] = ['*'];
+      callback({ responseHeaders: headers });
+    }
+  );
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

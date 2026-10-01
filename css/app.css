@@ -523,3 +523,45 @@ button.link:hover { text-decoration: underline; }
 .mb-identify .mb-freqs { margin-left: 18px; }
 .mb-ident-more { font-size: 11px; padding: 4px 4px 0; border-top: 1px solid var(--border); }
 .mb-data-icon.mb-data-hl svg { filter: drop-shadow(0 0 4px #ffd166) drop-shadow(0 0 2px #ffd166); transform: scale(1.25); }
+
+/* ---------- live air traffic (ADS-B) ---------- */
+.mb-ac { background: transparent; border: 0; }
+.mb-ac-rot { width: 100%; height: 100%; color: #dfe4ea; }
+.mb-ac-rot svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.mb-ac-rot svg path, .adsb-types svg path { fill: currentColor; stroke: #0b1118; stroke-width: 1.5; stroke-linejoin: round; paint-order: stroke; }
+.mb-ac-rot svg path.rotor-bg, .adsb-types svg path.rotor-bg { fill: none; stroke: #0b1118; stroke-width: 3.6; stroke-linecap: round; }
+.mb-ac-rot svg path.rotor, .adsb-types svg path.rotor { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; paint-order: normal; }
+.mb-ac.stale { opacity: .45; }
+.mb-ac.sel .mb-ac-rot { filter: drop-shadow(0 0 3px #ffd166) drop-shadow(0 0 2px #ffd166); }
+.mb-ac-label {
+  display: none; position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 3px; white-space: nowrap; pointer-events: none;
+  font-size: 10.5px; font-weight: 600; line-height: 1; color: #fff; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 2px #000;
+}
+.leaflet-mb-adsb-pane.labels .mb-ac-label, .mb-ac.sel .mb-ac-label { display: block; }
+/* glide between position reports; switched off while the map zooms */
+.leaflet-mb-adsb-pane.smooth .mb-ac { transition: transform 1s linear; } /* duration is set per icon to its source's refresh rate */
+.mb-alt-legend {
+  width: 250px; max-width: calc(100vw - 90px); margin: 0 12px 8px 0 !important; pointer-events: none;
+  background: rgba(27,31,39,.85); border: 1px solid var(--border); border-radius: 6px; padding: 5px 14px 4px; font-size: 10px; color: var(--text);
+}
+@media (max-width: 640px) { .mb-alt-legend { margin: 0 8px 14px 0 !important; } } /* clear the coordinates box on phones */
+.mb-alt-legend .ttl { color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
+.mb-alt-legend .scale, .mb-alt-legend .ticks { display: flex; gap: 6px; align-items: center; }
+.mb-alt-legend .scale span { height: 8px; border-radius: 2px; }
+.mb-alt-legend .gnd { flex: 0 0 24px; text-align: center; }
+.mb-alt-legend .bar, .mb-alt-legend .axis { flex: 1 1 auto; }
+.mb-alt-legend .ticks { margin-top: 2px; height: 12px; font-variant-numeric: tabular-nums; }
+.mb-alt-legend .axis { position: relative; height: 12px; }
+.mb-alt-legend .axis i { position: absolute; top: 0; transform: translateX(-50%); font-style: normal; white-space: nowrap; }
+.data-item .adsb-row { margin: 6px 0 0 23px; }
+.data-item .adsb-row label { flex: 0 0 52px; }
+.data-item .dname a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--text-dim); }
+.data-item.adsb-display .subsets, .data-item.adsb-display .note, .data-item.adsb-display .adsb-row { margin-left: 0; }
+.data-item.adsb-display .adsb-row input { height: 30px; }
+.adsb-types svg { width: 15px; height: 15px; color: var(--text); overflow: visible; }
+#adsbFindOut .mb-datatable { margin: 4px 0; }
+.mb-ac-info .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; border: 1px solid rgba(255,255,255,.3); }
+.mb-ac-info .warn { color: var(--warn); font-weight: 600; }
+.mb-ac-look { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.mb-ac-look:empty { display: none; }
+.mb-ac-links { margin-top: 6px; font-size: 11px; }
