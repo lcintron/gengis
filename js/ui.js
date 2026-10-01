@@ -92,7 +92,6 @@ window.MB = window.MB || {};
       e.target.value = '';
     });
 
-    $('#sheetClose').addEventListener('click', () => { $('#sidebar').classList.add('collapsed'); setTimeout(() => MB.map.invalidateSize(), 50); });
     $('#sidebarToggle').addEventListener('click', () => {
       $('#sidebar').classList.toggle('collapsed');
       setTimeout(() => MB.map.invalidateSize(), 50);
@@ -255,7 +254,6 @@ window.MB = window.MB || {};
           <button class="chev${collapsed ? ' closed' : ''}" data-act="toggle" title="${collapsed ? 'Expand' : 'Collapse'}">&#9662;</button>
           <span class="active-dot"></span>
           <span class="layer-name" data-act="rename">${esc(l.name)}</span>
-          <button class="icon-btn mini" data-act="rename-btn" title="Rename layer">${icons.edit}</button>
           <span class="count">${feats.length}</span>
           <button class="icon-btn mini${l.visible ? ' on' : ''}" data-act="vis" title="${l.visible ? 'Hide' : 'Show'} layer (all objects)">${l.visible ? icons.eye : icons.eyeOff}</button>
           <button class="icon-btn mini${l.locked ? ' on' : ''}" data-act="lock" title="${l.locked ? 'Unlock' : 'Lock'} layer (all objects)">${l.locked ? icons.lock : icons.unlock}</button>
@@ -277,7 +275,6 @@ window.MB = window.MB || {};
         const actEl = e.target.closest('[data-act]');
         const act = actEl && actEl.dataset.act;
         if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
-        if (act === 'rename-btn') { startRename(item, id); return; }
         if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
         else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
         else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }

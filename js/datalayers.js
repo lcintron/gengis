@@ -54,11 +54,6 @@ window.MB = window.MB || {};
   const ESRI = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/';
   const boundaryStyle = (color, weight, dash) => () => ({ color, weight, opacity: .85, fill: false, dashArray: dash || null, lineJoin: 'round' });
 
-  MB.dataSources = {
-    faa: { name: 'FAA UAS Data Delivery System', url: 'https://udds-faa.opendata.arcgis.com/', note: 'Live FAA airspace and UAS data for the visible area, cached on this device. Informational only.' },
-    custom: { name: 'Custom ArcGIS layers', url: '', note: '' }
-  };
-
   MB.dataCatalog = [
     { id: 'countries', group: 'Boundaries', name: 'Country boundaries', minZoom: 0, defaultOn: true,
       levels: [{ maxZoom: 4, whole: true, offset: 0.05 }, { maxZoom: 7, cellSize: 20, offset: 0.01 }, { cellSize: 10, offset: 0 }],
@@ -70,65 +65,62 @@ window.MB = window.MB || {};
       label: p => `${p.NAME || ''}${p.COUNTRY ? ', ' + p.COUNTRY : ''}`, fields: ['NAME', 'COUNTRY', 'ADMINTYPE', 'ISO_CODE', 'AUTONOMOUS', 'DISPUTED'], legend: [['State / province (dashed)', '#4a4f5c']],
       desc: 'States, provinces, regions. Full detail from zoom 8.' },
     { id: 'fria', group: 'Remote ID', name: 'FAA-Recognized Identification Areas (FRIA)', minZoom: 7,
-      source: 'faa', url: FAA + 'FAA_Recognized_Identification_Areas/FeatureServer/0', style: solid('#2ecc71', .25),
+      url: FAA + 'FAA_Recognized_Identification_Areas/FeatureServer/0', style: solid('#2ecc71', .25),
       label: p => p.title || p.orgName || 'FRIA', fields: ['title', 'orgName', 'address1', 'city', 'state', 'zipcode', 'startDate', 'endDate', 'refNumber'],
       legend: [['FRIA', '#2ecc71']], desc: 'Fly without Remote ID (VLOS).' },
     { id: 'uasfm', group: 'LAANC', name: 'UAS Facility Map (LAANC ceilings)', minZoom: 10,
-      source: 'faa', url: FAA + 'FAA_UAS_FacilityMap_Data/FeatureServer/0', style: ceilingStyle,
+      url: FAA + 'FAA_UAS_FacilityMap_Data/FeatureServer/0', style: ceilingStyle,
       label: p => `Ceiling ${p.CEILING} ${p.UNIT || 'ft'} AGL${p.APT1_NAME ? ' · ' + p.APT1_NAME : ''}`,
       fields: ['CEILING', 'UNIT', 'APT1_NAME', 'APT1_FAAID', 'APT1_LAANC', 'APT2_NAME', 'APT2_FAAID', 'AIRSPACE_1', 'AIRSPACE_2', 'MAP_EFF', 'LAST_EDIT'],
       legend: CEIL.map(([v, c]) => [v + ' ft', c]), desc: 'LAANC ceilings, ft AGL. 0 ft: coordination required.',
       subsets: { key: p => String(ceilingBucket(p.CEILING)), items: CEIL.map(([v, c]) => [String(v), v + ' ft', c]) } },
     { id: 'classAirspace', group: 'Airspace', name: 'Class B / C / D / E airspace', minZoom: 7,
-      source: 'faa', url: FAA + 'Class_Airspace/FeatureServer/0', style: classStyle,
+      url: FAA + 'Class_Airspace/FeatureServer/0', style: classStyle,
       label: p => `Class ${p.CLASS} · ${p.NAME || ''} ${feetDesc(p)}`, fields: ['NAME', 'CLASS', 'LOCAL_TYPE', 'LOWER_DESC', 'UPPER_DESC', 'ICAO_ID', 'COMM_NAME', 'WKHR_RMK'],
       legend: [['Class B', '#1f5fd6'], ['Class C', '#a12fb5'], ['Class D (dashed)', '#1f5fd6'], ['Class E (dotted)', '#b76ad6']], desc: '',
       subsets: { key: p => (p.CLASS || '').trim().toUpperCase(), items: [['B', 'Class B', '#1f5fd6'], ['C', 'Class C', '#a12fb5'], ['D', 'Class D (dashed)', '#1f5fd6'], ['E', 'Class E (dotted)', '#b76ad6']], other: 'Other classes' } },
     { id: 'sua', group: 'Airspace', name: 'Special Use Airspace (R, W, MOA, A, NSA)', minZoom: 6,
-      source: 'faa', url: FAA + 'Special_Use_Airspace/FeatureServer/0', style: suaStyle,
+      url: FAA + 'Special_Use_Airspace/FeatureServer/0', style: suaStyle,
       label: p => `${p.NAME || ''} (${p.TYPE_CODE || ''}) ${feetDesc(p)}`, fields: ['NAME', 'TYPE_CODE', 'LOWER_DESC', 'UPPER_DESC', 'TIMESOFUSE', 'CONT_AGENT', 'COMM_NAME', 'REMARKS'],
       legend: [['Restricted', '#d7263d'], ['Warning', '#f46036'], ['MOA', '#c2185b'], ['Alert', '#f7b32b'], ['NSA', '#6a1b9a']],
       subsets: { key: p => (p.TYPE_CODE || '').trim().toUpperCase(), items: [['R', 'Restricted (R)', '#d7263d'], ['W', 'Warning (W)', '#f46036'], ['MOA', 'Military Operations Area', '#c2185b'], ['A', 'Alert (A)', '#f7b32b'], ['NSA', 'National Security Area', '#6a1b9a'], ['P', 'Prohibited (P)', '#b71c1c']], other: 'Other types' } },
     { id: 'prohibited', group: 'Airspace', name: 'Prohibited Areas', minZoom: 6,
-      source: 'faa', url: FAA + 'Prohibited_Areas/FeatureServer/0', style: solid('#b71c1c', .3),
+      url: FAA + 'Prohibited_Areas/FeatureServer/0', style: solid('#b71c1c', .3),
       label: p => `${p.NAME || 'Prohibited'} ${feetDesc(p)}`, fields: ['NAME', 'LOWER_DESC', 'UPPER_DESC', 'TIMESOFUSE', 'CONT_AGENT', 'REMARKS'], legend: [['Prohibited', '#b71c1c']] },
     { id: 'nsufr', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (full-time)', minZoom: 7,
-      source: 'faa', url: FAA + 'DoD_Mar_13/FeatureServer/0', style: hatched('#e53935'),
+      url: FAA + 'DoD_Mar_13/FeatureServer/0', style: hatched('#e53935'),
       label: p => `${p.Facility || p.Base || 'NSUFR'} · ${p.Floor || 'SFC'}–${p.Ceiling || '400 ft'}`, fields: ['Facility', 'Base', 'Branch', 'Proponent', 'Reason', 'Floor', 'Ceiling', 'FAA_ID', 'State', 'POC'],
       legend: [['NSUFR 24/7', '#e53935']], desc: 'No UAS, surface to 400 ft AGL, 24/7.' },
     { id: 'nsufrPart', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (part-time)', minZoom: 7,
-      source: 'faa', url: FAA + 'Part_Time_National_Security_UAS_Flight_Restrictions/FeatureServer/0', style: hatched('#fb8c00'),
+      url: FAA + 'Part_Time_National_Security_UAS_Flight_Restrictions/FeatureServer/0', style: hatched('#fb8c00'),
       label: p => `${p.Facility || p.Base || 'Part-time NSUFR'} · ${p.ALERTYPE || ''}`, fields: ['Facility', 'Base', 'Reason', 'Floor', 'Ceiling', 'ALERTYPE', 'ACTIVETIME', 'ENDTIME', 'ADVISENOTE', 'FAA_ID'],
       legend: [['Part-time NSUFR', '#fb8c00']], desc: 'Active during announced periods.',
       subsets: { key: p => (p.ALERTYPE || '').trim() ? 'alert' : 'none', items: [['alert', 'With an active alert / schedule', '#fb8c00'], ['none', 'No current alert', '#fb8c00']] } },
     { id: 'nsufrPending', group: 'UAS restrictions', name: 'Pending National Security UAS Flight Restrictions', minZoom: 7,
-      source: 'faa', url: FAA + 'UAS_NSR_Pending/FeatureServer/0', style: hatched('#8e24aa'),
+      url: FAA + 'UAS_NSR_Pending/FeatureServer/0', style: hatched('#8e24aa'),
       label: p => `${p.Facility || p.Base || 'Pending NSUFR'}`, fields: ['Facility', 'Base', 'Branch', 'Reason', 'Floor', 'Ceiling', 'FAA_ID'], legend: [['Pending NSUFR', '#8e24aa']] },
     { id: 'ndaTfr', group: 'UAS restrictions', name: 'National Defense Airspace TFR areas', minZoom: 7,
-      source: 'faa', url: FAA + 'National_Defense_Airspace_TFR_Areas/FeatureServer/0', style: hatched('#6d4c41'),
+      url: FAA + 'National_Defense_Airspace_TFR_Areas/FeatureServer/0', style: hatched('#6d4c41'),
       label: p => p.NAME || 'NDA TFR', fields: ['NAME', 'TYPE_CODE', 'LOCAL_TYPE', 'WKHR_RMK', 'CITY', 'STATE'], legend: [['NDA TFR', '#6d4c41']] },
     { id: 'recSites', group: 'Sites', name: 'Recreational Flyer Fixed Sites', minZoom: 8,
-      source: 'faa', url: FAA + 'Recreational_Flyer_Fixed_Sites/FeatureServer/0', style: solid('#00897b', .2),
+      url: FAA + 'Recreational_Flyer_Fixed_Sites/FeatureServer/0', style: solid('#00897b', .2),
       label: p => `${p.SITE_NAME || 'Fixed site'} · ceiling ${p.CEILING || '?'} ${p.UNIT || 'ft'}`, fields: ['SITE_NAME', 'SITE_ID', 'CEILING', 'UNIT', 'CITY', 'STATE', 'POC'], legend: [['Fixed site', '#00897b']] },
     { id: 'stadiums', group: 'Sites', name: 'Stadiums (3 NM TFR during events)', minZoom: 7, point: true,
-      source: 'faa', url: FAA + 'Stadiums/FeatureServer/0', style: () => ({ radius: 6, color: '#fff', weight: 1.5, fillColor: '#ef6c00', fillOpacity: .95 }),
-      icon: () => stadiumIcon(), iconSize: 22,
+      url: FAA + 'Stadiums/FeatureServer/0', style: () => ({ radius: 6, color: '#fff', weight: 1.5, fillColor: '#ef6c00', fillOpacity: .95 }),
       label: p => p.NAME || 'Stadium', fields: ['NAME', 'CITY', 'STATE', 'STATUS_CODE'], legend: [['Stadium', '#ef6c00']], desc: '3 NM TFR during major events.' },
     { id: 'airports', group: 'Sites', name: 'Airports', minZoom: 9, point: true,
-      source: 'faa', url: FAA + 'US_Airport/FeatureServer/0',
+      url: FAA + 'US_Airport/FeatureServer/0',
       style: p => {
         const priv = p.PRIVATEUSE === 'Y' || p.PRIVATEUSE === 1 || p.PRIVATEUSE === '1';
         const towered = !priv && MB.freqs && MB.freqs.index && MB.freqs.hasTower(p);
-        return { radius: towered ? 6 : 5, color: '#fff', weight: 1.2, fillColor: priv ? '#78909c' : (towered ? '#1f5fd6' : '#c2185b'), fillOpacity: .95 };
+        return { radius: towered ? 6 : 5, color: '#fff', weight: 1.2, fillColor: priv ? '#78909c' : (towered ? '#1db3a9' : '#37474f'), fillOpacity: .95 };
       },
-      // Sectional-chart conventions: blue = towered, magenta = non-towered, grey = private; H = heliport, anchor = seaplane base.
-      icon: p => airportIcon(p), iconSize: 22,
       label: p => `${p.NAME || ''} (${p.IDENT || p.ICAO_ID || ''})`, fields: ['NAME', 'IDENT', 'ICAO_ID', 'TYPE_CODE', 'ELEVATION', 'PRIVATEUSE', 'OPERSTATUS', 'SERVCITY', 'STATE'],
-      legend: [['Towered', '#1f5fd6'], ['Non-towered', '#c2185b'], ['Private', '#78909c'], ['H = heliport', '#c2185b']],
+      legend: [['Towered', '#1db3a9'], ['Public', '#37474f'], ['Private', '#78909c']],
       subsets: { key: p => (p.PRIVATEUSE === 'Y' || p.PRIVATEUSE === 1 || p.PRIVATEUSE === '1') ? 'private' : 'public', items: [['public', 'Public use', '#37474f'], ['private', 'Private use', '#78909c']] },
       popupExtra: p => MB.freqs.ensure().then(() => MB.freqs.popupHtml(p)),
       onEnable: () => MB.freqs.ensure(), extraStatus: () => MB.freqs.statusLine(),
-      desc: 'Click for radio frequencies. Chart colors: blue towered, magenta non-towered.' }
+      desc: 'Click for radio frequencies. Teal = towered.' }
   ];
 
   /* ---------- IndexedDB (with in-memory fallback) ---------- */
@@ -168,8 +160,6 @@ window.MB = window.MB || {};
     lastError: null,
 
     init() {
-      const mpane = MB.map.createPane('mb-data-markers'); // icon markers above the data canvas, below user objects
-      mpane.style.zIndex = 360;
       const pane = MB.map.createPane('mb-data');
       pane.style.zIndex = 350;
       pane.style.pointerEvents = 'auto';
@@ -184,7 +174,7 @@ window.MB = window.MB || {};
 
     buildSets() {
       const custom = ((MB.settings && MB.settings.dataServices) || []).map(c => ({
-        id: 'custom:' + c.id, group: 'Custom ArcGIS layers', source: 'custom', name: c.name, url: c.url.replace(/\/query.*$/, '').replace(/\/$/, ''), minZoom: +c.minZoom || 8,
+        id: 'custom:' + c.id, group: 'Custom services', name: c.name, url: c.url.replace(/\/query.*$/, '').replace(/\/$/, ''), minZoom: +c.minZoom || 8,
         point: !!c.point, custom: true, style: () => ({ color: c.color || '#4f8cff', weight: 2, opacity: .9, fillColor: c.color || '#4f8cff', fillOpacity: .15, radius: 6 }),
         label: p => firstText(p), fields: null, legend: [[c.name, c.color || '#4f8cff']]
       }));
@@ -278,7 +268,8 @@ window.MB = window.MB || {};
     },
 
     applyOpacity() {
-      ['mb-data', 'mb-data-markers'].forEach(name => { const pane = MB.map.getPane(name); if (pane) pane.style.opacity = this.settings.opacity; });
+      const pane = MB.map.getPane('mb-data');
+      if (pane) pane.style.opacity = this.settings.opacity;
     },
 
     saveSettings() {
@@ -445,10 +436,7 @@ window.MB = window.MB || {};
   MB.data.restyle = function (id) {
     const ds = MB.data.sets[id];
     if (!ds || !ds.def.style) return;
-    ds.cells.forEach(c => { if (c.layer) c.layer.eachLayer(l => {
-      if (l.setIcon && ds.def.icon && l.feature) l.setIcon(makeIcon(ds.def, l.feature.properties));
-      else if (l.setStyle && l.feature) l.setStyle(ds.def.style(l.feature.properties || {}));
-    }); });
+    ds.cells.forEach(c => { if (c.layer) c.layer.eachLayer(l => { if (l.setStyle && l.feature) l.setStyle(ds.def.style(l.feature.properties || {})); }); });
   };
 
   function cellsFor(bounds, size) {
@@ -537,38 +525,13 @@ window.MB = window.MB || {};
   }
   MB.data.dataRenderer = dataRenderer;
 
-  /* ----- chart-style icons for point datasets ----- */
-  function airportIcon(p) {
-    const priv = p.PRIVATEUSE === 'Y' || p.PRIVATEUSE === 1 || p.PRIVATEUSE === '1';
-    const towered = !priv && MB.freqs && MB.freqs.index && MB.freqs.hasTower(p);
-    const c = priv ? '#78909c' : (towered ? '#1f5fd6' : '#c2185b');
-    const type = (p.TYPE_CODE || '').toUpperCase();
-    const ring = `<circle cx="12" cy="12" r="9" fill="rgba(255,255,255,.92)" stroke="${c}" stroke-width="2.3"/>`;
-    if (type === 'HP' || type === 'HELIPORT') return `<svg viewBox="0 0 24 24">${ring}<text x="12" y="16.5" text-anchor="middle" font-size="12" font-weight="700" fill="${c}" font-family="system-ui,sans-serif">H</text></svg>`;
-    if (type === 'SP' || type === 'SEAPLANE') return `<svg viewBox="0 0 24 24">${ring}<path d="M12 6.5v10M8 10h8M7.5 13c0 3 2 4.5 4.5 4.5s4.5-1.5 4.5-4.5" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`;
-    if (type === 'GL' || type === 'GLIDERPORT') return `<svg viewBox="0 0 24 24">${ring}<path d="M5 12h14M12 9v6" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`;
-    if (type === 'UL' || type === 'ULTRALIGHT') return `<svg viewBox="0 0 24 24">${ring}<text x="12" y="16.5" text-anchor="middle" font-size="11" font-weight="700" fill="${c}" font-family="system-ui,sans-serif">U</text></svg>`;
-    // airport: ring with a runway bar; towered airports get the chart's outer tick marks
-    const ticks = towered ? '<path d="M12 1v3M12 20v3M1 12h3M20 12h3" stroke="' + c + '" stroke-width="2"/>' : '';
-    return `<svg viewBox="0 0 24 24">${ticks}${ring}<rect x="4.5" y="10.4" width="15" height="3.2" rx="1.2" fill="${c}" transform="rotate(-35 12 12)"/></svg>`;
-  }
-  function stadiumIcon() {
-    return '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="10" ry="6.5" fill="rgba(255,255,255,.92)" stroke="#ef6c00" stroke-width="2.3"/><rect x="7.5" y="9.3" width="9" height="5.4" rx="1" fill="none" stroke="#ef6c00" stroke-width="1.6"/><path d="M12 9.3v5.4" stroke="#ef6c00" stroke-width="1.4"/></svg>';
-  }
-  function makeIcon(def, p) {
-    const s = def.iconSize || 22;
-    return L.divIcon({ className: 'mb-data-icon', html: def.icon(p || {}), iconSize: [s, s], iconAnchor: [s / 2, s / 2] });
-  }
-
   function buildGeoJson(ds, geojson) {
     const def = ds.def;
     const renderer = dataRenderer();
     return L.geoJSON(geojson, {
       pane: 'mb-data', pmIgnore: true, renderer,
       style: f => def.style(f.properties || {}),
-      pointToLayer: (f, ll) => def.icon
-        ? L.marker(ll, { icon: makeIcon(def, f.properties), pane: 'mb-data-markers', pmIgnore: true, keyboard: false })
-        : L.circleMarker(ll, Object.assign({ pane: 'mb-data', pmIgnore: true, renderer }, def.style(f.properties || {}))),
+      pointToLayer: (f, ll) => L.circleMarker(ll, Object.assign({ pane: 'mb-data', pmIgnore: true, renderer }, def.style(f.properties || {}))),
       onEachFeature: (f, layer) => {
         const p = f.properties || {};
         layer.options.pmIgnore = true;
@@ -593,45 +556,18 @@ window.MB = window.MB || {};
   }
 
   /* ---------- panel ---------- */
-  MB.data.ui = { q: '', filter: 'all' };
-
   MB.data.renderPanel = async function () {
     const panel = document.getElementById('tab-data');
     if (!panel) return;
-    // Don't rebuild while the user is typing in the search box; a later 'data' event will catch up.
-    if (document.activeElement && document.activeElement.id === 'dsSearch') { clearTimeout(this._deferred); this._deferred = setTimeout(() => this.renderPanel(), 1500); return; }
-    const ui = this.ui;
-    const q = ui.q.trim().toLowerCase();
-    const matches = ds => {
-      if (ui.filter === 'on' && !ds.enabled) return false;
-      if (ui.filter === 'off' && ds.enabled) return false;
-      if (!q) return true;
-      const d = ds.def;
-      return [d.name, d.group, d.desc || '', (d.legend || []).map(x => x[0]).join(' ')].join(' ').toLowerCase().includes(q);
-    };
-    const bySource = {};
-    this.catalog().forEach(ds => {
-      if (ds.def.group === 'Boundaries') return; // boundary overlays live in Settings
-      const src = ds.def.source || 'custom';
-      (bySource[src] = bySource[src] || []).push(ds);
-    });
+    const groups = {};
+    this.catalog().forEach(ds => { if (ds.def.group !== 'Boundaries') (groups[ds.def.group] = groups[ds.def.group] || []).push(ds); });
     const zoom = MB.map.getZoom();
     const anyOn = this.catalog().some(ds => ds.enabled);
     const s = this.settings;
-    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length;
-    let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${zoom.toFixed(0)}</span></div>
-      <div class="row ds-tools"><input type="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" autocomplete="off"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
-      <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
+    let html = `<div class="panel-head"><h3>FAA airspace &amp; UAS data</h3><span class="badge">zoom ${zoom.toFixed(0)}</span></div>
+      <p class="note">Live <a href="https://udds-faa.opendata.arcgis.com/" target="_blank" rel="noopener">FAA UDDS</a> data for the visible area, cached on this device. Informational only.</p>
+      <div class="btn-row" style="margin:0 0 10px"><button class="btn small" data-act="check">Check for updates now</button><button class="btn small ghost" data-act="clear">Clear cached data</button></div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px"></div>`;
-    let shownTotal = 0;
-    Object.keys(bySource).forEach(srcKey => {
-      const src = MB.dataSources[srcKey] || { name: srcKey, url: '', note: '' };
-      const list = bySource[srcKey].filter(matches);
-      if (!list.length) return;
-      shownTotal += list.length;
-      const groups = {};
-      list.forEach(ds => { (groups[ds.def.group] = groups[ds.def.group] || []).push(ds); });
-      html += `<div class="ds-source"><div class="ds-source-head"><h3>${src.url ? `<a href="${src.url}" target="_blank" rel="noopener">${esc(src.name)}</a>` : esc(src.name)}</h3><span class="badge">${bySource[srcKey].filter(d => d.enabled).length}/${bySource[srcKey].length} on</span></div>${src.note ? `<p class="note">${esc(src.note)}</p>` : ''}`;
     Object.keys(groups).forEach(g => {
       html += `<div class="section"><h3>${esc(g)}</h3>`;
       groups[g].forEach(ds => {
@@ -643,7 +579,7 @@ window.MB = window.MB || {};
           if (ds.loading.size) bits.push('loading ' + ds.loading.size + '…');
           if (ds.status) bits.push(ds.status);
           if (!ds.loading.size && !ds.status) bits.push(shown + ' features in view');
-          if (ds.meta && ds.meta.lastEdit && ds.meta.lastEdit !== 'offline') bits.push('source updated ' + new Date(ds.meta.lastEdit).toLocaleDateString());
+          if (ds.meta && ds.meta.lastEdit && ds.meta.lastEdit !== 'offline') bits.push('FAA updated ' + new Date(ds.meta.lastEdit).toLocaleDateString());
           if (ds.meta && ds.meta.checkedAt) bits.push('checked ' + ago(ds.meta.checkedAt));
           statusLine = esc(bits.join(' · '));
           if (d.extraStatus) { try { statusLine += '<br>' + esc(d.extraStatus()); } catch (e) { /* ignore */ } }
@@ -661,15 +597,12 @@ window.MB = window.MB || {};
       });
       html += '</div>';
     });
-      html += '</div>';
-    });
-    if (!shownTotal) html += '<p class="note">No datasets match.</p>';
     html += `<div class="section"><h3>Options</h3>
       <div class="row"><label>Data opacity</label><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div>
       <div class="row" title="How often each service's last-edit stamp is compared; changed datasets are re-downloaded"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
       <div class="row" title="Cached areas older than this are refreshed"><label>Keep cache</label><select id="dataMaxAge">${[1, 3, 7, 14, 30].map(dd => `<option value="${dd}"${+s.maxAgeDays === dd ? ' selected' : ''}>${dd} day${dd > 1 ? 's' : ''}</option>`).join('')}</select></div>
     </div>
-    <div class="section"><h3>Add ArcGIS layer</h3><p class="note">Any public ArcGIS Feature Service layer becomes a dataset under "Custom ArcGIS layers".</p>
+    <div class="section"><h3>Add ArcGIS layer</h3>
       <form id="dataCustomForm">
         <div class="row"><label>Name</label><input type="text" name="name" required placeholder="Layer name"></div>
         <div class="row"><label>URL</label><input type="text" name="url" required placeholder="https://…/FeatureServer/0" title="Any public ArcGIS Feature Service layer"></div>
@@ -680,11 +613,8 @@ window.MB = window.MB || {};
     </div>`;
     panel.innerHTML = html;
 
-    const search = panel.querySelector('#dsSearch');
-    search.addEventListener('input', () => { ui.q = search.value; clearTimeout(this._searchTimer); this._searchTimer = setTimeout(() => { if (document.activeElement === search) { const pos = search.selectionStart; search.blur(); this.renderPanel().then(() => { const el = document.getElementById('dsSearch'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }); } else this.renderPanel(); }, 350); });
-    panel.querySelector('#dsFilter').addEventListener('change', e => { ui.filter = e.target.value; this.renderPanel(); });
-    panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!anyOn) { MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
-    panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
+    panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!anyOn) { MB.toast('Enable a dataset first'); return; } MB.toast('Checking FAA services…'); await this.checkAll(true); MB.toast('Update check finished'); });
+    panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached FAA/ArcGIS data on this device? It will be downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
     panel.querySelectorAll('.data-item').forEach(item => {
       const id = item.dataset.id;
       item.querySelector('[data-act="toggle"]').addEventListener('change', () => this.toggle(id));

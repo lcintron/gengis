@@ -290,49 +290,11 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   #searchInput { padding-left: 30px; }
   .seg button { padding: 7px 8px; }
 }
-.sheet-close { display: none; }
 @media (max-width: 640px) {
-  :root { --topbar-h: auto; }
   #topbar { flex-wrap: wrap; height: auto; padding: 6px 8px; gap: 6px; }
-  .brand { gap: 6px; }
-  .project-name { width: 90px; font-size: 13px; padding: 4px 6px; }
   .search-wrap { order: 3; flex: 1 1 100%; max-width: none; }
-  .brand { flex: 1 1 auto; }
-  .topbar-right { order: 2; flex: 1 1 100%; margin-left: 0; gap: 6px; overflow-x: auto; flex-wrap: nowrap; justify-content: flex-start; scrollbar-width: none; padding-bottom: 2px; }
-  .topbar-right::-webkit-scrollbar { display: none; }
-  .seg button { padding: 7px 8px; font-size: 12px; }
-  #basemapSelect { max-width: 120px; }
+  #sidebar { position: absolute; right: 0; top: 0; bottom: 0; z-index: 30; box-shadow: -8px 0 24px rgba(0,0,0,.5); }
   #main { position: relative; }
-  /* side panel becomes a bottom sheet */
-  #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: 56%; max-height: 70vh; border-left: 0; border-top: 1px solid var(--border);
-    border-radius: 14px 14px 0 0; z-index: 30; box-shadow: 0 -8px 24px rgba(0,0,0,.5); padding-bottom: env(safe-area-inset-bottom); }
-  .tabs { overflow-x: auto; scrollbar-width: none; position: relative; }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tabs button { flex: 0 0 auto; padding: 12px 10px; }
-  .sheet-close { display: flex; align-items: center; justify-content: center; flex: 0 0 36px; height: 40px; border: 0; background: transparent; color: var(--text-dim); font-size: 14px; }
-  .tab-panel { padding: 10px; }
-  /* toolbar: compact column that fits a phone's height */
-  #toolbar { left: 8px; top: 8px; padding: 4px; gap: 2px; }
-  #toolbar button { width: 36px; height: 36px; }
-  #toolbar button svg { width: 20px; height: 20px; }
-  .tool-hint { left: 54px; top: 10px; max-width: calc(100vw - 70px); font-size: 11px; }
-  .leaflet-control-zoom { display: none; }
-  .mb-status { font-size: 10px; margin: 0 0 8px 8px !important; }
-  .mb-scale { margin: 0 8px 8px 0 !important; }
-  .leaflet-control-attribution { max-width: 60vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row label { flex: 0 0 80px; }
-  .form-grid { grid-template-columns: 1fr; gap: 4px 0; }
-  .form-grid label { margin-top: 6px; }
-  .modal-box { padding: 14px; max-height: 92vh; }
-  .btn, .icon-btn { min-height: 36px; }
-  .layer-node .icon-btn.mini, .obj-item .icon-btn.mini { width: 28px; height: 28px; }
-  #presentBar { top: auto; bottom: calc(10px + env(safe-area-inset-bottom)); right: 10px; }
-}
-@media (hover: none) and (pointer: coarse) {
-  /* touch: bigger hit areas, no hover-only affordances */
-  .svg-card .del { display: block; }
-  .layer-item, .obj-item { padding-top: 6px; padding-bottom: 6px; }
-  .mb-ctx li { padding: 10px 12px; }
 }
 
 /* ---------- two-block scale bar ---------- */
@@ -492,18 +454,3 @@ button.link:hover { text-decoration: underline; }
 .mb-busy.hidden { display: none; }
 .mb-busy .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid rgba(29,179,169,.25); border-top-color: var(--accent); animation: mb-spin .8s linear infinite; flex: 0 0 auto; }
 @keyframes mb-spin { to { transform: rotate(360deg); } }
-
-/* ---------- data sources panel ---------- */
-.ds-tools { gap: 6px; }
-.ds-tools input[type="search"] { flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px; }
-.ds-tools input[type="search"]:focus { outline: none; border-color: var(--accent); }
-.ds-tools select { flex: 0 0 auto; height: 32px; }
-.ds-source { margin-bottom: 14px; }
-.ds-source-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
-.ds-source-head h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text); }
-.ds-source-head h3 a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--text-dim); }
-.ds-source .section { margin-bottom: 10px; }
-.ds-source .section h3 { font-size: 11px; }
-/* chart-style data icons */
-.mb-data-icon { background: transparent; border: 0; }
-.mb-data-icon svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)); }

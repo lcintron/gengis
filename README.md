@@ -23,12 +23,12 @@ A standalone map building tool built on web technologies. Runs as a **Progressiv
 - **Search** by address, place name or coordinates (decimal `48.858, 2.294` or DMS `48°51'30"N 2°17'40"E`).
 - **Points of interest** by category (cafés, hospitals, parking, ...) or any OpenStreetMap tag, within the current view; add them as markers.
 - **URL parameters** to open the app centered on a location: `?q=Eiffel+Tower`, `?lat=48.858&lon=2.294&zoom=16`, `?center=48.858,2.294`, `?poi=cafe`.
-- **Fast tiles and rendering**: cached tiles are shown instantly and re-fetched only after a week (the tile cache survives app updates), a ring of tiles around the view is kept so small pans never reload, neighbouring zoom levels are preloaded (off on volunteer-run servers unless enabled), and data layers draw on a single Canvas instead of thousands of SVG nodes.
+- **Fast tiles and rendering**: cached tiles are shown instantly and refreshed in the background, a ring of tiles around the view is kept so small pans never reload, neighbouring zoom levels are preloaded (off on volunteer-run servers unless enabled), and data layers draw on a single Canvas instead of thousands of SVG nodes.
 - **Offline areas** (Settings tab): download the current view's map tiles for a zoom range (with tile count and size estimate, progress, cancel), optionally pre-loading the enabled FAA/boundary data for the area. Downloaded areas are listed with go-to, re-download and delete, are served by the service worker before the network, and are never evicted by the rolling tile cache. Volunteer-run tile servers (OpenStreetMap and friends) are capped at 3,000 tiles per area; use a keyed provider for larger areas.
 - **Projects**: autosaved in the browser, save/open as `.mapproject.json`, export/import GeoJSON (styles preserved), undo/redo.
 - 8 free base maps (OpenStreetMap, Humanitarian, OpenTopoMap, CyclOSM, CARTO light/dark/voyager, Esri imagery). CARTO needs a free key (Map & search APIs dialog), where you can also pick its label variant.
 - **Country and state/province boundaries** (on by default, Settings tab → Map overlays): world country outlines and first-level administrative divisions from Esri's public Living Atlas services. Generalized when zoomed out, full detail when zoomed in, cached like the FAA data.
-- **Data sources** (Data tab, with search and an enabled/disabled filter) — **FAA airspace & UAS data**: live layers from the FAA UAS Data Delivery System: FAA-Recognized Identification Areas, UAS Facility Map (LAANC ceilings, colored by altitude), Class B/C/D/E airspace, Special Use Airspace, Prohibited Areas, National Security UAS Flight Restrictions (full-time, part-time, pending), National Defense Airspace TFR areas, recreational fixed sites, stadiums and airports. Data is fetched for the visible area (0.5° cells, paged), cached in IndexedDB, and re-downloaded when the service's last-edit stamp changes (checked on a schedule you choose). Hover for labels, click for details. Airports and stadiums use chart-style icons (blue towered, magenta non-towered, grey private, H for heliports). Clicking an airport shows its radio frequencies (tower, ground, ATIS, CTAF, approach, departure) from the OurAirports republication of FAA NASR data, downloaded once and refreshed only when the source changes; towered airports are drawn in teal. Datasets with sub-elements (airspace classes, special-use types, LAANC ceiling altitudes, public/private airports, part-time NSUFR alert state) have per-element toggles. Any other public ArcGIS Feature Service layer can be added by URL.
+- **FAA airspace & UAS data** (FAA tab): live layers from the FAA UAS Data Delivery System: FAA-Recognized Identification Areas, UAS Facility Map (LAANC ceilings, colored by altitude), Class B/C/D/E airspace, Special Use Airspace, Prohibited Areas, National Security UAS Flight Restrictions (full-time, part-time, pending), National Defense Airspace TFR areas, recreational fixed sites, stadiums and airports. Data is fetched for the visible area (0.5° cells, paged), cached in IndexedDB, and re-downloaded when the service's last-edit stamp changes (checked on a schedule you choose). Hover for labels, click for details. Clicking an airport shows its radio frequencies (tower, ground, ATIS, CTAF, approach, departure) from the OurAirports republication of FAA NASR data, downloaded once and refreshed only when the source changes; towered airports are drawn in teal. Datasets with sub-elements (airspace classes, special-use types, LAANC ceiling altitudes, public/private airports, part-time NSUFR alert state) have per-element toggles. Any other public ArcGIS Feature Service layer can be added by URL.
 - **Map & search APIs dialog** (Project menu): add tile providers that need an API key (presets for MapTiler, Thunderforest, Stadia, Mapbox, Geoapify), any XYZ tile server or WMS server, and point the geocoder at any Nominatim-compatible service (LocationIQ, geocode.maps.co, self-hosted) or your own Overpass endpoints. Keys stay in the browser's local storage.
 
 ## Run as a PWA
@@ -57,23 +57,6 @@ npm start -- --center=37.8199,-122.4783 --poi=cafe
 ```
 
 Build installers with `npm run dist` (electron-builder; produces NSIS/DMG/AppImage).
-
-## Building, releasing and deploying
-
-| Command | What it does |
-| --- | --- |
-| `make serve` | Run locally at <http://localhost:8080> |
-| `make build` | Desktop installer for this machine's OS (`dist/`) |
-| `make build-win` / `build-mac` / `build-linux` | One platform (macOS builds need a Mac) |
-| `make release` | Bump the version from the conventional commits since the last tag (`feat:` → minor, `fix:` → patch, `BREAKING CHANGE` → major; `BUMP=` to override, `PRE=Beta` for a pre-release, `DRY=1` to preview), update the version shown in the app, commit, tag and push |
-
-Pushing the tag triggers two GitHub Actions workflows: **Release** builds the Windows (NSIS), macOS (DMG, zip) and Linux (AppImage, deb) installers on their own runners and attaches them to a GitHub Release; **Deploy site** publishes GitHub Pages from that tag, so the live site always matches a release rather than whatever is on `main`. The Pages source must be set to "GitHub Actions" once in the repository settings. Without `make`, the same commands are available as `npm run dist`, `npm run dist:win|mac|linux` and `npm run release`.
-
-Installers are unsigned; macOS and Windows show a warning on first launch until signing certificates are added to the Release workflow.
-
-## Mobile
-
-The layout adapts to phones (tested at 375 to 430 px widths): the side panel becomes a bottom sheet with a close button, the toolbar shrinks, pinch zoom replaces the zoom buttons, and long-press opens the right-click menu.
 
 ## Keyboard shortcuts
 
