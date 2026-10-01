@@ -641,14 +641,15 @@ window.MB = window.MB || {};
     if (!hits.length) return;
     const total = hits.length;
     hits = hits.slice(0, 15);
-    const title = total === 1 ? esc(hits[0].ds.def.name) : (total > hits.length ? hits.length + ' of ' + total : total) + ' features here';
     const label = h => { const d = h.ds.def; try { return d.label ? String(d.label(h.props)) : firstText(h.props); } catch (e) { return ''; } };
     const sections = hits.map((h, i) => {
       const body = popupHtml(h.ds, h.props).replace(/^<div class="mb-popup"><div class="mb-popup-title">[^<]*<\/div>/, '').replace(/<\/div>$/, '');
       const extra = h.ds.def.popupExtra ? `<div class="mb-extra dim" data-extra="${i}">Loading frequencies…</div>` : '';
       return `<details class="mb-ident" data-i="${i}"${i === 0 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
     }).join('');
-    const html = `<div class="mb-popup mb-identify"><div class="mb-popup-title">${title}${hits.length > 1 ? '<span class="dim"> · hover to highlight</span>' : ''}</div>${sections}</div>`;
+    // No header: each entry names its dataset and feature. Only a truncated list gets a note.
+    const more = total > hits.length ? `<div class="mb-ident-more dim">Showing ${hits.length} of ${total}</div>` : '';
+    const html = `<div class="mb-popup mb-identify">${sections}${more}</div>`;
     if (identifyPopup && identifyPopup.isOpen()) MB.map.closePopup(identifyPopup);
     // Hand Leaflet a DOM node, not the HTML string: popup.update() (called when frequencies arrive) re-renders
     // string content from scratch, which would wipe the loaded frequencies, the listeners and the expanded state.
