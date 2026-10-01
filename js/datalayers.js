@@ -639,8 +639,9 @@ window.MB = window.MB || {};
       if (ds) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
     if (!hits.length) return;
+    const total = hits.length;
     hits = hits.slice(0, 15);
-    const title = hits.length === 1 ? esc(hits[0].ds.def.name) : hits.length + ' features here';
+    const title = total === 1 ? esc(hits[0].ds.def.name) : (total > hits.length ? hits.length + ' of ' + total : total) + ' features here';
     const label = h => { const d = h.ds.def; try { return d.label ? String(d.label(h.props)) : firstText(h.props); } catch (e) { return ''; } };
     const sections = hits.map((h, i) => {
       const body = popupHtml(h.ds, h.props).replace(/^<div class="mb-popup"><div class="mb-popup-title">[^<]*<\/div>/, '').replace(/<\/div>$/, '');
@@ -649,22 +650,23 @@ window.MB = window.MB || {};
     }).join('');
     const html = `<div class="mb-popup mb-identify"><div class="mb-popup-title">${title}${hits.length > 1 ? '<span class="dim"> · hover to highlight</span>' : ''}</div>${sections}</div>`;
     if (identifyPopup && identifyPopup.isOpen()) MB.map.closePopup(identifyPopup);
-    identifyPopup = L.popup({ maxWidth: 400, maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(html).openOn(MB.map);
-    identifyPopup.on('remove', clearHighlight);
-    const root = identifyPopup.getElement();
+    const popup = identifyPopup = L.popup({ maxWidth: 400, maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(html).openOn(MB.map);
+    let pinned = hits.length === 1 ? hits[0] : null; // stays highlighted when the pointer leaves the list
+    popup.on('remove', () => { pinned = null; clearHighlight(); });
+    const root = popup.getElement();
     root.querySelectorAll('details.mb-ident').forEach(d => {
       const h = hits[+d.dataset.i];
       d.addEventListener('mouseenter', () => highlight(h));
-      d.addEventListener('mouseleave', clearHighlight);
-      d.addEventListener('toggle', () => { if (d.open) highlight(h); });
+      d.addEventListener('mouseleave', () => { if (pinned) highlight(pinned); else clearHighlight(); });
+      d.addEventListener('toggle', () => { if (d.open) { pinned = h; highlight(h); } else if (pinned === h) { pinned = null; clearHighlight(); } });
     });
     hits.forEach((h, i) => {
       if (!h.ds.def.popupExtra) return;
       Promise.resolve().then(() => h.ds.def.popupExtra(h.props)).then(extraHtml => {
-        const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.outerHTML = extraHtml; identifyPopup.update(); }
+        const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.outerHTML = extraHtml; if (popup.isOpen()) popup.update(); }
       }).catch(err => { const el = root.querySelector(`[data-extra="${i}"]`); if (el) el.textContent = 'Frequencies unavailable: ' + err.message; });
     });
-    if (hits.length === 1) highlight(hits[0]);
+    if (pinned) highlight(pinned);
   };
 
   /* ---------- panel ---------- */
