@@ -1,20 +1,20 @@
 name: Release
 
-# Fully automated release:
-#   1. "version": on every push to main (a merged PR), work out the semantic-version bump from the
-#      conventional commits since the last tag, update the version shown in the app, commit, tag and push.
-#      Nothing to release (only chore/docs/ci commits) means the run stops here.
+# Releases are cut on demand, never by a merge. Start one from Actions -> Release -> Run workflow (on main)
+# or with: gh workflow run release.yml -f bump=auto
+#   1. "version": work out the semantic-version bump from the conventional commits since the last tag (or
+#      use the bump chosen in the form), update the version shown in the app, commit, tag and push.
+#      With "auto" and only chore/docs/ci commits since the last tag there is nothing to release and the
+#      run stops here.
 #   2. "build": build the Windows, macOS and Linux installers from that tag.
 #   3. "publish": create the GitHub Release with the installers and generated notes.
 #   4. "deploy-pages": publish GitHub Pages from the release tag.
-# Run it manually (Actions -> Release -> Run workflow, on main) to force a bump or a pre-release.
+# Tick "Dry run" to see the version a run would release without changing anything.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump
+        description: Version bump (auto reads the commits since the last release)
         type: choice
         default: auto
         options: [auto, patch, minor, major, prerelease]
@@ -22,6 +22,10 @@ on:
         description: Pre-release label (e.g. Beta); empty for a normal release
         type: string
         default: ''
+      dry_run:
+        description: Dry run (only report the version this would release)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -33,8 +37,6 @@ concurrency:
 jobs:
   version:
     name: Bump version and tag
-    # skip the push that the release itself creates
-    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release)')
     runs-on: ubuntu-latest
     outputs:
       released: ${{ steps.release.outputs.released }}
@@ -52,10 +54,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - name: Check manual inputs
-        if: github.event_name == 'workflow_dispatch'
+      - name: Check inputs
         # Inputs reach the shell only through env vars (never interpolated into the script) and are
-        # allowlisted here; manual runs are also refused from any ref other than main.
+        # allowlisted here; runs are also refused from any ref other than main.
         env:
           REF: ${{ github.ref }}
           BUMP: ${{ inputs.bump }}
@@ -75,9 +76,27 @@ jobs:
       - name: Bump version, commit, tag and push
         id: release
         env:
-          BUMP: ${{ inputs.bump || 'auto' }}
+          BUMP: ${{ inputs.bump }}
           PRE: ${{ inputs.prerelease }}
-        run: make release CI=1 BUMP="$BUMP" PRE="$PRE"
+          DRY: ${{ inputs.dry_run && '1' || '' }}
+        run: make release CI=1 BUMP="$BUMP" PRE="$PRE" DRY="$DRY"
+      - name: Summary
+        if: always()
+        env:
+          RELEASED: ${{ steps.release.outputs.released }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          if [ "$RELEASED" = "true" ]; then
+            echo "Released **$TAG**. The installers, the GitHub Release and the site deploy follow in this run." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$DRY" = "true" ] && [ -n "$TAG" ]; then
+            echo "Dry run: this would release **$TAG**. Nothing was changed." >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$VERSION" ]; then
+            echo "Nothing to release: no feat/fix/perf commits since the last release (current version $VERSION). Choose a bump other than auto to release anyway." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No release was made; see the log of the failed step." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   build:
     name: Build (${{ matrix.os }})

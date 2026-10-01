@@ -8,8 +8,8 @@
 #   make dist-all     build all three on one machine (fully supported only on macOS)
 #   make release      used by the Release workflow (CI=1): bump the version from the conventional commits
 #                     since the last tag, update the version shown in the app, commit, tag and push. The
-#                     workflow then builds the installers and deploys GitHub Pages. Releases happen
-#                     automatically on every merge to main; run the workflow manually to force a bump.
+#                     workflow then builds the installers and deploys GitHub Pages. Releases are started
+#                     by hand: Actions -> Release -> Run workflow (nothing is released by a merge).
 #                     Local use (needs permission to push main): BUMP=major|minor|patch|prerelease, PRE=Beta, DRY=1
 #   make version      print the current version
 
