@@ -295,6 +295,7 @@ window.MB = window.MB || {};
     saveSettings() {
       MB.settings.data = Object.assign({}, this.settings);
       MB.saveSettings();
+      if (MB.autosave) MB.autosave(); // the project records the data opacity
     },
 
     /* ----- update checks ----- */

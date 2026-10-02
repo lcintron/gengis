@@ -623,61 +623,11 @@ window.MB = window.MB || {};
     return MB.addFeature(layer, d);
   };
 
-  MB.serializeProject = function (opts) {
-    opts = opts || {};
-    const s = MB.state;
-    const p = {
-      app: 'map-builder', version: 1, appName: MB.APP.name, appVersion: MB.APP.version, // `app` is the file-format id and stays stable
-      projectName: s.projectName, units: s.units, shortUnit: s.shortUnit, basemap: s.basemap,
-      showMeasurements: s.showMeasurements, continueDrawing: s.continueDrawing, snapping: s.snapping,
-      layers: MB.deepClone(s.layers), activeLayerId: s.activeLayerId,
-      svgLibrary: MB.deepClone(s.svgLibrary), dataLayers: MB.deepClone(s.dataLayers || {}),
-      features: Object.keys(MB.featureLayers).map(id => MB.serializeFeature(MB.featureLayers[id]))
-    };
-    if (!opts.noView && MB.map) {
-      const c = MB.map.getCenter();
-      p.view = { lat: c.lat, lng: c.lng, zoom: MB.map.getZoom() };
-    }
-    return p;
-  };
-
   MB.clearAll = function () {
     MB.deselect();
     Object.keys(MB.featureLayers).forEach(id => MB.removeFeature(id, { silent: true }));
     Object.keys(MB.groups).forEach(id => { MB.map.removeLayer(MB.groups[id]); delete MB.groups[id]; });
     MB.state.layers = [];
     MB.state.activeLayerId = null;
-  };
-
-  MB.loadProject = function (p, opts) {
-    opts = opts || {};
-    p = p || {};
-    MB.clearAll();
-    Object.assign(MB.state, {
-      projectName: p.projectName || 'Untitled map',
-      units: MB.unitSystems[p.units] ? p.units : 'metric',
-      shortUnit: p.shortUnit === 'm' ? 'm' : 'ft',
-      showMeasurements: !!p.showMeasurements,
-      continueDrawing: p.continueDrawing !== false,
-      snapping: p.snapping !== false,
-      svgLibrary: p.svgLibrary || {},
-      dataLayers: p.dataLayers || {}
-    });
-    (p.layers || []).forEach(l => MB.createLayer(l.name, { id: l.id, visible: l.visible, locked: l.locked, activate: false }));
-    if (!MB.state.layers.length) MB.createLayer('Layer 1');
-    MB.state.activeLayerId = MB.getLayer(p.activeLayerId) ? p.activeLayerId : MB.state.layers[MB.state.layers.length - 1].id;
-    (p.features || []).forEach(f => { try { MB.restoreFeature(f); } catch (e) { console.warn('Could not restore feature', f, e); } });
-    MB.applyZOrder();
-    if (p.basemap && p.basemap !== MB.state.basemap && (MB.basemaps[p.basemap] || (p.basemap.startsWith('custom:') && MB.getProvider(p.basemap.slice(7))))) MB.setBasemap(p.basemap);
-    if (!opts.keepView && p.view && MB.map) MB.map.setView([p.view.lat, p.view.lng], p.view.zoom);
-    MB.emit('units', MB.state.units);
-    MB.emit('layers');
-    MB.emit('features');
-    MB.emit('project');
-    if (!opts.keepHistory) MB.resetHistory();
-  };
-
-  MB.newProject = function () {
-    MB.loadProject({ projectName: 'Untitled map', units: MB.state.units, basemap: MB.state.basemap, layers: [{ id: MB.uid(), name: 'Layer 1', visible: true, locked: false }] }, { keepView: true });
   };
 })(window.MB);

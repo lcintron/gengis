@@ -6,7 +6,7 @@ window.MB = window.MB || {};
   'use strict';
 
   const esc = MB.escapeHtml;
-  const KEY = 'map-builder.offline.v1';
+  const KEY = 'gengis.offline', OLD_KEY = 'map-builder.offline.v1';
   const CACHE = 'map-builder-offline';
   const COMMUNITY = { osm: 3000, hot: 3000, topo: 3000, cyclosm: 3000 }; // per-download caps for volunteer-run tile servers
   const MAX_TILES = 60000;
@@ -16,7 +16,7 @@ window.MB = window.MB || {};
     areas: [], job: null,
 
     init() {
-      try { this.areas = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { this.areas = []; }
+      try { this.areas = JSON.parse(MB.storedItem(KEY, OLD_KEY) || '[]'); } catch (e) { this.areas = []; }
       if (!Array.isArray(this.areas)) this.areas = [];
     },
     save() { localStorage.setItem(KEY, JSON.stringify(this.areas)); MB.emit('offline'); },

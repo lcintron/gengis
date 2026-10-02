@@ -3,7 +3,7 @@ window.MB = window.MB || {};
 (function (MB) {
   'use strict';
 
-  const KEY = 'map-builder.settings.v1';
+  const KEY = 'gengis.settings', OLD_KEY = 'map-builder.settings.v1';
   const esc = MB.escapeHtml;
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
@@ -12,7 +12,7 @@ window.MB = window.MB || {};
 
   MB.loadSettings = function () {
     try {
-      const s = JSON.parse(localStorage.getItem(KEY) || 'null');
+      const s = JSON.parse(MB.storedItem(KEY, OLD_KEY) || 'null');
       if (s && typeof s === 'object') MB.settings = Object.assign({ providers: [], search: {}, keys: {} }, s);
     } catch (e) { /* ignore */ }
     MB.settings.providers = MB.settings.providers || [];

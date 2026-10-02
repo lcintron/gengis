@@ -249,6 +249,16 @@ window.MB = window.MB || {};
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
   };
 
+  // A stored item, carrying over what an earlier version saved under its old key.
+  MB.storedItem = function (key, oldKey) {
+    let v = null;
+    try {
+      v = localStorage.getItem(key);
+      if (v == null && oldKey) { v = localStorage.getItem(oldKey); if (v != null) { localStorage.setItem(key, v); localStorage.removeItem(oldKey); } }
+    } catch (e) { /* storage unavailable */ }
+    return v;
+  };
+
   MB.toast = function (msg, ms) {
     let el = document.getElementById('mb-toast');
     if (!el) {

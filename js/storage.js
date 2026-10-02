@@ -3,7 +3,7 @@ window.MB = window.MB || {};
 (function (MB) {
   'use strict';
 
-  const KEY = 'map-builder.project.v1';
+  const KEY = 'gengis.project', OLD_KEY = 'map-builder.project.v1';
 
   MB.autosave = MB.debounce(function () {
     try {
@@ -22,10 +22,10 @@ window.MB = window.MB || {};
 
   MB.loadAutosave = function () {
     try {
-      const raw = localStorage.getItem(KEY);
+      const raw = MB.storedItem(KEY, OLD_KEY);
       if (!raw) return false;
       const p = JSON.parse(raw);
-      if (!p || p.app !== 'map-builder') return false;
+      if (!MB.isProject(p)) return false;
       MB.loadProject(p);
       return true;
     } catch (e) { console.warn('Could not load autosave', e); return false; }
@@ -35,15 +35,15 @@ window.MB = window.MB || {};
 
   MB.saveToFile = function () {
     const p = MB.serializeProject();
-    const name = (p.projectName || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map';
-    MB.download(name + '.mapproject.json', JSON.stringify(p, null, 1));
+    const name = (p.name || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map';
+    MB.download(name + MB.PROJECT_EXT, JSON.stringify(p, null, 1));
     MB.toast('Project saved');
   };
 
   MB.openFile = function (file) {
     return file.text().then(txt => {
       const p = JSON.parse(txt);
-      if (p && p.app === 'map-builder') { MB.loadProject(p); MB.toast('Project loaded'); return; }
+      if (MB.isProject(p)) { MB.loadProject(p); MB.toast('Project loaded'); return; }
       if (p && (p.type === 'FeatureCollection' || p.type === 'Feature')) { MB.importGeoJSON(p, file.name); return; }
       throw new Error('Unrecognized file');
     }).catch(e => MB.toast('Could not open file: ' + e.message));
