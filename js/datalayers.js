@@ -201,11 +201,12 @@ window.MB = window.MB || {};
       const keep = {};
       all.forEach(def => {
         const prev = this.sets[def.id];
-        keep[def.id] = prev ? Object.assign(prev, { def }) : { def, enabled: false, meta: null, group: null, cells: new Map(), feats: new Map(), loading: new Set(), status: '', error: null };
+        keep[def.id] = prev ? Object.assign(prev, { def }) : { def, enabled: false, meta: null, group: null, cells: new Map(), feats: new Map(), failed: new Set(), loading: new Set(), status: '', error: null };
       });
       Object.keys(this.sets).forEach(id => { if (!keep[id] && this.sets[id].enabled) this.disable(id); });
       this.sets = keep;
       Object.keys(this.sets).forEach(id => { if (!this.sets[id].off) this.sets[id].off = new Set(); });
+      Object.keys(this.sets).forEach(id => { if (!this.sets[id].failed) this.sets[id].failed = new Set(); });
       MB.emit('data');
     },
 
@@ -391,13 +392,12 @@ window.MB = window.MB || {};
         const cells = level.whole ? [{ key: 'all', bounds: L.latLngBounds([-90, -180], [90, 180]) }] : cellsFor(bounds, level.cellSize);
         if (cells.length > MAX_CELLS) { ds.status = 'View too large: zoom in'; return; }
         const prefix = 'L' + level.idx + ':';
-        const need = new Set(cells.map(c => prefix + c.key));
         cells.forEach(cell => {
           const c = ds.cells.get(prefix + cell.key);
-          if (c) { showCell(ds, c); c.used = Date.now(); }
+          if (c) c.used = Date.now();
           else this.loadCell(ds, cell, level);
         });
-        this.settle(ds, need, prefix);
+        this.settle(ds);
         // LRU eviction of hidden cells
         if (ds.cells.size > MAX_CACHED_LAYERS) {
           const hidden = Array.from(ds.cells.entries()).filter(([, c]) => !c.shown).sort((a, b) => a[1].used - b[1].used);
@@ -408,13 +408,28 @@ window.MB = window.MB || {};
       MB.emit('data');
     },
 
-    // Hide the cells the view no longer needs. Cells of another detail level stay up until this level's cells have
-    // all arrived, so crossing a zoom threshold swaps the detail in place instead of blanking the layer.
-    settle(ds, need, prefix) {
-      const ready = Array.from(need).every(k => ds.cells.has(k));
-      ds.cells.forEach((c, key) => { if (c.shown && !need.has(key) && (ready || key.startsWith(prefix))) hideCell(ds, c); });
+    // Decide which loaded cells are on the map for the current view. One detail level is shown at a time: while
+    // cells of another level are still up (a zoom threshold was just crossed), this level's cells wait and the two
+    // are exchanged in one step, so the layer is neither blank nor drawn (and identified) twice in between.
+    settle(ds) {
+      if (!ds.enabled || !ds.group) return;
+      const zoom = MB.map.getZoom(), view = MB.map.getBounds();
+      if (zoom < ds.def.minZoom) { ds.cells.forEach(c => hideCell(ds, c)); return; }
+      const level = this.levelFor(ds.def, zoom), prefix = 'L' + level.idx + ':';
+      const cells = level.whole ? [{ key: 'all' }] : cellsFor(view, level.cellSize);
+      if (cells.length > MAX_CELLS) return; // view too large for this dataset: leave what is shown
+      const need = cells.map(c => prefix + c.key), needed = new Set(need);
+      // out of view: this level's cells at once, another level's as soon as they no longer touch the view
+      ds.cells.forEach((c, key) => { if (c.shown && !needed.has(key) && (key.startsWith(prefix) || !view.intersects(c.bounds))) hideCell(ds, c); });
+      const other = [];
+      ds.cells.forEach((c, key) => { if (c.shown && !key.startsWith(prefix)) other.push(c); });
+      // a cell that failed counts as settled: it must not hold the exchange up (it is asked for again on the next move)
+      const settled = need.every(k => ds.cells.has(k) || ds.failed.has(k));
+      if (other.length && !settled) return;
+      other.forEach(c => hideCell(ds, c));
+      need.forEach(k => { const c = ds.cells.get(k); if (c) showCell(ds, c); });
       // an error is about the view on screen: once everything it needs is loaded and current, a failure elsewhere is history
-      if (ready && !Array.from(need).some(k => ds.cells.get(k).stale)) ds.error = null;
+      if (need.every(k => ds.cells.has(k) && !ds.cells.get(k).stale)) ds.error = null;
     },
 
     async loadCell(ds, cell, level) {
@@ -423,6 +438,7 @@ window.MB = window.MB || {};
       const key = ds.def.id + '|r' + CACHE_REV + '|' + memKey;
       if (ds.loading.has(key)) return;
       ds.loading.add(key);
+      ds.failed.delete(memKey);
       ds.status = 'Loading…';
       MB.emit('data');
       const meta = await this.loadMeta(ds);
@@ -435,7 +451,6 @@ window.MB = window.MB || {};
           try {
             geojson = await queryCell(ds.def.url, cell, ds.def.fields, level);
             await DB.set('cells', key, { ts: Date.now(), lastEdit: meta.lastEdit, geojson });
-            ds.error = null;
           } catch (e) {
             // Offline or the service failed: anything stored for this area will do, including what an earlier
             // version saved with an offline area.
@@ -448,15 +463,9 @@ window.MB = window.MB || {};
       if (geojson) {
         const prev = ds.cells.get(memKey);
         if (prev) dropCell(ds, prev); // loaded again (offline pre-loading, a retry): replace, never stack
-        const entry = { keys: registerCell(ds, geojson), shown: false, used: Date.now(), fromCache, stale, n: (geojson.features || []).length };
-        ds.cells.set(memKey, entry);
-        const cur = this.levelFor(ds.def, MB.map.getZoom());
-        if (ds.enabled && cur.idx === level.idx && MB.map.getZoom() >= ds.def.minZoom && MB.map.getBounds().intersects(cell.bounds)) {
-          showCell(ds, entry);
-          const size = cur.cellSize, prefix = 'L' + cur.idx + ':';
-          this.settle(ds, new Set((cur.whole ? [{ key: 'all' }] : cellsFor(MB.map.getBounds(), size)).map(c => prefix + c.key)), prefix);
-        }
-      }
+        ds.cells.set(memKey, { keys: registerCell(ds, geojson), bounds: cell.bounds, shown: false, used: Date.now(), fromCache, stale, n: (geojson.features || []).length });
+      } else ds.failed.add(memKey);
+      this.settle(ds);
       if (!ds.loading.size) ds.status = ds.error ? '' : '';
       MB.emit('data');
     },
@@ -688,6 +697,7 @@ window.MB = window.MB || {};
     if (ds.group) ds.group.clearLayers();
     ds.cells.clear();
     ds.feats.clear();
+    ds.failed.clear();
   }
   // Apply the dataset's sub-element toggles to what is on the map.
   function applyFilter(ds) { ds.feats.forEach(e => sync(ds, e)); }
