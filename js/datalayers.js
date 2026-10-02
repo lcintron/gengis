@@ -438,8 +438,8 @@ window.MB = window.MB || {};
             ds.error = null;
           } catch (e) {
             // Offline or the service failed: anything stored for this area will do, including what an earlier
-            // version saved with an offline area (keys without a revision; FAA data was one full-detail level, "L0").
-            const old = cached || await DB.get('cells', ds.def.id + '|' + memKey) || await DB.get('cells', ds.def.id + '|L0:' + cell.key);
+            // version saved with an offline area.
+            const old = cached || await legacyCell(ds, cell, memKey, level);
             if (old && old.geojson) { geojson = old.geojson; fromCache = stale = true; ds.error = 'Offline or service error: showing cached data.'; }
             else { ds.error = 'Load failed: ' + e.message; }
           }
@@ -604,6 +604,20 @@ window.MB = window.MB || {};
     return `<div class="mb-popup"><div class="mb-popup-title">${esc(ds.def.name)}</div><table class="mb-datatable">${rows}</table></div>`;
   }
 
+  // What an earlier version stored for this area: keys without a revision, kept only for an offline area saved
+  // with its data. Boundary and custom layers used the cells they use now; FAA data was a single full-detail level
+  // of 0.5 degree cells ("L0"), so a larger cell is put together from the old ones inside it.
+  async function legacyCell(ds, cell, memKey, level) {
+    const features = [];
+    let found = false;
+    const take = rec => { if (rec && rec.geojson && Array.isArray(rec.geojson.features)) { found = true; for (const f of rec.geojson.features) features.push(f); } };
+    take(await DB.get('cells', ds.def.id + '|' + memKey));
+    if (!level.whole && level.cellSize <= 2) {
+      for (const sub of cellsFor(cell.bounds, CELL)) take(await DB.get('cells', ds.def.id + '|L0:' + sub.key));
+    }
+    return found ? { geojson: { type: 'FeatureCollection', features } } : null; // a feature in several of them is registered once
+  }
+
   /* ----- feature registry -----
    * A polygon that spans several cells comes back from each of their queries. Features therefore live once per
    * dataset in ds.feats (key -> { layer, cells, refs }): `cells` counts the loaded cells that contain the feature,
@@ -634,10 +648,17 @@ window.MB = window.MB || {};
       const e = ds.feats.get(k);
       if (e) e.cells++; else { fresh.push(f); keyOf.set(f, k); }
     });
-    if (fresh.length) buildGeoJson(ds, { type: 'FeatureCollection', features: fresh }).eachLayer(l => {
-      const k = keyOf.get(l.feature);
-      if (k) ds.feats.set(k, { layer: l, cells: 1, refs: 0 });
-    });
+    if (fresh.length) {
+      const built = buildGeoJson(ds, { type: 'FeatureCollection', features: fresh });
+      const layers = built.getLayers();
+      // Detach them from the group they were built in: Leaflet links each layer back to its group (event parent)
+      // and the group to all of its layers, so one surviving feature would keep its evicted siblings in memory.
+      built.clearLayers();
+      layers.forEach(l => {
+        const k = keyOf.get(l.feature);
+        if (k) ds.feats.set(k, { layer: l, cells: 1, refs: 0 });
+      });
+    }
     return Array.from(keys).filter(k => ds.feats.has(k)); // a geometry Leaflet could not build has no entry
   }
 
