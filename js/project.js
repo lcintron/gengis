@@ -18,9 +18,23 @@ window.MB = window.MB || {};
   MB.PROJECT_SCHEMA = SCHEMA;
   MB.PROJECT_EXT = '.gengis.json';
 
-  const normUrl = u => String(u || '').trim().replace(/\/query.*$/i, '').replace(/\/+$/, '');
-  const sameUrl = (a, b) => normUrl(a).toLowerCase() === normUrl(b).toLowerCase();
   const clone = v => MB.deepClone(v);
+
+  // Credentials never leave the device. An API key inside a URL (a query parameter or user:password@) is replaced
+  // by the {key} placeholder, which the app fills from the key stored on the device; the recipient enters their own.
+  const SECRET_PARAM = /^(api[-_]?key|key|access[-_]?token|token|auth|authorization|signature|sig|secret|password|pass|app[-_]?id|client[-_]?secret)$/i;
+  function sanitizeUrl(u) {
+    let s = String(u || '').trim().replace(/^(https?:\/\/)[^/@]+@/i, '$1');
+    const q = s.indexOf('?');
+    if (q < 0) return s;
+    const params = s.slice(q + 1).split('&').map(part => { const i = part.indexOf('='); const name = i < 0 ? part : part.slice(0, i); return SECRET_PARAM.test(name) ? name + '={key}' : part; });
+    return s.slice(0, q) + '?' + params.join('&');
+  }
+  MB.sanitizeUrl = sanitizeUrl;
+  // URLs compare without credentials, a /query suffix or trailing slashes, so a definition on this device (with
+  // its key) matches the same one from a file (with the placeholder).
+  const normUrl = u => sanitizeUrl(u).replace(/\/query.*$/i, '').replace(/\/+$/, '').toLowerCase();
+  const sameUrl = (a, b) => normUrl(a) === normUrl(b);
 
   /* ---------- what the app knows, by URI ---------- */
 
@@ -36,17 +50,30 @@ window.MB = window.MB || {};
   const sameProvider = (a, b) => sameUrl(a.url, b.url) && String(a.layers || '') === String(b.layers || '');
   const providerByUrl = (url, layers) => (MB.settings.providers || []).find(p => sameProvider(p, { url, layers }));
 
-  function basemapOptions() {
+  // The declared basemap options and their valid choices: the only settings keys a project may carry or set.
+  function declaredOptions() {
     const out = {};
-    Object.keys(MB.builtinKeyGroups || {}).forEach(g => (MB.builtinKeyGroups[g].options || []).forEach(o => { out[o.key] = MB.builtinOption(o.key, o.choices[0][0]); }));
+    Object.keys(MB.builtinKeyGroups || {}).forEach(g => (MB.builtinKeyGroups[g].options || []).forEach(o => { out[o.key] = o.choices.map(c => c[0]); }));
     return out;
+  }
+  function basemapOptions() {
+    const out = {}, declared = declaredOptions();
+    Object.keys(declared).forEach(k => { out[k] = MB.builtinOption(k, declared[k][0]); });
+    return out;
+  }
+  // A definition as it may leave the device: no key field, no credentials in URLs.
+  function exportable(def) {
+    const d = clone(def);
+    delete d.key;
+    if (d.url) d.url = sanitizeUrl(d.url);
+    return d;
   }
 
   // The base map in use -> { name, tiles, layers?, options }
   function basemapRef(key) {
     const ref = { name: key, tiles: '', options: basemapOptions() };
     if (MB.basemaps[key]) { ref.name = MB.basemaps[key].name; ref.tiles = MB.basemaps[key].url; }
-    else if (key && key.startsWith('custom:')) { const p = MB.getProvider(key.slice(7)); if (p) { ref.name = p.name; ref.tiles = p.url; if (p.layers) ref.layers = p.layers; } }
+    else if (key && key.startsWith('custom:')) { const p = MB.getProvider(key.slice(7)); if (p) { ref.name = p.name; ref.tiles = sanitizeUrl(p.url); if (p.layers) ref.layers = p.layers; } }
     return ref;
   }
   // A saved reference -> the key the app uses, or null when the base map is not known here.
@@ -64,7 +91,7 @@ window.MB = window.MB || {};
     return {
       sources: MB.adsb.sources.map(s => {
         const c = MB.adsb.srcConf(s.id);
-        return s.kind === 'receiver' ? { kind: 'receiver', uri: c.url || '', enabled: !!c.on, refreshSeconds: c.interval }
+        return s.kind === 'receiver' ? { kind: 'receiver', uri: sanitizeUrl(c.url || ''), enabled: !!c.on, refreshSeconds: c.interval }
           : { uri: s.site, enabled: !!c.on, refreshSeconds: c.interval };
       }),
       hiddenTypes: cf.off.slice(), labels: !!cf.labels, ground: !!cf.ground
@@ -86,7 +113,7 @@ window.MB = window.MB || {};
       svgLibrary: clone(s.svgLibrary),
       dataSources: Object.keys(s.dataLayers || {}).map(id => {
         const d = datasetById(id), e = s.dataLayers[id];
-        return d ? { uri: d.url, name: d.name, enabled: !!(e === true || (e && e.on)), hidden: (e && Array.isArray(e.off)) ? e.off.slice() : [] } : null;
+        return d ? { uri: sanitizeUrl(d.url), name: d.name, enabled: !!(e === true || (e && e.on)), hidden: (e && Array.isArray(e.off)) ? e.off.slice() : [] } : null;
       }).filter(Boolean)
     };
     // The view and the display state belong to a saved project, not to undo snapshots (objects and layers only).
@@ -95,8 +122,10 @@ window.MB = window.MB || {};
       p.savedAt = new Date().toISOString();
       p.view = { lat: c.lat, lng: c.lng, zoom: MB.map.getZoom() };
       p.basemap = basemapRef(s.basemap);
-      p.tileProviders = (MB.settings.providers || []).map(x => { const d = Object.assign({}, x); delete d.key; return d; }); // never the API key
-      p.customDataSources = clone(MB.settings.dataServices || []);
+      // only the definitions this project uses, and nothing secret in them
+      const prov = s.basemap && s.basemap.startsWith('custom:') ? MB.getProvider(s.basemap.slice(7)) : null;
+      p.tileProviders = prov ? [exportable(prov)] : [];
+      p.customDataSources = (MB.settings.dataServices || []).filter(c => s.dataLayers && s.dataLayers['custom:' + c.id]).map(exportable);
       p.dataOpacity = MB.data ? MB.data.settings.opacity : 1;
       p.liveTraffic = trafficRef();
     }
@@ -115,7 +144,7 @@ window.MB = window.MB || {};
     (p.tileProviders || []).forEach(x => {
       if (!x || !x.url) return;
       if (providerByUrl(x.url, x.layers)) return;
-      const d = clone(x); delete d.key;
+      const d = exportable(x);
       if (!d.id || MB.getProvider(d.id)) d.id = MB.uid();
       st.providers.push(d); changed = basemap = true;
     });
@@ -123,12 +152,13 @@ window.MB = window.MB || {};
       if (!c || !c.url) return;
       st.dataServices = st.dataServices || [];
       if (st.dataServices.some(x => sameUrl(x.url, c.url))) return;
-      const d = clone(c);
+      const d = exportable(c);
       if (!d.id || st.dataServices.some(x => x.id === d.id)) d.id = MB.uid();
       st.dataServices.push(d); changed = true;
     });
-    const opts = (p.basemap && p.basemap.options) || {};
-    Object.keys(opts).forEach(k => { if (st.keys[k] !== opts[k]) { st.keys[k] = opts[k]; changed = basemap = true; } });
+    // only declared options with a valid choice: settings.keys also holds the API keys, which a file must not touch
+    const opts = (p.basemap && p.basemap.options) || {}, declared = declaredOptions();
+    Object.keys(opts).forEach(k => { if (declared[k] && declared[k].includes(opts[k]) && st.keys[k] !== opts[k]) { st.keys[k] = opts[k]; changed = basemap = true; } });
     if (changed) MB.saveSettings(); // also announces 'providers': the basemap list and custom datasets follow
     return basemap;
   }
