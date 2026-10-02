@@ -11,7 +11,15 @@ window.MB = window.MB || {};
   const FAA = 'https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/';
   const CELL = 0.5;            // degrees
   const MAX_CELLS = 24;        // refuse to load when the view spans more cells than this
-  const MAX_CACHED_LAYERS = 80; // in-memory cell layers kept per dataset (LRU)
+  const MAX_CACHED_LAYERS = 80; // in-memory cells kept per dataset (LRU)
+  const CACHE_REV = 2;          // part of every stored cell's key; bump when what a cell holds changes (2: detail follows the zoom)
+  // Detail follows the zoom. The FAA polygons carry thousands of vertices each at 10 cm precision: far more than
+  // can be seen until zoomed right in, and every vertex is re-projected on each zoom step. Tolerances are in
+  // degrees (0.0005 is about 55 m), each under half a pixel across its zoom range; full detail from zoom 17.
+  // Cells grow as detail drops: a query costs the same share of the service's quota whatever it returns, so zoomed
+  // out it is better to ask for a few large areas than many small ones.
+  const DETAIL = [{ maxZoom: 9, offset: 0.0005, cellSize: 2 }, { maxZoom: 12, offset: 0.0001, cellSize: 1 }, { maxZoom: 16, offset: 0.00001 }, { offset: 0 }];
+  const MAX_ACTIVE = 6;         // queries in flight at once
 
   /* ---------- styles ---------- */
   const CEIL = [[0, '#d7263d'], [50, '#f46036'], [100, '#f7b32b'], [200, '#9bc53d'], [300, '#5bc0eb'], [400, '#2e86de']];
@@ -69,7 +77,7 @@ window.MB = window.MB || {};
       url: ESRI + 'World_Administrative_Divisions/FeatureServer/0', style: boundaryStyle('#4a4f5c', 1.1, '5,4'),
       label: p => `${p.NAME || ''}${p.COUNTRY ? ', ' + p.COUNTRY : ''}`, fields: ['NAME', 'COUNTRY', 'ADMINTYPE', 'ISO_CODE', 'AUTONOMOUS', 'DISPUTED'], legend: [['State / province (dashed)', '#4a4f5c']],
       desc: 'States, provinces, regions. Full detail from zoom 8.' },
-    { id: 'fria', group: 'Remote ID', name: 'FAA-Recognized Identification Areas (FRIA)', minZoom: 7,
+    { id: 'fria', group: 'Remote ID', name: 'FAA-Recognized Identification Areas (FRIA)', minZoom: 7, cellSize: 1,
       source: 'faa', url: FAA + 'FAA_Recognized_Identification_Areas/FeatureServer/0', style: solid('#2ecc71', .25),
       label: p => p.title || p.orgName || 'FRIA', fields: ['title', 'orgName', 'address1', 'city', 'state', 'zipcode', 'startDate', 'endDate', 'refNumber'],
       legend: [['FRIA', '#2ecc71']], desc: 'Fly without Remote ID (VLOS).' },
@@ -79,42 +87,42 @@ window.MB = window.MB || {};
       fields: ['CEILING', 'UNIT', 'APT1_NAME', 'APT1_FAAID', 'APT1_LAANC', 'APT2_NAME', 'APT2_FAAID', 'AIRSPACE_1', 'AIRSPACE_2', 'MAP_EFF', 'LAST_EDIT'],
       legend: CEIL.map(([v, c]) => [v + ' ft', c]), desc: 'LAANC ceilings, ft AGL. 0 ft: coordination required.',
       subsets: { key: p => String(ceilingBucket(p.CEILING)), items: CEIL.map(([v, c]) => [String(v), v + ' ft', c]) } },
-    { id: 'classAirspace', group: 'Airspace', name: 'Class B / C / D / E airspace', minZoom: 7,
+    { id: 'classAirspace', group: 'Airspace', name: 'Class B / C / D / E airspace', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'Class_Airspace/FeatureServer/0', style: classStyle,
       label: p => `${p.CLASS ? 'Class ' + p.CLASS : (p.LOCAL_TYPE || 'Airspace')} · ${p.NAME || ''} ${feetDesc(p)}`, fields: ['NAME', 'CLASS', 'LOCAL_TYPE', 'LOWER_DESC', 'UPPER_DESC', 'ICAO_ID', 'COMM_NAME', 'WKHR_RMK'],
       legend: [['Class B', '#1f5fd6'], ['Class C', '#a12fb5'], ['Class D (dashed)', '#1f5fd6'], ['Class E (dotted)', '#b76ad6']], desc: '',
       subsets: { key: p => (p.CLASS || '').trim().toUpperCase(), items: [['B', 'Class B', '#1f5fd6'], ['C', 'Class C', '#a12fb5'], ['D', 'Class D (dashed)', '#1f5fd6'], ['E', 'Class E (dotted)', '#b76ad6']], other: 'Other classes' } },
-    { id: 'sua', group: 'Airspace', name: 'Special Use Airspace (R, W, MOA, A, NSA)', minZoom: 6,
+    { id: 'sua', group: 'Airspace', name: 'Special Use Airspace (R, W, MOA, A, NSA)', minZoom: 6, levels: DETAIL,
       source: 'faa', url: FAA + 'Special_Use_Airspace/FeatureServer/0', style: suaStyle,
       label: p => `${p.NAME || ''} (${p.TYPE_CODE || ''}) ${feetDesc(p)}`, fields: ['NAME', 'TYPE_CODE', 'LOWER_DESC', 'UPPER_DESC', 'TIMESOFUSE', 'CONT_AGENT', 'COMM_NAME', 'REMARKS'],
       legend: [['Restricted', '#d7263d'], ['Warning', '#f46036'], ['MOA', '#c2185b'], ['Alert', '#f7b32b'], ['NSA', '#6a1b9a']],
       subsets: { key: p => (p.TYPE_CODE || '').trim().toUpperCase(), items: [['R', 'Restricted (R)', '#d7263d'], ['W', 'Warning (W)', '#f46036'], ['MOA', 'Military Operations Area', '#c2185b'], ['A', 'Alert (A)', '#f7b32b'], ['NSA', 'National Security Area', '#6a1b9a'], ['P', 'Prohibited (P)', '#b71c1c']], other: 'Other types' } },
-    { id: 'prohibited', group: 'Airspace', name: 'Prohibited Areas', minZoom: 6,
+    { id: 'prohibited', group: 'Airspace', name: 'Prohibited Areas', minZoom: 6, levels: DETAIL,
       source: 'faa', url: FAA + 'Prohibited_Areas/FeatureServer/0', style: solid('#b71c1c', .3),
       label: p => `${p.NAME || 'Prohibited'} ${feetDesc(p)}`, fields: ['NAME', 'LOWER_DESC', 'UPPER_DESC', 'TIMESOFUSE', 'CONT_AGENT', 'REMARKS'], legend: [['Prohibited', '#b71c1c']] },
-    { id: 'nsufr', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (full-time)', minZoom: 7,
+    { id: 'nsufr', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (full-time)', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'DoD_Mar_13/FeatureServer/0', style: hatched('#e53935'),
       label: p => `${p.Facility || p.Base || 'NSUFR'} · ${p.Floor || 'SFC'}–${p.Ceiling || '400 ft'}`, fields: ['Facility', 'Base', 'Branch', 'Proponent', 'Reason', 'Floor', 'Ceiling', 'FAA_ID', 'State', 'POC'],
       legend: [['NSUFR 24/7', '#e53935']], desc: 'No UAS, surface to 400 ft AGL, 24/7.' },
-    { id: 'nsufrPart', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (part-time)', minZoom: 7,
+    { id: 'nsufrPart', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (part-time)', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'Part_Time_National_Security_UAS_Flight_Restrictions/FeatureServer/0', style: hatched('#fb8c00'),
       label: p => `${p.Facility || p.Base || 'Part-time NSUFR'} · ${p.ALERTYPE || ''}`, fields: ['Facility', 'Base', 'Reason', 'Floor', 'Ceiling', 'ALERTYPE', 'ACTIVETIME', 'ENDTIME', 'ADVISENOTE', 'FAA_ID'],
       legend: [['Part-time NSUFR', '#fb8c00']], desc: 'Active during announced periods.',
       subsets: { key: p => (p.ALERTYPE || '').trim() ? 'alert' : 'none', items: [['alert', 'With an active alert / schedule', '#fb8c00'], ['none', 'No current alert', '#fb8c00']] } },
-    { id: 'nsufrPending', group: 'UAS restrictions', name: 'Pending National Security UAS Flight Restrictions', minZoom: 7,
+    { id: 'nsufrPending', group: 'UAS restrictions', name: 'Pending National Security UAS Flight Restrictions', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'UAS_NSR_Pending/FeatureServer/0', style: hatched('#8e24aa'),
       label: p => `${p.Facility || p.Base || 'Pending NSUFR'}`, fields: ['Facility', 'Base', 'Branch', 'Reason', 'Floor', 'Ceiling', 'FAA_ID'], legend: [['Pending NSUFR', '#8e24aa']] },
-    { id: 'ndaTfr', group: 'UAS restrictions', name: 'National Defense Airspace TFR areas', minZoom: 7,
+    { id: 'ndaTfr', group: 'UAS restrictions', name: 'National Defense Airspace TFR areas', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'National_Defense_Airspace_TFR_Areas/FeatureServer/0', style: hatched('#6d4c41'),
       label: p => p.NAME || 'NDA TFR', fields: ['NAME', 'TYPE_CODE', 'LOCAL_TYPE', 'WKHR_RMK', 'CITY', 'STATE'], legend: [['NDA TFR', '#6d4c41']] },
-    { id: 'recSites', group: 'Sites', name: 'Recreational Flyer Fixed Sites', minZoom: 8,
+    { id: 'recSites', group: 'Sites', name: 'Recreational Flyer Fixed Sites', minZoom: 8, levels: DETAIL,
       source: 'faa', url: FAA + 'Recreational_Flyer_Fixed_Sites/FeatureServer/0', style: solid('#00897b', .2),
       label: p => `${p.SITE_NAME || 'Fixed site'} · ceiling ${p.CEILING || '?'} ${p.UNIT || 'ft'}`, fields: ['SITE_NAME', 'SITE_ID', 'CEILING', 'UNIT', 'CITY', 'STATE', 'POC'], legend: [['Fixed site', '#00897b']] },
-    { id: 'stadiums', group: 'Sites', name: 'Stadiums (3 NM TFR during events)', minZoom: 7, point: true,
+    { id: 'stadiums', group: 'Sites', name: 'Stadiums (3 NM TFR during events)', minZoom: 7, cellSize: 1, point: true,
       source: 'faa', url: FAA + 'Stadiums/FeatureServer/0', style: () => ({ radius: 6, color: '#fff', weight: 1.5, fillColor: '#ef6c00', fillOpacity: .95 }),
       icon: () => stadiumIcon(), iconSize: 22,
       label: p => p.NAME || 'Stadium', fields: ['NAME', 'CITY', 'STATE', 'STATUS_CODE'], legend: [['Stadium', '#ef6c00']], desc: '3 NM TFR during major events.' },
-    { id: 'airports', group: 'Sites', name: 'Airports', minZoom: 9, point: true,
+    { id: 'airports', group: 'Sites', name: 'Airports', minZoom: 9, cellSize: 1, point: true,
       source: 'faa', url: FAA + 'US_Airport/FeatureServer/0',
       style: p => {
         const priv = p.PRIVATEUSE === 'Y' || p.PRIVATEUSE === 1 || p.PRIVATEUSE === '1';
@@ -180,6 +188,7 @@ window.MB = window.MB || {};
       MB.map.on('moveend zoomend', () => this.refreshSoon());
       MB.on('providers', () => { this.buildSets(); this.refreshSoon(); });
       setInterval(() => this.checkAll(), 15 * 60 * 1000); // periodic update check (honours checkHours)
+      setTimeout(() => this.sweepLegacy().then(n => { if (n) MB.emit('data'); }).catch(() => {}), 20000); // once start-up has settled
     },
 
     buildSets() {
@@ -192,7 +201,7 @@ window.MB = window.MB || {};
       const keep = {};
       all.forEach(def => {
         const prev = this.sets[def.id];
-        keep[def.id] = prev ? Object.assign(prev, { def }) : { def, enabled: false, meta: null, group: null, cells: new Map(), loading: new Set(), status: '', error: null };
+        keep[def.id] = prev ? Object.assign(prev, { def }) : { def, enabled: false, meta: null, group: null, cells: new Map(), feats: new Map(), loading: new Set(), status: '', error: null };
       });
       Object.keys(this.sets).forEach(id => { if (!keep[id] && this.sets[id].enabled) this.disable(id); });
       this.sets = keep;
@@ -224,7 +233,7 @@ window.MB = window.MB || {};
       if (on) ds.off.delete(key); else ds.off.add(key);
       const st = this.stateFor(id);
       st.off = Array.from(ds.off);
-      ds.cells.forEach(c => { if (c.layer) applyFilter(ds, c.layer); });
+      applyFilter(ds);
       MB.emit('data');
       MB.autosave();
     },
@@ -240,7 +249,7 @@ window.MB = window.MB || {};
       const st = this.stateFor(id);
       st.on = true;
       ds.off = new Set(st.off || []);
-      ds.cells.forEach(c => { if (c.layer) applyFilter(ds, c.layer); });
+      applyFilter(ds);
       ds.status = 'Checking for updates…';
       MB.emit('data');
       MB.autosave();
@@ -256,6 +265,7 @@ window.MB = window.MB || {};
       ds.enabled = false;
       if (ds.group) { MB.map.removeLayer(ds.group); ds.group.clearLayers(); }
       ds.cells.forEach(c => { c.shown = false; });
+      ds.feats.forEach(e => { e.refs = 0; });
       if (MB.state.dataLayers) { const st = this.stateFor(id); st.on = false; }
       ds.status = '';
       MB.emit('data');
@@ -272,7 +282,7 @@ window.MB = window.MB || {};
         const on = e === undefined ? !!this.sets[id].def.defaultOn : (e === true || (e && e.on));
         if (on && !this.sets[id].enabled) this.enable(id);
         else if (!on && this.sets[id].enabled) this.disable(id);
-        else if (on) { const ds = this.sets[id]; ds.off = new Set((e && e.off) || []); ds.cells.forEach(c => { if (c.layer) applyFilter(ds, c.layer); }); }
+        else if (on) { const ds = this.sets[id]; ds.off = new Set((e && e.off) || []); applyFilter(ds); }
       });
       MB.emit('data');
     },
@@ -332,14 +342,13 @@ window.MB = window.MB || {};
     },
 
     async purge(ds) {
-      ds.cells.forEach(c => { if (ds.group && c.layer) ds.group.removeLayer(c.layer); });
-      ds.cells.clear();
+      forget(ds);
       const keys = await DB.keys('cells') || [];
       for (const k of keys) if (String(k).startsWith(ds.def.id + '|')) await DB.del('cells', k);
     },
 
     async clearCache() {
-      for (const ds of this.catalog()) { ds.cells.forEach(c => { if (ds.group && c.layer) ds.group.removeLayer(c.layer); }); ds.cells.clear(); ds.meta = null; }
+      for (const ds of this.catalog()) { forget(ds); ds.meta = null; }
       await DB.clear('cells'); await DB.clear('meta');
       if (MB.freqs) { MB.freqs.index = null; MB.freqs.meta = null; }
       MB.emit('data');
@@ -366,7 +375,7 @@ window.MB = window.MB || {};
         const l = def.levels[idx];
         return { idx, whole: !!l.whole, cellSize: l.cellSize || CELL, offset: l.offset || 0 };
       }
-      return { idx: 0, whole: false, cellSize: CELL, offset: 0 };
+      return { idx: 0, whole: false, cellSize: def.cellSize || CELL, offset: 0 };
     },
 
     refresh() {
@@ -375,7 +384,7 @@ window.MB = window.MB || {};
         if (!ds.enabled || ds.checking) return; // wait until the update stamp is known before caching anything
         if (zoom < ds.def.minZoom) {
           ds.status = 'Zoom in to level ' + ds.def.minZoom + ' or closer to load';
-          ds.cells.forEach(c => { if (c.shown) { ds.group.removeLayer(c.layer); c.shown = false; } });
+          ds.cells.forEach(c => hideCell(ds, c));
           return;
         }
         const level = this.levelFor(ds.def, zoom);
@@ -383,33 +392,42 @@ window.MB = window.MB || {};
         if (cells.length > MAX_CELLS) { ds.status = 'View too large: zoom in'; return; }
         const prefix = 'L' + level.idx + ':';
         const need = new Set(cells.map(c => prefix + c.key));
-        ds.cells.forEach((c, key) => { if (!need.has(key) && c.shown) { ds.group.removeLayer(c.layer); c.shown = false; } });
         cells.forEach(cell => {
           const c = ds.cells.get(prefix + cell.key);
-          if (c) { if (!c.shown && c.layer) { ds.group.addLayer(c.layer); c.shown = true; } c.used = Date.now(); }
+          if (c) { showCell(ds, c); c.used = Date.now(); }
           else this.loadCell(ds, cell, level);
         });
-        // LRU eviction of hidden cell layers
+        this.settle(ds, need, prefix);
+        // LRU eviction of hidden cells
         if (ds.cells.size > MAX_CACHED_LAYERS) {
           const hidden = Array.from(ds.cells.entries()).filter(([, c]) => !c.shown).sort((a, b) => a[1].used - b[1].used);
-          hidden.slice(0, ds.cells.size - MAX_CACHED_LAYERS).forEach(([k]) => ds.cells.delete(k));
+          hidden.slice(0, ds.cells.size - MAX_CACHED_LAYERS).forEach(([k, c]) => { dropCell(ds, c); ds.cells.delete(k); });
         }
         if (!ds.loading.size && !ds.error) ds.status = level.whole && level.offset ? 'overview (generalized): zoom in for full detail' : '';
       });
       MB.emit('data');
     },
 
+    // Hide the cells the view no longer needs. Cells of another detail level stay up until this level's cells have
+    // all arrived, so crossing a zoom threshold swaps the detail in place instead of blanking the layer.
+    settle(ds, need, prefix) {
+      const ready = Array.from(need).every(k => ds.cells.has(k));
+      ds.cells.forEach((c, key) => { if (c.shown && !need.has(key) && (ready || key.startsWith(prefix))) hideCell(ds, c); });
+      // an error is about the view on screen: once everything it needs is loaded and current, a failure elsewhere is history
+      if (ready && !Array.from(need).some(k => ds.cells.get(k).stale)) ds.error = null;
+    },
+
     async loadCell(ds, cell, level) {
       level = level || this.levelFor(ds.def, MB.map.getZoom());
       const memKey = 'L' + level.idx + ':' + cell.key;
-      const key = ds.def.id + '|' + memKey;
+      const key = ds.def.id + '|r' + CACHE_REV + '|' + memKey;
       if (ds.loading.has(key)) return;
       ds.loading.add(key);
       ds.status = 'Loading…';
       MB.emit('data');
       const meta = await this.loadMeta(ds);
       const maxAge = this.settings.maxAgeDays * 86400 * 1000;
-      let geojson = null, fromCache = false;
+      let geojson = null, fromCache = false, stale = false;
       try {
         const cached = await DB.get('cells', key);
         if (cached && cached.lastEdit === meta.lastEdit && Date.now() - cached.ts < maxAge) { geojson = cached.geojson; fromCache = true; }
@@ -419,23 +437,40 @@ window.MB = window.MB || {};
             await DB.set('cells', key, { ts: Date.now(), lastEdit: meta.lastEdit, geojson });
             ds.error = null;
           } catch (e) {
-            if (cached) { geojson = cached.geojson; fromCache = true; ds.error = 'Offline or service error: showing cached data.'; }
+            // Offline or the service failed: anything stored for this area will do, including what an earlier
+            // version saved with an offline area (keys without a revision; FAA data was one full-detail level, "L0").
+            const old = cached || await DB.get('cells', ds.def.id + '|' + memKey) || await DB.get('cells', ds.def.id + '|L0:' + cell.key);
+            if (old && old.geojson) { geojson = old.geojson; fromCache = stale = true; ds.error = 'Offline or service error: showing cached data.'; }
             else { ds.error = 'Load failed: ' + e.message; }
           }
         }
       } finally { ds.loading.delete(key); }
       if (geojson) {
-        const layer = makeLayer(ds, geojson);
-        const entry = { layer, shown: false, used: Date.now(), fromCache, n: (geojson.features || []).length };
+        const prev = ds.cells.get(memKey);
+        if (prev) dropCell(ds, prev); // loaded again (offline pre-loading, a retry): replace, never stack
+        const entry = { keys: registerCell(ds, geojson), shown: false, used: Date.now(), fromCache, stale, n: (geojson.features || []).length };
         ds.cells.set(memKey, entry);
         const cur = this.levelFor(ds.def, MB.map.getZoom());
-        if (ds.enabled && cur.idx === level.idx && MB.map.getZoom() >= ds.def.minZoom && MB.map.getBounds().intersects(cell.bounds)) { ds.group.addLayer(layer); entry.shown = true; }
+        if (ds.enabled && cur.idx === level.idx && MB.map.getZoom() >= ds.def.minZoom && MB.map.getBounds().intersects(cell.bounds)) {
+          showCell(ds, entry);
+          const size = cur.cellSize, prefix = 'L' + cur.idx + ':';
+          this.settle(ds, new Set((cur.whole ? [{ key: 'all' }] : cellsFor(MB.map.getBounds(), size)).map(c => prefix + c.key)), prefix);
+        }
       }
       if (!ds.loading.size) ds.status = ds.error ? '' : '';
       MB.emit('data');
     },
 
-    featureCount(ds) { let n = 0; ds.cells.forEach(c => { if (c.shown && c.layer) n += c.layer.getLayers().length; }); return n; }
+    // Cells stored by earlier versions (keys without a revision) are full detail and several megabytes each. They
+    // only still serve as the fallback for an offline area saved with its data; without one, remove them.
+    async sweepLegacy() {
+      if (MB.offline && (MB.offline.areas || []).some(a => a.dataCells)) return 0;
+      const keys = (await DB.keys('cells') || []).filter(k => /^[^|]+\|L\d+:/.test(String(k)));
+      for (const k of keys) await DB.del('cells', k);
+      return keys.length;
+    },
+
+    featureCount(ds) { let n = 0; if (ds.group) ds.feats.forEach(e => { if (e.refs > 0 && ds.group.hasLayer(e.layer)) n++; }); return n; }
   };
   MB.data.refreshSoon = MB.debounce(() => MB.data.refresh(), 350);
   MB.data.cellsFor = cellsFor;
@@ -445,10 +480,11 @@ window.MB = window.MB || {};
   MB.data.restyle = function (id) {
     const ds = MB.data.sets[id];
     if (!ds || !ds.def.style) return;
-    ds.cells.forEach(c => { if (c.layer) c.layer.eachLayer(l => {
+    ds.feats.forEach(e => {
+      const l = e.layer;
       if (l.setIcon && ds.def.icon && l.feature) l.setIcon(makeIcon(ds.def, l.feature.properties));
       else if (l.setStyle && l.feature) l.setStyle(ds.def.style(l.feature.properties || {}));
-    }); });
+    });
   };
 
   function cellsFor(bounds, size) {
@@ -466,13 +502,73 @@ window.MB = window.MB || {};
     return out;
   }
 
+  /* ----- request scheduling -----
+   * The FAA services meter all of their users against one quota (x-esri-org-request-units-per-min). When it is
+   * used up a query answers "429 ... Retry after N sec", often inside an HTTP 200. Queries therefore run a few at
+   * a time, and a 429 pauses every query to that host until the stated time; they are then tried again instead
+   * of leaving a hole in the map. */
+  const net = { active: 0, queue: [], pausedUntil: {}, timer: null };
+  const hostOf = url => { try { return new URL(url).host; } catch (e) { return ''; } };
+
+  function throttled(host, task) {
+    return new Promise((resolve, reject) => { net.queue.push({ host, task, resolve, reject, tries: 0 }); pump(); });
+  }
+  function pump() {
+    while (net.active < MAX_ACTIVE && net.queue.length) {
+      const now = Date.now();
+      const i = net.queue.findIndex(j => !(net.pausedUntil[j.host] > now));
+      if (i < 0) { // everything waiting is paused: wake when the first pause ends
+        const wake = Math.min.apply(null, net.queue.map(j => net.pausedUntil[j.host]));
+        clearTimeout(net.timer);
+        net.timer = setTimeout(pump, Math.max(50, wake - now));
+        return;
+      }
+      const job = net.queue.splice(i, 1)[0];
+      net.active++;
+      job.task().then(job.resolve, err => {
+        if (err && err.retryAfter && job.tries < 3) {
+          job.tries++;
+          net.pausedUntil[job.host] = Date.now() + err.retryAfter * 1000;
+          net.queue.unshift(job);
+          MB.emit('data'); // the panel says what is being waited for
+        } else job.reject(err);
+      }).finally(() => { net.active--; pump(); });
+    }
+  }
+  // Seconds until queries to this dataset's service resume, or 0.
+  MB.data.pausedFor = ds => Math.max(0, Math.ceil(((net.pausedUntil[hostOf(ds.def.url)] || 0) - Date.now()) / 1000));
+
+  async function fetchJson(u) {
+    const r = await fetch(u);
+    let j = null;
+    try { j = await r.json(); } catch (e) { /* not JSON */ }
+    const err = j && j.error;
+    if (r.status === 429 || (err && +err.code === 429)) {
+      const text = err ? [err.message].concat(err.details || []).join(' ') : '';
+      const m = /retry after (\d+)/i.exec(text);
+      const e = new Error('the service is over its request quota');
+      e.retryAfter = Math.min(120, +(m ? m[1] : (r.headers.get('Retry-After') || 60)) || 60) + Math.random() * 3; // jitter: do not all return at once
+      throw e;
+    }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!j) throw new Error('unreadable response');
+    if (err) throw new Error(err.message || 'service error');
+    return j;
+  }
+
+  // Decimal places worth sending for a given generalization tolerance (degrees): one digit finer than the tolerance.
+  function precisionFor(offset) {
+    if (!offset) return '6';
+    return offset >= 0.01 ? '3' : (offset >= 0.001 ? '4' : (offset >= 0.0001 ? '5' : '6'));
+  }
+
   async function queryCell(url, cell, fields, level) {
     const b = cell.bounds;
     const features = [];
     let offset = 0;
     for (let page = 0; page < 30; page++) {
       const p = new URLSearchParams({
-        where: '1=1', outFields: fields ? fields.join(',') : '*', outSR: '4326', geometryPrecision: level && level.offset ? '3' : '6', f: 'geojson',
+        where: '1=1', outFields: fields ? fields.join(',') : '*', outSR: '4326', geometryPrecision: precisionFor(level && level.offset), f: 'geojson',
         resultOffset: String(offset), resultRecordCount: '2000'
       });
       if (!(level && level.whole)) {
@@ -480,10 +576,7 @@ window.MB = window.MB || {};
         p.set('geometryType', 'esriGeometryEnvelope'); p.set('inSR', '4326'); p.set('spatialRel', 'esriSpatialRelIntersects');
       }
       if (level && level.offset) p.set('maxAllowableOffset', String(level.offset));
-      const r = await fetch(url + '/query?' + p.toString());
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const j = await r.json();
-      if (j.error) throw new Error(j.error.message || 'service error');
+      const j = await throttled(hostOf(url), () => fetchJson(url + '/query?' + p.toString()));
       const feats = j.features || [];
       features.push(...feats);
       const more = (j.properties && j.properties.exceededTransferLimit) || j.exceededTransferLimit;
@@ -511,23 +604,72 @@ window.MB = window.MB || {};
     return `<div class="mb-popup"><div class="mb-popup-title">${esc(ds.def.name)}</div><table class="mb-datatable">${rows}</table></div>`;
   }
 
-  // Show / hide the features of a cell layer according to the dataset's sub-element toggles.
-  function applyFilter(ds, layer) {
-    if (!ds.def.subsets || !layer._all) return;
-    layer._all.forEach(sub => {
-      const k = MB.data.subsetKey(ds, sub.feature && sub.feature.properties);
-      const show = !ds.off.has(k);
-      if (show && !layer.hasLayer(sub)) layer.addLayer(sub);
-      else if (!show && layer.hasLayer(sub)) layer.removeLayer(sub);
-    });
+  /* ----- feature registry -----
+   * A polygon that spans several cells comes back from each of their queries. Features therefore live once per
+   * dataset in ds.feats (key -> { layer, cells, refs }): `cells` counts the loaded cells that contain the feature,
+   * `refs` the shown ones. It is on the map while refs > 0 and its sub-element toggle is on, so it is built,
+   * projected, drawn and identified exactly once however many cells it touches. */
+
+  // Identity across cells: the attributes plus a cheap fingerprint of the geometry (the same feature at another
+  // detail level has other vertices and is a different entry).
+  function featureKey(f) {
+    const g = f.geometry || {};
+    let n = 0, sx = 0, sy = 0;
+    const walk = a => {
+      if (typeof a[0] === 'number') { n++; sx += a[0] * (n % 7 + 1); sy += a[1] * (n % 5 + 1); }
+      else for (let i = 0; i < a.length; i++) walk(a[i]);
+    };
+    if (Array.isArray(g.coordinates)) walk(g.coordinates);
+    return JSON.stringify(f.properties || {}) + '|' + g.type + '|' + n + '|' + sx.toFixed(4) + '|' + sy.toFixed(4);
   }
 
-  function makeLayer(ds, geojson) {
-    const layer = buildGeoJson(ds, geojson);
-    layer._all = layer.getLayers();
-    applyFilter(ds, layer);
-    return layer;
+  // Build layers for the features of a cell that are not known yet; returns the keys of every feature in the cell.
+  function registerCell(ds, geojson) {
+    const keys = new Set(), fresh = [], keyOf = new Map();
+    (geojson.features || []).forEach(f => {
+      if (!f || !f.geometry) return;
+      const k = featureKey(f);
+      if (keys.has(k)) return;
+      keys.add(k);
+      const e = ds.feats.get(k);
+      if (e) e.cells++; else { fresh.push(f); keyOf.set(f, k); }
+    });
+    if (fresh.length) buildGeoJson(ds, { type: 'FeatureCollection', features: fresh }).eachLayer(l => {
+      const k = keyOf.get(l.feature);
+      if (k) ds.feats.set(k, { layer: l, cells: 1, refs: 0 });
+    });
+    return Array.from(keys).filter(k => ds.feats.has(k)); // a geometry Leaflet could not build has no entry
   }
+
+  function sync(ds, e) {
+    if (!ds.group) return;
+    const on = ds.group.hasLayer(e.layer);
+    const want = e.refs > 0 && !(ds.def.subsets && ds.off.has(MB.data.subsetKey(ds, e.layer.feature && e.layer.feature.properties)));
+    if (want && !on) ds.group.addLayer(e.layer);
+    else if (!want && on) ds.group.removeLayer(e.layer);
+  }
+  function showCell(ds, c) {
+    if (c.shown) return;
+    c.shown = true;
+    c.keys.forEach(k => { const e = ds.feats.get(k); if (e) { e.refs++; sync(ds, e); } });
+  }
+  function hideCell(ds, c) {
+    if (!c.shown) return;
+    c.shown = false;
+    c.keys.forEach(k => { const e = ds.feats.get(k); if (e) { e.refs--; sync(ds, e); } });
+  }
+  // Forget a cell: its features go too once no other loaded cell contains them.
+  function dropCell(ds, c) {
+    hideCell(ds, c);
+    c.keys.forEach(k => { const e = ds.feats.get(k); if (e && --e.cells <= 0) ds.feats.delete(k); });
+  }
+  function forget(ds) {
+    if (ds.group) ds.group.clearLayers();
+    ds.cells.clear();
+    ds.feats.clear();
+  }
+  // Apply the dataset's sub-element toggles to what is on the map.
+  function applyFilter(ds) { ds.feats.forEach(e => sync(ds, e)); }
 
   // One shared Canvas renderer for every data layer: thousands of features become a single bitmap instead of
   // thousands of SVG nodes, which roughly halves paint and zoom cost and keeps the DOM small.
@@ -594,22 +736,19 @@ window.MB = window.MB || {};
     const hits = [];
     const sets = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').reverse(); // later datasets draw on top
     sets.forEach(ds => {
-      ds.cells.forEach(c => {
-        if (!c.shown || !c.layer) return;
-        c.layer.eachLayer(l => {
-          if (!l.feature) return;
-          let hit = false;
-          try {
-            if (l.getLatLng) hit = map.latLngToContainerPoint(l.getLatLng()).distanceTo(cp) <= 14;
-            else if (l._containsPoint && l._pxBounds) hit = l._pxBounds.contains(lp) && l._containsPoint(lp);
-          } catch (err) { /* ignore */ }
-          if (hit) hits.push({ ds, layer: l, props: l.feature.properties || {} });
-        });
+      if (!ds.group) return;
+      ds.feats.forEach(e => {
+        const l = e.layer;
+        if (e.refs <= 0 || !l.feature || !ds.group.hasLayer(l)) return;
+        let hit = false;
+        try {
+          if (l.getLatLng) hit = map.latLngToContainerPoint(l.getLatLng()).distanceTo(cp) <= 14;
+          else if (l._containsPoint && l._pxBounds) hit = l._pxBounds.contains(lp) && l._containsPoint(lp);
+        } catch (err) { /* ignore */ }
+        if (hit) hits.push({ ds, layer: l, props: l.feature.properties || {} });
       });
     });
-    // de-duplicate features that appear in two cells
-    const seen = new Set();
-    return hits.filter(h => { const k = h.ds.def.id + '|' + (h.props.OBJECTID || h.props.GLOBAL_ID || h.props.ObjectId || JSON.stringify(h.props).slice(0, 80)); if (seen.has(k)) return false; seen.add(k); return true; });
+    return hits; // every feature is in the registry once: distinct features are never merged, duplicates never appear
   };
 
   let identifyPopup = null, highlighted = null;
@@ -635,7 +774,7 @@ window.MB = window.MB || {};
   MB.data.identify = function (latlng, containerPoint, clicked) {
     let hits = this.featuresAt(latlng, containerPoint);
     if (clicked && clicked.feature && !hits.some(h => h.layer === clicked)) {
-      const ds = this.catalog().find(d => d.cells && Array.from(d.cells.values()).some(c => c.layer && c.layer.hasLayer(clicked)));
+      const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked));
       if (ds) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
     if (!hits.length) return;
@@ -645,9 +784,11 @@ window.MB = window.MB || {};
     const sections = hits.map((h, i) => {
       const body = popupHtml(h.ds, h.props).replace(/^<div class="mb-popup"><div class="mb-popup-title">[^<]*<\/div>/, '').replace(/<\/div>$/, '');
       const extra = h.ds.def.popupExtra ? `<div class="mb-extra dim" data-extra="${i}">Loading frequencies…</div>` : '';
-      return `<details class="mb-ident" data-i="${i}"${i === 0 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
+      return `<details class="mb-ident" name="mb-ident" data-i="${i}"${hits.length === 1 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
     }).join('');
-    // No header: each entry names its dataset and feature. Only a truncated list gets a note.
+    // No header: each entry names its dataset and feature. Several features start collapsed, so the whole list is
+    // in view at once (an expanded first entry used to push the others below the popup's scroll); the shared
+    // name makes them an accordion. Only a truncated list gets a note.
     const more = total > hits.length ? `<div class="mb-ident-more dim">Showing ${hits.length} of ${total}</div>` : '';
     const html = `<div class="mb-popup mb-identify">${sections}${more}</div>`;
     if (identifyPopup && identifyPopup.isOpen()) MB.map.closePopup(identifyPopup);
@@ -655,7 +796,7 @@ window.MB = window.MB || {};
     // string content from scratch, which would wipe the loaded frequencies, the listeners and the expanded state.
     const content = document.createElement('div'); content.innerHTML = html;
     const popup = identifyPopup = L.popup({ maxWidth: 400, maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
-    let pinned = hits[0]; // the first entry opens expanded; the expanded entry stays highlighted when the pointer leaves the list
+    let pinned = hits.length === 1 ? hits[0] : null; // the expanded entry stays highlighted when the pointer leaves the list
     popup.on('remove', () => { pinned = null; clearHighlight(); });
     const root = popup.getElement();
     root.querySelectorAll('details.mb-ident').forEach(d => {
@@ -732,6 +873,7 @@ window.MB = window.MB || {};
         if (ds.enabled) {
           const bits = [];
           if (ds.loading.size) bits.push('loading ' + ds.loading.size + '…');
+          if (ds.loading.size && this.pausedFor(ds)) bits.push('the service is over its shared request quota, retrying in ' + this.pausedFor(ds) + ' s');
           if (ds.status) bits.push(ds.status);
           if (!ds.loading.size && !ds.status) bits.push(shown + ' features in view');
           if (ds.meta && ds.meta.lastEdit && ds.meta.lastEdit !== 'offline') bits.push('source updated ' + new Date(ds.meta.lastEdit).toLocaleDateString());
