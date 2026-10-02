@@ -2,7 +2,35 @@
 (function (MB) {
   'use strict';
 
+  // The splash covers start-up only. It is always taken down, also when start-up fails, so an error cannot leave
+  // the app hidden behind it.
+  function hideSplash() {
+    const splash = document.getElementById('splash');
+    if (splash) setTimeout(() => { splash.classList.add('hide'); setTimeout(() => splash.remove(), 400); }, 150);
+  }
+
   function init() {
+    try { start(); } finally { hideSplash(); }
+  }
+
+  // A new release installs in the background while the page keeps running the version it loaded. Say so once it
+  // has taken over; the project is saved continuously, so reloading loses nothing.
+  function watchForUpdate() {
+    const sw = navigator.serviceWorker;
+    const hadController = !!sw.controller; // the very first install also takes control: that is not an update
+    sw.addEventListener('controllerchange', () => {
+      if (!hadController || document.getElementById('mb-update')) return;
+      const el = document.createElement('div');
+      el.id = 'mb-update';
+      el.setAttribute('role', 'status');
+      el.innerHTML = '<span>A new version of GenGIS is ready.</span><button type="button" class="btn small primary">Reload</button><button type="button" class="icon-btn mini" title="Later" aria-label="Later">&times;</button>';
+      el.querySelector('.primary').addEventListener('click', () => { MB.saveNow(); location.reload(); });
+      el.querySelector('.icon-btn').addEventListener('click', () => el.remove());
+      document.body.appendChild(el);
+    });
+  }
+
+  function start() {
     MB.map = L.map('map', {
       center: [40.7128, -74.006], zoom: 13, zoomControl: false, attributionControl: false,
       worldCopyJump: true, zoomSnap: 0.5, doubleClickZoom: true
@@ -52,6 +80,7 @@
 
     // PWA
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      watchForUpdate();
       navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service worker not registered', e));
     }
     window.addEventListener('beforeinstallprompt', e => {
@@ -63,8 +92,6 @@
     window.addEventListener('offline', () => MB.toast('Offline: cached map tiles only, search unavailable'));
     window.addEventListener('resize', () => MB.map.invalidateSize());
     window.addEventListener('pagehide', () => MB.saveNow());
-    const splash = document.getElementById('splash');
-    if (splash) setTimeout(() => { splash.classList.add('hide'); setTimeout(() => splash.remove(), 400); }, 350);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') MB.saveNow(); });
   }
 
