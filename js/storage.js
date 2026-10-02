@@ -39,9 +39,9 @@ window.MB = window.MB || {};
   // display options. API keys and device preferences (geocoder, cache policy, tooltip delay) are not part of it.
   MB.displayState = function () {
     const st = MB.settings || {};
-    const optionKeys = [].concat.apply([], Object.keys(MB.builtinKeyGroups || {}).map(g => (MB.builtinKeyGroups[g].options || []).map(o => o.key)));
+    // the value in effect for every basemap option, defaults included, so the file does not inherit the opening device's choice
     const basemapOptions = {};
-    optionKeys.forEach(k => { if (st.keys && st.keys[k]) basemapOptions[k] = st.keys[k]; });
+    Object.keys(MB.builtinKeyGroups || {}).forEach(g => (MB.builtinKeyGroups[g].options || []).forEach(o => { basemapOptions[o.key] = (st.keys && st.keys[o.key]) || o.choices[0][0]; }));
     return {
       dataOpacity: MB.data ? MB.data.settings.opacity : 1,
       basemapOptions,
@@ -51,14 +51,15 @@ window.MB = window.MB || {};
     };
   };
 
+  // Returns true when the base map should be rebuilt (a provider definition or basemap option changed).
   MB.applyDisplayState = function (d) {
-    if (!d || !MB.settings) return;
+    if (!d || !MB.settings) return false;
     const st = MB.settings;
-    let changed = false;
+    let changed = false, basemapChanged = false;
     // definitions the project refers to are added by id; one already on this device (which may hold an API key) is kept
-    (d.providers || []).forEach(p => { if (p && p.id && !st.providers.some(x => x.id === p.id)) { st.providers.push(MB.deepClone(p)); changed = true; } });
+    (d.providers || []).forEach(p => { if (p && p.id && !st.providers.some(x => x.id === p.id)) { st.providers.push(MB.deepClone(p)); changed = basemapChanged = true; } });
     (d.dataServices || []).forEach(c => { st.dataServices = st.dataServices || []; if (c && c.id && !st.dataServices.some(x => x.id === c.id)) { st.dataServices.push(MB.deepClone(c)); changed = true; } });
-    Object.keys(d.basemapOptions || {}).forEach(k => { if (st.keys[k] !== d.basemapOptions[k]) { st.keys[k] = d.basemapOptions[k]; changed = true; } });
+    Object.keys(d.basemapOptions || {}).forEach(k => { if (st.keys[k] !== d.basemapOptions[k]) { st.keys[k] = d.basemapOptions[k]; changed = basemapChanged = true; } });
     if (d.adsb && typeof d.adsb === 'object') {
       const mine = st.adsb && st.adsb.sources && st.adsb.sources.dump1090 && st.adsb.sources.dump1090.url;
       st.adsb = MB.deepClone(d.adsb);
@@ -67,11 +68,15 @@ window.MB = window.MB || {};
     }
     if (changed) MB.saveSettings(); // also announces 'providers': the basemap list and custom datasets follow
     if (MB.data && typeof d.dataOpacity === 'number' && isFinite(d.dataOpacity)) {
-      MB.data.settings.opacity = Math.min(1, Math.max(0.1, d.dataOpacity));
+      // only the opacity: the other data settings are device preferences, and before start-up the module still holds defaults
+      const opacity = Math.min(1, Math.max(0.1, d.dataOpacity));
+      MB.data.settings.opacity = opacity;
+      st.data = Object.assign({}, st.data, { opacity });
+      MB.saveSettings();
       MB.data.applyOpacity();
-      MB.data.saveSettings();
     }
     if (MB.adsb && d.adsb) MB.adsb.applyConf();
+    return basemapChanged;
   };
 
   MB.saveToFile = function () {

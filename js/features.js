@@ -671,8 +671,9 @@ window.MB = window.MB || {};
     MB.state.activeLayerId = MB.getLayer(p.activeLayerId) ? p.activeLayerId : MB.state.layers[MB.state.layers.length - 1].id;
     (p.features || []).forEach(f => { try { MB.restoreFeature(f); } catch (e) { console.warn('Could not restore feature', f, e); } });
     MB.applyZOrder();
-    if (p.display && MB.applyDisplayState) MB.applyDisplayState(p.display); // before the basemap: it may be a custom provider the project carries
-    if (p.basemap && p.basemap !== MB.state.basemap && (MB.basemaps[p.basemap] || (p.basemap.startsWith('custom:') && MB.getProvider(p.basemap.slice(7))))) MB.setBasemap(p.basemap);
+    // before the basemap: the project may carry the provider it uses, or options (labels) that change its tiles
+    const rebuild = !!(p.display && MB.applyDisplayState && MB.applyDisplayState(p.display));
+    if (p.basemap && (rebuild || p.basemap !== MB.state.basemap) && (MB.basemaps[p.basemap] || (p.basemap.startsWith('custom:') && MB.getProvider(p.basemap.slice(7))))) MB.setBasemap(p.basemap);
     if (!opts.keepView && p.view && MB.map) MB.map.setView([p.view.lat, p.view.lng], p.view.zoom);
     MB.emit('units', MB.state.units);
     MB.emit('layers');
