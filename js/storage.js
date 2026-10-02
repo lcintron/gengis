@@ -3,7 +3,7 @@ window.MB = window.MB || {};
 (function (MB) {
   'use strict';
 
-  const KEY = 'map-builder.project.v1';
+  const KEY = 'gengis.project', OLD_KEY = 'map-builder.project.v1';
 
   MB.autosave = MB.debounce(function () {
     try {
@@ -22,10 +22,10 @@ window.MB = window.MB || {};
 
   MB.loadAutosave = function () {
     try {
-      const raw = localStorage.getItem(KEY);
+      const raw = MB.storedItem(KEY, OLD_KEY);
       if (!raw) return false;
       const p = JSON.parse(raw);
-      if (!p || p.app !== 'map-builder') return false;
+      if (!MB.isProject(p)) return false;
       MB.loadProject(p);
       return true;
     } catch (e) { console.warn('Could not load autosave', e); return false; }
@@ -33,63 +33,17 @@ window.MB = window.MB || {};
 
   MB.clearAutosave = function () { localStorage.removeItem(KEY); };
 
-  /* ---------- display state: the part of a project that is not an object ---------- */
-  // Everything else needed to open the project the same way on another device: data opacity, the custom tile
-  // providers and ArcGIS layers the project can refer to, basemap options, and the live-traffic sources and
-  // display options. API keys and device preferences (geocoder, cache policy, tooltip delay) are not part of it.
-  MB.displayState = function () {
-    const st = MB.settings || {};
-    // the value in effect for every basemap option, defaults included, so the file does not inherit the opening device's choice
-    const basemapOptions = {};
-    Object.keys(MB.builtinKeyGroups || {}).forEach(g => (MB.builtinKeyGroups[g].options || []).forEach(o => { basemapOptions[o.key] = (st.keys && st.keys[o.key]) || o.choices[0][0]; }));
-    return {
-      dataOpacity: MB.data ? MB.data.settings.opacity : 1,
-      basemapOptions,
-      providers: (st.providers || []).map(p => { const c = Object.assign({}, p); delete c.key; return c; }),
-      dataServices: MB.deepClone(st.dataServices || []),
-      adsb: MB.adsb ? MB.deepClone(MB.adsb.conf()) : undefined
-    };
-  };
-
-  // Returns true when the base map should be rebuilt (a provider definition or basemap option changed).
-  MB.applyDisplayState = function (d) {
-    if (!d || !MB.settings) return false;
-    const st = MB.settings;
-    let changed = false, basemapChanged = false;
-    // definitions the project refers to are added by id; one already on this device (which may hold an API key) is kept
-    (d.providers || []).forEach(p => { if (p && p.id && !st.providers.some(x => x.id === p.id)) { st.providers.push(MB.deepClone(p)); changed = basemapChanged = true; } });
-    (d.dataServices || []).forEach(c => { st.dataServices = st.dataServices || []; if (c && c.id && !st.dataServices.some(x => x.id === c.id)) { st.dataServices.push(MB.deepClone(c)); changed = true; } });
-    Object.keys(d.basemapOptions || {}).forEach(k => { if (st.keys[k] !== d.basemapOptions[k]) { st.keys[k] = d.basemapOptions[k]; changed = basemapChanged = true; } });
-    if (d.adsb && typeof d.adsb === 'object') {
-      const mine = st.adsb && st.adsb.sources && st.adsb.sources.dump1090 && st.adsb.sources.dump1090.url;
-      st.adsb = MB.deepClone(d.adsb);
-      if (mine) { st.adsb.sources = st.adsb.sources || {}; st.adsb.sources.dump1090 = Object.assign({}, st.adsb.sources.dump1090, { url: mine }); } // a receiver address set here stays
-      changed = true;
-    }
-    if (changed) MB.saveSettings(); // also announces 'providers': the basemap list and custom datasets follow
-    if (MB.data && typeof d.dataOpacity === 'number' && isFinite(d.dataOpacity)) {
-      // only the opacity: the other data settings are device preferences, and before start-up the module still holds defaults
-      const opacity = Math.min(1, Math.max(0.1, d.dataOpacity));
-      MB.data.settings.opacity = opacity;
-      st.data = Object.assign({}, st.data, { opacity });
-      MB.saveSettings();
-      MB.data.applyOpacity();
-    }
-    if (MB.adsb && d.adsb) MB.adsb.applyConf();
-    return basemapChanged;
-  };
-
   MB.saveToFile = function () {
     const p = MB.serializeProject();
-    const name = (p.projectName || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map';
-    MB.download(name + '.mapproject.json', JSON.stringify(p, null, 1));
+    const name = (p.name || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map';
+    MB.download(name + MB.PROJECT_EXT, JSON.stringify(p, null, 1));
     MB.toast('Project saved');
   };
 
   MB.openFile = function (file) {
     return file.text().then(txt => {
       const p = JSON.parse(txt);
-      if (p && p.app === 'map-builder') { MB.loadProject(p); MB.toast('Project loaded'); return; }
+      if (MB.isProject(p)) { MB.loadProject(p); MB.toast('Project loaded'); return; }
       if (p && (p.type === 'FeatureCollection' || p.type === 'Feature')) { MB.importGeoJSON(p, file.name); return; }
       throw new Error('Unrecognized file');
     }).catch(e => MB.toast('Could not open file: ' + e.message));

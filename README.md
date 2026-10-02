@@ -25,7 +25,7 @@ A standalone map building tool built on web technologies. Runs as a **Progressiv
 - **URL parameters** to open the app centered on a location: `?q=Eiffel+Tower`, `?lat=48.858&lon=2.294&zoom=16`, `?center=48.858,2.294`, `?poi=cafe`.
 - **Fast tiles and rendering**: cached tiles are shown instantly and re-fetched only after a week (the tile cache survives app updates), a ring of tiles around the view is kept so small pans never reload, neighbouring zoom levels are preloaded (off on volunteer-run servers unless enabled), and data layers draw on a single Canvas instead of thousands of SVG nodes.
 - **Offline areas** (Settings tab): download the current view's map tiles for a zoom range (with tile count and size estimate, progress, cancel), optionally pre-loading the enabled FAA/boundary data for the area. Downloaded areas are listed with go-to, re-download and delete, are served by the service worker before the network, and are never evicted by the rolling tile cache. Volunteer-run tile servers (OpenStreetMap and friends) are capped at 3,000 tiles per area; use a keyed provider for larger areas.
-- **Projects**: autosaved in the browser, save/open as `.mapproject.json`, export/import GeoJSON (styles preserved), undo/redo.
+- **Projects**: autosaved in the browser, save/open as `.gengis.json` (files from earlier versions open too), export/import GeoJSON (styles preserved), undo/redo.
 - 8 free base maps (OpenStreetMap, Humanitarian, OpenTopoMap, CyclOSM, CARTO light/dark/voyager, Esri imagery). CARTO needs a free key (Map & search APIs dialog), where you can also pick its label variant.
 - **Country and state/province boundaries** (on by default, Settings tab → Map overlays): world country outlines and first-level administrative divisions from Esri's public Living Atlas services. Generalized when zoomed out, full detail when zoomed in, cached like the FAA data.
 - **Live air traffic (ADS-B)** (Data tab → ADS-B live air traffic): aircraft positions drawn as they are received, one icon per aircraft.
@@ -102,9 +102,13 @@ The form also takes an optional pre-release label (e.g. `Beta`) and a **Dry run*
 
 Installers are unsigned; macOS and Windows show a warning on first launch until signing certificates are added to the Release workflow.
 
-## What a project file contains
+## The project file
 
-A project (`.mapproject.json`, also what the autosave keeps) holds everything needed to open the map the same way elsewhere: the objects and their styles, the layers, the project name, units, the base map (with the definition of a custom tile provider it uses, without its API key, and basemap options such as CARTO's label style), measurement and snapping options, the SVG library, which data sources and sub-elements are on, the definitions of custom ArcGIS layers, data opacity, the live-traffic sources with their refresh rates and display options, and the view. API keys and device preferences (geocoder settings, cache policy, tooltip delay) stay on the device and are never written to a project file. Opening a project adds the providers and custom layers it carries to this device's settings when they are not there yet; a receiver address already set on this device is kept.
+A project (`.gengis.json`, also what the autosave keeps) is JSON with `format: "gengis-project"` and a `schema` number. It holds everything needed to open the map the same way elsewhere: the objects and their styles, the layers, name, units, editing options, the SVG library, the view, the base map, which data sources and sub-elements are on, data opacity, and the live-traffic sources with their refresh rates and display options.
+
+Everything is referred to by what it is, not by a name internal to one version of the app: data sources by their service URL, the base map by its tile URL, live-traffic sources by their site or receiver address. Definitions the project needs travel inside it: custom tile providers (without their API keys) and custom ArcGIS layers; opening a project adds them to the device when it lacks them. API keys and device preferences (geocoder settings, cache policy, tooltip delay) are never written to a project, and a receiver address already set on the device is kept.
+
+The schema evolves by number: a new version of the app bumps it and migrates older files on open (schema 1 files, written as `map-builder` through 0.2.0, are migrated too). A file from a newer version is opened as far as it is understood.
 
 ## Mobile
 
@@ -136,6 +140,7 @@ js/tools.js           drawing (Leaflet-Geoman), measuring, SVG placement
 js/geometry.js        multi-select, line/polygon conversion, joining lines, snap indicator
 js/search.js          Nominatim, Overpass, URL parameters
 js/storage.js         autosave, project files, GeoJSON, SVG library
+js/project.js         the project file format: writing, reading by URI, migration of older schemas
 js/scale.js           two-block scale bar control
 js/settings.js        map provider / search service settings dialog
 js/contextmenu.js     right-click menus
