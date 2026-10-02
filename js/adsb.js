@@ -217,7 +217,7 @@ window.MB = window.MB || {};
       if (!def.intervals.includes(+all[id].interval)) all[id].interval = def.interval;
       return all[id];
     },
-    save() { MB.saveSettings(); },
+    save() { MB.saveSettings(); if (MB.autosave) MB.autosave(); }, // the project records which sources and options are in use
 
     init() {
       const pane = MB.map.createPane('mb-adsb'); // above the data layers, below the user's own objects
@@ -231,6 +231,15 @@ window.MB = window.MB || {};
       document.addEventListener('visibilitychange', () => { if (!document.hidden) SOURCES.forEach(s => { if (this.rt[s.id].on) this.schedule(s, 0); }); });
       setInterval(() => this.tickStatus(), 1000);
       SOURCES.forEach(s => { if (this.srcConf(s.id).on) this.enable(s.id, true); });
+    },
+
+    // Bring the running sources in line with the saved configuration (a project was opened).
+    applyConf() {
+      if (!this.legend) return; // before init: init() reads the configuration itself
+      SOURCES.forEach(s => { const want = !!this.srcConf(s.id).on; if (want && !this.rt[s.id].on) this.enable(s.id, true); else if (!want && this.rt[s.id].on) this.disable(s.id); });
+      this.applyPaneState();
+      this.render();
+      MB.emit('data');
     },
 
     anyOn() { return SOURCES.some(s => this.rt[s.id].on); },

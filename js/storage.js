@@ -33,6 +33,47 @@ window.MB = window.MB || {};
 
   MB.clearAutosave = function () { localStorage.removeItem(KEY); };
 
+  /* ---------- display state: the part of a project that is not an object ---------- */
+  // Everything else needed to open the project the same way on another device: data opacity, the custom tile
+  // providers and ArcGIS layers the project can refer to, basemap options, and the live-traffic sources and
+  // display options. API keys and device preferences (geocoder, cache policy, tooltip delay) are not part of it.
+  MB.displayState = function () {
+    const st = MB.settings || {};
+    const optionKeys = [].concat.apply([], Object.keys(MB.builtinKeyGroups || {}).map(g => (MB.builtinKeyGroups[g].options || []).map(o => o.key)));
+    const basemapOptions = {};
+    optionKeys.forEach(k => { if (st.keys && st.keys[k]) basemapOptions[k] = st.keys[k]; });
+    return {
+      dataOpacity: MB.data ? MB.data.settings.opacity : 1,
+      basemapOptions,
+      providers: (st.providers || []).map(p => { const c = Object.assign({}, p); delete c.key; return c; }),
+      dataServices: MB.deepClone(st.dataServices || []),
+      adsb: MB.adsb ? MB.deepClone(MB.adsb.conf()) : undefined
+    };
+  };
+
+  MB.applyDisplayState = function (d) {
+    if (!d || !MB.settings) return;
+    const st = MB.settings;
+    let changed = false;
+    // definitions the project refers to are added by id; one already on this device (which may hold an API key) is kept
+    (d.providers || []).forEach(p => { if (p && p.id && !st.providers.some(x => x.id === p.id)) { st.providers.push(MB.deepClone(p)); changed = true; } });
+    (d.dataServices || []).forEach(c => { st.dataServices = st.dataServices || []; if (c && c.id && !st.dataServices.some(x => x.id === c.id)) { st.dataServices.push(MB.deepClone(c)); changed = true; } });
+    Object.keys(d.basemapOptions || {}).forEach(k => { if (st.keys[k] !== d.basemapOptions[k]) { st.keys[k] = d.basemapOptions[k]; changed = true; } });
+    if (d.adsb && typeof d.adsb === 'object') {
+      const mine = st.adsb && st.adsb.sources && st.adsb.sources.dump1090 && st.adsb.sources.dump1090.url;
+      st.adsb = MB.deepClone(d.adsb);
+      if (mine) { st.adsb.sources = st.adsb.sources || {}; st.adsb.sources.dump1090 = Object.assign({}, st.adsb.sources.dump1090, { url: mine }); } // a receiver address set here stays
+      changed = true;
+    }
+    if (changed) MB.saveSettings(); // also announces 'providers': the basemap list and custom datasets follow
+    if (MB.data && typeof d.dataOpacity === 'number' && isFinite(d.dataOpacity)) {
+      MB.data.settings.opacity = Math.min(1, Math.max(0.1, d.dataOpacity));
+      MB.data.applyOpacity();
+      MB.data.saveSettings();
+    }
+    if (MB.adsb && d.adsb) MB.adsb.applyConf();
+  };
+
   MB.saveToFile = function () {
     const p = MB.serializeProject();
     const name = (p.projectName || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map';

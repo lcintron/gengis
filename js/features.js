@@ -634,9 +634,12 @@ window.MB = window.MB || {};
       svgLibrary: MB.deepClone(s.svgLibrary), dataLayers: MB.deepClone(s.dataLayers || {}),
       features: Object.keys(MB.featureLayers).map(id => MB.serializeFeature(MB.featureLayers[id]))
     };
+    // The view and the display state (opacity, provider and custom-layer definitions, live traffic) belong to the
+    // saved project but not to undo snapshots, which only cover the objects and layers.
     if (!opts.noView && MB.map) {
       const c = MB.map.getCenter();
       p.view = { lat: c.lat, lng: c.lng, zoom: MB.map.getZoom() };
+      if (MB.displayState) p.display = MB.displayState();
     }
     return p;
   };
@@ -668,6 +671,7 @@ window.MB = window.MB || {};
     MB.state.activeLayerId = MB.getLayer(p.activeLayerId) ? p.activeLayerId : MB.state.layers[MB.state.layers.length - 1].id;
     (p.features || []).forEach(f => { try { MB.restoreFeature(f); } catch (e) { console.warn('Could not restore feature', f, e); } });
     MB.applyZOrder();
+    if (p.display && MB.applyDisplayState) MB.applyDisplayState(p.display); // before the basemap: it may be a custom provider the project carries
     if (p.basemap && p.basemap !== MB.state.basemap && (MB.basemaps[p.basemap] || (p.basemap.startsWith('custom:') && MB.getProvider(p.basemap.slice(7))))) MB.setBasemap(p.basemap);
     if (!opts.keepView && p.view && MB.map) MB.map.setView([p.view.lat, p.view.lng], p.view.zoom);
     MB.emit('units', MB.state.units);

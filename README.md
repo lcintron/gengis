@@ -102,6 +102,10 @@ The form also takes an optional pre-release label (e.g. `Beta`) and a **Dry run*
 
 Installers are unsigned; macOS and Windows show a warning on first launch until signing certificates are added to the Release workflow.
 
+## What a project file contains
+
+A project (`.mapproject.json`, also what the autosave keeps) holds everything needed to open the map the same way elsewhere: the objects and their styles, the layers, the project name, units, the base map (with the definition of a custom tile provider it uses, without its API key, and basemap options such as CARTO's label style), measurement and snapping options, the SVG library, which data sources and sub-elements are on, the definitions of custom ArcGIS layers, data opacity, the live-traffic sources with their refresh rates and display options, and the view. API keys and device preferences (geocoder settings, cache policy, tooltip delay) stay on the device and are never written to a project file. Opening a project adds the providers and custom layers it carries to this device's settings when they are not there yet; a receiver address already set on this device is kept.
+
 ## Mobile
 
 The layout adapts to phones (tested at 375 to 430 px widths): the side panel becomes a bottom sheet with a close button, the toolbar shrinks, pinch zoom replaces the zoom buttons, and long-press opens the right-click menu.
