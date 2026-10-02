@@ -25,8 +25,8 @@ window.MB = window.MB || {};
   const SECRET_PARAM = /^(api[-_]?key|key|access[-_]?token|token|auth|authorization|signature|sig|secret|password|pass|app[-_]?id|client[-_]?secret)$/i;
   const decoded = v => { try { return decodeURIComponent(v); } catch (e) { return v; } }; // names may be percent-encoded
   function sanitizeUrl(u) {
-    // user:password@ goes whether or not the address has a scheme (receiver addresses often have none)
-    let s = String(u || '').trim().replace(/^((?:[a-z][a-z0-9+.-]*:\/\/)?)[^/?#@]+@/i, '$1');
+    // user:password@ goes whatever precedes the authority: a scheme, a protocol-relative "//", or nothing
+    let s = String(u || '').trim().replace(/^((?:[a-z][a-z0-9+.-]*:)?\/\/|)[^/?#@]+@/i, '$1');
     const q = s.indexOf('?');
     if (q < 0) return s;
     const params = s.slice(q + 1).split('&').map(part => { const i = part.indexOf('='); const name = i < 0 ? part : part.slice(0, i); return SECRET_PARAM.test(decoded(name)) ? name + '={key}' : part; });
