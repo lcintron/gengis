@@ -43,15 +43,20 @@ window.MB = window.MB || {};
 
   // Dataset definitions: the built-in catalog plus this device's custom ArcGIS layers.
   function datasets() {
-    const custom = ((MB.settings && MB.settings.dataServices) || []).map(c => ({ id: 'custom:' + c.id, name: c.name, url: c.url }));
+    const custom = ((MB.settings && MB.settings.dataServices) || []).map(c => ({ id: 'custom:' + c.id, name: c.name, url: c.url, custom: true }));
     return (MB.dataCatalog || []).map(d => ({ id: d.id, name: d.name, url: d.url })).concat(custom);
   }
-  const datasetByUrl = url => datasets().find(d => sameUrl(d.url, url));
+  // A custom layer may point at the same service as a built-in dataset (to style it differently): an entry says
+  // which of the two it is for, and both keep their own toggle.
+  const datasetByUrl = (url, custom) => datasets().find(d => !!d.custom === !!custom && sameUrl(d.url, url)) || datasets().find(d => sameUrl(d.url, url));
   const datasetById = id => datasets().find(d => d.id === id);
 
-  // Custom tile providers are told apart by tile URL (and WMS layers); the id is this device's.
-  const sameProvider = (a, b) => sameUrl(a.url, b.url) && String(a.layers || '') === String(b.layers || '');
-  const providerByUrl = (url, layers) => (MB.settings.providers || []).find(p => sameProvider(p, { url, layers }));
+  // Custom tile providers are told apart by what decides how their tiles are fetched and placed: URL, WMS layers,
+  // type, tile size and format. Two providers with one URL and different tile sizes are two providers.
+  const RENDERING = ['type', 'layers', 'tileSize', 'format'];
+  const renderingOf = p => RENDERING.map(k => String(p[k] == null || p[k] === '' ? { type: 'xyz', tileSize: 256, format: 'image/png' }[k] || '' : p[k])).join('|');
+  const sameProvider = (a, b) => sameUrl(a.url, b.url) && renderingOf(a) === renderingOf(b);
+  const providerLike = def => (MB.settings.providers || []).find(p => sameProvider(p, def));
 
   // The declared basemap options and their valid choices: the only settings keys a project may carry or set.
   function declaredOptions() {
@@ -76,7 +81,10 @@ window.MB = window.MB || {};
   function basemapRef(key) {
     const ref = { name: key, tiles: '', options: basemapOptions() };
     if (MB.basemaps[key]) { ref.name = MB.basemaps[key].name; ref.tiles = MB.basemaps[key].url; }
-    else if (key && key.startsWith('custom:')) { const p = MB.getProvider(key.slice(7)); if (p) { ref.name = p.name; ref.tiles = sanitizeUrl(p.url); if (p.layers) ref.layers = p.layers; } }
+    else if (key && key.startsWith('custom:')) {
+      const p = MB.getProvider(key.slice(7));
+      if (p) { ref.name = p.name; ref.tiles = sanitizeUrl(p.url); RENDERING.forEach(k => { if (p[k] != null && p[k] !== '') ref[k] = p[k]; }); }
+    }
     return ref;
   }
   // A saved reference -> the key the app uses, or null when the base map is not known here.
@@ -84,7 +92,7 @@ window.MB = window.MB || {};
     if (!ref || !ref.tiles) return null;
     const builtin = Object.keys(MB.basemaps).find(k => sameUrl(MB.basemaps[k].url, ref.tiles));
     if (builtin) return builtin;
-    const p = providerByUrl(ref.tiles, ref.layers);
+    const p = providerLike(Object.assign({}, ref, { url: ref.tiles }));
     return p ? 'custom:' + p.id : null;
   }
 
@@ -116,7 +124,10 @@ window.MB = window.MB || {};
       svgLibrary: clone(s.svgLibrary),
       dataSources: Object.keys(s.dataLayers || {}).map(id => {
         const d = datasetById(id), e = s.dataLayers[id];
-        return d ? { uri: sanitizeUrl(d.url), name: d.name, enabled: !!(e === true || (e && e.on)), hidden: (e && Array.isArray(e.off)) ? e.off.slice() : [] } : null;
+        if (!d) return null;
+        const entry = { uri: sanitizeUrl(d.url), name: d.name, enabled: !!(e === true || (e && e.on)), hidden: (e && Array.isArray(e.off)) ? e.off.slice() : [] };
+        if (d.custom) entry.custom = true;
+        return entry;
       }).filter(Boolean)
     };
     // The view and the display state belong to a saved project, not to undo snapshots (objects and layers only).
@@ -146,7 +157,7 @@ window.MB = window.MB || {};
     let changed = false, basemap = false;
     (p.tileProviders || []).forEach(x => {
       if (!x || !x.url) return;
-      if (providerByUrl(x.url, x.layers)) return;
+      if (providerLike(x)) return;
       const d = exportable(x);
       if (!d.id || MB.getProvider(d.id)) d.id = MB.uid();
       st.providers.push(d); changed = basemap = true;
@@ -203,7 +214,7 @@ window.MB = window.MB || {};
     });
     const rebuild = importDefinitions(p); // before datasets and the base map: the project may carry what they refer to
     (p.dataSources || []).forEach(e => {
-      const d = e && datasetByUrl(e.uri);
+      const d = e && datasetByUrl(e.uri, e.custom);
       if (d) MB.state.dataLayers[d.id] = { on: !!e.enabled, off: Array.isArray(e.hidden) ? e.hidden.slice() : [] };
     });
     (p.layers || []).forEach(l => MB.createLayer(l.name, { id: l.id, visible: l.visible, locked: l.locked, activate: false }));
@@ -261,14 +272,17 @@ window.MB = window.MB || {};
     const carried = id => out.customDataSources.find(x => 'custom:' + x.id === id);
     out.dataSources = Object.keys(v.dataLayers || {}).map(id => {
       const e = v.dataLayers[id], def = carried(id) || datasetById(id);
-      return def && def.url ? { uri: def.url, name: def.name || id, enabled: !!(e === true || (e && e.on)), hidden: (e && Array.isArray(e.off)) ? e.off : [] } : null;
+      if (!def || !def.url) return null;
+      const entry = { uri: def.url, name: def.name || id, enabled: !!(e === true || (e && e.on)), hidden: (e && Array.isArray(e.off)) ? e.off : [] };
+      if (id.startsWith('custom:')) entry.custom = true;
+      return entry;
     }).filter(Boolean);
     if (v.basemap) {
       let ref = null;
       if (MB.basemaps[v.basemap]) ref = { name: MB.basemaps[v.basemap].name, tiles: MB.basemaps[v.basemap].url };
       else if (v.basemap.startsWith('custom:')) {
         const id = v.basemap.slice(7), p = out.tileProviders.find(x => x.id === id) || MB.getProvider(id);
-        if (p) { ref = { name: p.name, tiles: p.url }; if (p.layers) ref.layers = p.layers; }
+        if (p) { ref = { name: p.name, tiles: p.url }; RENDERING.forEach(k => { if (p[k] != null && p[k] !== '') ref[k] = p[k]; }); }
       }
       if (ref) { ref.options = d.basemapOptions || {}; out.basemap = ref; }
     }
