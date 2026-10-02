@@ -28,7 +28,7 @@ window.MB = window.MB || {};
     },
 
     drawOptions() {
-      const st = MB.currentStyle, ls = MB.toLeafletStyle(st);
+      const st = MB.newShapeStyle(), ls = MB.toLeafletStyle(st); // the preview shows the color the object will get
       return {
         snappable: MB.state.snapping, snapDistance: 15,
         continueDrawing: MB.state.continueDrawing,
@@ -56,7 +56,7 @@ window.MB = window.MB || {};
       if (this.shapes[this.current]) {
         const group = MB.groups[MB.activeLayer().id];
         MB.map.pm.setGlobalOptions({ layerGroup: group });
-        const st = MB.currentStyle, ls = MB.toLeafletStyle(st);
+        const st = MB.newShapeStyle(), ls = MB.toLeafletStyle(st);
         MB.map.pm.setPathOptions(ls);
         try {
           MB.map.pm.Draw[this.shapes[this.current]].setOptions({
@@ -70,6 +70,8 @@ window.MB = window.MB || {};
     },
 
     init() {
+      // Deleting an object can free a palette color: the previews show what the next object will really get.
+      MB.on('features', () => { this.refreshDraw(); if (MB.measure.active) MB.measure.restyleTemp(); });
       MB.map.on('pm:create', e => {
         const type = Object.keys(this.shapes).find(k => this.shapes[k] === e.shape) || 'polygon';
         const layer = e.layer;
@@ -85,16 +87,18 @@ window.MB = window.MB || {};
             const g = MB.groups[MB.activeLayer().id];
             if (g.hasLayer(layer)) g.removeLayer(layer);
             if (MB.map.hasLayer(layer)) MB.map.removeLayer(layer);
-            const poly = MB.restoreFeature({ type: 'polygon', latlngs: [pts], layerId: MB.activeLayer().id, style: MB.deepClone(MB.currentStyle) });
+            const poly = MB.restoreFeature({ type: 'polygon', latlngs: [pts], layerId: MB.activeLayer().id, style: MB.newShapeStyle(true) });
             MB.commit('draw closed line as polygon');
+            this.refreshDraw(); // the next object gets the next color
             MB.toast('Closed outline: saved as a polygon (' + MB.formatArea(MB.polygonArea(poly.getLatLngs())) + ')', 3500);
             if (!MB.state.continueDrawing) { this.set('select'); MB.selectFeature(poly); }
             return;
           }
         }
-        MB.addFeature(layer, { type, layerId: MB.activeLayer().id, style: MB.deepClone(MB.currentStyle) });
+        MB.addFeature(layer, { type, layerId: MB.activeLayer().id, style: MB.newShapeStyle(true) });
         if (type === 'text' && layer.pm) layer.mb.text = layer.pm.getText();
         MB.commit('draw ' + type);
+        this.refreshDraw(); // the next object gets the next color
         if (!MB.state.continueDrawing) {
           this.set('select');
           if (type !== 'text') MB.selectFeature(layer);
@@ -152,7 +156,8 @@ window.MB = window.MB || {};
     },
 
     _tempStyle() {
-      const ms = MB.toLeafletStyle(MB.measureStyle);
+      this.style = MB.newMeasureStyle(); // the color this measurement will get
+      const ms = MB.toLeafletStyle(this.style);
       return Object.assign(ms, { dashArray: ms.dashArray || '6,4', pmIgnore: true, interactive: false });
     },
     _buildTemp() {
@@ -160,13 +165,21 @@ window.MB = window.MB || {};
       this.tempLine = L.polyline([], Object.assign({}, st, { fill: false })).addTo(this.tempGroup);
       this.tempPoly = L.polygon([], st).addTo(this.tempGroup);
     },
+    // Restyle the measurement in progress (the defaults or the color variation changed) without losing its points.
+    restyleTemp() {
+      if (!this.active) return;
+      const st = this._tempStyle();
+      this.tempLine.setStyle(Object.assign({}, st, { fill: false }));
+      this.tempPoly.setStyle(st);
+      this.tempGroup.eachLayer(l => { if (l.setRadius) l.setStyle({ color: this.style.color }); });
+    },
     _clearTemp() { this.tempGroup.clearLayers(); },
 
     _click(e) {
       const last = this.pts[this.pts.length - 1];
       if (last && last.equals(e.latlng)) return;
       this.pts.push(e.latlng);
-      L.circleMarker(e.latlng, { radius: 4, color: MB.measureStyle.color, fillColor: '#1b1f27', fillOpacity: 1, weight: 2, pmIgnore: true, interactive: false }).addTo(this.tempGroup);
+      L.circleMarker(e.latlng, { radius: 4, color: (this.style || MB.measureStyle).color, fillColor: '#1b1f27', fillOpacity: 1, weight: 2, pmIgnore: true, interactive: false }).addTo(this.tempGroup);
       this._redraw(e.latlng, e.containerPoint);
     },
 
@@ -199,8 +212,11 @@ window.MB = window.MB || {};
       const need = this.mode === 'area' ? 3 : 2;
       if (pts.length < need) { this.cancel(); return; }
       const type = this.mode === 'area' ? 'measure-area' : 'measure-line';
+      // the measurement gets the color it was previewed in; the palette moves on from it
+      const style = this.style || MB.newMeasureStyle();
+      if (MB.state.autoColor !== false) MB.nextColor(true, style.color);
       const f = MB.restoreFeature({
-        type, layerId: MB.activeLayer().id, style: MB.deepClone(MB.measureStyle),
+        type, layerId: MB.activeLayer().id, style: MB.deepClone(style),
         latlngs: pts.map(p => [p.lat, p.lng])
       });
       MB.commit('measure');

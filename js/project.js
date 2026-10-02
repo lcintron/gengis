@@ -142,6 +142,9 @@ window.MB = window.MB || {};
       p.customDataSources = (MB.settings.dataServices || []).filter(c => s.dataLayers && s.dataLayers['custom:' + c.id]).map(exportable);
       p.dataOpacity = MB.data ? MB.data.settings.opacity : 1;
       p.liveTraffic = trafficRef();
+      // the defaults for new objects: the color-variation toggle and the styles (a pinned color included)
+      p.autoColor = s.autoColor !== false;
+      p.defaults = { shape: clone(MB.currentStyle), measure: clone(MB.measureStyle) };
     }
     return p;
   };
@@ -209,9 +212,14 @@ window.MB = window.MB || {};
       showMeasurements: !!ed.showMeasurements,
       continueDrawing: ed.continueDrawing !== false,
       snapping: ed.snapping !== false,
+      autoColor: p.autoColor === undefined ? (opts.keepHistory ? MB.state.autoColor : true) : p.autoColor !== false, // undo leaves the preference alone
       svgLibrary: p.svgLibrary || {},
       dataLayers: {}
     });
+    if (p.defaults && typeof p.defaults === 'object') {
+      if (p.defaults.shape && typeof p.defaults.shape === 'object') MB.currentStyle = Object.assign(clone(MB.defaultStyle), p.defaults.shape);
+      if (p.defaults.measure && typeof p.defaults.measure === 'object') MB.measureStyle = Object.assign(clone(MB.defaultMeasureStyle), p.defaults.measure);
+    }
     const rebuild = importDefinitions(p); // before datasets and the base map: the project may carry what they refer to
     (p.dataSources || []).forEach(e => {
       const d = e && datasetByUrl(e.uri, e.custom);
@@ -287,6 +295,8 @@ window.MB = window.MB || {};
       if (ref) { ref.options = d.basemapOptions || {}; out.basemap = ref; }
     }
     if (typeof d.dataOpacity === 'number') out.dataOpacity = d.dataOpacity;
+    if (v.autoColor !== undefined) out.autoColor = v.autoColor !== false;
+    if (v.shapeStyle || v.measureStyle) out.defaults = { shape: v.shapeStyle, measure: v.measureStyle };
     if (d.adsb && MB.adsb) {
       const srcs = d.adsb.sources || {};
       out.liveTraffic = {

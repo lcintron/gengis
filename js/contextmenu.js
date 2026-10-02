@@ -177,7 +177,7 @@ window.MB = window.MB || {};
         { label: 'Zoom in here', action: () => MB.map.setView(ll, Math.min(MB.map.getMaxZoom ? MB.map.getMaxZoom() : 19, MB.map.getZoom() + 2)) },
         { sep: true },
         { label: 'Add marker here', action: () => {
-          const f = MB.restoreFeature({ type: 'marker', latlng: [ll.lat, ll.lng], style: MB.deepClone(MB.currentStyle) });
+          const f = MB.restoreFeature({ type: 'marker', latlng: [ll.lat, ll.lng], style: MB.newShapeStyle(true) });
           MB.commit('add marker'); MB.tools.set('select'); if (f) MB.selectFeature(f);
         } },
         { label: 'Add text here', action: () => {

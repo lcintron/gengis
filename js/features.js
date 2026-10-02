@@ -18,6 +18,31 @@ window.MB = window.MB || {};
 
   MB.svgDefaults = { mode: 'pin', widthPx: 48, widthM: 20, rotation: 0, opacity: 1 };
 
+  /* ---------- a color of its own for each new object ----------
+   * Unless the user pins a color in the "New shapes" defaults, every new line, shape, marker and measurement takes
+   * the next color of the palette: the one used by the fewest existing objects, cycling from the last one handed
+   * out. Picking telling colors apart on both light and dark maps is what the palette was chosen for. */
+  MB.PALETTE = ['#e4572e', '#2f80ed', '#27ae60', '#9b51e0', '#f2c94c', '#00b8d9', '#eb5757', '#f2994a', '#1abc9c', '#d81b60', '#8d6e63', '#6c8ebf'];
+  let lastColor = null;
+  // The color the next object would get; with `take`, it is handed out (the cycle moves on).
+  MB.nextColor = function (take, from) {
+    if (from) { lastColor = from; return from; } // a color that was previewed and then used: the cycle moves on from it
+    const used = {};
+    Object.keys(MB.featureLayers).forEach(id => { const m = MB.featureLayers[id].mb; const c = m && m.style && String(m.style.color || '').toLowerCase(); if (c) used[c] = (used[c] || 0) + 1; });
+    const P = MB.PALETTE, start = (P.indexOf(lastColor) + 1) % P.length;
+    let best = P[start], min = Infinity;
+    for (let i = 0; i < P.length; i++) { const c = P[(start + i) % P.length], n = used[c] || 0; if (n < min) { min = n; best = c; } }
+    if (take) lastColor = best;
+    return best;
+  };
+  function withNextColor(base, take) {
+    const s = MB.deepClone(base);
+    if (MB.state.autoColor !== false) { const c = MB.nextColor(take); s.color = c; s.fillColor = c; }
+    return s;
+  }
+  MB.newShapeStyle = take => withNextColor(MB.currentStyle, take);
+  MB.newMeasureStyle = take => withNextColor(MB.measureStyle, take);
+
   MB.dashStyles = {
     solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted', dashdot: 'Dash-dot', longdash: 'Long dash'
   };

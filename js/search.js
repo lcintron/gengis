@@ -91,7 +91,7 @@ window.MB = window.MB || {};
       el.addEventListener('click', ev => {
         const act = ev.target.getAttribute('data-act');
         if (act === 'add') {
-          const f = MB.restoreFeature({ type: 'marker', latlng: [latlng.lat, latlng.lng], name: label.split(',')[0], style: MB.deepClone(MB.currentStyle) });
+          const f = MB.restoreFeature({ type: 'marker', latlng: [latlng.lat, latlng.lng], name: label.split(',')[0], style: MB.newShapeStyle(true) });
           MB.commit('add search marker');
           this.clearMarker();
           if (f) MB.selectFeature(f);
