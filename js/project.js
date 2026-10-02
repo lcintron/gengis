@@ -32,8 +32,9 @@ window.MB = window.MB || {};
   }
   MB.sanitizeUrl = sanitizeUrl;
   // URLs compare without credentials, a /query suffix or trailing slashes, so a definition on this device (with
-  // its key) matches the same one from a file (with the placeholder).
-  const normUrl = u => sanitizeUrl(u).replace(/\/query.*$/i, '').replace(/\/+$/, '').toLowerCase();
+  // its key) matches the same one from a file (with the placeholder). Only the scheme and host are case-insensitive:
+  // paths and parameters are not, on most servers.
+  const normUrl = u => sanitizeUrl(u).replace(/\/query.*$/i, '').replace(/\/+$/, '').replace(/^([a-z]+:\/\/[^/?#]*)/i, m => m.toLowerCase());
   const sameUrl = (a, b) => normUrl(a) === normUrl(b);
 
   /* ---------- what the app knows, by URI ---------- */
@@ -254,11 +255,11 @@ window.MB = window.MB || {};
       layers: v.layers || [], activeLayer: v.activeLayerId, features: v.features || [], svgLibrary: v.svgLibrary || {},
       view: v.view, tileProviders: d.providers || [], customDataSources: d.dataServices || []
     };
-    const customUrl = id => { const c = out.customDataSources.find(x => 'custom:' + x.id === id); return c ? c.url : null; };
+    // A custom layer id is resolved from the file's own definitions first: the same id on this device may be another service.
+    const carried = id => out.customDataSources.find(x => 'custom:' + x.id === id);
     out.dataSources = Object.keys(v.dataLayers || {}).map(id => {
-      const e = v.dataLayers[id], def = datasetById(id);
-      const url = def ? def.url : customUrl(id);
-      return url ? { uri: url, name: def ? def.name : id, enabled: !!(e === true || (e && e.on)), hidden: (e && Array.isArray(e.off)) ? e.off : [] } : null;
+      const e = v.dataLayers[id], def = carried(id) || datasetById(id);
+      return def && def.url ? { uri: def.url, name: def.name || id, enabled: !!(e === true || (e && e.on)), hidden: (e && Array.isArray(e.off)) ? e.off : [] } : null;
     }).filter(Boolean);
     if (v.basemap) {
       let ref = null;
