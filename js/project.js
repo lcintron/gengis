@@ -23,11 +23,13 @@ window.MB = window.MB || {};
   // Credentials never leave the device. An API key inside a URL (a query parameter or user:password@) is replaced
   // by the {key} placeholder, which the app fills from the key stored on the device; the recipient enters their own.
   const SECRET_PARAM = /^(api[-_]?key|key|access[-_]?token|token|auth|authorization|signature|sig|secret|password|pass|app[-_]?id|client[-_]?secret)$/i;
+  const decoded = v => { try { return decodeURIComponent(v); } catch (e) { return v; } }; // names may be percent-encoded
   function sanitizeUrl(u) {
-    let s = String(u || '').trim().replace(/^(https?:\/\/)[^/@]+@/i, '$1');
+    // user:password@ goes whether or not the address has a scheme (receiver addresses often have none)
+    let s = String(u || '').trim().replace(/^((?:[a-z][a-z0-9+.-]*:\/\/)?)[^/?#@]+@/i, '$1');
     const q = s.indexOf('?');
     if (q < 0) return s;
-    const params = s.slice(q + 1).split('&').map(part => { const i = part.indexOf('='); const name = i < 0 ? part : part.slice(0, i); return SECRET_PARAM.test(name) ? name + '={key}' : part; });
+    const params = s.slice(q + 1).split('&').map(part => { const i = part.indexOf('='); const name = i < 0 ? part : part.slice(0, i); return SECRET_PARAM.test(decoded(name)) ? name + '={key}' : part; });
     return s.slice(0, q) + '?' + params.join('&');
   }
   MB.sanitizeUrl = sanitizeUrl;
@@ -53,7 +55,7 @@ window.MB = window.MB || {};
 
   // The declared basemap options and their valid choices: the only settings keys a project may carry or set.
   function declaredOptions() {
-    const out = {};
+    const out = Object.create(null); // a file's option names are looked up here: no inherited names (toString) must match
     Object.keys(MB.builtinKeyGroups || {}).forEach(g => (MB.builtinKeyGroups[g].options || []).forEach(o => { out[o.key] = o.choices.map(c => c[0]); }));
     return out;
   }
