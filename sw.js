@@ -23,8 +23,14 @@ const SHELL = [
 
 const TILE_HOSTS = /(^|\.)(tile\.openstreetmap\.org|tile\.openstreetmap\.fr|opentopomap\.org|basemaps\.cartocdn\.com|arcgisonline\.com|tile-cyclosm\.openstreetmap\.fr)$/;
 
+// On a development host the shell is fetched from the network first so edits show up at once. Anywhere else the
+// installed version's files come straight from its cache: start-up then never waits for the network, and a new
+// release replaces them as a set when its service worker (a changed VERSION) installs.
+const DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);
+
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // 'reload' bypasses the HTTP cache: a new version must not be built from files the browser cached for the old one
+  e.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 async function migrateOldTileCaches(keys) {
@@ -72,13 +78,20 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
 
   if (url.origin === location.origin) {
-    // App shell: network first (so updates show up immediately), cache as offline fallback.
-    e.respondWith(
-      fetch(req).then(res => {
-        if (res && res.ok) caches.open(SHELL_CACHE).then(c => c.put(req, res.clone()));
-        return res;
-      }).catch(() => caches.match(req).then(c => c || caches.match('./index.html')))
-    );
+    const fromNetwork = () => fetch(req).then(res => {
+      if (res && res.ok) caches.open(SHELL_CACHE).then(c => c.put(req, res.clone()));
+      return res;
+    });
+    if (DEV) {
+      // App shell, development: network first, cache as offline fallback.
+      e.respondWith(fromNetwork().catch(() => caches.match(req).then(c => c || caches.match('./index.html'))));
+    } else {
+      // App shell, installed: this version's cache first; the network only for a file that is not part of the shell.
+      // A page address may carry parameters (?q=, ?lat=...), which are not part of the cached entry.
+      e.respondWith(caches.open(SHELL_CACHE)
+        .then(c => c.match(req, { ignoreSearch: req.mode === 'navigate' }))
+        .then(hit => hit || fromNetwork().catch(() => caches.match('./index.html'))));
+    }
     return;
   }
 
