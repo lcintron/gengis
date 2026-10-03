@@ -528,8 +528,8 @@ window.MB = window.MB || {};
       if (act === 'zoom') MB.zoomToFeature(f);
       else if (act === 'dup') { const n = MB.duplicateFeature(m.id); if (n) MB.selectFeature(n); }
       else if (act === 'convert') MB.convertFeature(f);
-      else if (act === 'front') { if (f.bringToFront) f.bringToFront(); }
-      else if (act === 'back') { if (f.bringToBack) { f.bringToBack(); MB.baseLayer.bringToBack(); } }
+      else if (act === 'front') MB.featureToEdge(m.id, true);
+      else if (act === 'back') MB.featureToEdge(m.id, false);
       else if (act === 'del') MB.removeFeature(m.id);
     });
     panel.appendChild(actions);
