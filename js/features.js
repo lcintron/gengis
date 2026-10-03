@@ -226,11 +226,22 @@ window.MB = window.MB || {};
     if (layer._mbBound) return;
     layer._mbBound = true;
     layer.on('click', e => {
-      if (MB.tools.current !== 'select' && MB.tools.current !== 'move') return;
-      if (MB.isFeatureLocked(layer)) return;
-      L.DomEvent.stopPropagation(e);
-      if (e.originalEvent && e.originalEvent.shiftKey) { MB.toggleMulti(layer); return; }
-      MB.selectFeature(layer);
+      const t = MB.tools.current;
+      if (t !== 'select' && t !== 'move' && t !== 'present') return;
+      const shift = e.originalEvent && e.originalEvent.shiftKey;
+      if (t !== 'present' && !MB.isFeatureLocked(layer)) {
+        L.DomEvent.stopPropagation(e);
+        if (shift) { MB.toggleMulti(layer); return; }
+        MB.selectFeature(layer);
+      }
+      // Objects draw above the data layers, so the data under one is only reachable from here: the same popup as
+      // a click on the data, with the objects at this point listed first. Nothing opens where there is no data, nor
+      // with the Move tool (a click there ends a drag).
+      if (shift || t === 'move' || !MB.data || !MB.data.identify) return;
+      // where the pointer was: a marker's event carries its anchor (a keyboard activation has no pointer)
+      const oe = e.originalEvent, pointer = oe && oe.clientX != null && (oe.clientX || oe.clientY);
+      const latlng = pointer ? MB.map.mouseEventToLatLng(oe) : e.latlng, cp = pointer ? MB.map.mouseEventToContainerPoint(oe) : e.containerPoint;
+      MB.data.identify(latlng, cp, null, { own: MB.data.objectsAt(latlng, cp) });
     });
     layer.on('pm:snap', ev => MB.snap.show(ev));
     layer.on('pm:unsnap pm:markerdragend pm:dragend', () => MB.snap.hide());

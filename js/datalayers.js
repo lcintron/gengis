@@ -835,9 +835,63 @@ window.MB = window.MB || {};
     return hits; // every feature is in the registry once: distinct features are never merged, duplicates never appear
   };
 
+  // The user's own objects at this point (shown ones only), top-most first: they draw above every dataset.
+  // Lines, shapes and circles by their geometry, ground images by their bounds, and markers (pins, text, pinned
+  // SVGs) by what they show on screen, wherever it sits around their anchor.
+  MB.data.objectsAt = function (latlng, containerPoint) {
+    const map = MB.map;
+    const lp = map.latLngToLayerPoint(latlng);
+    const cp = containerPoint || map.latLngToContainerPoint(latlng);
+    // Does an element, as drawn, cover the point? The point is turned back by the element's rotation (about its
+    // centre, which the rotation keeps in place) and tested against the element's own, unrotated size.
+    const box = map.getContainer().getBoundingClientRect(), px = box.left + cp.x, py = box.top + cp.y;
+    const covers = el => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return false;
+      let dx = px - (r.left + r.width / 2), dy = py - (r.top + r.height / 2);
+      const t = getComputedStyle(el).transform;
+      if (t && t !== 'none') {
+        const m = new DOMMatrix(t);
+        m.e = 0; m.f = 0; // a translation (text anchoring) is already in the rectangle's position
+        const q = m.inverse().transformPoint(new DOMPoint(dx, dy));
+        dx = q.x; dy = q.y;
+      }
+      const w = el.offsetWidth != null ? el.offsetWidth : r.width, h = el.offsetHeight != null ? el.offsetHeight : r.height; // an inline <svg> has no offset size
+      return Math.abs(dx) <= w / 2 && Math.abs(dy) <= h / 2;
+    };
+    const byLayer = {};
+    Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; (byLayer[f.mb.layerId] = byLayer[f.mb.layerId] || []).push(f); });
+    const marks = [], shapes = [];
+    MB.state.layers.slice().reverse().forEach(l => {
+      (byLayer[l.id] || []).slice().reverse().forEach(f => {
+        if (!map.hasLayer(f)) return;
+        try {
+          if (f instanceof L.Path) { if (f._pxBounds && f._pxBounds.contains(lp) && f._containsPoint(lp)) shapes.push(f); }
+          else if (f.getLatLng) {
+            // what is drawn: the (rotated) image of a pinned SVG or the text box, not the icon's unrotated wrapper
+            const el = f.getElement && f.getElement(), shown = el ? Array.from(el.querySelectorAll('img, svg, textarea')) : [];
+            if (el && (shown.length ? shown.some(covers) : covers(el))) marks.push(f);
+          }
+          else if (f.getBounds && f.getBounds().contains(latlng)) shapes.push(f); // ground images
+        } catch (e) { /* ignore */ }
+      });
+    });
+    // Markers are in the marker pane, above every shape and image, stacked by Leaflet's z-index and, at the same
+    // z-index, by their order in the pane (the later one on top).
+    marks.sort((a, b) => ((b._zIndex || 0) - (a._zIndex || 0)) ||
+      (a.getElement().compareDocumentPosition(b.getElement()) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1));
+    return marks.concat(shapes);
+  };
+
   let identifyPopup = null, highlighted = null;
   function clearHighlight() {
     if (!highlighted) return;
+    if (highlighted.own) { // the user's object: a class, so its own style is never touched
+      const el = highlighted.layer.getElement ? highlighted.layer.getElement() : highlighted.layer._path;
+      if (el) L.DomUtil.removeClass(el, 'mb-ident-hl');
+      highlighted = null;
+      return;
+    }
     const { ds } = highlighted;
     (highlighted.layers || [highlighted.layer]).forEach(layer => {
       try {
@@ -849,6 +903,12 @@ window.MB = window.MB || {};
   }
   function highlight(h) {
     clearHighlight();
+    if (h.own) {
+      const el = h.layer.getElement ? h.layer.getElement() : h.layer._path;
+      if (el) L.DomUtil.addClass(el, 'mb-ident-hl');
+      highlighted = h;
+      return;
+    }
     const { ds } = h;
     (h.layers || [h.layer]).forEach(layer => {
       try {
@@ -859,14 +919,18 @@ window.MB = window.MB || {};
     highlighted = h;
   }
 
-  MB.data.identify = function (latlng, containerPoint, clicked) {
+  // Everything under a click in one popup. opts.own: the user's objects at the point, listed first (their objects
+  // draw above the data, so a click on one never reaches the data under it). It opens only when there is data at the
+  // point; the return value says whether it did.
+  MB.data.identify = function (latlng, containerPoint, clicked, opts) {
+    opts = opts || {};
     let hits = this.featuresAt(latlng, containerPoint);
     if (clicked && clicked.feature && !hits.some(h => h.layer === clicked)) {
       // the layer the map reported (it may be the neighbour of the square that was tapped, when tiled)
       const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked));
       if (ds && !ds.def.tiled) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
-    if (!hits.length) return;
+    if (!hits.length) return false;
     // Polygons that read the same (a LAANC grid square and its neighbour with the same ceiling, tapped near their
     // shared edge) are one entry; it highlights all of them.
     const byText = new Map();
@@ -878,10 +942,25 @@ window.MB = window.MB || {};
       byText.set(k, h);
       return true;
     });
-    const total = hits.length;
-    hits = hits.slice(0, 15);
+    // At most 15 entries; however many objects overlap, at least five places (or all the data) go to the data.
+    const own = (opts.own || []).map(layer => ({ own: true, layer }));
+    const total = own.length + hits.length;
+    const ownShown = own.slice(0, 15 - Math.min(hits.length, Math.max(5, 15 - own.length)));
+    hits = ownShown.concat(hits.slice(0, 15 - ownShown.length));
     const label = h => { const d = h.ds.def; try { return d.label ? String(d.label(h.props)) : firstText(h.props); } catch (e) { return ''; } };
+    const presenting = MB.presenter && MB.presenter.active;
+    const ownSection = (h, i) => {
+      const m = h.layer.mb, lay = MB.getLayer(m.layerId), type = MB.typeLabels[m.type] || m.type;
+      const name = m.name || (m.type === 'text' ? m.text : '') || type;
+      let measure = '';
+      try { measure = MB.measureText(h.layer); } catch (e) { /* ignore */ }
+      const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('');
+      const locked = MB.isFeatureLocked(h.layer);
+      const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}"${locked ? ' disabled title="Locked"' : ''}>Select</button></div>`;
+      return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
+    };
     const sections = hits.map((h, i) => {
+      if (h.own) return ownSection(h, i);
       const body = popupHtml(h.ds, h.props).replace(/^<div class="mb-popup"><div class="mb-popup-title">[^<]*<\/div>/, '').replace(/<\/div>$/, '');
       const extra = h.ds.def.popupExtra ? `<div class="mb-extra dim" data-extra="${i}">Loading frequencies…</div>` : '';
       return `<details class="mb-ident" name="mb-ident" data-i="${i}"${hits.length === 1 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
@@ -899,6 +978,14 @@ window.MB = window.MB || {};
     let pinned = hits.length === 1 ? hits[0] : null; // the expanded entry stays highlighted when the pointer leaves the list
     popup.on('remove', () => { pinned = null; clearHighlight(); });
     const root = popup.getElement();
+    root.querySelectorAll('[data-select]').forEach(b => b.addEventListener('click', () => {
+      if (MB.presenter && MB.presenter.active) return; // a popup opened before presenting: no editing now
+      const h = hits[+b.dataset.select];
+      MB.map.closePopup(popup);
+      // the object may have been deleted (or undone away) since the popup opened
+      if (MB.featureLayers[h.layer.mb.id] !== h.layer) { MB.toast('That object no longer exists.'); return; }
+      MB.selectFeature(h.layer);
+    }));
     root.querySelectorAll('details.mb-ident').forEach(d => {
       const h = hits[+d.dataset.i];
       d.addEventListener('mouseenter', () => highlight(h));
@@ -913,12 +1000,13 @@ window.MB = window.MB || {};
       });
     });
     hits.forEach((h, i) => {
-      if (!h.ds.def.popupExtra) return;
+      if (h.own || !h.ds.def.popupExtra) return;
       Promise.resolve().then(() => h.ds.def.popupExtra(h.props)).then(extraHtml => {
         const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.outerHTML = extraHtml; if (popup.isOpen()) popup.update(); }
       }).catch(err => { const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.textContent = 'Frequencies unavailable: ' + err.message; if (popup.isOpen()) popup.update(); } });
     });
     if (pinned) highlight(pinned);
+    return true;
   };
 
   /* ---------- panel ---------- */

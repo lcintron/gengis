@@ -537,6 +537,13 @@ button.link:hover { text-decoration: underline; }
 .mb-identify .mb-freqs { margin-left: 18px; }
 .mb-ident-more { font-size: 11px; padding: 4px 4px 0; border-top: 1px solid var(--border); }
 .mb-data-icon.mb-data-hl svg { filter: drop-shadow(0 0 4px #ffd166) drop-shadow(0 0 2px #ffd166); transform: scale(1.25); }
+/* one of the user's objects, hovered or expanded in the identify popup */
+path.mb-ident-hl { stroke: #ffd166 !important; stroke-opacity: 1 !important; stroke-width: 5px; }
+.leaflet-marker-icon.mb-ident-hl, .leaflet-image-layer.mb-ident-hl { filter: drop-shadow(0 0 4px #ffd166) drop-shadow(0 0 2px #ffd166); }
+.leaflet-image-layer.mb-ident-hl { outline: 3px solid #ffd166; }
+.mb-ident-own .mb-ident-ds { color: var(--accent); }
+.mb-ident-own .btn-row { margin: 6px 0 2px; }
+body.presenting .mb-ident-own .btn-row { display: none; }
 
 /* ---------- live air traffic (ADS-B) ---------- */
 .mb-ac { background: transparent; border: 0; }
