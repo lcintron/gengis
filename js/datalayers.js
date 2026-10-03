@@ -842,8 +842,23 @@ window.MB = window.MB || {};
     const map = MB.map;
     const lp = map.latLngToLayerPoint(latlng);
     const cp = containerPoint || map.latLngToContainerPoint(latlng);
-    const box = map.getContainer().getBoundingClientRect(), cx = box.left + cp.x, cy = box.top + cp.y;
-    const covers = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom; };
+    // Does an element, as drawn, cover the point? The point is turned back by the element's rotation (about its
+    // centre, which the rotation keeps in place) and tested against the element's own, unrotated size.
+    const box = map.getContainer().getBoundingClientRect(), px = box.left + cp.x, py = box.top + cp.y;
+    const covers = el => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return false;
+      let dx = px - (r.left + r.width / 2), dy = py - (r.top + r.height / 2);
+      const t = getComputedStyle(el).transform;
+      if (t && t !== 'none') {
+        const m = new DOMMatrix(t);
+        m.e = 0; m.f = 0; // a translation (text anchoring) is already in the rectangle's position
+        const q = m.inverse().transformPoint(new DOMPoint(dx, dy));
+        dx = q.x; dy = q.y;
+      }
+      const w = el.offsetWidth != null ? el.offsetWidth : r.width, h = el.offsetHeight != null ? el.offsetHeight : r.height; // an inline <svg> has no offset size
+      return Math.abs(dx) <= w / 2 && Math.abs(dy) <= h / 2;
+    };
     const byLayer = {};
     Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; (byLayer[f.mb.layerId] = byLayer[f.mb.layerId] || []).push(f); });
     const marks = [], shapes = [];
@@ -967,6 +982,8 @@ window.MB = window.MB || {};
       if (MB.presenter && MB.presenter.active) return; // a popup opened before presenting: no editing now
       const h = hits[+b.dataset.select];
       MB.map.closePopup(popup);
+      // the object may have been deleted (or undone away) since the popup opened
+      if (MB.featureLayers[h.layer.mb.id] !== h.layer) { MB.toast('That object no longer exists.'); return; }
       MB.selectFeature(h.layer);
     }));
     root.querySelectorAll('details.mb-ident').forEach(d => {
