@@ -134,8 +134,8 @@ window.MB = window.MB || {};
       }
       if (layer.bringToFront) {
         items.push(
-          { label: 'Bring to front', action: () => layer.bringToFront() },
-          { label: 'Send to back', action: () => { layer.bringToBack(); if (MB.baseLayer) MB.baseLayer.bringToBack(); } }
+          { label: 'Bring to front', action: () => MB.featureToEdge(layer.mb.id, true) },
+          { label: 'Send to back', action: () => MB.featureToEdge(layer.mb.id, false) }
         );
       }
       items.push(

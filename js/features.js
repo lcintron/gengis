@@ -142,10 +142,24 @@ window.MB = window.MB || {};
     MB.commit('object lock');
   };
 
-  // Re-apply draw order of a layer's objects (paths / image overlays; markers keep their pane order).
-  MB.applyFeatureOrder = function (layerId) {
-    MB.layerFeatures(layerId).forEach(f => { if (f.bringToFront && MB.map.hasLayer(f)) f.bringToFront(); });
+  // Re-apply the draw order of the objects (paths / image overlays; markers keep their pane order). Every layer is
+  // restacked: the layers above this one must stay above it.
+  MB.applyFeatureOrder = function () { MB.applyZOrder(); };
+
+  // Put an object at the top (or bottom) of its layer's order.
+  function placeFeature(id, top) {
+    const ids = Object.keys(MB.featureLayers).filter(k => k !== id);
+    if (top) ids.push(id); else ids.unshift(id);
+    const next = {};
+    ids.forEach(k => { next[k] = MB.featureLayers[k]; });
+    MB.featureLayers = next;
+  }
+  MB.featureToEdge = function (id, top) {
+    if (!MB.featureLayers[id]) return;
+    placeFeature(id, top);
     MB.applyZOrder();
+    MB.emit('features');
+    MB.commit(top ? 'bring to front' : 'send to back');
   };
 
   // Move an object one step up (+1, towards the top) or down (-1) within its layer.
@@ -188,6 +202,7 @@ window.MB = window.MB || {};
     removeSegLabels(l);
     MB.groups[l.mb.layerId].removeLayer(l);
     l.mb.layerId = layerId;
+    placeFeature(id, true); // it lands on top of the objects of its new layer
     if (l.mb.visible !== false) { MB.groups[layerId].addLayer(l); updateSegLabels(l); MB.updateLabel(l); }
     MB.applyZOrder();
     if (wasSelected && MB.getLayer(layerId).visible) MB.selectFeature(l);

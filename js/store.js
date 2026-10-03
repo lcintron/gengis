@@ -182,10 +182,16 @@ window.MB = window.MB || {};
     MB.emit('layers');
   };
 
+  // Draw the layers bottom to top, and the objects of each in their order (MB.featureLayers, bottom-most first).
+  // Not the group's own bringToFront(): it restacks a group's objects in the order Leaflet created them, which put
+  // the newest object on top (and under the pointer) whatever its place in the list.
   MB.applyZOrder = function () {
+    const byLayer = {};
+    Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; (byLayer[f.mb.layerId] = byLayer[f.mb.layerId] || []).push(f); });
     MB.state.layers.forEach(l => {
       const g = MB.groups[l.id];
-      if (g && MB.map.hasLayer(g)) g.bringToFront();
+      if (!g || !MB.map.hasLayer(g)) return;
+      (byLayer[l.id] || []).forEach(f => { if (f.bringToFront && MB.map.hasLayer(f)) f.bringToFront(); });
     });
   };
 
