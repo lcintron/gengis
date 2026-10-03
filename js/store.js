@@ -11,6 +11,7 @@ window.MB = window.MB || {};
     showMeasurements: false,
     continueDrawing: true,
     snapping: true,
+    autoColor: true,        // each new object gets its own color from the palette
     layers: [],           // [{id, name, visible, locked}] bottom -> top
     activeLayerId: null,
     svgLibrary: {}        // id -> {id, name, dataUrl, aspect}

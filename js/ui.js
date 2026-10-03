@@ -442,22 +442,37 @@ window.MB = window.MB || {};
     panel.innerHTML = '';
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
     if (!f) {
-      panel.innerHTML = `<div class="panel-head"><h3>New shapes</h3><span class="badge" title="Select an object to edit its own style">defaults</span></div>`;
+      panel.innerHTML = `<div class="panel-head"><h3>New shapes</h3><span class="badge" title="Select an object to edit its own style">defaults</span></div>
+        <label class="check" title="Each new line, shape, marker and measurement takes the next color of the palette; pick a color below to use that one instead"><input type="checkbox" id="setAutoColor"${MB.state.autoColor !== false ? ' checked' : ''}> A different color for each new object</label>`;
+      const previews = () => { MB.tools.refreshDraw(); if (MB.measure.active) MB.measure.restyleTemp(); }; // what the next object will look like
+      $('#setAutoColor', panel).addEventListener('change', e => { MB.state.autoColor = e.target.checked; previews(); MB.autosave(); });
+      // A chosen color is a pinned color: variation goes off, for shapes and measurements alike.
+      const pin = patch => {
+        if (('color' in patch || 'fillColor' in patch) && MB.state.autoColor !== false) {
+          MB.state.autoColor = false;
+          $('#setAutoColor', panel).checked = false;
+          MB.toast('New objects now use this color; tick "A different color for each new object" to vary them again', 3500);
+        }
+      };
       panel.appendChild(styleForm(['stroke', 'fill', 'text'], () => MB.currentStyle, patch => {
         Object.assign(MB.currentStyle, patch);
-        MB.tools.refreshDraw();
+        pin(patch);
+        previews();
+        MB.autosave(); // the defaults are saved with the project
       }));
       const mh = document.createElement('div');
       mh.innerHTML = '<hr><div class="panel-head" style="margin-top:12px"><h3>New measurements</h3><span class="badge">defaults</span></div>';
       panel.appendChild(mh);
       panel.appendChild(styleForm(['stroke', 'fill'], () => MB.measureStyle, patch => {
         Object.assign(MB.measureStyle, patch);
-        if (MB.measure.active) { MB.measure._clearTemp(); MB.measure._buildTemp(); MB.measure.pts = []; }
+        pin(patch);
+        previews();
+        MB.autosave();
       }));
       const reset = document.createElement('div');
       reset.className = 'btn-row';
       reset.innerHTML = '<button class="btn small ghost">Reset to defaults</button>';
-      reset.querySelector('button').addEventListener('click', () => { MB.currentStyle = MB.deepClone(MB.defaultStyle); MB.measureStyle = MB.deepClone(MB.defaultMeasureStyle); MB.tools.refreshDraw(); MB.ui.renderProps(); });
+      reset.querySelector('button').addEventListener('click', () => { MB.currentStyle = MB.deepClone(MB.defaultStyle); MB.measureStyle = MB.deepClone(MB.defaultMeasureStyle); MB.state.autoColor = true; previews(); MB.ui.renderProps(); MB.autosave(); });
       panel.appendChild(reset);
       return;
     }
@@ -754,7 +769,7 @@ window.MB = window.MB || {};
       if (g.getBounds().isValid() && !MB.map.getBounds().contains(g.getBounds())) MB.map.fitBounds(g.getBounds().pad(0.1));
     }
     function addPoi(p, silent) {
-      const f = MB.restoreFeature({ type: 'marker', latlng: [p.latlng.lat, p.latlng.lng], name: p.name, style: MB.deepClone(MB.currentStyle) });
+      const f = MB.restoreFeature({ type: 'marker', latlng: [p.latlng.lat, p.latlng.lng], name: p.name, style: MB.newShapeStyle(true) });
       if (f) bindNameTip(f);
       if (!silent) { MB.commit('add poi'); MB.toast('Added "' + p.name + '"'); }
     }
