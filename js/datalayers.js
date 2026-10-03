@@ -836,26 +836,30 @@ window.MB = window.MB || {};
   };
 
   // The user's own objects at this point (shown ones only), top-most first: they draw above every dataset.
+  // Lines, shapes and circles by their geometry, ground images by their bounds, and markers (pins, text, pinned
+  // SVGs) by what they show on screen, wherever it sits around their anchor.
   MB.data.objectsAt = function (latlng, containerPoint) {
     const map = MB.map;
     const lp = map.latLngToLayerPoint(latlng);
     const cp = containerPoint || map.latLngToContainerPoint(latlng);
+    const box = map.getContainer().getBoundingClientRect(), cx = box.left + cp.x, cy = box.top + cp.y;
+    const covers = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom; };
     const byLayer = {};
     Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; (byLayer[f.mb.layerId] = byLayer[f.mb.layerId] || []).push(f); });
-    const out = [];
+    const marks = [], shapes = [];
     MB.state.layers.slice().reverse().forEach(l => {
       (byLayer[l.id] || []).slice().reverse().forEach(f => {
         if (!map.hasLayer(f)) return;
-        let hit = false;
         try {
-          if (f.getLatLng) hit = map.latLngToContainerPoint(f.getLatLng()).distanceTo(cp) <= 14; // markers, text, pinned SVGs
-          else if (f instanceof L.Path) hit = !!(f._pxBounds && f._pxBounds.contains(lp) && f._containsPoint(lp));
-          else if (f.getBounds) hit = f.getBounds().contains(latlng); // ground images
+          if (f instanceof L.Path) { if (f._pxBounds && f._pxBounds.contains(lp) && f._containsPoint(lp)) shapes.push(f); }
+          else if (f.getLatLng) { const el = f.getElement && f.getElement(); if (el && (covers(el) || Array.from(el.querySelectorAll('img, svg, textarea')).some(covers))) marks.push(f); }
+          else if (f.getBounds && f.getBounds().contains(latlng)) shapes.push(f); // ground images
         } catch (e) { /* ignore */ }
-        if (hit) out.push(f);
       });
     });
-    return out;
+    // Markers are in the marker pane, above every shape and image, and stacked there by Leaflet's z-index.
+    marks.sort((a, b) => (b._zIndex || 0) - (a._zIndex || 0));
+    return marks.concat(shapes);
   };
 
   let identifyPopup = null, highlighted = null;
@@ -917,9 +921,11 @@ window.MB = window.MB || {};
       byText.set(k, h);
       return true;
     });
+    // At most 15 entries; however many objects overlap, at least five places (or all the data) go to the data.
     const own = (opts.own || []).map(layer => ({ own: true, layer }));
     const total = own.length + hits.length;
-    hits = own.concat(hits).slice(0, 15);
+    const ownShown = own.slice(0, 15 - Math.min(hits.length, Math.max(5, 15 - own.length)));
+    hits = ownShown.concat(hits.slice(0, 15 - ownShown.length));
     const label = h => { const d = h.ds.def; try { return d.label ? String(d.label(h.props)) : firstText(h.props); } catch (e) { return ''; } };
     const presenting = MB.presenter && MB.presenter.active;
     const ownSection = (h, i) => {
@@ -952,6 +958,7 @@ window.MB = window.MB || {};
     popup.on('remove', () => { pinned = null; clearHighlight(); });
     const root = popup.getElement();
     root.querySelectorAll('[data-select]').forEach(b => b.addEventListener('click', () => {
+      if (MB.presenter && MB.presenter.active) return; // a popup opened before presenting: no editing now
       const h = hits[+b.dataset.select];
       MB.map.closePopup(popup);
       MB.selectFeature(h.layer);

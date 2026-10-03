@@ -543,6 +543,7 @@ path.mb-ident-hl { stroke: #ffd166 !important; stroke-opacity: 1 !important; str
 .leaflet-image-layer.mb-ident-hl { outline: 3px solid #ffd166; }
 .mb-ident-own .mb-ident-ds { color: var(--accent); }
 .mb-ident-own .btn-row { margin: 6px 0 2px; }
+body.presenting .mb-ident-own .btn-row { display: none; }
 
 /* ---------- live air traffic (ADS-B) ---------- */
 .mb-ac { background: transparent; border: 0; }
