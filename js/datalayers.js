@@ -835,9 +835,38 @@ window.MB = window.MB || {};
     return hits; // every feature is in the registry once: distinct features are never merged, duplicates never appear
   };
 
+  // The user's own objects at this point (shown ones only), top-most first: they draw above every dataset.
+  MB.data.objectsAt = function (latlng, containerPoint) {
+    const map = MB.map;
+    const lp = map.latLngToLayerPoint(latlng);
+    const cp = containerPoint || map.latLngToContainerPoint(latlng);
+    const byLayer = {};
+    Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; (byLayer[f.mb.layerId] = byLayer[f.mb.layerId] || []).push(f); });
+    const out = [];
+    MB.state.layers.slice().reverse().forEach(l => {
+      (byLayer[l.id] || []).slice().reverse().forEach(f => {
+        if (!map.hasLayer(f)) return;
+        let hit = false;
+        try {
+          if (f.getLatLng) hit = map.latLngToContainerPoint(f.getLatLng()).distanceTo(cp) <= 14; // markers, text, pinned SVGs
+          else if (f instanceof L.Path) hit = !!(f._pxBounds && f._pxBounds.contains(lp) && f._containsPoint(lp));
+          else if (f.getBounds) hit = f.getBounds().contains(latlng); // ground images
+        } catch (e) { /* ignore */ }
+        if (hit) out.push(f);
+      });
+    });
+    return out;
+  };
+
   let identifyPopup = null, highlighted = null;
   function clearHighlight() {
     if (!highlighted) return;
+    if (highlighted.own) { // the user's object: a class, so its own style is never touched
+      const el = highlighted.layer.getElement ? highlighted.layer.getElement() : highlighted.layer._path;
+      if (el) L.DomUtil.removeClass(el, 'mb-ident-hl');
+      highlighted = null;
+      return;
+    }
     const { ds } = highlighted;
     (highlighted.layers || [highlighted.layer]).forEach(layer => {
       try {
@@ -849,6 +878,12 @@ window.MB = window.MB || {};
   }
   function highlight(h) {
     clearHighlight();
+    if (h.own) {
+      const el = h.layer.getElement ? h.layer.getElement() : h.layer._path;
+      if (el) L.DomUtil.addClass(el, 'mb-ident-hl');
+      highlighted = h;
+      return;
+    }
     const { ds } = h;
     (h.layers || [h.layer]).forEach(layer => {
       try {
@@ -859,14 +894,18 @@ window.MB = window.MB || {};
     highlighted = h;
   }
 
-  MB.data.identify = function (latlng, containerPoint, clicked) {
+  // Everything under a click in one popup. opts.own: the user's objects at the point, listed first (their objects
+  // draw above the data, so a click on one never reaches the data under it). It opens only when there is data at the
+  // point; the return value says whether it did.
+  MB.data.identify = function (latlng, containerPoint, clicked, opts) {
+    opts = opts || {};
     let hits = this.featuresAt(latlng, containerPoint);
     if (clicked && clicked.feature && !hits.some(h => h.layer === clicked)) {
       // the layer the map reported (it may be the neighbour of the square that was tapped, when tiled)
       const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked));
       if (ds && !ds.def.tiled) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
-    if (!hits.length) return;
+    if (!hits.length) return false;
     // Polygons that read the same (a LAANC grid square and its neighbour with the same ceiling, tapped near their
     // shared edge) are one entry; it highlights all of them.
     const byText = new Map();
@@ -878,10 +917,23 @@ window.MB = window.MB || {};
       byText.set(k, h);
       return true;
     });
-    const total = hits.length;
-    hits = hits.slice(0, 15);
+    const own = (opts.own || []).map(layer => ({ own: true, layer }));
+    const total = own.length + hits.length;
+    hits = own.concat(hits).slice(0, 15);
     const label = h => { const d = h.ds.def; try { return d.label ? String(d.label(h.props)) : firstText(h.props); } catch (e) { return ''; } };
+    const presenting = MB.presenter && MB.presenter.active;
+    const ownSection = (h, i) => {
+      const m = h.layer.mb, lay = MB.getLayer(m.layerId), type = MB.typeLabels[m.type] || m.type;
+      const name = m.name || (m.type === 'text' ? m.text : '') || type;
+      let measure = '';
+      try { measure = MB.measureText(h.layer); } catch (e) { /* ignore */ }
+      const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('');
+      const locked = MB.isFeatureLocked(h.layer);
+      const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}"${locked ? ' disabled title="Locked"' : ''}>Select</button></div>`;
+      return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
+    };
     const sections = hits.map((h, i) => {
+      if (h.own) return ownSection(h, i);
       const body = popupHtml(h.ds, h.props).replace(/^<div class="mb-popup"><div class="mb-popup-title">[^<]*<\/div>/, '').replace(/<\/div>$/, '');
       const extra = h.ds.def.popupExtra ? `<div class="mb-extra dim" data-extra="${i}">Loading frequencies…</div>` : '';
       return `<details class="mb-ident" name="mb-ident" data-i="${i}"${hits.length === 1 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
@@ -899,6 +951,11 @@ window.MB = window.MB || {};
     let pinned = hits.length === 1 ? hits[0] : null; // the expanded entry stays highlighted when the pointer leaves the list
     popup.on('remove', () => { pinned = null; clearHighlight(); });
     const root = popup.getElement();
+    root.querySelectorAll('[data-select]').forEach(b => b.addEventListener('click', () => {
+      const h = hits[+b.dataset.select];
+      MB.map.closePopup(popup);
+      MB.selectFeature(h.layer);
+    }));
     root.querySelectorAll('details.mb-ident').forEach(d => {
       const h = hits[+d.dataset.i];
       d.addEventListener('mouseenter', () => highlight(h));
@@ -913,12 +970,13 @@ window.MB = window.MB || {};
       });
     });
     hits.forEach((h, i) => {
-      if (!h.ds.def.popupExtra) return;
+      if (h.own || !h.ds.def.popupExtra) return;
       Promise.resolve().then(() => h.ds.def.popupExtra(h.props)).then(extraHtml => {
         const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.outerHTML = extraHtml; if (popup.isOpen()) popup.update(); }
       }).catch(err => { const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.textContent = 'Frequencies unavailable: ' + err.message; if (popup.isOpen()) popup.update(); } });
     });
     if (pinned) highlight(pinned);
+    return true;
   };
 
   /* ---------- panel ---------- */
