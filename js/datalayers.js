@@ -483,7 +483,12 @@ window.MB = window.MB || {};
           } catch (e) {
             // Offline or the service failed: anything stored for this area will do, including what an earlier
             // version saved with an offline area.
-            const old = cached || await legacyCell(ds, cell, memKey, level);
+            // Only a cell like the ones fetched now (same fields, same service data): any other would sit next to
+            // current cells with other attributes, its shared features registered and listed twice. Cells stored by
+            // earlier versions have the fields of revision 0.
+            const rev = ds.def.rev || 0;
+            const old = cached ? ((cached.rev || 0) === rev && (cached.lastEdit === meta.lastEdit || meta.lastEdit === 'offline') ? cached : null)
+              : (rev ? null : await legacyCell(ds, cell, memKey, level));
             if (old && old.geojson) { geojson = old.geojson; fromCache = stale = true; ds.error = 'Offline or service error: showing cached data.'; }
             else { ds.error = 'Load failed: ' + e.message; }
           }
