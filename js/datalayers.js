@@ -58,6 +58,22 @@ window.MB = window.MB || {};
 
   const feetDesc = p => [p.LOWER_DESC, p.UPPER_DESC].filter(Boolean).join(' – ');
 
+  // An airspace floor or ceiling as charted: SFC, 1,200 ft MSL, 700 ft AGL, FL180, unlimited. -9998 stands for a
+  // limit that is not a number (unlimited, by NOTAM, the airspace above); one the code does not name is left out.
+  function altitude(v, uom, code) {
+    code = String(code || '').toUpperCase(); uom = String(uom || '').toUpperCase();
+    if (code === 'UNLTD') return 'unlimited';
+    if (code === 'BYNOTAM') return 'by NOTAM';
+    if (v == null || v === '' || +v < 0) return '';
+    if (code === 'SFC' && !+v) return 'SFC';
+    if (uom === 'FL' || code === 'STD') return 'FL' + v;
+    return Number(v).toLocaleString('en-US') + ' ft ' + (code === 'SFC' ? 'AGL' : (code || 'MSL'));
+  }
+  const floorOf = p => altitude(p.LOWER_VAL, p.LOWER_UOM, p.LOWER_CODE);
+  const ceilingOf = p => altitude(p.UPPER_VAL, p.UPPER_UOM, p.UPPER_CODE);
+  const altRange = p => { const lo = floorOf(p), hi = ceilingOf(p); return lo && hi ? lo + ' – ' + hi : (hi ? 'up to ' + hi : (lo ? 'from ' + lo : '')); };
+  const cap = s => String(s).toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+
   /* ---------- catalog ---------- */
   const ESRI = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/';
   const boundaryStyle = (color, weight, dash) => () => ({ color, weight, opacity: .85, fill: false, dashArray: dash || null, lineJoin: 'round' });
@@ -83,18 +99,28 @@ window.MB = window.MB || {};
       legend: [['FRIA', '#2ecc71']], desc: 'Fly without Remote ID (VLOS).' },
     { id: 'uasfm', group: 'LAANC', name: 'UAS Facility Map (LAANC ceilings)', minZoom: 10,
       source: 'faa', url: FAA + 'FAA_UAS_FacilityMap_Data/FeatureServer/0', style: ceilingStyle,
+      tiled: true, // grid squares that cover the area edge to edge: a point is in one of them
       label: p => `Ceiling ${p.CEILING} ${p.UNIT || 'ft'} AGL${p.APT1_NAME ? ' · ' + p.APT1_NAME : ''}`,
       fields: ['CEILING', 'UNIT', 'APT1_NAME', 'APT1_FAAID', 'APT1_LAANC', 'APT2_NAME', 'APT2_FAAID', 'AIRSPACE_1', 'AIRSPACE_2', 'MAP_EFF', 'LAST_EDIT'],
       legend: CEIL.map(([v, c]) => [v + ' ft', c]), desc: 'LAANC ceilings, ft AGL. 0 ft: coordination required.',
       subsets: { key: p => String(ceilingBucket(p.CEILING)), items: CEIL.map(([v, c]) => [String(v), v + ' ft', c]) } },
     { id: 'classAirspace', group: 'Airspace', name: 'Class B / C / D / E airspace', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'Class_Airspace/FeatureServer/0', style: classStyle,
-      label: p => `${p.CLASS ? 'Class ' + p.CLASS : (p.LOCAL_TYPE || 'Airspace')} · ${p.NAME || ''} ${feetDesc(p)}`, fields: ['NAME', 'CLASS', 'LOCAL_TYPE', 'LOWER_DESC', 'UPPER_DESC', 'ICAO_ID', 'COMM_NAME', 'WKHR_RMK'],
+      // A Class B or C is several sectors (shelves) with the same name: the sector and its floor tell them apart.
+      label: p => [p.CLASS ? 'Class ' + p.CLASS : (p.LOCAL_TYPE || 'Airspace'), p.NAME || '', p.SECTOR ? cap(p.SECTOR) : '', altRange(p)].filter(Boolean).join(' · '),
+      fields: ['NAME', 'CLASS', 'SECTOR', 'LOCAL_TYPE', 'LOWER_DESC', 'UPPER_DESC', 'ICAO_ID', 'COMM_NAME', 'WKHR_RMK'],
+      queryFields: ['LOWER_VAL', 'LOWER_UOM', 'LOWER_CODE', 'UPPER_VAL', 'UPPER_UOM', 'UPPER_CODE'],
+      rows: p => [['Floor', floorOf(p)], ['Ceiling', ceilingOf(p)]],
+      rev: 1, // cells stored before the altitudes were requested are fetched again
       legend: [['Class B', '#1f5fd6'], ['Class C', '#a12fb5'], ['Class D (dashed)', '#1f5fd6'], ['Class E (dotted)', '#b76ad6']], desc: '',
       subsets: { key: p => (p.CLASS || '').trim().toUpperCase(), items: [['B', 'Class B', '#1f5fd6'], ['C', 'Class C', '#a12fb5'], ['D', 'Class D (dashed)', '#1f5fd6'], ['E', 'Class E (dotted)', '#b76ad6']], other: 'Other classes' } },
     { id: 'sua', group: 'Airspace', name: 'Special Use Airspace (R, W, MOA, A, NSA)', minZoom: 6, levels: DETAIL,
       source: 'faa', url: FAA + 'Special_Use_Airspace/FeatureServer/0', style: suaStyle,
-      label: p => `${p.NAME || ''} (${p.TYPE_CODE || ''}) ${feetDesc(p)}`, fields: ['NAME', 'TYPE_CODE', 'LOWER_DESC', 'UPPER_DESC', 'TIMESOFUSE', 'CONT_AGENT', 'COMM_NAME', 'REMARKS'],
+      // an area can be several parts with the same name at other altitudes (R-2934: from the surface, and above 1,200 ft)
+      label: p => [`${p.NAME || ''} (${p.TYPE_CODE || ''})`, altRange(p)].filter(Boolean).join(' · '), fields: ['NAME', 'TYPE_CODE', 'LOWER_DESC', 'UPPER_DESC', 'TIMESOFUSE', 'CONT_AGENT', 'COMM_NAME', 'REMARKS'],
+      queryFields: ['LOWER_VAL', 'LOWER_UOM', 'LOWER_CODE', 'UPPER_VAL', 'UPPER_UOM', 'UPPER_CODE'],
+      rows: p => [['Floor', floorOf(p)], ['Ceiling', ceilingOf(p)]],
+      rev: 1,
       legend: [['Restricted', '#d7263d'], ['Warning', '#f46036'], ['MOA', '#c2185b'], ['Alert', '#f7b32b'], ['NSA', '#6a1b9a']],
       subsets: { key: p => (p.TYPE_CODE || '').trim().toUpperCase(), items: [['R', 'Restricted (R)', '#d7263d'], ['W', 'Warning (W)', '#f46036'], ['MOA', 'Military Operations Area', '#c2185b'], ['A', 'Alert (A)', '#f7b32b'], ['NSA', 'National Security Area', '#6a1b9a'], ['P', 'Prohibited (P)', '#b71c1c']], other: 'Other types' } },
     { id: 'prohibited', group: 'Airspace', name: 'Prohibited Areas', minZoom: 6, levels: DETAIL,
@@ -102,16 +128,16 @@ window.MB = window.MB || {};
       label: p => `${p.NAME || 'Prohibited'} ${feetDesc(p)}`, fields: ['NAME', 'LOWER_DESC', 'UPPER_DESC', 'TIMESOFUSE', 'CONT_AGENT', 'REMARKS'], legend: [['Prohibited', '#b71c1c']] },
     { id: 'nsufr', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (full-time)', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'DoD_Mar_13/FeatureServer/0', style: hatched('#e53935'),
-      label: p => `${p.Facility || p.Base || 'NSUFR'} · ${p.Floor || 'SFC'}–${p.Ceiling || '400 ft'}`, fields: ['Facility', 'Base', 'Branch', 'Proponent', 'Reason', 'Floor', 'Ceiling', 'FAA_ID', 'State', 'POC'],
+      label: p => `${String(p.Facility || '').trim() || p.Base || 'NSUFR'} · ${p.Floor || 'SFC'}–${p.Ceiling || '400 ft'}`, fields: ['Facility', 'Base', 'Branch', 'Proponent', 'Reason', 'Floor', 'Ceiling', 'FAA_ID', 'State', 'POC'],
       legend: [['NSUFR 24/7', '#e53935']], desc: 'No UAS, surface to 400 ft AGL, 24/7.' },
     { id: 'nsufrPart', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (part-time)', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'Part_Time_National_Security_UAS_Flight_Restrictions/FeatureServer/0', style: hatched('#fb8c00'),
-      label: p => `${p.Facility || p.Base || 'Part-time NSUFR'} · ${p.ALERTYPE || ''}`, fields: ['Facility', 'Base', 'Reason', 'Floor', 'Ceiling', 'ALERTYPE', 'ACTIVETIME', 'ENDTIME', 'ADVISENOTE', 'FAA_ID'],
+      label: p => `${String(p.Facility || '').trim() || p.Base || 'Part-time NSUFR'} · ${p.ALERTYPE || ''}`, fields: ['Facility', 'Base', 'Reason', 'Floor', 'Ceiling', 'ALERTYPE', 'ACTIVETIME', 'ENDTIME', 'ADVISENOTE', 'FAA_ID'],
       legend: [['Part-time NSUFR', '#fb8c00']], desc: 'Active during announced periods.',
       subsets: { key: p => (p.ALERTYPE || '').trim() ? 'alert' : 'none', items: [['alert', 'With an active alert / schedule', '#fb8c00'], ['none', 'No current alert', '#fb8c00']] } },
     { id: 'nsufrPending', group: 'UAS restrictions', name: 'Pending National Security UAS Flight Restrictions', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'UAS_NSR_Pending/FeatureServer/0', style: hatched('#8e24aa'),
-      label: p => `${p.Facility || p.Base || 'Pending NSUFR'}`, fields: ['Facility', 'Base', 'Branch', 'Reason', 'Floor', 'Ceiling', 'FAA_ID'], legend: [['Pending NSUFR', '#8e24aa']] },
+      label: p => `${String(p.Facility || '').trim() || p.Base || 'Pending NSUFR'}`, fields: ['Facility', 'Base', 'Branch', 'Reason', 'Floor', 'Ceiling', 'FAA_ID'], legend: [['Pending NSUFR', '#8e24aa']] },
     { id: 'ndaTfr', group: 'UAS restrictions', name: 'National Defense Airspace TFR areas', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'National_Defense_Airspace_TFR_Areas/FeatureServer/0', style: hatched('#6d4c41'),
       label: p => p.NAME || 'NDA TFR', fields: ['NAME', 'TYPE_CODE', 'LOCAL_TYPE', 'WKHR_RMK', 'CITY', 'STATE'], legend: [['NDA TFR', '#6d4c41']] },
@@ -447,11 +473,13 @@ window.MB = window.MB || {};
       let geojson = null, fromCache = false, stale = false;
       try {
         const cached = await DB.get('cells', key);
-        if (cached && cached.lastEdit === meta.lastEdit && Date.now() - cached.ts < maxAge) { geojson = cached.geojson; fromCache = true; }
+        // A cell is used only with the same service data and the same fields as the cells fetched now: a cached cell
+        // with other attributes would register the polygons it shares with its neighbours a second time.
+        if (cached && cached.lastEdit === meta.lastEdit && (cached.rev || 0) === (ds.def.rev || 0) && Date.now() - cached.ts < maxAge) { geojson = cached.geojson; fromCache = true; }
         if (!geojson) {
           try {
-            geojson = await queryCell(ds.def.url, cell, ds.def.fields, level);
-            await DB.set('cells', key, { ts: Date.now(), lastEdit: meta.lastEdit, geojson });
+            geojson = await queryCell(ds.def.url, cell, ds.def.fields && ds.def.fields.concat(ds.def.queryFields || []), level);
+            await DB.set('cells', key, { ts: Date.now(), lastEdit: meta.lastEdit, rev: ds.def.rev || 0, geojson });
           } catch (e) {
             // Offline or the service failed: anything stored for this area will do, including what an earlier
             // version saved with an offline area.
@@ -610,7 +638,9 @@ window.MB = window.MB || {};
 
   function popupHtml(ds, p) {
     const keys = ds.def.fields || Object.keys(p).filter(k => !/^(OBJECTID|GLOBAL_?ID|Shape__|GlobalID)/i.test(k)).slice(0, 18);
-    const rows = keys.map(k => { const v = fmtVal(k, p[k]); return v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : ''; }).join('');
+    const row = (k, v) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '';
+    let rows = keys.map(k => row(k, fmtVal(k, p[k]))).join('');
+    if (ds.def.rows) { try { rows += ds.def.rows(p).map(([k, v]) => row(k, v)).join(''); } catch (e) { /* ignore */ } }
     return `<div class="mb-popup"><div class="mb-popup-title">${esc(ds.def.name)}</div><table class="mb-datatable">${rows}</table></div>`;
   }
 
@@ -760,6 +790,28 @@ window.MB = window.MB || {};
 
   /* ---------- identify: everything under a click in one popup ---------- */
 
+  // Is a layer point inside a polygon's filled area (not merely within the click tolerance of its outline)?
+  function inside(l, p) {
+    if (!l._parts || !l._rawPxBounds || !l._rawPxBounds.contains(p)) return false;
+    let into = false;
+    for (const part of l._parts) {
+      for (let j = 0, k = part.length - 1; j < part.length; k = j++) {
+        const a = part[j], b = part[k];
+        if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) into = !into;
+      }
+    }
+    return into;
+  }
+  // Does a click at this point concern the layer? Points within a few pixels; lines and outlines within the click
+  // tolerance; for a tiled dataset, only the square the point is in (a tap near an edge is not also its neighbour).
+  function hitTest(ds, l, lp, cp) {
+    try {
+      if (l.getLatLng) return MB.map.latLngToContainerPoint(l.getLatLng()).distanceTo(cp) <= 14;
+      if (ds.def.tiled && l instanceof L.Polygon) return inside(l, lp);
+      return !!(l._containsPoint && l._pxBounds && l._pxBounds.contains(lp) && l._containsPoint(lp));
+    } catch (err) { return false; }
+  }
+
   // Features of every enabled dataset at this point (polygons containing it, lines/points within a few pixels), top-most first.
   MB.data.featuresAt = function (latlng, containerPoint) {
     const map = MB.map;
@@ -772,12 +824,7 @@ window.MB = window.MB || {};
       ds.feats.forEach(e => {
         const l = e.layer;
         if (e.refs <= 0 || !l.feature || !ds.group.hasLayer(l)) return;
-        let hit = false;
-        try {
-          if (l.getLatLng) hit = map.latLngToContainerPoint(l.getLatLng()).distanceTo(cp) <= 14;
-          else if (l._containsPoint && l._pxBounds) hit = l._pxBounds.contains(lp) && l._containsPoint(lp);
-        } catch (err) { /* ignore */ }
-        if (hit) hits.push({ ds, layer: l, props: l.feature.properties || {} });
+        if (hitTest(ds, l, lp, cp)) hits.push({ ds, layer: l, props: l.feature.properties || {} });
       });
     });
     return hits; // every feature is in the registry once: distinct features are never merged, duplicates never appear
@@ -786,30 +833,46 @@ window.MB = window.MB || {};
   let identifyPopup = null, highlighted = null;
   function clearHighlight() {
     if (!highlighted) return;
-    const { layer, ds } = highlighted;
-    try {
-      if (layer.setStyle && layer.feature) layer.setStyle(ds.def.style(layer.feature.properties || {}));
-      else if (layer.getElement && layer.getElement()) L.DomUtil.removeClass(layer.getElement(), 'mb-data-hl');
-    } catch (e) { /* ignore */ }
+    const { ds } = highlighted;
+    (highlighted.layers || [highlighted.layer]).forEach(layer => {
+      try {
+        if (layer.setStyle && layer.feature) layer.setStyle(ds.def.style(layer.feature.properties || {}));
+        else if (layer.getElement && layer.getElement()) L.DomUtil.removeClass(layer.getElement(), 'mb-data-hl');
+      } catch (e) { /* ignore */ }
+    });
     highlighted = null;
   }
   function highlight(h) {
     clearHighlight();
-    const { layer, ds } = h;
-    try {
-      if (layer.setStyle && layer.feature) { layer.setStyle({ weight: 4, color: '#ffd166', opacity: 1, fillOpacity: Math.min(0.5, (ds.def.style(layer.feature.properties || {}).fillOpacity || 0) + 0.25) }); if (layer.bringToFront) layer.bringToFront(); }
-      else if (layer.getElement && layer.getElement()) L.DomUtil.addClass(layer.getElement(), 'mb-data-hl');
-      highlighted = h;
-    } catch (e) { /* ignore */ }
+    const { ds } = h;
+    (h.layers || [h.layer]).forEach(layer => {
+      try {
+        if (layer.setStyle && layer.feature) { layer.setStyle({ weight: 4, color: '#ffd166', opacity: 1, fillOpacity: Math.min(0.5, (ds.def.style(layer.feature.properties || {}).fillOpacity || 0) + 0.25) }); if (layer.bringToFront) layer.bringToFront(); }
+        else if (layer.getElement && layer.getElement()) L.DomUtil.addClass(layer.getElement(), 'mb-data-hl');
+      } catch (e) { /* ignore */ }
+    });
+    highlighted = h;
   }
 
   MB.data.identify = function (latlng, containerPoint, clicked) {
     let hits = this.featuresAt(latlng, containerPoint);
     if (clicked && clicked.feature && !hits.some(h => h.layer === clicked)) {
+      // the layer the map reported (it may be the neighbour of the square that was tapped, when tiled)
       const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked));
-      if (ds) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
+      if (ds && !ds.def.tiled) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
     if (!hits.length) return;
+    // Polygons that read the same (a LAANC grid square and its neighbour with the same ceiling, tapped near their
+    // shared edge) are one entry; it highlights all of them.
+    const byText = new Map();
+    hits = hits.filter(h => {
+      const k = h.ds.def.id + '|' + JSON.stringify(h.props);
+      const first = byText.get(k);
+      if (first) { first.layers.push(h.layer); return false; }
+      h.layers = [h.layer];
+      byText.set(k, h);
+      return true;
+    });
     const total = hits.length;
     hits = hits.slice(0, 15);
     const label = h => { const d = h.ds.def; try { return d.label ? String(d.label(h.props)) : firstText(h.props); } catch (e) { return ''; } };
