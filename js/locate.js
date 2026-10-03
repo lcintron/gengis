@@ -1,7 +1,8 @@
 /* GenGIS - my location: a map button that centers on the device's position (GPS or the browser's estimate)
  * and keeps a dot with its accuracy circle on the map. The browser (or the desktop app's OS) asks the user for
  * permission the first time. The map follows the position until it is panned by hand; the button then re-centers,
- * and a press while centered turns the location off. Nothing about the position is saved. */
+ * and a press while centered turns the location off. The dot and the position are never saved; the map view is, as
+ * after any pan, so a project saved while centered on the position opens there. */
 (function () {
   const MB = window.MB;
   const ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>';
@@ -9,6 +10,7 @@
 
   MB.locate = {
     watchId: null,   // navigator.geolocation watch while the location is on
+    gen: 0,          // which watch is current: callbacks of an earlier one are ignored
     fix: null,       // last position: { latlng, accuracy (m), at }
     follow: false,   // the map pans with the position until the user moves it
     centered: false, // the next fix centers (and zooms to) the position
@@ -34,8 +36,11 @@
         }
       });
       new Ctl().addTo(MB.map);
-      // a pan by hand ends following (a programmatic pan has no dragstart)
-      MB.map.on('dragstart', () => { if (this.follow) { this.follow = false; this.render(); } });
+      // A pan by hand ends following: a drag, or the arrow keys on the focused map (the location's own pans are
+      // programmatic and fire neither).
+      const unfollow = () => { if (this.follow) { this.follow = false; this.render(); } };
+      MB.map.on('dragstart', unfollow);
+      L.DomEvent.on(MB.map.getContainer(), 'keydown', e => { if (/^Arrow/.test(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey) unfollow(); });
     },
 
     press() {
@@ -53,7 +58,8 @@
       if (window.isSecureContext === false) { MB.toast('Your location is only available on a secure (https) page.', 4500); return; }
       this.follow = true;
       this.centered = false;
-      this.watchId = navigator.geolocation.watchPosition(p => this.onFix(p), e => this.onError(e),
+      const gen = ++this.gen;
+      this.watchId = navigator.geolocation.watchPosition(p => { if (gen === this.gen) this.onFix(p); }, e => { if (gen === this.gen) this.onError(e); },
         { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
       this.render();
     },
@@ -61,6 +67,7 @@
     stop() {
       if (this.watchId != null) navigator.geolocation.clearWatch(this.watchId);
       this.watchId = null;
+      this.gen++; // a callback still on its way from this watch is ignored
       this.fix = null;
       this.follow = false;
       if (this.dot) { MB.map.removeLayer(this.dot); this.dot = null; }
@@ -80,9 +87,10 @@
         this.dot.setLatLng(latlng);
       }
       if (!this.centered) {
-        // first position: center on it, close enough to see the accuracy circle whole (a city block or a town)
+        // first position: center on it, close enough to see the accuracy circle whole (a city block or a town),
+        // unless the map was panned by hand while it was being found
         this.centered = true;
-        MB.map.setView(latlng, Math.min(17, MB.map.getBoundsZoom(this.ring.getBounds(), false)));
+        if (this.follow) MB.map.setView(latlng, Math.min(17, MB.map.getBoundsZoom(this.ring.getBounds(), false)));
         MB.toast('Your location, accurate to about ' + MB.formatDistance(accuracy), 3000);
       } else if (this.follow) MB.map.panTo(latlng, { animate: true });
       this.render();
