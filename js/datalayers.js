@@ -852,13 +852,19 @@ window.MB = window.MB || {};
         if (!map.hasLayer(f)) return;
         try {
           if (f instanceof L.Path) { if (f._pxBounds && f._pxBounds.contains(lp) && f._containsPoint(lp)) shapes.push(f); }
-          else if (f.getLatLng) { const el = f.getElement && f.getElement(); if (el && (covers(el) || Array.from(el.querySelectorAll('img, svg, textarea')).some(covers))) marks.push(f); }
+          else if (f.getLatLng) {
+            // what is drawn: the (rotated) image of a pinned SVG or the text box, not the icon's unrotated wrapper
+            const el = f.getElement && f.getElement(), shown = el ? Array.from(el.querySelectorAll('img, svg, textarea')) : [];
+            if (el && (shown.length ? shown.some(covers) : covers(el))) marks.push(f);
+          }
           else if (f.getBounds && f.getBounds().contains(latlng)) shapes.push(f); // ground images
         } catch (e) { /* ignore */ }
       });
     });
-    // Markers are in the marker pane, above every shape and image, and stacked there by Leaflet's z-index.
-    marks.sort((a, b) => (b._zIndex || 0) - (a._zIndex || 0));
+    // Markers are in the marker pane, above every shape and image, stacked by Leaflet's z-index and, at the same
+    // z-index, by their order in the pane (the later one on top).
+    marks.sort((a, b) => ((b._zIndex || 0) - (a._zIndex || 0)) ||
+      (a.getElement().compareDocumentPosition(b.getElement()) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1));
     return marks.concat(shapes);
   };
 
