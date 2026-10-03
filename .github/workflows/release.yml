@@ -43,13 +43,14 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
+          package-manager-cache: false   # no lock file to key a cache on (setup-node caches npm by default since v5)
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -113,12 +114,13 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.tag }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
+          package-manager-cache: false   # no lock file to key a cache on (setup-node caches npm by default since v5)
       - name: Install build tooling
         run: npm install --no-audit --no-fund
       - name: Build installers
@@ -131,7 +133,7 @@ jobs:
           mkdir -p out
           find dist -maxdepth 1 -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' \) -exec cp {} out/ \;
           ls -la out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: installers-${{ matrix.os }}
           path: out/*
@@ -142,11 +144,11 @@ jobs:
     needs: [version, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: installers
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: GenGIS ${{ needs.version.outputs.tag }}
@@ -166,7 +168,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.tag }}
       - name: Assemble site
@@ -176,9 +178,9 @@ jobs:
                    --exclude 'scripts' --exclude 'branding/source' --exclude 'Makefile' --exclude 'package.json' \
                    --exclude 'package-lock.json' --exclude 'serve.js' --exclude '.claude' ./ site/
           echo "${{ needs.version.outputs.tag }} deployed $(date -u +%FT%TZ)" > site/VERSION.txt
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
