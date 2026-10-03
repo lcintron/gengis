@@ -100,6 +100,7 @@ window.MB = window.MB || {};
     bindFeatureEvents(layer);
     MB.updateTooltip(layer);
     if (!layer.mb.visible) { removeSegLabels(layer); g.removeLayer(layer); }
+    MB.applyZOrderSoon();
     MB.emit('features');
     return layer;
   };

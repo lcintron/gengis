@@ -185,14 +185,60 @@ window.MB = window.MB || {};
   // Draw the layers bottom to top, and the objects of each in their order (MB.featureLayers, bottom-most first).
   // Not the group's own bringToFront(): it restacks a group's objects in the order Leaflet created them, which put
   // the newest object on top (and under the pointer) whatever its place in the list.
+  //
+  // Lines and shapes are <path>s inside an SVG renderer, while a ground image is an element of its own beside it in
+  // the overlay pane: a path can only be reordered among the paths of its renderer, and Leaflet's stylesheet puts
+  // every SVG (z-index 200) above every image overlay (z-index 1). So each run of paths between two images gets a
+  // renderer of its own, and the renderers and images get z-indexes in order. Markers (pins, text, pinned SVGs) are
+  // in the marker pane, above all of these, as before.
+  const pathRenderers = []; // one per run of paths, reused
+  function rendererFor(run) {
+    if (!pathRenderers[run]) pathRenderers[run] = L.svg({ pane: 'overlayPane' });
+    if (!MB.map.hasLayer(pathRenderers[run])) MB.map.addLayer(pathRenderers[run]);
+    return pathRenderers[run];
+  }
+  // Move a path to another renderer, keeping its element (selection class, editing state, events).
+  function moveToRenderer(f, r) {
+    if (f._renderer === r) return;
+    if (f._renderer) f._renderer._removePath(f);
+    f.options.renderer = r; // also where it goes when it is shown again
+    f._renderer = r;
+    r._layers[L.stamp(f)] = f;
+    r._addPath(f);
+    f._reset();
+  }
   MB.applyZOrder = function () {
     const byLayer = {};
     Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; (byLayer[f.mb.layerId] = byLayer[f.mb.layerId] || []).push(f); });
+    const order = []; // what is drawn in the overlay pane, bottom to top
     MB.state.layers.forEach(l => {
       const g = MB.groups[l.id];
       if (!g || !MB.map.hasLayer(g)) return;
-      (byLayer[l.id] || []).forEach(f => { if (f.bringToFront && MB.map.hasLayer(f)) f.bringToFront(); });
+      (byLayer[l.id] || []).forEach(f => { if (f.bringToFront && MB.map.hasLayer(f)) order.push(f); });
     });
+    const pane = MB.map.getPane('overlayPane');
+    let run = -1, inRun = false, z = 200;
+    order.forEach(f => {
+      if (f instanceof L.Path) {
+        if (!inRun) { run++; inRun = true; const c = rendererFor(run)._container; c.style.zIndex = z++; pane.appendChild(c); }
+        moveToRenderer(f, rendererFor(run));
+        f.bringToFront();
+      } else {
+        inRun = false;
+        if (f.setZIndex) f.setZIndex(z++); // an image overlay: its own element, between the runs of paths
+        f.bringToFront();
+      }
+    });
+    // Everything else drawn with the map's own renderer (drawing and measuring previews) stays on top.
+    const own = MB.map._renderer;
+    if (own && own._container && own._container.parentNode === pane) { own._container.style.zIndex = z; pane.appendChild(own._container); }
+  };
+  // Once the current task is done: an object just added (drawn, pasted, loaded) joins the order.
+  let zPending = false;
+  MB.applyZOrderSoon = function () {
+    if (zPending) return;
+    zPending = true;
+    Promise.resolve().then(() => { zPending = false; if (MB.map) MB.applyZOrder(); });
   };
 
   MB.layerFeatureCount = function (id) {
