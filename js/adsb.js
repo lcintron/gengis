@@ -20,8 +20,8 @@ window.MB = window.MB || {};
 
   const SOURCES = [
     // `intervals`: refresh rates offered (seconds), first measured against each service; `interval`: the default
-    { id: 'dump1090', section: 'dump1090', name: 'Your receiver', kind: 'receiver', interval: 1, intervals: [1, 2, 5, 10],
-      desc: 'dump1090, dump1090-fa (SkyAware), readsb or tar1090. Enter the address its map opens at.' },
+    { id: 'dump1090', section: 'dump1090', name: 'dump1090', kind: 'receiver', interval: 1, intervals: [1, 2, 5, 10],
+      desc: 'Your own receiver: dump1090, dump1090-fa (SkyAware), readsb or tar1090. Enter the address its map opens at.' },
     { id: 'adsblol', section: 'Community networks', name: 'adsb.lol', kind: 'area', interval: 10, intervals: [5, 10, 30], site: 'https://adsb.lol',
       attribution: 'Air traffic &copy; <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a> (ODbL)',
       query: (lat, lon, nm) => `https://api.adsb.lol/v2/point/${lat}/${lon}/${nm}`,
@@ -670,17 +670,16 @@ window.MB = window.MB || {};
       const cf = this.conf();
       const sections = {};
       list.forEach(s => { (sections[s.section] = sections[s.section] || []).push(s); });
-      let html = `<div class="ds-source" id="adsbSource"><div class="ds-source-head"><h3>ADS-B live air traffic</h3><span class="badge" id="adsbCount">${this.enabledCount()}/${SOURCES.length} on</span></div>
+      let html = `<details class="ds-source" id="adsbSource" data-src="adsb"${MB.data.sourceOpen('adsb') ? ' open' : ''}><summary class="ds-source-head"><h3>ADS-B live air traffic</h3><span class="badge" id="adsbCount">${this.enabledCount()}/${SOURCES.length} on</span></summary>
         <p class="note">Aircraft positions as they are received. Informational only, not for navigation.</p>`;
       Object.keys(sections).forEach(sec => {
         html += `<div class="section"><h3>${esc(sec)}</h3>`;
         sections[sec].forEach(s => {
           const rt = this.rt[s.id], sc = this.srcConf(s.id);
           html += `<div class="data-item${rt.on ? ' on' : ''}" data-adsb="${s.id}">
-            <label class="check" style="margin:0"><input type="checkbox" data-act="adsb-toggle"${rt.on ? ' checked' : ''}> <span class="dname">${s.site ? `<a href="${s.site}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}</span></label>
+            <div class="ds-head"><label class="check"><input type="checkbox" data-act="adsb-toggle"${rt.on ? ' checked' : ''}> <span class="dname">${s.site ? `<a href="${s.site}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}</span></label>${MB.data.infoIcon(s.desc)}</div>
             ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="adsb-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8080" autocomplete="off" spellcheck="false"></div>` : ''}
             <div class="row adsb-row"><label>Refresh</label><select class="adsb-interval">${s.intervals.map(n => `<option value="${n}"${+sc.interval === n ? ' selected' : ''}>every ${n} s</option>`).join('')}</select></div>
-            <div class="note">${esc(s.desc)}</div>
             <div class="dstatus${rt.on && rt.error ? ' err' : ''}" id="adsbStatus-${s.id}">${esc(this.statusText(s.id))}</div>
           </div>`;
         });
@@ -692,7 +691,7 @@ window.MB = window.MB || {};
           <form class="row adsb-row" id="adsbFind"><input type="text" data-keep-focus value="${esc(this.findState.q)}" placeholder="Find callsign, registration or ICAO address" autocomplete="off" spellcheck="false"><button class="btn small" type="submit">Find</button></form>
           <div id="adsbFindOut">${this.findState.html}</div>
           <div class="note">Icon color shows altitude (legend on the map). Click an aircraft for details.</div>
-        </div></div></div>`;
+        </div></div></details>`;
       return html;
     },
 

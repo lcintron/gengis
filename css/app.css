@@ -87,6 +87,15 @@ select { background: var(--bg); border: 1px solid var(--border); border-radius: 
 select:focus { outline: none; border-color: var(--accent); }
 
 .menu-wrap { position: relative; }
+#moreBtn { display: none; }
+.dropdown.more-menu { right: 8px; width: min(340px, calc(100vw - 16px)); padding: 10px; max-height: calc(100vh - 90px); overflow: auto; }
+.more-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); margin: 12px 2px 6px; }
+.more-label:first-child { margin-top: 0; }
+.more-slot .seg { display: flex; width: 100%; }
+.more-slot .seg button { flex: 1 1 0; padding: 9px 6px; }
+.more-slot select { width: 100%; max-width: none; }
+.more-items button { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 10px; border-radius: 6px; cursor: pointer; color: var(--text); }
+.more-items button:hover, .more-items button:active { background: var(--bg-3); }
 .dropdown {
   position: absolute; top: calc(100% + 6px); right: 0; background: var(--bg-2); border: 1px solid var(--border);
   border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45); z-index: 100; min-width: 220px; overflow: hidden;
@@ -195,11 +204,15 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   display: flex; flex-direction: column; min-height: 0;
 }
 #sidebar.collapsed { display: none; }
-.tabs { display: flex; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.tabs { display: flex; border-bottom: 1px solid var(--border); flex: 0 0 auto; padding: 0 4px; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+/* Evenly spaced headings whatever the width: an auto margin before each and one after the last share the free
+   space equally (and give way to scrolling, never clipping, when the panel is too narrow). */
 .tabs button {
-  flex: 1; background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 10px 4px; cursor: pointer;
-  color: var(--text-dim); font-weight: 500; font-size: 12px;
+  flex: 0 0 auto; margin-left: auto; background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 10px 4px;
+  cursor: pointer; color: var(--text-dim); font-weight: 500; font-size: 12px; white-space: nowrap;
 }
+.tabs::after { content: ''; flex: 0 0 0; margin-left: auto; }
 .tabs button:hover { color: var(--text); }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 .tab-panels { flex: 1 1 auto; overflow: auto; min-height: 0; }
@@ -301,20 +314,20 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   :root { --topbar-h: auto; }
   #topbar { flex-wrap: wrap; height: auto; padding: 6px 8px; gap: 6px; }
   .brand { gap: 6px; }
-  .project-name { width: 90px; font-size: 13px; padding: 4px 6px; }
+  .project-name { flex: 1 1 0; width: 0; min-width: 0; font-size: 13px; padding: 4px 6px; } /* takes what the buttons leave */
   .search-wrap { order: 3; flex: 1 1 100%; max-width: none; }
-  .brand { flex: 1 1 auto; }
-  .topbar-right { order: 2; flex: 1 1 100%; margin-left: 0; gap: 6px; overflow-x: auto; flex-wrap: nowrap; justify-content: flex-start; scrollbar-width: none; padding-bottom: 2px; }
-  .topbar-right::-webkit-scrollbar { display: none; }
-  .seg button { padding: 7px 8px; font-size: 12px; }
-  #basemapSelect { max-width: 120px; }
+  .brand { flex: 1 1 0; min-width: 0; }
+  .brand-name { display: none; } /* the logo says it */
+  .topbar-right { order: 2; flex: 0 0 auto; margin-left: 0; gap: 6px; }
+  #presentBtn, .menu-wrap { display: none; } /* in the menu */
+  #moreBtn { display: inline-flex; }
   #main { position: relative; }
   /* side panel becomes a bottom sheet */
   #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: 56%; max-height: 70vh; border-left: 0; border-top: 1px solid var(--border);
     border-radius: 14px 14px 0 0; z-index: 30; box-shadow: 0 -8px 24px rgba(0,0,0,.5); padding-bottom: env(safe-area-inset-bottom); }
-  .tabs { overflow-x: auto; scrollbar-width: none; position: relative; }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tabs button { flex: 0 0 auto; padding: 12px 10px; }
+  .tabs { position: relative; }
+  .tabs button { padding: 12px 6px; }
+  .tabs .sheet-close { margin-left: 0; }
   .sheet-close { display: flex; align-items: center; justify-content: center; flex: 0 0 36px; height: 40px; border: 0; background: transparent; color: var(--text-dim); font-size: 14px; }
   .tab-panel { padding: 10px; }
   /* toolbar: compact column that fits a phone's height */
@@ -439,7 +452,6 @@ body.presenting #presentBar { display: flex; }
 .mb-datatable { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .mb-datatable td { padding: 2px 6px 2px 0; vertical-align: top; }
 .mb-datatable td:first-child { color: var(--text-dim); white-space: nowrap; }
-.tabs button { padding: 10px 2px; }
 
 /* sub-element toggles inside a dataset */
 .data-item .subsets { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 5px 0 2px 23px; font-size: 11px; color: var(--text); align-items: center; }
@@ -514,6 +526,21 @@ button.link:hover { text-decoration: underline; }
 .ds-tools select { flex: 0 0 auto; height: 32px; }
 .ds-source { margin-bottom: 14px; }
 .ds-source-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
+details.ds-source > summary { list-style: none; cursor: pointer; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+details.ds-source > summary::-webkit-details-marker { display: none; }
+details.ds-source > summary h3 { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; }
+details.ds-source > summary h3::before { content: '\25BE'; color: var(--text-dim); font-size: 11px; transition: transform .15s; }
+details.ds-source:not([open]) > summary h3::before { transform: rotate(-90deg); }
+details.ds-source[open] > summary { margin-bottom: 8px; }
+details.ds-source > summary .badge { flex: 0 0 auto; white-space: nowrap; }
+.ds-head { position: relative; display: flex; align-items: center; gap: 6px; padding-right: 26px; }
+.ds-head .check { margin: 0; }
+.ds-info { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%;
+  border: 1px solid var(--text-dim); color: var(--text-dim); font: italic 600 10px/1 Georgia, serif; cursor: help; user-select: none; }
+.ds-info:hover, .ds-info:focus { color: var(--text); border-color: var(--text); outline: none; }
+.ds-tip { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--text); box-shadow: 0 8px 20px rgba(0,0,0,.45); }
+.ds-info:hover + .ds-tip, .ds-info:focus + .ds-tip { display: block; } /* hover, or a tap (focus) on touch screens */
 .ds-source-head h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text); }
 .ds-source-head h3 a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--text-dim); }
 .ds-source .section { margin-bottom: 10px; }

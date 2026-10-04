@@ -1010,7 +1010,16 @@ window.MB = window.MB || {};
   };
 
   /* ---------- panel ---------- */
-  MB.data.ui = { q: '', filter: 'all' };
+  MB.data.ui = { q: '', filter: 'all', closed: new Set() };
+  // Which source blocks (FAA, ADS-B, custom layers...) are collapsed: a convenience of this device.
+  try { MB.data.ui.closed = new Set(JSON.parse(localStorage.getItem('gengis.dataClosed') || '[]')); } catch (e) { /* private mode: all open */ }
+  MB.data.saveClosed = function () { try { localStorage.setItem('gengis.dataClosed', JSON.stringify(Array.from(this.ui.closed))); } catch (e) { /* ignore */ } };
+  // A source block that collapses; a search keeps every block open so its matches show.
+  MB.data.sourceOpen = function (key) { return !!this.ui.q.trim() || !this.ui.closed.has(key); };
+  // A dataset's details behind an info icon next to its name (hover, or tap on a touch screen).
+  MB.data.infoIcon = function (text) {
+    return text ? `<span class="ds-info" tabindex="0" role="img" aria-label="About this source: ${esc(text)}">i</span><span class="ds-tip" role="tooltip">${esc(text)}</span>` : '';
+  };
 
   MB.data.renderPanel = async function () {
     const panel = document.getElementById('tab-data');
@@ -1051,7 +1060,7 @@ window.MB = window.MB || {};
       shownTotal += list.length;
       const groups = {};
       list.forEach(ds => { (groups[ds.def.group] = groups[ds.def.group] || []).push(ds); });
-      html += `<div class="ds-source"><div class="ds-source-head"><h3>${src.url ? `<a href="${src.url}" target="_blank" rel="noopener">${esc(src.name)}</a>` : esc(src.name)}</h3><span class="badge">${bySource[srcKey].filter(d => d.enabled).length}/${bySource[srcKey].length} on</span></div>${src.note ? `<p class="note">${esc(src.note)}</p>` : ''}`;
+      html += `<details class="ds-source" data-src="${esc(srcKey)}"${this.sourceOpen(srcKey) ? ' open' : ''}><summary class="ds-source-head"><h3>${src.url ? `<a href="${src.url}" target="_blank" rel="noopener">${esc(src.name)}</a>` : esc(src.name)}</h3><span class="badge">${bySource[srcKey].filter(d => d.enabled).length}/${bySource[srcKey].length} on</span></summary>${src.note ? `<p class="note">${esc(src.note)}</p>` : ''}`;
     Object.keys(groups).forEach(g => {
       html += `<div class="section"><h3>${esc(g)}</h3>`;
       groups[g].forEach(ds => {
@@ -1070,19 +1079,18 @@ window.MB = window.MB || {};
           if (d.extraStatus) { try { statusLine += '<br>' + esc(d.extraStatus()); } catch (e) { /* ignore */ } }
         } else statusLine = esc(d.minZoom ? 'zoom ' + d.minZoom + '+' : 'any zoom');
         html += `<div class="data-item${ds.enabled ? ' on' : ''}" data-id="${d.id}">
-          <label class="check" style="margin:0"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>
+          <div class="ds-head"><label class="check"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>${this.infoIcon(d.desc)}</div>
           ${d.custom ? `<button class="icon-btn mini danger" data-act="remove" title="Remove this service">${trashIcon}</button>` : ''}
           ${d.subsets
             ? `<div class="subsets">${d.subsets.items.concat(d.subsets.other ? [['__other', d.subsets.other, '#888']] : []).map(([k, t, c]) => `<label class="sub${ds.off.has(k) ? ' off' : ''}"><input type="checkbox" data-sub="${esc(k)}"${ds.off.has(k) ? '' : ' checked'}${ds.enabled ? '' : ' disabled'}><i style="background:${c}"></i>${esc(t)}</label>`).join('')}
                <span class="sub-actions"><button type="button" class="link" data-act="sub-all">all</button> · <button type="button" class="link" data-act="sub-none">none</button></span></div>`
             : `<div class="legend">${(d.legend || []).map(([t, c]) => `<span><i style="background:${c}"></i>${esc(t)}</span>`).join('')}</div>`}
-          ${d.desc ? `<div class="note">${esc(d.desc)}</div>` : ''}
           <div class="dstatus${ds.error ? ' err' : ''}">${ds.error ? esc(ds.error) : statusLine}</div>
         </div>`;
       });
       html += '</div>';
     });
-      html += '</div>';
+      html += '</details>';
     });
     if (!shownTotal && !adsbHtml) html += '<p class="note">No datasets match.</p>';
     html += `<div class="section"><h3>Options</h3>
@@ -1107,6 +1115,12 @@ window.MB = window.MB || {};
     panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!anyOn) { MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
     panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
     if (MB.adsb) MB.adsb.bindPanel(panel);
+    panel.querySelectorAll('details.ds-source[data-src]').forEach(d => d.addEventListener('toggle', () => {
+      if (ui.q.trim()) return; // opened by a search, not by the user
+      if (d.open) ui.closed.delete(d.dataset.src); else ui.closed.add(d.dataset.src);
+      this.saveClosed();
+    }));
+    panel.querySelectorAll('.ds-info').forEach(i => i.addEventListener('click', e => e.preventDefault()));
     panel.querySelectorAll('.data-item[data-id]').forEach(item => {
       const id = item.dataset.id;
       item.querySelector('[data-act="toggle"]').addEventListener('change', () => this.toggle(id));

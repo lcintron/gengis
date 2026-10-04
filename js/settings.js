@@ -182,7 +182,7 @@ window.MB = window.MB || {};
           const x = MB.getProvider(b.dataset.del);
           if (x && confirm('Remove provider "' + x.name + '"?')) {
             MB.settings.providers = MB.settings.providers.filter(y => y.id !== x.id);
-            if (MB.state.basemap === 'custom:' + x.id) MB.setBasemap('osm');
+            if (MB.state.basemap === 'custom:' + x.id) MB.setBasemap('esriSat');
             MB.saveSettings(); this.render();
           }
         } else if (b.dataset.use) { MB.setBasemap('custom:' + b.dataset.use); MB.toast('Base map changed'); }

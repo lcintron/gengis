@@ -41,7 +41,7 @@
     MB.map.pm.setGlobalOptions({ pmIgnore: false, allowSelfIntersection: true });
     MB.loadSettings();
     MB.initTooltipDelay(MB.map);
-    MB.setBasemap('osm');
+    MB.setBasemap(MB.state.basemap); // the default until the autosaved project says otherwise
 
     MB.measure.init();
     MB.tools.init();
