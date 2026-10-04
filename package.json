@@ -1,6 +1,6 @@
 {
   "name": "gengis",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Standalone map building tool: draw shapes, place SVGs, layers, measurement, search. PWA + Electron.",
   "private": true,
   "main": "electron/main.js",
