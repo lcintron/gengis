@@ -33,7 +33,9 @@ window.MB = window.MB || {};
       document.title = MB.state.projectName + ' - GenGIS';
       MB.commit('rename project');
     });
-    MB.on('project', () => { nameInput.value = MB.state.projectName; document.title = MB.state.projectName + ' - GenGIS'; });
+    const showName = () => { nameInput.value = MB.state.projectName; document.title = MB.state.projectName + ' - GenGIS'; };
+    MB.on('project', showName);
+    showName(); // the autosaved project was loaded before this bar was set up: its 'project' event came too early
 
     $$('#unitsSeg button').forEach(b => b.addEventListener('click', () => MB.setUnits(b.dataset.units)));
     MB.on('units', u => {
@@ -85,6 +87,40 @@ window.MB = window.MB || {};
       menu.classList.add('hidden');
       MB.ui.menuAction(act);
     });
+
+    // Phones: the units, the base map and the project menu (presenter mode included) move behind the menu button,
+    // so the top bar is a single row that never scrolls: a scrolling row clipped the Project dropdown and let the
+    // base map list run over the units.
+    const more = $('#moreMenu'), moreBtn = $('#moreBtn'), units = $('#unitsSeg'), right = $('.topbar-right');
+    const phone = window.matchMedia('(max-width: 640px)');
+    const closeMore = () => { more.classList.add('hidden'); moreBtn.setAttribute('aria-expanded', 'false'); };
+    const place = () => {
+      if (phone.matches) {
+        $('[data-slot="units"]', more).appendChild(units);
+        $('[data-slot="basemap"]', more).appendChild(bm);
+      } else {
+        right.insertBefore(units, $('#undoBtn'));
+        right.insertBefore(bm, $('#undoBtn'));
+        closeMore();
+      }
+    };
+    moreBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!more.classList.contains('hidden')) { closeMore(); return; }
+      // the project menu's items as they are now (Install shows only once the browser offers it)
+      const items = $('.more-items', more);
+      items.innerHTML = '';
+      Array.from(menu.children).forEach(c => items.appendChild(c.cloneNode(true)));
+      more.classList.remove('hidden');
+      moreBtn.setAttribute('aria-expanded', 'true');
+    });
+    more.addEventListener('click', e => {
+      const b = e.target.closest('.more-items button');
+      if (b && b.dataset.act) { closeMore(); MB.ui.menuAction(b.dataset.act); }
+    });
+    document.addEventListener('click', e => { if (!e.target.closest('#moreMenu, #moreBtn')) closeMore(); });
+    if (phone.addEventListener) phone.addEventListener('change', place); else phone.addListener(place);
+    place();
 
     $('#fileOpen').addEventListener('change', e => {
       const f = e.target.files[0];
@@ -202,7 +238,8 @@ window.MB = window.MB || {};
     if ($('#sidebar').classList.contains('collapsed')) { $('#sidebar').classList.remove('collapsed'); setTimeout(() => MB.map.invalidateSize(), 50); }
   };
   function initTabs() {
-    $$('.tabs button').forEach(b => b.addEventListener('click', () => MB.ui.showTab(b.dataset.tab)));
+    // the tabs only: the phone sheet's close button shares the row, and showing a tab reopens the panel
+    $$('.tabs button[data-tab]').forEach(b => b.addEventListener('click', () => MB.ui.showTab(b.dataset.tab)));
   }
 
   /* ================= layers panel ================= */

@@ -7,7 +7,7 @@ window.MB = window.MB || {};
     projectName: 'Untitled map',
     units: 'metric',        // metric | imperial | nautical
     shortUnit: 'ft',        // nautical only: unit for distances under 0.1 NM (ft | m)
-    basemap: 'osm',
+    basemap: 'esriSat',  // default base map for a new map (Esri World Imagery)
     showMeasurements: false,
     continueDrawing: true,
     snapping: true,
@@ -86,7 +86,7 @@ window.MB = window.MB || {};
 
   MB.setBasemap = function (key) {
     let layer = MB.buildBaseLayer(key);
-    if (!layer) { key = 'osm'; layer = MB.buildBaseLayer(key); }
+    if (!layer) { key = 'esriSat'; layer = MB.buildBaseLayer(key); }
     if (MB.baseLayer) MB.map.removeLayer(MB.baseLayer);
     MB.baseLayer = layer;
     MB.baseLayer.addTo(MB.map);
