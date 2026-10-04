@@ -20,7 +20,7 @@ A free map builder that runs in the browser (installable, works offline) or as a
 
 ## Features
 
-- **Draw and edit** markers, text, lines, polygons, rectangles, circles and SVG images, with snapping, multi-select, joining lines into shapes, name labels and full styling. Each new object gets its own color.
+- **Draw and edit** markers, text, lines, polygons, rectangles, circles and SVG images, with snapping, multi-select, joining lines into shapes, name labels and full styling. By default, each new object gets its own color.
 - **Measure** distances and areas in metric, imperial or nautical units, with a scale bar.
 - **Layers** with show/hide, lock and draw order; undo/redo; right-click menus; presenter mode.
 - **Projects** autosave in the browser and save/open as `.gengis.json`; GeoJSON import/export.
@@ -53,7 +53,7 @@ Browsers only read another server's data when it allows them to (CORS), and bloc
 
 ## Releasing
 
-Releases run in CI on demand: **Actions → Release → Run workflow** on `main` (or `gh workflow run release.yml -f bump=auto`). The version bump is derived from conventional commits. The workflow tags the release, builds Windows, macOS and Linux installers, publishes a GitHub Release, and deploys the site. **Dry run** only reports the version it would release. `make serve`, `make build` and `make release DRY=1` do the same locally.
+Releases run in CI on demand: **Actions → Release → Run workflow** on `main` (or `gh workflow run release.yml -f bump=auto`). By default, the version bump is derived from conventional commits (or choose one in the form). The workflow tags the release, builds Windows, macOS and Linux installers, publishes a GitHub Release, and deploys the site. **Dry run** only reports the version it would release. `make serve`, `make build` and `make release DRY=1` do the same locally.
 
 ## Keyboard shortcuts
 
@@ -64,7 +64,7 @@ Releases run in CI on demand: **Actions → Release → Run workflow** on `main`
 | D / A | Measure distance / area |
 | F | Presenter mode |
 | Esc / Delete | Cancel or deselect / delete |
-| Ctrl+Z / Ctrl+Y / Ctrl+D / Ctrl+S | Undo / redo / duplicate / save |
+| Ctrl/Cmd + Z / Y / D / S | Undo / redo / duplicate / save |
 | / | Search |
 
 ## Data sources and fair use
