@@ -144,8 +144,8 @@ window.MB = window.MB || {};
 
   MB.ui.menuAction = function (act) {
     switch (act) {
-      case 'new': // nothing is lost: the open project stays in Recent projects
-        MB.projects.flush().then(() => { MB.newProject(); MB.toast('New project. The previous one is in Recent projects.', 3500); });
+      case 'new': // nothing is lost: the open project stays in Recent projects (asked first when it could not be saved there)
+        MB.projects.confirmReplace('Start a new project').then(ok => { if (ok) { MB.newProject(); MB.toast('New project. The previous one is in Recent projects.', 3500); } });
         break;
       case 'open': $('#fileOpen').click(); break;
       case 'recent': MB.projects.openDialog(); break;

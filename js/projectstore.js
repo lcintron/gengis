@@ -59,9 +59,14 @@ window.MB = window.MB || {};
     ready: false,       // false until start-up has settled which project is open: nothing is saved before
     readOnly: false,    // open in another tab: shown here, saved there
     persisted: null,    // whether the browser has promised not to clear the app's storage
-    where: 'database'   // or 'browser storage' when IndexedDB is unavailable
+    where: 'database',  // or 'browser storage' when IndexedDB is unavailable
+    archived: false     // the open project, as it is now, is in the database (so Recent projects has it)
   };
-  let timer = null, pending = false, lastSnap = {}, warned = false;
+  let timer = null, pending = false, lastSnap = {}, warned = false, lastFits = true;
+  let heldId = null, release = null, owned = false, claiming = false;
+
+  // Only the tab that holds the open project's lock writes it, and never while that is being settled.
+  const canWrite = () => P.ready && !P.readOnly && owned && !claiming && MB.state.projectId === heldId;
 
   function setStatus(status, error) {
     P.status = status;
@@ -76,71 +81,91 @@ window.MB = window.MB || {};
   // A change happened: save it a moment later.
   P.schedule = function () {
     pending = true;
-    if (!P.ready || P.readOnly) return;
+    P.archived = false;
+    if (!canWrite()) return;
     clearTimeout(timer);
     if (P.status !== 'saving') setStatus('saving');
     timer = setTimeout(() => P.save(), DELAY);
   };
 
-  // The copy in localStorage: the whole project while it fits, otherwise a note that the database holds it.
-  // The pointer goes first: a full localStorage must not leave start-up pointing at another project.
+  // A project small enough goes to localStorage in full, at once (the pointer first: a full localStorage must not
+  // leave start-up pointing at another project). A larger one replaces it there by a note only once the database
+  // holds it, so the last full copy is never given up for a save that may fail.
+  const noteOf = p => JSON.stringify({ id: p.id, savedAt: p.savedAt, inDatabase: true });
   function writeMirror(p, json) {
-    const note = JSON.stringify({ id: p.id, savedAt: p.savedAt, inDatabase: true });
     try { localStorage.setItem(CURRENT, p.id); } catch (e) { /* ignore */ }
-    try {
-      localStorage.setItem(MIRROR, json.length <= MIRROR_MAX ? json : note);
-      return json.length <= MIRROR_MAX;
-    } catch (e) {
-      try { localStorage.setItem(MIRROR, note); } catch (x) { /* ignore */ } // never leave an older full copy behind
-      return false;
-    }
+    try { localStorage.setItem(MIRROR, json); return true; } catch (e) { return false; }
   }
 
+  // Keep the last SNAP_KEEP recovery copies of a project.
+  async function prune(snaps, id) {
+    const all = (await snapsOf(snaps, id)).sort((a, b) => b.savedAt - a.savedAt);
+    all.slice(SNAP_KEEP).forEach(x => snaps.delete(x.key));
+  }
+
+  // Save the open project now. Resolves true once it is in the database.
   P.save = async function () {
     clearTimeout(timer);
-    if (!P.ready || P.readOnly) return;
+    if (!canWrite()) return false;
     pending = false;
-    const p = MB.serializeProject(), json = JSON.stringify(p), now = Date.now();
-    const mirrored = writeMirror(p, json);
+    const now = Date.now(), p = MB.serializeProject();
+    p.savedAt = new Date(now).toISOString(); // one stamp for both copies: start-up compares them exactly
+    const json = JSON.stringify(p);
+    lastFits = json.length <= MIRROR_MAX;
+    const mirrored = lastFits && writeMirror(p, json);
+    let archived = false;
     try {
       const rec = Object.assign(summary(p), { savedAt: now, data: p });
       await run(['projects', 'snapshots'], 'readwrite', async (projects, snaps) => {
         projects.put(rec);
         // a recovery copy now and then, the oldest ones dropped
-        if (!(p.id in lastSnap)) lastSnap[p.id] = Math.max(0, ...(await snapsOf(snaps, p.id)).map(s => s.savedAt));
+        if (!(p.id in lastSnap)) lastSnap[p.id] = Math.max(0, ...(await snapsOf(snaps, p.id)).map(x => x.savedAt));
         if (now - lastSnap[p.id] >= SNAP_EVERY) {
           snaps.put(Object.assign(summary(p), { key: p.id + '|' + now, savedAt: now, reason: 'autosave', data: p }));
           lastSnap[p.id] = now;
-          const all = (await snapsOf(snaps, p.id)).sort((a, b) => b.savedAt - a.savedAt);
-          all.slice(SNAP_KEEP).forEach(s => snaps.delete(s.key));
+          await prune(snaps, p.id);
         }
       });
+      archived = true;
       P.where = 'database';
+      if (!lastFits) { try { localStorage.setItem(CURRENT, p.id); localStorage.setItem(MIRROR, noteOf(p)); } catch (e) { /* ignore */ } }
     } catch (e) {
-      if (!mirrored) { fail(e); return; }
-      P.where = 'browser storage'; // no database: the localStorage copy is the save
+      if (!mirrored) { pending = true; fail(e); return false; } // still to be saved: kept dirty, tried again
+      P.where = 'browser storage'; // no database: the localStorage copy is the save, but not a Recent project
     }
     P.savedAt = now;
+    P.archived = archived && !pending;
     setStatus(pending ? 'saving' : 'saved');
     if (pending) P.schedule();
     if (!warned) { warned = true; P.persist(false); }
+    return archived;
   };
 
   function fail(e) {
     console.warn('Autosave failed', e);
+    const first = P.status !== 'error';
     setStatus('error', e && e.message ? e.message : String(e));
-    MB.toast('Autosave failed (' + P.error + '). Save your project to a file.', 6000);
+    if (first) MB.toast('Autosave failed (' + P.error + '). Save your project to a file.', 6000);
   }
 
-  // The page is being hidden or closed: save at once. localStorage is written before the page goes; the database
-  // write is started and normally completes.
-  P.saveNow = function () {
-    if (!P.ready || P.readOnly) return;
-    if (pending || P.status === 'saving') P.save();
+  // The page is being hidden or closed: save at once. A project that fits localStorage is written there before the
+  // page goes; the database write is started and normally completes.
+  P.saveNow = function () { if (canWrite() && pending) P.save(); };
+
+  // Before another project replaces this one: save what is pending. Resolves true when the project is safely in
+  // the database (or this tab does not own it: the tab that does saves it).
+  P.flush = async function () {
+    if (!canWrite()) return P.readOnly || !P.ready;
+    if (pending || P.status === 'saving') await P.save();
+    return P.archived;
   };
 
-  // Save anything pending before another project replaces this one.
-  P.flush = function () { return (P.ready && !P.readOnly && (pending || P.status === 'saving')) ? P.save() : Promise.resolve(); };
+  // Ask before replacing a project that is not in the database (it would not be in Recent projects).
+  P.confirmReplace = async function (what) {
+    if (await P.flush()) return true;
+    return confirm('"' + MB.state.projectName + '" could not be saved in this browser\'s project storage' + (P.error ? ' (' + P.error + ')' : '') +
+      ', so it will not be in Recent projects. ' + what + ' anyway?\n\nChoose Cancel, then Project \u2192 Save project to keep it as a file.');
+  };
 
   /* ---------- start-up ---------- */
 
@@ -154,26 +179,40 @@ window.MB = window.MB || {};
       if (p.inDatabase || !MB.isProject(p)) return false;
       MB.loadProject(p);
       mirrorAt = Date.parse(p.savedAt) || 0;
-      mirrorOpened = true;
+      mirrorOpened = p.id === MB.state.projectId; // an id-less 0.4 copy got a new id: nothing in the database to compare
       return true;
     } catch (e) { console.warn('Could not load the autosave', e); return false; }
   };
 
   // Asynchronous: the database copy of the open project replaces the localStorage one when it is newer (or the
   // only one). Saving starts afterwards, so start-up never overwrites a saved project with an empty one.
-  P.start = async function () {
+  P.start = function () {
+    if (!P.started) P.started = startUp();
+    return P.started;
+  };
+  async function startUp() {
+    // edits made while the database is being read are the user's latest: they are kept, not replaced
+    const shown = () => JSON.stringify(MB.serializeProject({ noView: true }));
+    const before = shown();
     try {
       const want = MB.storedItem(CURRENT) || MB.state.projectId;
-      let rec = want ? await run('projects', 'readonly', s => done(s.get(want))) : null;
-      if (!rec && !mirrorOpened) { const last = (await P.list())[0]; if (last) rec = await run('projects', 'readonly', s => done(s.get(last.id))); } // no pointer: the most recent
+      let rec = want ? await run('projects', 'readonly', st => done(st.get(want))) : null;
+      if (!rec && !mirrorOpened) { const last = (await P.list())[0]; if (last) rec = await run('projects', 'readonly', st => done(st.get(last.id))); } // no pointer: the most recent
       // the database copy when localStorage held none (a large project) or an older one
-      if (rec && (!mirrorOpened || rec.savedAt > mirrorAt + 1000)) MB.loadProject(rec.data);
+      if (rec && (!mirrorOpened || rec.savedAt > mirrorAt) && shown() === before) MB.loadProject(rec.data);
     } catch (e) { /* no database: the localStorage copy stands */ }
     P.ready = true;
-    await claim(MB.state.projectId);
-    if (!P.readOnly) P.save();
     MB.on('project', () => { if (MB.state.projectId !== heldId) claim(MB.state.projectId); });
-  };
+    await claim(MB.state.projectId);
+    if (canWrite()) P.save();
+    // A large project's last changes cannot be written while the page closes: let the browser ask first.
+    window.addEventListener('beforeunload', e => {
+      if (!canWrite() || !pending || lastFits) return;
+      P.save();
+      e.preventDefault();
+      e.returnValue = '';
+    });
+  }
 
   /* ---------- recent projects and recovery copies ---------- */
 
@@ -185,18 +224,22 @@ window.MB = window.MB || {};
     const now = Date.now();
     await run(['projects', 'snapshots'], 'readwrite', async (projects, snaps) => {
       const rec = await done(projects.get(id));
-      if (rec) snaps.put(Object.assign(summary(rec.data), { key: id + '|' + now, savedAt: now, reason, data: rec.data }));
+      if (!rec) return;
+      snaps.put(Object.assign(summary(rec.data), { key: id + '|' + now, savedAt: now, reason, data: rec.data }));
+      await prune(snaps, id);
     }).catch(() => {});
   }
 
   // A project file is being opened: if it is a project saved here, what is saved here is kept as a recovery copy.
+  // Resolves false when the user would rather not replace the open project.
   P.beforeOpen = async function (p) {
-    await P.flush();
+    if (!(await P.confirmReplace('Open the file'))) return false;
     if (p && p.id) await keepCopy(p.id, 'before opening a file');
+    return true;
   };
 
   P.open = async function (id) {
-    await P.flush();
+    if (!(await P.confirmReplace('Open the other project'))) return;
     const rec = await run('projects', 'readonly', s => done(s.get(id)));
     if (!rec) { MB.toast('That project is no longer saved here.'); return; }
     MB.loadProject(rec.data);
@@ -242,34 +285,51 @@ window.MB = window.MB || {};
   };
 
   /* ---------- one tab edits a project ---------- */
-  let heldId = null, release = null;
+  // Nothing is written from the moment a claim starts until it is settled, and only for the project claimed.
   async function claim(id) {
+    claiming = true; owned = false; clearTimeout(timer);
     if (release) { release(); release = null; }
     heldId = id;
-    if (!id || !navigator.locks) { setReadOnly(false); return; }
-    let resolveClaim;
-    const claimed = new Promise(r => { resolveClaim = r; });
-    navigator.locks.request('gengis.project.' + id, { ifAvailable: true }, lock => {
-      if (!lock) { resolveClaim(false); return null; }
-      resolveClaim(true);
-      return new Promise(r => { release = r; }); // held until this tab opens another project
-    }).catch(() => { if (heldId === id) setReadOnly(true, 'taken'); }); // another tab took it over
-    setReadOnly(!(await claimed));
+    let granted = true;
+    if (id && navigator.locks) {
+      let resolveClaim;
+      const claimed = new Promise(r => { resolveClaim = r; });
+      navigator.locks.request('gengis.project.' + id, { ifAvailable: true }, lock => {
+        if (!lock || heldId !== id) { resolveClaim(false); return null; } // not available, or no longer wanted
+        resolveClaim(true);
+        return new Promise(r => { release = r; }); // held until this tab opens another project
+      }).catch(() => { if (heldId === id) { owned = false; setReadOnly(true, 'taken'); } }); // another tab took it over
+      granted = await claimed;
+    }
+    if (heldId !== id) return; // a later claim took over from this one
+    owned = granted;
+    claiming = false;
+    setReadOnly(!granted);
+  }
+
+  // What was last saved for a project: the newer of the database record and the localStorage copy.
+  async function latestSaved(id) {
+    const rec = await run('projects', 'readonly', st => done(st.get(id))).catch(() => null);
+    let m = null;
+    try { const x = JSON.parse(localStorage.getItem(MIRROR) || 'null'); if (x && x.id === id && !x.inDatabase && MB.isProject(x)) m = x; } catch (e) { /* ignore */ }
+    if (m && (!rec || (Date.parse(m.savedAt) || 0) > rec.savedAt)) return m;
+    return rec ? rec.data : m;
   }
 
   // Edit the project in this tab: take it over from the other one, starting from what it last saved.
   P.takeOver = async function () {
     const id = MB.state.projectId;
+    claiming = true; owned = false;
     if (release) { release(); release = null; }
+    heldId = id;
     let resolveClaim;
     const claimed = new Promise(r => { resolveClaim = r; });
     navigator.locks.request('gengis.project.' + id, { steal: true }, () => { resolveClaim(); return new Promise(r => { release = r; }); })
-      .catch(() => { if (heldId === id) setReadOnly(true, 'taken'); });
+      .catch(() => { if (heldId === id) { owned = false; setReadOnly(true, 'taken'); } });
     await claimed;
-    heldId = id;
-    const rec = await run('projects', 'readonly', s => done(s.get(id))).catch(() => null);
-    P.readOnly = false;
-    if (rec) MB.loadProject(rec.data);
+    const data = await latestSaved(id);
+    owned = true; claiming = false; P.readOnly = false;
+    if (data) MB.loadProject(data);
     setReadOnly(false);
     P.save();
   };

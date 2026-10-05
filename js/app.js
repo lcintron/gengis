@@ -9,8 +9,13 @@
     if (splash) setTimeout(() => { splash.classList.add('hide'); setTimeout(() => splash.remove(), 400); }, 150);
   }
 
+  // The splash stays up until the saved project has been read from the database (3 s at most), so nothing can be
+  // edited in a project that is about to be replaced by its newer saved copy.
   function init() {
-    try { start(); } finally { hideSplash(); }
+    try { start(); } finally {
+      const settled = MB.projects && MB.projects.started ? MB.projects.started.catch(() => {}) : Promise.resolve();
+      Promise.race([settled, new Promise(r => setTimeout(r, 3000))]).then(hideSplash);
+    }
   }
 
   // A new release installs in the background while the page keeps running the version it loaded. Say so once it
@@ -24,7 +29,7 @@
       el.id = 'mb-update';
       el.setAttribute('role', 'status');
       el.innerHTML = '<span>A new version of GenGIS is ready.</span><button type="button" class="btn small primary">Reload</button><button type="button" class="icon-btn mini" title="Later" aria-label="Later">&times;</button>';
-      el.querySelector('.primary').addEventListener('click', () => { MB.saveNow(); location.reload(); });
+      el.querySelector('.primary').addEventListener('click', () => { MB.projects.flush().finally(() => location.reload()); }); // saved first, also a large project
       el.querySelector('.icon-btn').addEventListener('click', () => el.remove());
       document.body.appendChild(el);
     });
@@ -49,6 +54,7 @@
 
     // restore previous session or start fresh
     if (!MB.loadAutosave()) {
+      MB.state.projectId = MB.uid(); // a project of its own from the start
       MB.createLayer('Layer 1');
       MB.resetHistory();
     }

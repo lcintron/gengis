@@ -19,7 +19,7 @@ window.MB = window.MB || {};
   MB.openFile = function (file) {
     return file.text().then(async txt => {
       const p = JSON.parse(txt);
-      if (MB.isProject(p)) { await MB.projects.beforeOpen(p); MB.loadProject(p); MB.toast('Project loaded'); return; }
+      if (MB.isProject(p)) { if (!(await MB.projects.beforeOpen(p))) return; MB.loadProject(p); MB.toast('Project loaded'); return; }
       if (p && (p.type === 'FeatureCollection' || p.type === 'Feature')) { MB.importGeoJSON(p, file.name); return; }
       throw new Error('Unrecognized file');
     }).catch(e => MB.toast('Could not open file: ' + e.message));
