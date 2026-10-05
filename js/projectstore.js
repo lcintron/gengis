@@ -431,16 +431,27 @@ window.MB = window.MB || {};
       <div class="row right"><button class="btn" data-close>Close</button></div>`;
     box.querySelector('[data-close]').addEventListener('click', () => dlg.classList.add('hidden'));
     box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await P.open(b.dataset.open); }));
-    box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
-      const r = list.find(x => x.id === b.dataset.del);
-      if (!confirm(`Delete "${r ? r.name : 'this project'}" and its earlier copies from this device?`)) return;
+    // Confirm inside the row: some embedded browsers (and in-app previews) suppress confirm() and read it as Cancel,
+    // which made these buttons look dead.
+    const ask = (btn, question, yes, act) => {
+      const row = btn.closest('.recent-item');
+      const actions = Array.from(row.children).filter(el => !el.classList.contains('recent-main'));
+      actions.forEach(el => { el.style.display = 'none'; });
+      const q = document.createElement('div');
+      q.className = 'recent-ask';
+      q.innerHTML = `<span>${esc(question)}</span><button class="btn small danger" data-yes>${esc(yes)}</button><button class="btn small" data-no>Cancel</button>`;
+      row.appendChild(q);
+      q.querySelector('[data-no]').addEventListener('click', () => { q.remove(); actions.forEach(el => { el.style.display = ''; }); btn.focus(); });
+      q.querySelector('[data-yes]').addEventListener('click', act);
+      q.querySelector('[data-yes]').focus();
+    };
+    box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => ask(b, 'Delete it and its earlier copies?', 'Delete', async () => {
       await P.remove(b.dataset.del);
       P.openDialog();
-    }));
-    box.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', async () => {
-      if (!confirm('Replace the open project with this earlier copy? What is open now is kept as a copy too.')) return;
+    })));
+    box.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', () => ask(b, 'Replace the open project with this copy?', 'Restore', async () => {
       dlg.classList.add('hidden');
       await P.restore(b.dataset.restore);
-    }));
+    })));
   };
 })(window.MB);
