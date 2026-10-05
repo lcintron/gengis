@@ -60,13 +60,18 @@ window.MB = window.MB || {};
     readOnly: false,    // open in another tab: shown here, saved there
     persisted: null,    // whether the browser has promised not to clear the app's storage
     where: 'database',  // or 'browser storage' when IndexedDB is unavailable
-    archived: false     // the open project, as it is now, is in the database (so Recent projects has it)
+    archived: false,    // the open project, as it is now, is in the database (so Recent projects has it)
+    fileBacked: false   // the open project was saved to a file or opened from one (so it is not a draft)
   };
+  // A draft: a map still called "Untitled map" that was never saved to a file nor opened from one. Drafts do not
+  // pile up in Recent projects: a new map takes the place of an earlier one (asked first when it has objects).
+  const isUntitled = name => /^\s*untitled( map)?\s*$/i.test(name || '');
+  const isDraft = r => isUntitled(r.name) && !r.fileBacked;
   let timer = null, pending = false, lastSnap = {}, warned = false;
   // Every change bumps the revision; a save records which revision it wrote where. "Archived" means the database
   // holds the latest revision. Saves run one at a time.
   let rev = 0, dbRev = -1, mirrorRev = -1, inflight = null;
-  let heldId = null, release = null, owned = false, claiming = false, claimToken = 0;
+  let heldId = null, release = null, owned = false, claiming = false, claimToken = 0, claimWait = Promise.resolve();
   let startEdits = -1; // while start-up reads the database: changes made meanwhile (-1: not counting)
 
   // Only the tab that holds the open project's lock writes it, and never while that is being settled.
@@ -122,7 +127,7 @@ window.MB = window.MB || {};
     const json = JSON.stringify(p), fits = json.length <= MIRROR_MAX;
     const mirrored = fits && writeMirror(p, json);
     if (mirrored) mirrorRev = savingRev;
-    const rec = Object.assign(summary(p), { savedAt: now, data: p });
+    const rec = Object.assign(summary(p), { savedAt: now, fileBacked: !!P.fileBacked, data: p });
     inflight = run(['projects', 'snapshots'], 'readwrite', async (projects, snaps) => {
       projects.put(rec);
       // a recovery copy now and then, the oldest ones dropped
@@ -169,6 +174,8 @@ window.MB = window.MB || {};
   // Before another project replaces this one: save what is pending. Resolves true when the project is safely in
   // the database (or this tab does not own it: the tab that does saves it).
   P.flush = async function () {
+    // a project just opened: its lock is still being settled (bounded, so nothing can hang on it)
+    for (const until = Date.now() + 5000; claiming && Date.now() < until;) await Promise.race([claimWait, new Promise(r => setTimeout(r, 50))]);
     if (!canWrite()) return P.readOnly || !P.ready;
     if (dbRev !== rev || inflight) await P.save();
     return dbRev === rev;
@@ -177,9 +184,57 @@ window.MB = window.MB || {};
   // Ask before replacing a project that is not in the database (it would not be in Recent projects).
   P.confirmReplace = async function (what) {
     if (await P.flush()) return true;
-    return confirm('"' + MB.state.projectName + '" could not be saved in this browser\'s project storage' + (P.error ? ' (' + P.error + ')' : '') +
-      ', so it will not be in Recent projects. ' + what + ' anyway?\n\nChoose Cancel, then Project \u2192 Save project to keep it as a file.');
+    return MB.ask('"' + MB.state.projectName + '" could not be saved in this browser\'s project storage' + (P.error ? ' (' + P.error + ')' : '') +
+      ', so it will not be in Recent projects. ' + what + ' anyway?\n\nTo keep it, cancel and use Project \u2192 Save project.', what, 'Cancel');
   };
+
+  // Which projects other tabs have open (their lock is held).
+  async function openElsewhere() {
+    try {
+      const held = (await navigator.locks.query()).held;
+      const mine = held.find(l => l.name === lockName(heldId)); // this tab's own locks are not "elsewhere"
+      return new Set(held.filter(l => !mine || l.clientId !== mine.clientId).map(l => l.name));
+    } catch (e) { return new Set(); }
+  }
+  const lockName = id => 'gengis.project.' + id;
+
+  // A fresh map, not a draft.
+  P.startFresh = function () { MB.newProject(); P.fileBacked = false; };
+
+  // Project -> New project. A draft is not kept twice: an empty one is replaced quietly; one with objects is
+  // shown, and the user is asked whether a new map should take its place.
+  P.newMap = async function () {
+    if (!(await P.confirmReplace('Start a new project'))) return;
+    const cur = MB.state.projectId;
+    const question = 'This untitled map has not been saved or named. Start a new map in its place?';
+    if (isUntitled(MB.state.projectName) && !P.fileBacked) {
+      if (!Object.keys(MB.featureLayers).length) { MB.toast('This map is already new.'); return; }
+      if (!(await MB.ask(question, 'Start new', 'Keep it'))) return;
+      P.startFresh();
+      await P.remove(cur);
+      MB.toast('New map');
+      return;
+    }
+    // an earlier draft, not open in another tab
+    const busy = await openElsewhere();
+    const drafts = (await P.list()).filter(r => r.id !== cur && isDraft(r) && !busy.has(lockName(r.id)));
+    for (const r of drafts.filter(x => !x.objects)) await P.remove(r.id);
+    const kept = drafts.find(x => x.objects);
+    if (kept) {
+      await P.open(kept.id); // show it first
+      if (MB.state.projectId !== kept.id) return;
+      if (!(await MB.ask(question, 'Start new', 'Keep it'))) return;
+      P.startFresh();
+      await P.remove(kept.id);
+      MB.toast('New map');
+      return;
+    }
+    P.startFresh();
+    MB.toast('New project. The previous one is in Recent projects.', 3500);
+  };
+
+  // The open project was saved to a file (or opened from one): it is no longer a draft.
+  P.markFileBacked = function () { if (!P.fileBacked) { P.fileBacked = true; P.schedule(); } };
 
   /* ---------- start-up ---------- */
 
@@ -217,6 +272,7 @@ window.MB = window.MB || {};
       const edited = startEdits > 0;
       startEdits = -1;
       if (rec && (!mirrorOpened || rec.savedAt > mirrorAt) && !edited) MB.loadProject(rec.data);
+      if (rec && rec.id === MB.state.projectId) P.fileBacked = !!rec.fileBacked;
     } catch (e) { /* no database: the localStorage copy stands */ }
     startEdits = -1;
     P.ready = true;
@@ -236,7 +292,7 @@ window.MB = window.MB || {};
 
   /* ---------- recent projects and recovery copies ---------- */
 
-  P.list = () => run('projects', 'readonly', s => done(s.getAll())).then(all => all.map(r => ({ id: r.id, name: r.name, objects: r.objects, savedAt: r.savedAt })).sort((a, b) => b.savedAt - a.savedAt)).catch(() => []);
+  P.list = () => run('projects', 'readonly', s => done(s.getAll())).then(all => all.map(r => ({ id: r.id, name: r.name, objects: r.objects, savedAt: r.savedAt, fileBacked: !!r.fileBacked })).sort((a, b) => b.savedAt - a.savedAt)).catch(() => []);
   P.snapshots = id => run('snapshots', 'readonly', s => snapsOf(s, id)).then(all => all.map(s => ({ key: s.key, name: s.name, objects: s.objects, savedAt: s.savedAt, reason: s.reason })).sort((a, b) => b.savedAt - a.savedAt)).catch(() => []);
 
   // A recovery copy of what is saved for a project, before something replaces it.
@@ -257,7 +313,7 @@ window.MB = window.MB || {};
   P.beforeOpen = async function (p) {
     if (!(await P.confirmReplace('Open the file'))) return false;
     if (p && p.id && (await keepCopy(p.id, 'before opening a file')) === false &&
-      !confirm('The copy of this project saved here could not be kept before the file replaces it. Open the file anyway?')) return false;
+      !(await MB.ask('The copy of this project saved here could not be kept before the file replaces it. Open the file anyway?', 'Open the file', 'Cancel'))) return false;
     return true;
   };
 
@@ -266,6 +322,7 @@ window.MB = window.MB || {};
     const rec = await run('projects', 'readonly', s => done(s.get(id)));
     if (!rec) { MB.toast('That project is no longer saved here.'); return; }
     MB.loadProject(rec.data);
+    P.fileBacked = !!rec.fileBacked;
   };
 
   P.restore = async function (key) {
@@ -274,7 +331,7 @@ window.MB = window.MB || {};
     // the open project must be safely kept before an earlier copy replaces it
     if (!(await P.confirmReplace('Restore the earlier copy'))) return;
     if ((await keepCopy(snap.id, 'before restoring an earlier copy')) !== true &&
-      !confirm('What is open now could not be kept as a copy. Restore the earlier copy anyway?')) return;
+      !(await MB.ask('What is open now could not be kept as a copy. Restore the earlier copy anyway?', 'Restore', 'Cancel'))) return;
     MB.loadProject(snap.data);
     MB.toast('Restored the copy from ' + new Date(snap.savedAt).toLocaleString());
   };
@@ -311,7 +368,11 @@ window.MB = window.MB || {};
 
   /* ---------- one tab edits a project ---------- */
   // Nothing is written from the moment a claim starts until it is settled, and only for the project claimed.
-  async function claim(id) {
+  function claim(id) {
+    claimWait = claimNow(id);
+    return claimWait;
+  }
+  async function claimNow(id) {
     const token = ++claimToken;
     claiming = true; owned = false; clearTimeout(timer);
     if (release) { release(); release = null; }
@@ -343,7 +404,11 @@ window.MB = window.MB || {};
   }
 
   // Edit the project in this tab: take it over from the other one, starting from what it last saved.
-  P.takeOver = async function () {
+  P.takeOver = function () {
+    claimWait = takeOverNow();
+    return claimWait;
+  };
+  async function takeOverNow() {
     const id = MB.state.projectId, token = ++claimToken;
     claiming = true; owned = false;
     if (release) { release(); release = null; }
@@ -358,9 +423,11 @@ window.MB = window.MB || {};
       .catch(() => { lost = true; if (heldId === id) { owned = false; setReadOnly(true, 'taken'); } });
     await claimed;
     const data = await latestSaved(id);
-    if (lost || token !== claimToken) return; // taken back (or another claim started) while reading: stay as that left it
+    if (token !== claimToken) return; // another claim started while reading: it decides
+    if (lost) { claiming = false; return; } // taken back while reading: read-only, as the steal left it
     owned = true; claiming = false; P.readOnly = false;
     if (data) MB.loadProject(data);
+    P.fileBacked = !!(await run('projects', 'readonly', st => done(st.get(id))).then(r => r && r.fileBacked).catch(() => false));
     setReadOnly(false);
     P.save();
   };
@@ -386,7 +453,7 @@ window.MB = window.MB || {};
     el.innerHTML = `<span>${why === 'taken' ? 'This map is now being edited in another tab or window.' : 'This map is open in another tab or window.'} Changes made here are not saved.</span>
       <button type="button" class="btn small primary" data-act="here">Edit here</button><button type="button" class="btn small" data-act="new">New map</button>`;
     el.querySelector('[data-act="here"]').addEventListener('click', () => P.takeOver());
-    el.querySelector('[data-act="new"]').addEventListener('click', () => { MB.newProject(); MB.toast('New map'); });
+    el.querySelector('[data-act="new"]').addEventListener('click', () => P.newMap());
   }
 
   /* ---------- the Recent projects dialog ---------- */

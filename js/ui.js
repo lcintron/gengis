@@ -145,7 +145,7 @@ window.MB = window.MB || {};
   MB.ui.menuAction = function (act) {
     switch (act) {
       case 'new': // nothing is lost: the open project stays in Recent projects (asked first when it could not be saved there)
-        MB.projects.confirmReplace('Start a new project').then(ok => { if (ok) { MB.newProject(); MB.toast('New project. The previous one is in Recent projects.', 3500); } });
+        MB.projects.newMap();
         break;
       case 'open': $('#fileOpen').click(); break;
       case 'recent': MB.projects.openDialog(); break;
@@ -858,7 +858,7 @@ window.MB = window.MB || {};
       if (!confirm('Delete this project (its layers, objects and SVG library) and its saved copies on this device? Other projects stay.')) return;
       await MB.projects.flush();
       await MB.clearAutosave();
-      MB.newProject();
+      MB.projects.startFresh();
       MB.toast('Project reset');
     });
     $('#setPersist', panel).addEventListener('click', () => MB.projects.persist(true).then(ok => MB.toast(ok ? 'Kept on this device: the browser will not clear it to free space.' : 'The browser did not agree to keep it. Save important projects to a file.', 4500)));
