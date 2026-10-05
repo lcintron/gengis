@@ -260,11 +260,19 @@ window.MB = window.MB || {};
       dlg.querySelector('.ask-text').textContent = message;
       dlg.querySelector('[data-yes]').textContent = yes || 'OK';
       dlg.querySelector('[data-no]').textContent = no || 'Cancel';
-      const finish = v => { document.removeEventListener('keydown', onKey, true); dlg.remove(); resolve(v); };
-      const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); finish(false); } };
-      dlg.querySelector('[data-yes]').addEventListener('click', () => finish(true));
-      dlg.querySelector('[data-no]').addEventListener('click', () => finish(false));
-      document.addEventListener('keydown', onKey, true);
+      const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]');
+      const finish = v => { window.removeEventListener('keydown', onKey, true); dlg.remove(); resolve(v); };
+      // While it is open no key reaches the app (Delete must not delete the selection behind it). Enter and Space
+      // still press the focused button; Tab stays on the two buttons; Escape answers no.
+      const onKey = e => {
+        e.stopPropagation();
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        else if (e.key === 'Tab') { e.preventDefault(); (document.activeElement === yesBtn ? noBtn : yesBtn).focus(); }
+        else if (!dlg.contains(e.target)) e.preventDefault();
+      };
+      yesBtn.addEventListener('click', () => finish(true));
+      noBtn.addEventListener('click', () => finish(false));
+      window.addEventListener('keydown', onKey, true);
       document.body.appendChild(dlg);
       dlg.querySelector('[data-yes]').focus();
     });

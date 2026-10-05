@@ -205,6 +205,8 @@ window.MB = window.MB || {};
   // shown, and the user is asked whether a new map should take its place.
   P.newMap = async function () {
     if (!(await P.confirmReplace('Start a new project'))) return;
+    // a map this tab only shows (another tab edits it) is that tab's: leave it, and start a map of our own
+    if (P.readOnly) { P.startFresh(); MB.toast('New map'); return; }
     const cur = MB.state.projectId;
     const question = 'This untitled map has not been saved or named. Start a new map in its place?';
     if (isUntitled(MB.state.projectName) && !P.fileBacked) {
@@ -332,7 +334,9 @@ window.MB = window.MB || {};
     if (!(await P.confirmReplace('Restore the earlier copy'))) return;
     if ((await keepCopy(snap.id, 'before restoring an earlier copy')) !== true &&
       !(await MB.ask('What is open now could not be kept as a copy. Restore the earlier copy anyway?', 'Restore', 'Cancel'))) return;
+    const own = await run('projects', 'readonly', st => done(st.get(snap.id))).catch(() => null);
     MB.loadProject(snap.data);
+    P.fileBacked = !!(own && own.fileBacked); // the restored project's, not the one being left
     MB.toast('Restored the copy from ' + new Date(snap.savedAt).toLocaleString());
   };
 
@@ -395,12 +399,14 @@ window.MB = window.MB || {};
   }
 
   // What was last saved for a project: the newer of the database record and the localStorage copy.
+  // Resolves { data, fileBacked } (the record's flag either way).
   async function latestSaved(id) {
     const rec = await run('projects', 'readonly', st => done(st.get(id))).catch(() => null);
     let m = null;
     try { const x = JSON.parse(localStorage.getItem(MIRROR) || 'null'); if (x && x.id === id && !x.inDatabase && MB.isProject(x)) m = x; } catch (e) { /* ignore */ }
-    if (m && (!rec || (Date.parse(m.savedAt) || 0) > rec.savedAt)) return m;
-    return rec ? rec.data : m;
+    const fileBacked = !!(rec && rec.fileBacked);
+    if (m && (!rec || (Date.parse(m.savedAt) || 0) > rec.savedAt)) return { data: m, fileBacked };
+    return { data: rec ? rec.data : m, fileBacked };
   }
 
   // Edit the project in this tab: take it over from the other one, starting from what it last saved.
@@ -422,12 +428,12 @@ window.MB = window.MB || {};
     })
       .catch(() => { lost = true; if (heldId === id) { owned = false; setReadOnly(true, 'taken'); } });
     await claimed;
-    const data = await latestSaved(id);
+    const saved = await latestSaved(id); // the last wait: ownership is checked after it, and nothing waits after that
     if (token !== claimToken) return; // another claim started while reading: it decides
     if (lost) { claiming = false; return; } // taken back while reading: read-only, as the steal left it
     owned = true; claiming = false; P.readOnly = false;
-    if (data) MB.loadProject(data);
-    P.fileBacked = !!(await run('projects', 'readonly', st => done(st.get(id))).then(r => r && r.fileBacked).catch(() => false));
+    if (saved.data) MB.loadProject(saved.data);
+    P.fileBacked = saved.fileBacked;
     setReadOnly(false);
     P.save();
   };
