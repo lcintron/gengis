@@ -23,7 +23,7 @@ A free map builder that runs in the browser (installable, works offline) or as a
 - **Draw and edit** markers, text, lines, polygons, rectangles, circles and SVG images, with snapping, multi-select, joining lines into shapes, name labels and full styling. By default, each new object gets its own color.
 - **Measure** distances and areas in metric, imperial or nautical units, with a scale bar.
 - **Layers** with show/hide, lock and draw order; undo/redo; right-click menus; presenter mode.
-- **Projects** autosave in the browser and save/open as `.gengis.json`; GeoJSON import/export.
+- **Projects** save automatically on the device as you work, with recent projects and earlier copies to restore (Project → Recent projects); save/open as `.gengis.json`; GeoJSON import/export.
 - **Search** addresses, places and coordinates; find points of interest; center on **your location**.
 - **FAA data**, live for the area in view: Class B–E airspace with floors and ceilings, special use airspace, LAANC ceilings, security flight restrictions, TFRs, airports (with radio frequencies) and more. Click anywhere to see everything under that point. Any public ArcGIS layer can be added.
 - **Live air traffic (ADS-B)** from your own dump1090 receiver or the adsb.fi and adsb.lol networks, with type icons colored by altitude and aircraft look-up.

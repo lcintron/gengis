@@ -55,6 +55,7 @@
     MB.map.on('moveend', () => MB.autosave());
 
     MB.ui.init();
+    MB.projects.start(); // the saved copy in the database, if newer; saving starts once it has settled
     MB.data.init();
     MB.adsb.init();
     MB.locate.init();

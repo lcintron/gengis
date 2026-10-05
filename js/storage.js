@@ -3,35 +3,11 @@ window.MB = window.MB || {};
 (function (MB) {
   'use strict';
 
-  const KEY = 'gengis.project', OLD_KEY = 'map-builder.project.v1';
-
-  MB.autosave = MB.debounce(function () {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(MB.serializeProject()));
-      MB.emit('saved');
-    } catch (e) {
-      console.warn('Autosave failed', e);
-      MB.toast('Autosave failed (storage full?). Save your project to a file.');
-    }
-  }, 600);
-
-  // Synchronous save, used when the page is being hidden/closed so a pending debounced save is not lost.
-  MB.saveNow = function () {
-    try { localStorage.setItem(KEY, JSON.stringify(MB.serializeProject())); } catch (e) { /* ignore */ }
-  };
-
-  MB.loadAutosave = function () {
-    try {
-      const raw = MB.storedItem(KEY, OLD_KEY);
-      if (!raw) return false;
-      const p = JSON.parse(raw);
-      if (!MB.isProject(p)) return false;
-      MB.loadProject(p);
-      return true;
-    } catch (e) { console.warn('Could not load autosave', e); return false; }
-  };
-
-  MB.clearAutosave = function () { localStorage.removeItem(KEY); };
+  // Saving in the background lives in projectstore.js; these are the names the rest of the app calls.
+  MB.autosave = () => MB.projects.schedule();
+  MB.saveNow = () => MB.projects.saveNow(); // the page is being hidden or closed
+  MB.loadAutosave = () => MB.projects.loadMirror();
+  MB.clearAutosave = () => MB.projects.removeCurrent();
 
   MB.saveToFile = function () {
     const p = MB.serializeProject();
@@ -41,9 +17,9 @@ window.MB = window.MB || {};
   };
 
   MB.openFile = function (file) {
-    return file.text().then(txt => {
+    return file.text().then(async txt => {
       const p = JSON.parse(txt);
-      if (MB.isProject(p)) { MB.loadProject(p); MB.toast('Project loaded'); return; }
+      if (MB.isProject(p)) { await MB.projects.beforeOpen(p); MB.loadProject(p); MB.toast('Project loaded'); return; }
       if (p && (p.type === 'FeatureCollection' || p.type === 'Feature')) { MB.importGeoJSON(p, file.name); return; }
       throw new Error('Unrecognized file');
     }).catch(e => MB.toast('Could not open file: ' + e.message));

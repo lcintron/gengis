@@ -38,6 +38,7 @@
       <img class="logo" src="icons/logo-on-dark.svg" alt="GenGIS" title="GenGIS (G²)">
       <span class="brand-name" title="GenGIS (G²)">GenGIS</span>
       <input id="projectName" class="project-name" value="Untitled map" title="Project name" spellcheck="false">
+      <span id="saveStatus" class="save-status" role="status" aria-live="polite"></span>
     </div>
 
     <div class="search-wrap">
@@ -62,6 +63,7 @@
         <div id="menu" class="dropdown menu hidden">
           <button data-act="new">New project</button>
           <button data-act="open">Open project or GeoJSON…</button>
+          <button data-act="recent">Recent projects…</button>
           <button data-act="save">Save project (.json)</button>
           <button data-act="geojson">Export GeoJSON</button>
           <hr>
@@ -159,6 +161,7 @@
 <script src="js/geometry.js"></script>
 <script src="js/search.js"></script>
 <script src="js/storage.js"></script>
+<script src="js/projectstore.js"></script>
 <script src="js/scale.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/contextmenu.js"></script>

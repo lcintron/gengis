@@ -4,6 +4,7 @@ window.MB = window.MB || {};
   'use strict';
 
   MB.state = {
+    projectId: null,        // set when a project is created or opened
     projectName: 'Untitled map',
     units: 'metric',        // metric | imperial | nautical
     shortUnit: 'ft',        // nautical only: unit for distances under 0.1 NM (ft | m)
