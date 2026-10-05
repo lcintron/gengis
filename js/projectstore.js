@@ -67,6 +67,7 @@ window.MB = window.MB || {};
   // holds the latest revision. Saves run one at a time.
   let rev = 0, dbRev = -1, mirrorRev = -1, inflight = null;
   let heldId = null, release = null, owned = false, claiming = false, claimToken = 0;
+  let startEdits = -1; // while start-up reads the database: changes made meanwhile (-1: not counting)
 
   // Only the tab that holds the open project's lock writes it, and never while that is being settled.
   const canWrite = () => P.ready && !P.readOnly && owned && !claiming && MB.state.projectId === heldId;
@@ -81,8 +82,9 @@ window.MB = window.MB || {};
 
   /* ---------- saving ---------- */
 
-  // A change happened: save it a moment later.
-  P.schedule = function () {
+  // A change happened: save it a moment later. kind 'view': the map was only panned or zoomed.
+  P.schedule = function (kind) {
+    if (startEdits >= 0 && kind !== 'view') startEdits++;
     rev++;
     pending = true;
     P.archived = false;
@@ -203,21 +205,20 @@ window.MB = window.MB || {};
     return P.started;
   };
   async function startUp() {
-    // Edits made while the database is being read are the user's latest: they are kept, not replaced. Edits are
-    // what reaches the undo history once start-up's own synchronous work is over (data overlays switching on are
-    // not edits).
-    let edits = 0, counting = false, watching = true;
-    setTimeout(() => { counting = true; }, 0);
-    MB.on('history', () => { if (counting && watching) edits++; });
+    // Changes made while the database is being read are the user's latest (objects, names, units, options...):
+    // they are kept, not replaced. Counting starts once start-up's own synchronous work is over (data overlays
+    // switching on are not edits); panning and zooming are not edits either.
+    setTimeout(() => { if (!P.ready) startEdits = 0; }, 0);
     try {
       const want = MB.storedItem(CURRENT) || MB.state.projectId;
       let rec = want ? await run('projects', 'readonly', st => done(st.get(want))) : null;
       if (!rec && !mirrorOpened) { const last = (await P.list())[0]; if (last) rec = await run('projects', 'readonly', st => done(st.get(last.id))); } // no pointer: the most recent
       // the database copy when localStorage held none (a large project) or an older one
-      watching = false;
-      if (rec && (!mirrorOpened || rec.savedAt > mirrorAt) && !edits) MB.loadProject(rec.data);
+      const edited = startEdits > 0;
+      startEdits = -1;
+      if (rec && (!mirrorOpened || rec.savedAt > mirrorAt) && !edited) MB.loadProject(rec.data);
     } catch (e) { /* no database: the localStorage copy stands */ }
-    watching = false;
+    startEdits = -1;
     P.ready = true;
     MB.on('project', () => { if (MB.state.projectId !== heldId) claim(MB.state.projectId); });
     await claim(MB.state.projectId);
@@ -349,7 +350,11 @@ window.MB = window.MB || {};
     heldId = id;
     let resolveClaim, lost = false;
     const claimed = new Promise(r => { resolveClaim = r; });
-    navigator.locks.request('gengis.project.' + id, { steal: true }, () => { resolveClaim(); return new Promise(r => { release = r; }); })
+    navigator.locks.request('gengis.project.' + id, { steal: true }, () => {
+      resolveClaim();
+      if (token !== claimToken) return null; // another project was opened meanwhile: let this lock go at once
+      return new Promise(r => { release = r; });
+    })
       .catch(() => { lost = true; if (heldId === id) { owned = false; setReadOnly(true, 'taken'); } });
     await claimed;
     const data = await latestSaved(id);

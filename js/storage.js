@@ -4,7 +4,7 @@ window.MB = window.MB || {};
   'use strict';
 
   // Saving in the background lives in projectstore.js; these are the names the rest of the app calls.
-  MB.autosave = () => MB.projects.schedule();
+  MB.autosave = kind => MB.projects.schedule(kind); // kind 'view': only the map view changed
   MB.saveNow = () => MB.projects.saveNow(); // the page is being hidden or closed
   MB.loadAutosave = () => MB.projects.loadMirror();
   MB.clearAutosave = () => MB.projects.removeCurrent();

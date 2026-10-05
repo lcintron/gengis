@@ -58,7 +58,7 @@
       MB.createLayer('Layer 1');
       MB.resetHistory();
     }
-    MB.map.on('moveend', () => MB.autosave());
+    MB.map.on('moveend', () => MB.autosave('view'));
 
     MB.ui.init();
     MB.projects.start(); // the saved copy in the database, if newer; saving starts once it has settled
