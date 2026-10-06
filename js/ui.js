@@ -237,36 +237,84 @@ window.MB = window.MB || {};
   function initTabs() {
     // the tabs only: the phone sheet's close button shares the row, and showing a tab reopens the panel
     $$('.tabs button[data-tab]').forEach(b => b.addEventListener('click', () => MB.ui.showTab(b.dataset.tab)));
-    let open = true;
-    try { open = localStorage.getItem('gengis.propsOpen') !== '0'; } catch (e) { /* storage unavailable */ }
-    MB.ui.setPropsOpen(open, true);
+    // the Layers tab's two sections, as left on this device
+    split = Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, +stored('gengis.layersSplit') || .5));
+    MB.ui.setLayersOpen(stored('gengis.layersOpen') !== '0', true);
+    MB.ui.setPropsOpen(stored('gengis.propsOpen') !== '0', true);
+    $('#layersToggle').addEventListener('click', () => MB.ui.setLayersOpen($('#layersSection').classList.contains('closed')));
     $('#propsToggle').addEventListener('click', () => MB.ui.setPropsOpen($('#propsSection').classList.contains('closed')));
-    // Double-click an object in the list: its properties. Listened for on the list's own box, which outlives the rows
-    // (the first click selects the object, and that redraws the list).
-    $('#layerScroll').addEventListener('dblclick', e => {
-      const row = e.target.closest('.obj-item');
-      if (!row || e.target.closest('button, input')) return;
-      const f = MB.featureLayers[row.dataset.fid];
-      if (!f) return;
-      if (MB.selected !== f) selectQuietly(f);
-      MB.ui.setPropsOpen(true);
+    $('#addLayerBtn').addEventListener('click', () => { MB.createLayer(); MB.commit('add layer'); MB.ui.setLayersOpen(true); });
+    initDivider();
+    // A button pressed while a name is being edited in the list: the field keeps focus until the click (its blur
+    // redraws the list, which would take the button away first), then the name is saved and the button does its job.
+    const editing = () => $('#layerScroll .fname input, #layerScroll .layer-name input');
+    $('#layerScroll').addEventListener('mousedown', e => { if (e.target.closest('button') && editing()) e.preventDefault(); });
+    $('#layerScroll').addEventListener('click', e => { const ed = editing(); if (ed && e.target.closest('button')) ed.blur(); }, true);
+  }
+
+  // The Layers tab's sections, Layers and Properties: each expands or collapses; both open, they share the height
+  // at the divider (split: the Layers share). All remembered on this device.
+  const MIN_SPLIT = .15, MAX_SPLIT = .85;
+  let split = .5;
+  const stored = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } };
+  function layoutSections() {
+    const ls = $('#layersSection'), ps = $('#propsSection'), div = $('#paneDivider');
+    const both = !ls.classList.contains('closed') && !ps.classList.contains('closed');
+    ls.style.flexGrow = both ? split : '';
+    ps.style.flexGrow = both ? 1 - split : '';
+    div.classList.toggle('hidden', !both);
+    div.setAttribute('aria-valuenow', Math.round(split * 100));
+  }
+  function setSectionOpen(name, open, quiet) {
+    const sec = $('#' + name + 'Section');
+    if (!sec) return;
+    sec.classList.toggle('closed', !open);
+    $('#' + name + 'Toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+    layoutSections();
+    if (!quiet) store('gengis.' + name + 'Open', open ? '1' : '0');
+  }
+  MB.ui.setLayersOpen = (open, quiet) => setSectionOpen('layers', open, quiet);
+  MB.ui.setPropsOpen = (open, quiet) => setSectionOpen('props', open, quiet);
+  // Drag the divider (or focus it and use the arrow keys) to share the height differently; double-click: half each.
+  function initDivider() {
+    const div = $('#paneDivider'), ls = $('#layersSection'), ps = $('#propsSection');
+    const setSplit = (r, save) => {
+      const total = ls.offsetHeight + ps.offsetHeight, min = total ? Math.min(.5, 72 / total) : 0; // a header and a little more
+      split = Math.min(MAX_SPLIT, 1 - min, Math.max(MIN_SPLIT, min, r));
+      layoutSections();
+      if (save) store('gengis.layersSplit', String(split));
+    };
+    div.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      div.setPointerCapture(e.pointerId);
+      div.classList.add('dragging');
+      const top = ls.getBoundingClientRect().top, total = ls.offsetHeight + ps.offsetHeight;
+      const move = ev => setSplit((ev.clientY - top) / total);
+      const end = () => {
+        div.classList.remove('dragging');
+        div.removeEventListener('pointermove', move); div.removeEventListener('pointerup', end); div.removeEventListener('pointercancel', end);
+        store('gengis.layersSplit', String(split));
+      };
+      div.addEventListener('pointermove', move); div.addEventListener('pointerup', end); div.addEventListener('pointercancel', end);
+    });
+    div.addEventListener('dblclick', () => setSplit(.5, true));
+    div.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      setSplit(split + (e.key === 'ArrowUp' ? -.05 : .05), true);
     });
   }
 
-  // Expand or collapse the Properties section (remembered on this device).
-  MB.ui.setPropsOpen = function (open, quiet) {
-    const sec = $('#propsSection');
-    if (!sec) return;
-    sec.classList.toggle('closed', !open);
-    $('#propsToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (!quiet) { try { localStorage.setItem('gengis.propsOpen', open ? '1' : '0'); } catch (e) { /* storage unavailable */ } }
-  };
-
-  // Select an object without opening its properties (a click in the layer list).
+  // Select an object from a click in the layer list and show its properties. The list stays where it is (the selection
+  // handler's reveal would scroll it to the first selected row); only the clicked row is kept in view.
   let quietSelect = false;
-  function selectQuietly(f, multi) {
+  function selectFromList(f, multi) {
     quietSelect = true;
     try { if (multi) MB.toggleMulti(f); else MB.selectFeature(f); } finally { quietSelect = false; }
+    MB.ui.setPropsOpen(true);
+    revealRow(f);
   }
 
   // Scroll the layer list to an object's row (or the first selected one), if it is out of view.
@@ -279,6 +327,7 @@ window.MB = window.MB || {};
   MB.ui.revealFeature = function (f) {
     if (!f || !f.mb) return;
     if (MB.ui.collapsed.delete(f.mb.layerId)) MB.ui.renderLayers();
+    MB.ui.setLayersOpen(true);
     MB.ui.showTab('props');
     revealRow(f);
   };
@@ -307,7 +356,7 @@ window.MB = window.MB || {};
     const m = f.mb;
     const hidden = m.visible === false, locked = !!m.locked;
     const sw = m.type === 'svg' ? 'transparent' : (m.type === 'text' ? m.style.textColor : m.style.color);
-    return `<div class="obj-item${MB.selected === f || (MB.multi && MB.multi.has(f)) ? ' selected' : ''}${hidden || layerHidden ? ' obj-hidden' : ''}" data-fid="${m.id}" title="${esc(MB.typeLabels[m.type])} · click: select · double-click: properties">
+    return `<div class="obj-item${MB.selected === f || (MB.multi && MB.multi.has(f)) ? ' selected' : ''}${hidden || layerHidden ? ' obj-hidden' : ''}" data-fid="${m.id}" title="${esc(MB.typeLabels[m.type])} · click: select and show properties · double-click name: rename">
       <span class="swatch" style="background:${sw}"></span>
       <span class="fname" data-act="rename">${esc(objectLabel(f))}</span>
       <button class="icon-btn mini${hidden ? '' : ' on'}" data-act="vis" title="${hidden ? 'Show' : 'Hide'} object">${hidden ? icons.eyeOff : icons.eye}</button>
@@ -323,8 +372,7 @@ window.MB = window.MB || {};
     const scrollTop = panel.scrollTop;
     const layers = MB.state.layers.slice().reverse(); // top first
     const active = MB.activeLayer();
-    let html = `<div class="panel-head"><h3>Layers</h3><button class="btn small" data-act="add-layer">+ Add layer</button></div>
-      <div class="layer-tree">`;
+    let html = '<div class="layer-tree">';
     layers.forEach((l, idx) => {
       const isActive = active && active.id === l.id;
       const feats = MB.layerFeatures(l.id).reverse(); // top-most first
@@ -349,7 +397,6 @@ window.MB = window.MB || {};
     panel.innerHTML = html;
     panel.scrollTop = scrollTop;
 
-    $('[data-act="add-layer"]', panel).addEventListener('click', () => { MB.createLayer(); MB.commit('add layer'); });
 
     $$('.layer-item', panel).forEach(item => {
       const id = item.closest('.layer-node').dataset.id;
@@ -357,7 +404,9 @@ window.MB = window.MB || {};
         const actEl = e.target.closest('[data-act]');
         const act = actEl && actEl.dataset.act;
         if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
-        if (act === 'rename-btn') { startRename(item, id); return; }
+        if (act === 'rename-btn') { // the row as it is now: saving another name being edited may have redrawn the list
+          startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`) || item, id); return;
+        }
         if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
         else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
         else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
@@ -385,14 +434,36 @@ window.MB = window.MB || {};
         else if (act === 'del') MB.removeFeature(fid);
         else {
           if (MB.tools.current !== 'select' && MB.tools.current !== 'move') MB.tools.set('select');
-          if (e.shiftKey) { selectQuietly(f, true); return; }
-          selectQuietly(f);
+          if (e.shiftKey) { selectFromList(f, true); return; }
+          selectFromList(f);
           const c = MB.featureCenter(f);
           if (c && !MB.map.getBounds().contains(c)) MB.zoomToFeature(f);
         }
       });
+      $('.fname', item).addEventListener('dblclick', e => { e.stopPropagation(); startObjectRename(item, fid); });
     });
   };
+
+  function startObjectRename(item, fid) {
+    const f = MB.featureLayers[fid];
+    if (!f) return;
+    const span = $('.fname', item);
+    const cur = f.mb.name || '';
+    span.innerHTML = `<input type="text" value="${esc(cur)}" placeholder="${esc(objectLabel(f))}">`;
+    const inp = span.querySelector('input');
+    inp.focus(); inp.select();
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      const v = inp.value.trim();
+      if (v !== cur) { f.mb.name = v; MB.ui.bindNameTip(f); MB.commit('rename'); if (MB.selected === f) MB.emit('selection', f); }
+      MB.ui.renderLayers();
+    };
+    inp.addEventListener('blur', finish);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { inp.value = cur; inp.blur(); } e.stopPropagation(); });
+    inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('dblclick', e => e.stopPropagation()); // selecting a word in it must not start the rename over
+  }
 
   function startRename(item, id) {
     const span = $('.layer-name', item);
@@ -404,6 +475,7 @@ window.MB = window.MB || {};
     inp.addEventListener('blur', done);
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { inp.value = cur; inp.blur(); } e.stopPropagation(); });
     inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('dblclick', e => e.stopPropagation()); // selecting a word in it must not start the rename over
   }
 
   /* ================= style form ================= */

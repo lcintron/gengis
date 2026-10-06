@@ -119,10 +119,19 @@
       </div>
       <div class="tab-panels">
         <section id="tab-layers" class="tab-panel active">
-          <div id="layerScroll" class="layer-scroll"></div>
-          <div id="propsSection" class="props-section">
-            <button type="button" id="propsToggle" class="props-toggle" aria-expanded="true" aria-controls="propsBody"><span class="chev">&#9662;</span><span class="props-title">Properties</span><span class="props-sub" id="propsSub"></span></button>
-            <div id="propsBody" class="props-body"></div>
+          <div id="layersSection" class="pane-section">
+            <div class="section-head">
+              <button type="button" id="layersToggle" class="section-toggle" aria-expanded="true" aria-controls="layerScroll"><span class="chev">&#9662;</span><span class="section-title">Layers</span></button>
+              <button type="button" id="addLayerBtn" class="btn small">+ Add layer</button>
+            </div>
+            <div id="layerScroll" class="section-body"></div>
+          </div>
+          <div id="paneDivider" class="pane-divider" role="separator" aria-orientation="horizontal" aria-controls="layersSection propsSection" aria-label="Resize Layers and Properties" aria-valuemin="15" aria-valuemax="85" aria-valuenow="50" tabindex="0" title="Drag to resize · double-click: half and half"></div>
+          <div id="propsSection" class="pane-section">
+            <div class="section-head">
+              <button type="button" id="propsToggle" class="section-toggle" aria-expanded="true" aria-controls="propsBody"><span class="chev">&#9662;</span><span class="section-title">Properties</span><span class="section-sub" id="propsSub"></span></button>
+            </div>
+            <div id="propsBody" class="section-body"></div>
           </div>
         </section>
         <section id="tab-svg" class="tab-panel"></section>
