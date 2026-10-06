@@ -91,30 +91,14 @@ window.MB = window.MB || {};
       MB.ui.menuAction(act);
     });
 
-    // Phones: the units, the base map and the project menu (presenter mode included) move behind the menu button,
-    // so the top bar is a single row that never scrolls: a scrolling row clipped the Project dropdown and let the
-    // base map list run over the units. So do narrow desktop-app windows, whose bar also holds the window buttons.
-    const more = $('#moreMenu'), moreBtn = $('#moreBtn'), units = $('#unitsSeg'), right = $('.topbar-right');
-    // The desktop app keeps them there at every width, in a panel that slides in from the left (css), opened by the
-    // menu button at the bar's left end; Esc or a click elsewhere closes it.
-    const desktop = !!document.documentElement.dataset.titlebar;
-    const phone = window.matchMedia(desktop ? 'all' : '(max-width: 640px)');
-    if (desktop) {
-      $('#topbar').insertBefore(moreBtn, $('#topbar .brand'));
-      moreBtn.title = 'Units, base map and project';
-      window.addEventListener('keydown', e => { if (e.key === 'Escape' && !more.classList.contains('hidden')) { e.stopPropagation(); closeMore(); } }, true);
-    }
+    // The units, the base map and the project menu (presenter mode included) are in a panel that slides in from the
+    // left, under the menu button at the bar's left end, so the bar keeps the search and a few buttons: one row that
+    // never scrolls (and, in the desktop app, room to grab the window). Esc or a click elsewhere closes it.
+    const more = $('#moreMenu'), moreBtn = $('#moreBtn');
     const closeMore = () => { more.classList.add('hidden'); moreBtn.setAttribute('aria-expanded', 'false'); };
-    const place = () => {
-      if (phone.matches) {
-        $('[data-slot="units"]', more).appendChild(units);
-        $('[data-slot="basemap"]', more).appendChild(bm);
-      } else {
-        right.insertBefore(units, $('#undoBtn'));
-        right.insertBefore(bm, $('#undoBtn'));
-        closeMore();
-      }
-    };
+    window.addEventListener('keydown', e => { if (e.key === 'Escape' && !more.classList.contains('hidden')) { e.stopPropagation(); closeMore(); } }, true);
+    const placeMore = () => { more.style.top = $('#topbar').getBoundingClientRect().bottom + 'px'; }; // under the bar (two rows on phones)
+    window.addEventListener('resize', () => { if (!more.classList.contains('hidden')) placeMore(); });
     moreBtn.addEventListener('click', e => {
       e.stopPropagation();
       if (!more.classList.contains('hidden')) { closeMore(); return; }
@@ -122,6 +106,7 @@ window.MB = window.MB || {};
       const items = $('.more-items', more);
       items.innerHTML = '';
       Array.from(menu.children).forEach(c => items.appendChild(c.cloneNode(true)));
+      placeMore();
       more.classList.remove('hidden');
       moreBtn.setAttribute('aria-expanded', 'true');
     });
@@ -130,8 +115,6 @@ window.MB = window.MB || {};
       if (b && b.dataset.act) { closeMore(); MB.ui.menuAction(b.dataset.act); }
     });
     document.addEventListener('click', e => { if (!e.target.closest('#moreMenu, #moreBtn')) closeMore(); });
-    if (phone.addEventListener) phone.addEventListener('change', place); else phone.addListener(place);
-    place();
 
     $('#fileOpen').addEventListener('change', e => {
       const f = e.target.files[0];

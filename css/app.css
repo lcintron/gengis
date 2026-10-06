@@ -64,21 +64,9 @@ html[data-titlebar] #topbar { -webkit-app-region: drag; user-select: none; }
 html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown) { -webkit-app-region: no-drag; }
 html[data-titlebar="overlay"] #topbar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="mac"] #topbar { padding-left: 84px; }
-/* A quiet bar, mostly free to grab: the menu button, logo and project name at the left, the search in the middle
-   with room to drag on both sides of it (at least 44 px), undo/redo, presenter and the side panel at the right. The
-   units, base map and project menu are in a panel that slides in from the left under the menu button (ui.js). */
-html[data-titlebar] #moreBtn { display: inline-flex; }
-html[data-titlebar] .menu-wrap { display: none; }
-html[data-titlebar] .brand { margin-right: 32px; }
-html[data-titlebar] .search-wrap { flex: 0 1 520px; margin: 0 auto; }
-html[data-titlebar] #searchInput { min-width: 80px; }
-html[data-titlebar] .topbar-right { margin-left: 32px; }
+/* The bar's empty parts (at least 44 px each side of the search, below) are where the window is grabbed; narrow
+   windows drop the name beside the logo to keep them. */
 @media (max-width: 1100px) { html[data-titlebar] .brand-name { display: none; } }
-html[data-titlebar] .dropdown.more-menu {
-  position: fixed; top: var(--topbar-h); left: 0; right: auto; bottom: 0; width: 320px; max-height: none;
-  border-radius: 0; border-width: 0 1px 0 0; padding: 14px; animation: mb-drawer-in .16s ease-out;
-}
-@keyframes mb-drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
 /* presenting (the top bar hidden): its bar sits beside the window buttons, the map's corner controls below them */
 html[data-titlebar="overlay"] #presentBar { top: 10px; right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="overlay"] body.presenting .leaflet-top.leaflet-right { top: env(titlebar-area-height, 51px); }
@@ -118,9 +106,20 @@ html[data-titlebar] #presentBar button { -webkit-app-region: no-drag; }
 select { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; color: var(--text); height: 34px; }
 select:focus { outline: none; border-color: var(--accent); }
 
-.menu-wrap { position: relative; }
-#moreBtn { display: none; }
-.dropdown.more-menu { right: 8px; width: min(340px, calc(100vw - 16px)); padding: 10px; max-height: calc(100vh - 90px); overflow: auto; }
+/* A quiet bar: the menu button, logo and project name at the left, the search in the middle (with free space on
+   both sides: in the desktop app that is where the window is grabbed), undo/redo, presenter and the side panel at
+   the right. The units, base map and project menu are in a panel that slides in from the left (ui.js). */
+.menu-wrap { display: none; } /* the project menu's items, shown in the panel */
+#moreBtn { display: inline-flex; }
+.brand { margin-right: 32px; }
+.search-wrap { flex: 0 1 520px; margin: 0 auto; }
+#searchInput { min-width: 80px; }
+.topbar-right { margin-left: 32px; }
+.dropdown.more-menu {
+  position: fixed; top: var(--topbar-h); left: 0; right: auto; bottom: 0; width: min(320px, calc(100vw - 48px)); max-height: none;
+  border-radius: 0; border-width: 0 1px 0 0; padding: 14px; overflow: auto; animation: mb-drawer-in .16s ease-out;
+}
+@keyframes mb-drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
 .more-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); margin: 12px 2px 6px; }
 .more-label:first-child { margin-top: 0; }
 .more-slot .seg { display: flex; width: 100%; }
@@ -348,11 +347,10 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .brand { gap: 6px; }
   .project-name { flex: 1 1 0; width: 0; min-width: 0; font-size: 13px; padding: 4px 6px; } /* takes what the buttons leave */
   .search-wrap { order: 3; flex: 1 1 100%; max-width: none; }
-  .brand { flex: 1 1 0; min-width: 0; }
+  .brand { flex: 1 1 0; min-width: 0; margin-right: 0; }
   .brand-name { display: none; } /* the logo says it */
   .topbar-right { order: 2; flex: 0 0 auto; margin-left: 0; gap: 6px; }
-  #presentBtn, .menu-wrap { display: none; } /* in the menu */
-  #moreBtn { display: inline-flex; }
+  #presentBtn { display: none; } /* in the menu */
   /* the save status shrinks to a dot (its words stay in the tooltip and for screen readers) */
   .save-status { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); overflow: hidden; text-indent: 20px; }
   .save-status[data-state="saved"] { background: var(--accent); }
