@@ -26,7 +26,7 @@ const TITLE_BAR = process.platform === 'darwin'
 
 function createWindow() {
   const win = new BrowserWindow(Object.assign({
-    width: 1400, height: 900, minWidth: 800, minHeight: 500,
+    width: 1400, height: 900, minWidth: 1200, minHeight: 500,
     title: 'GenGIS', backgroundColor: '#0b1118', autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'icons', process.platform === 'win32' ? 'icon.ico' : 'icon-512.png'),
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js') }

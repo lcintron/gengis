@@ -64,9 +64,6 @@ html[data-titlebar] #topbar { -webkit-app-region: drag; user-select: none; }
 html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown) { -webkit-app-region: no-drag; }
 html[data-titlebar="overlay"] #topbar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="mac"] #topbar { padding-left: 84px; }
-/* The bar's empty parts (at least 44 px each side of the search, below) are where the window is grabbed; narrow
-   windows drop the name beside the logo to keep them. */
-@media (max-width: 1100px) { html[data-titlebar] .brand-name { display: none; } }
 /* presenting (the top bar hidden): its bar sits beside the window buttons, the map's corner controls below them */
 html[data-titlebar="overlay"] #presentBar { top: 10px; right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="overlay"] body.presenting .leaflet-top.leaflet-right { top: env(titlebar-area-height, 51px); }
