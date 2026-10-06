@@ -147,7 +147,8 @@ window.MB = window.MB || {};
       case 'new': // nothing is lost: the open project stays in Recent projects (asked first when it could not be saved there)
         MB.projects.newMap();
         break;
-      case 'open': $('#fileOpen').click(); break;
+      case 'open': if (MB.desktopFiles.available) MB.desktopFiles.open(); else $('#fileOpen').click(); break;
+      case 'saveas': MB.desktopFiles.saveAs(); break;
       case 'recent': MB.projects.openDialog(); break;
       case 'save': MB.saveToFile(); break;
       case 'geojson': MB.exportGeoJSON(); break;
@@ -835,6 +836,7 @@ window.MB = window.MB || {};
       <div class="section"><h3>Project</h3>
         <div class="btn-row"><button class="btn small" data-act="save">Save to file</button><button class="btn small" data-act="open">Open file</button><button class="btn small" data-act="geojson">Export GeoJSON</button></div>
         <p class="note" style="margin-top:8px" id="saveWhere"></p>
+        <div id="desktopFilesBox"></div>
         <div class="btn-row"><button class="btn small" data-act="recent">Recent projects…</button><button class="btn small" id="setPersist" hidden>Keep on this device</button></div>
         <div class="btn-row"><button class="btn small danger" id="setReset">Reset project</button><button class="btn small ghost" data-act="about">About</button></div>
       </div>
@@ -863,6 +865,7 @@ window.MB = window.MB || {};
     });
     $('#setPersist', panel).addEventListener('click', () => MB.projects.persist(true).then(ok => MB.toast(ok ? 'Kept on this device: the browser will not clear it to free space.' : 'The browser did not agree to keep it. Save important projects to a file.', 4500)));
     MB.ui.renderSaveWhere();
+    MB.ui.renderDesktopFiles();
   };
 
   /* ================= saving status ================= */
@@ -875,7 +878,7 @@ window.MB = window.MB || {};
       const view = {
         idle: ['', ''],
         saving: ['Saving…', 'Saving on this device'],
-        saved: ['Saved', `Saved on this device${at ? ' at ' + at : ''} (${st.where})`],
+        saved: ['Saved', `Saved on this device${at ? ' at ' + at : ''} (${st.where})${MB.desktopFiles.file ? '\nFile: ' + MB.desktopFiles.file : ''}`],
         error: ['Not saved', 'Autosave failed: ' + st.error + '. Save the project to a file.'],
         readonly: ['Not saving', 'This map is open in another tab or window; changes here are not saved.']
       }[st.status] || ['', ''];
@@ -885,8 +888,30 @@ window.MB = window.MB || {};
       MB.ui.renderSaveWhere();
     };
     MB.on('savestate', render);
+    MB.on('desktopfiles', () => { render(MB.projects); MB.ui.renderDesktopFiles(); });
     render(MB.projects);
+    // the desktop app: Save as, and Save project writes the project's file rather than downloading a copy
+    if (MB.desktopFiles.available) {
+      $$('[data-act="saveas"]').forEach(b => b.classList.remove('hidden'));
+      $$('#menu [data-act="save"]').forEach(b => { b.textContent = 'Save project'; });
+    }
   }
+
+  // Settings -> Project, desktop app: the projects folder and the open project's file.
+  MB.ui.renderDesktopFiles = function () {
+    const box = $('#desktopFilesBox'), F = MB.desktopFiles;
+    if (!box) return;
+    if (!F.available) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="desktop-files">
+        <div class="row"><label>Folder</label><span class="path" title="${esc(F.folder || '')}">${esc(F.folder || '…')}</span></div>
+        <div class="row"><label>This project</label><span class="path" title="${esc(F.file || '')}">${F.file ? esc(F.file) : '<span class="dim">gets a file once it is named or saved</span>'}</span></div>
+        <div class="btn-row"><button class="btn small" data-df="folder">Change folder…</button><button class="btn small" data-df="show">Show in folder</button><button class="btn small" data-df="saveas">Save as…</button></div>
+        <p class="note">Each named project is also kept as a file here, saved a moment after every change.</p>
+      </div>`;
+    box.querySelector('[data-df="folder"]').addEventListener('click', () => F.chooseFolder());
+    box.querySelector('[data-df="show"]').addEventListener('click', () => F.reveal());
+    box.querySelector('[data-df="saveas"]').addEventListener('click', () => F.saveAs());
+  };
 
   // Settings → Project: where projects are kept and whether the browser may clear them.
   MB.ui.renderSaveWhere = function () {
