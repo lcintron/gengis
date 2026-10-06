@@ -521,6 +521,8 @@ button.link:hover { text-decoration: underline; }
 .mb-ask { z-index: 4500; }
 .mb-ask .modal-box { max-width: 440px; }
 .mb-ask .ask-text { white-space: pre-line; margin: 0 0 14px; }
+.desktop-files { margin-top: 8px; }
+.desktop-files .path { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .recent-ask { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
 .recent-ask span { font-size: 12px; color: var(--text-dim); }
 #mb-readonly {

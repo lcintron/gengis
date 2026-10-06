@@ -10,6 +10,7 @@ window.MB = window.MB || {};
   MB.clearAutosave = () => MB.projects.removeCurrent();
 
   MB.saveToFile = function () {
+    if (MB.desktopFiles && MB.desktopFiles.available) return MB.desktopFiles.save(); // the desktop app writes the file itself
     const p = MB.serializeProject();
     const name = (p.name || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map';
     MB.download(name + MB.PROJECT_EXT, JSON.stringify(p, null, 1));
@@ -18,12 +19,17 @@ window.MB = window.MB || {};
   };
 
   MB.openFile = function (file) {
-    return file.text().then(async txt => {
+    return file.text().then(txt => MB.openText(txt, file.name));
+  };
+
+  // A project or GeoJSON file's text (from a file picker, or the desktop app's own dialogs).
+  MB.openText = async function (txt, name) {
+    try {
       const p = JSON.parse(txt);
       if (MB.isProject(p)) { if (!(await MB.projects.beforeOpen(p))) return; MB.loadProject(p); MB.projects.markFileBacked(); MB.toast('Project loaded'); return; }
-      if (p && (p.type === 'FeatureCollection' || p.type === 'Feature')) { MB.importGeoJSON(p, file.name); return; }
+      if (p && (p.type === 'FeatureCollection' || p.type === 'Feature')) { MB.importGeoJSON(p, name); return; }
       throw new Error('Unrecognized file');
-    }).catch(e => MB.toast('Could not open file: ' + e.message));
+    } catch (e) { MB.toast('Could not open file: ' + e.message); }
   };
 
   /* ---------- GeoJSON ---------- */

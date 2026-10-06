@@ -4,8 +4,9 @@
  *        npm start -- --lat=48.858 --lon=2.294 --zoom=16
  *        npm start -- --center=48.858,2.294 --poi=cafe
  */
-const { app, BrowserWindow, session, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, session, shell } = require('electron');
 const path = require('path');
+const files = require('./files');
 
 function parseArgs() {
   const q = {};
@@ -21,14 +22,27 @@ function createWindow() {
     width: 1400, height: 900, minWidth: 800, minHeight: 500,
     title: 'GenGIS', backgroundColor: '#0b1118', autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'icons', process.platform === 'win32' ? 'icon.ico' : 'icon-512.png'),
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false }
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js') }
   });
   win.loadFile(path.join(__dirname, '..', 'index.html'), { query: parseArgs() });
+  // Closing: the page first saves what is pending (its database and the project file), then the window closes.
+  // A page that does not answer within 4 s does not hold the window.
+  let saved = false;
+  win.on('close', e => {
+    if (saved || win.webContents.isDestroyed()) return;
+    e.preventDefault();
+    const done = () => { if (saved) return; saved = true; ipcMain.removeListener('app:flushed', onFlushed); if (!win.isDestroyed()) win.close(); };
+    const onFlushed = ev => { if (ev.sender === win.webContents) done(); };
+    ipcMain.on('app:flushed', onFlushed);
+    win.webContents.send('app:flush');
+    setTimeout(done, 4000);
+  });
   // Open external links (attribution, about) in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 }
 
 app.whenReady().then(() => {
+  files.register(); // project files on disk: electron/files.js
   // Nominatim and Overpass ask clients to identify themselves.
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: ['https://nominatim.openstreetmap.org/*', 'https://overpass-api.de/*'] },

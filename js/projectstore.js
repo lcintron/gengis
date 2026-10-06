@@ -143,6 +143,7 @@ window.MB = window.MB || {};
     if (!err) {
       dbRev = savingRev;
       P.where = 'database';
+      MB.emit('saved', p.id); // the desktop app keeps the project file in step
       // a large project: the database now holds it, so the note may replace an older full copy in localStorage
       if (!fits) { try { localStorage.setItem(CURRENT, p.id); localStorage.setItem(MIRROR, noteOf(p)); } catch (e) { /* ignore */ } }
     } else if (mirrored) {
@@ -183,7 +184,9 @@ window.MB = window.MB || {};
 
   // Ask before replacing a project that is not in the database (it would not be in Recent projects).
   P.confirmReplace = async function (what) {
-    if (await P.flush()) return true;
+    const safe = await P.flush();
+    if (MB.desktopFiles && MB.desktopFiles.available) await MB.desktopFiles.writePending(); // its file too
+    if (safe) return true;
     return MB.ask('"' + MB.state.projectName + '" could not be saved in this browser\'s project storage' + (P.error ? ' (' + P.error + ')' : '') +
       ', so it will not be in Recent projects. ' + what + ' anyway?\n\nTo keep it, cancel and use Project \u2192 Save project.', what, 'Cancel');
   };
@@ -487,7 +490,8 @@ window.MB = window.MB || {};
     dlg.classList.remove('hidden');
     await P.flush();
     const cur = MB.state.projectId;
-    const [list, snaps] = await Promise.all([P.list(), P.snapshots(cur)]);
+    const DF = MB.desktopFiles || {};
+    const [list, snaps, files] = await Promise.all([P.list(), P.snapshots(cur), DF.available ? DF.recent() : []]);
     const box = dlg.querySelector('.modal-box');
     const reason = r => ({ 'before opening a file': 'before a file replaced it', 'before restoring an earlier copy': 'before a restore' })[r] || '';
     box.innerHTML = `<h2 id="recentTitle">Recent projects</h2>
@@ -501,8 +505,14 @@ window.MB = window.MB || {};
           <div class="recent-main"><span>${esc(new Date(s.savedAt).toLocaleString())}</span><span class="dim">${objects(s.objects)}${reason(s.reason) ? ' · ' + reason(s.reason) : ''}</span></div>
           <button class="btn small" data-restore="${esc(s.key)}"${P.readOnly ? ' disabled' : ''}>Restore</button>
         </div>`).join('') : '<p class="note">A copy is kept every 10 minutes while you edit (the last 10), and before a file or a restore replaces the project.</p>'}</div>
+      ${DF.available ? `<h3>Files on this computer</h3>
+      <div class="recent-list">${files.length ? files.map(f => `<div class="recent-item">
+          <div class="recent-main"><b>${esc(f.name)}</b><span class="dim" title="${esc(f.file)}">${esc(f.folder)} · ${esc(when(f.modified))}</span></div>
+          <button class="btn small" data-file="${esc(f.file)}">Open</button>
+        </div>`).join('') : '<p class="note">Project files you open or save appear here.</p>'}</div>` : ''}
       <div class="row right"><button class="btn" data-close>Close</button></div>`;
     box.querySelector('[data-close]').addEventListener('click', () => dlg.classList.add('hidden'));
+    box.querySelectorAll('[data-file]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await DF.openRecent(b.dataset.file); }));
     box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await P.open(b.dataset.open); }));
     // Confirm inside the row: some embedded browsers (and in-app previews) suppress confirm() and read it as Cancel,
     // which made these buttons look dead.

@@ -24,6 +24,7 @@ A free map builder that runs in the browser (installable, works offline) or as a
 - **Measure** distances and areas in metric, imperial or nautical units, with a scale bar.
 - **Layers** with show/hide, lock and draw order; undo/redo; right-click menus; presenter mode.
 - **Projects** save automatically on the device as you work, with recent projects and earlier copies to restore (Project → Recent projects); save/open as `.gengis.json`; GeoJSON import/export.
+- **Project files in the desktop app**: each named project is also kept as a file, `Documents\GenGIS\<name>.gengis.json` by default (Settings → Project to pick another folder), saved a moment after every change and when the window closes; Save as… and recent files under Project → Recent projects.
 - **Search** addresses, places and coordinates; find points of interest; center on **your location**.
 - **FAA data**, live for the area in view: Class B–E airspace with floors and ceilings, special use airspace, LAANC ceilings, security flight restrictions, TFRs, airports (with radio frequencies) and more. Click anywhere to see everything under that point. Any public ArcGIS layer can be added.
 - **Live air traffic (ADS-B)** from your own dump1090 receiver or the adsb.fi and adsb.lol networks, with type icons colored by altitude and aircraft look-up.
