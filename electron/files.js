@@ -47,16 +47,24 @@ function writeAtomic(file, text) {
 }
 
 /* ----- where a path really is ----- */
-// The real location of a path: symbolic links resolved (for a file that does not exist yet, its folder's).
+// The real location of a path: symbolic links resolved, through its nearest existing ancestor for a path that does
+// not exist (yet), so a link anywhere above it counts. Never throws.
 function real(file) {
-  const abs = path.resolve(file);
-  try { return fs.realpathSync.native(abs); } catch (e) { /* not there yet */ }
-  try { return path.join(fs.realpathSync.native(path.dirname(abs)), path.basename(abs)); } catch (e) { return abs; }
+  let abs = path.resolve(file);
+  const rest = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync.native(abs), ...rest); } catch (e) { /* not there: one level up */ }
+    const up = path.dirname(abs);
+    if (up === abs) return path.join(abs, ...rest);
+    rest.unshift(path.basename(abs));
+    abs = up;
+  }
 }
 // Windows file names ignore case; elsewhere two names that differ in case are two files.
 const same = (a, b) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+// Checks have no side effects and never throw: a projects folder that is missing or unreachable only means no
+// file is inside it.
 function insideFolder(realFile) {
-  fs.mkdirSync(load().folder, { recursive: true });
   const rel = path.relative(real(load().folder), realFile);
   return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
@@ -67,7 +75,8 @@ const isLink = file => { try { return fs.lstatSync(file).isSymbolicLink(); } cat
 function allowed(file) {
   if (typeof file !== 'string' || !path.isAbsolute(file)) return false;
   const r = real(file);
-  return (insideFolder(r) && r.toLowerCase().endsWith(EXT)) || isApproved(r);
+  if (isApproved(r)) return true; // picked by the user: whatever became of the projects folder
+  try { return insideFolder(r) && r.toLowerCase().endsWith(EXT); } catch (e) { return false; }
 }
 
 function approve(file) {
@@ -191,7 +200,8 @@ function register() {
 
   // The page opened a project from this file (as project `id`, after any migration): keep it there from now on.
   handle('files:adopt', (e, { id, file } = {}) => {
-    if (typeof id !== 'string' || !id || !allowed(file)) throw new Error('not allowed');
+    // only a file that was just read: it exists, and may be read and written
+    if (typeof id !== 'string' || !id || !allowed(file) || !fs.existsSync(file) || isLink(file)) throw new Error('not allowed');
     load().projects[id] = path.resolve(file);
     persist();
     return true;
