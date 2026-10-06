@@ -148,6 +148,7 @@ window.MB = window.MB || {};
       if (!fits) { try { localStorage.setItem(CURRENT, p.id); localStorage.setItem(MIRROR, noteOf(p)); } catch (e) { /* ignore */ } }
     } else if (mirrored) {
       P.where = 'browser storage'; // no database: the localStorage copy is the save, but not a Recent project
+      MB.emit('saved', p.id); // the desktop app's file is still kept in step
     } else {
       pending = true; // still to be saved: kept dirty, tried again
       P.archived = false;

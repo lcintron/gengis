@@ -5,27 +5,33 @@
  * Documents/GenGIS unless the user picks another one; the choice and which file belongs to which project are kept in
  * desktop-files.json in the app's user-data folder.
  *
- * The page reaches the disk only through the handlers below, and every path is decided or checked here: a project
- * file is written inside the projects folder, or to a file the user picked in a dialog (Save as, Open). Writes go to
- * a temporary file that then replaces the real one, so a crash never leaves half a project. */
+ * The page reaches the disk only through the handlers below, and only from the app's own page (not from anything
+ * the window might have been navigated to). Every path is decided or checked here, by its real location (symbolic
+ * links resolved): a project file is written inside the projects folder, or to a file the user picked in a dialog
+ * (Save as, Open) or that a project already had. Writes go to a temporary file that then replaces the real one, so
+ * a crash never leaves half a project. */
 const { app, dialog, ipcMain, shell, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 
 const EXT = '.gengis.json';
 const RECENT_MAX = 12;
-let state = null; // { folder, projects: { id: file }, approved: [file], recent: [file] }
+const APP_PAGE = pathToFileURL(path.join(__dirname, '..', 'index.html')).href;
+let state = null; // { folder, projects: { id: file }, approved: [real path], recent: [file] }
 
 const stateFile = () => path.join(app.getPath('userData'), 'desktop-files.json');
 const defaultFolder = () => path.join(app.getPath('documents'), 'GenGIS');
 
 function load() {
   if (state) return state;
-  try { state = JSON.parse(fs.readFileSync(stateFile(), 'utf8')); } catch (e) { state = {}; }
+  let s = null;
+  try { s = JSON.parse(fs.readFileSync(stateFile(), 'utf8')); } catch (e) { /* none yet, or unreadable */ }
+  state = s && typeof s === 'object' && !Array.isArray(s) ? s : {};
   state.folder = typeof state.folder === 'string' && state.folder ? state.folder : defaultFolder();
-  state.projects = state.projects && typeof state.projects === 'object' ? state.projects : {};
-  state.approved = Array.isArray(state.approved) ? state.approved : [];
-  state.recent = Array.isArray(state.recent) ? state.recent : [];
+  state.projects = state.projects && typeof state.projects === 'object' && !Array.isArray(state.projects) ? state.projects : {};
+  state.approved = Array.isArray(state.approved) ? state.approved.filter(f => typeof f === 'string') : [];
+  state.recent = Array.isArray(state.recent) ? state.recent.filter(f => typeof f === 'string') : [];
   return state;
 }
 function persist() {
@@ -40,20 +46,38 @@ function writeAtomic(file, text) {
   try { fs.renameSync(tmp, file); } catch (e) { try { fs.unlinkSync(tmp); } catch (x) { /* ignore */ } throw e; }
 }
 
-const same = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase(); // Windows and macOS: case-insensitive
-const insideFolder = file => { const rel = path.relative(load().folder, path.resolve(file)); return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
-const isApproved = file => load().approved.some(f => same(f, file));
-// May the page have this file written or read? Inside the projects folder (a project file), or picked by the user.
-const allowed = file => typeof file === 'string' && path.isAbsolute(file) && ((insideFolder(file) && file.toLowerCase().endsWith(EXT)) || isApproved(file));
+/* ----- where a path really is ----- */
+// The real location of a path: symbolic links resolved (for a file that does not exist yet, its folder's).
+function real(file) {
+  const abs = path.resolve(file);
+  try { return fs.realpathSync.native(abs); } catch (e) { /* not there yet */ }
+  try { return path.join(fs.realpathSync.native(path.dirname(abs)), path.basename(abs)); } catch (e) { return abs; }
+}
+// Windows file names ignore case; elsewhere two names that differ in case are two files.
+const same = (a, b) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+function insideFolder(realFile) {
+  fs.mkdirSync(load().folder, { recursive: true });
+  const rel = path.relative(real(load().folder), realFile);
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+const isApproved = realFile => load().approved.some(f => same(f, realFile));
+const isLink = file => { try { return fs.lstatSync(file).isSymbolicLink(); } catch (e) { return false; } };
+// May the page have this file read or written? A project file inside the projects folder, or a file the user picked
+// (or that a project already had). Judged by its real location; a symbolic link itself is never written through.
+function allowed(file) {
+  if (typeof file !== 'string' || !path.isAbsolute(file)) return false;
+  const r = real(file);
+  return (insideFolder(r) && r.toLowerCase().endsWith(EXT)) || isApproved(r);
+}
 
 function approve(file) {
-  const st = load();
-  if (!st.approved.some(f => same(f, file))) st.approved.push(path.resolve(file));
-  if (st.approved.length > 200) st.approved.splice(0, st.approved.length - 200);
+  const st = load(), r = real(file);
+  if (!st.approved.some(f => same(f, r))) st.approved.push(r);
+  if (st.approved.length > 500) st.approved.splice(0, st.approved.length - 500);
 }
 function remember(file) {
-  const st = load();
-  st.recent = [path.resolve(file)].concat(st.recent.filter(f => !same(f, file))).slice(0, RECENT_MAX);
+  const st = load(), r = path.resolve(file);
+  st.recent = [r].concat(st.recent.filter(f => !same(f, r))).slice(0, RECENT_MAX);
 }
 
 // A file name from a project name: no path characters, no reserved names, a sensible length.
@@ -71,6 +95,7 @@ function newFileFor(id, name) {
   const base = fileNameFor(name), stem = base.slice(0, -EXT.length);
   for (let i = 1; i < 1000; i++) {
     const file = path.join(load().folder, i === 1 ? base : `${stem} (${i})${EXT}`);
+    if (isLink(file)) continue;
     if (!fs.existsSync(file) || idIn(file) === id) return file;
   }
   throw new Error('no free file name');
@@ -78,33 +103,72 @@ function newFileFor(id, name) {
 
 const projectJson = text => { const p = JSON.parse(text); if (!p || p.format !== 'gengis-project' || typeof p.id !== 'string') throw new Error('not a GenGIS project'); return p; };
 
+function writeProject({ id, name, json } = {}) {
+  if (typeof id !== 'string' || !id || typeof json !== 'string') throw new Error('bad request');
+  const p = projectJson(json);
+  if (p.id !== id) throw new Error('project id mismatch');
+  const st = load();
+  let file = st.projects[id];
+  if (!file || !allowed(file) || isLink(file)) file = newFileFor(id, name);
+  writeAtomic(file, json);
+  st.projects[id] = path.resolve(file);
+  remember(file);
+  persist();
+  return file;
+}
+
+// Read a file the page may read (picked just now in Open, or allowed already). Nothing is tied to a project yet:
+// the page says which project it became once it has accepted opening it (files:adopt).
+function readFile(file) {
+  if (!allowed(file)) throw new Error('that file is not one GenGIS opened or saved');
+  const text = fs.readFileSync(real(file), 'utf8');
+  remember(file);
+  persist();
+  return { file: path.resolve(file), name: path.basename(file), text };
+}
+
+/* ----- only the app's own page ----- */
+// Privileged requests are answered only for the app's own page in the window's main frame: never for a frame or a
+// page the window was navigated to.
+function trusted(e) {
+  const f = e.senderFrame;
+  return !!f && f === e.sender.mainFrame && typeof f.url === 'string' && f.url.split(/[?#]/)[0] === APP_PAGE;
+}
+const handle = (channel, fn) => ipcMain.handle(channel, (e, ...args) => {
+  if (!trusted(e)) throw new Error('not allowed from this page');
+  return fn(e, ...args);
+});
+
 function register() {
   // The projects folder.
-  ipcMain.handle('files:folder', () => ({ folder: load().folder, isDefault: same(load().folder, defaultFolder()) }));
+  handle('files:folder', () => ({ folder: load().folder, isDefault: same(path.resolve(load().folder), path.resolve(defaultFolder())) }));
 
-  ipcMain.handle('files:choose-folder', async e => {
+  handle('files:choose-folder', async e => {
     const st = load();
     const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Folder for GenGIS projects', defaultPath: st.folder, properties: ['openDirectory', 'createDirectory', 'promptToCreate'] });
     if (r.canceled || !r.filePaths[0]) return null;
+    // projects that already have a file keep it (in the old folder): only new files go to the new one
+    Object.values(st.projects).concat(st.recent).forEach(f => { if (allowed(f)) approve(f); });
     st.folder = r.filePaths[0];
     fs.mkdirSync(st.folder, { recursive: true });
     persist();
-    return { folder: st.folder, isDefault: same(st.folder, defaultFolder()) };
+    return { folder: st.folder, isDefault: same(path.resolve(st.folder), path.resolve(defaultFolder())) };
   });
 
   // Save a project to its file: the one it already has, else a new one in the projects folder.
-  ipcMain.handle('files:write', (e, req) => ({ file: writeProject(req) }));
+  handle('files:write', (e, req) => ({ file: writeProject(req) }));
   // The same, synchronously: the page is unloading (closing, reloading) and cannot wait for an answer.
   ipcMain.on('files:write-sync', (e, req) => {
+    if (!trusted(e)) { e.returnValue = { error: 'not allowed from this page' }; return; }
     try { e.returnValue = { file: writeProject(req) }; } catch (err) { e.returnValue = { error: err.message }; }
   });
 
   // Save as: the user picks the file; the project is kept there from now on.
-  ipcMain.handle('files:save-as', async (e, { id, name, json }) => {
-    projectJson(json);
+  handle('files:save-as', async (e, { id, name, json } = {}) => {
+    const p = projectJson(json);
+    if (p.id !== id) throw new Error('project id mismatch');
     const st = load();
-    const win = BrowserWindow.fromWebContents(e.sender);
-    const r = await dialog.showSaveDialog(win, { title: 'Save project as', defaultPath: path.join(st.folder, fileNameFor(name)), filters: [{ name: 'GenGIS project', extensions: ['gengis.json', 'json'] }] });
+    const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Save project as', defaultPath: path.join(st.folder, fileNameFor(name)), filters: [{ name: 'GenGIS project', extensions: ['gengis.json', 'json'] }] });
     if (r.canceled || !r.filePath) return null;
     writeAtomic(r.filePath, json);
     approve(r.filePath);
@@ -114,55 +178,36 @@ function register() {
     return { file: r.filePath };
   });
 
-  // Open: the user picks a project or GeoJSON file; a project keeps being saved there.
-  ipcMain.handle('files:open', async e => {
-    const st = load();
-    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Open project or GeoJSON', defaultPath: st.folder, properties: ['openFile'], filters: [{ name: 'Projects and GeoJSON', extensions: ['json', 'geojson'] }] });
+  // Open: the user picks a project or GeoJSON file (which makes it one the page may read and, once adopted, write).
+  handle('files:open', async e => {
+    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Open project or GeoJSON', defaultPath: load().folder, properties: ['openFile'], filters: [{ name: 'Projects and GeoJSON', extensions: ['json', 'geojson'] }] });
     if (r.canceled || !r.filePaths[0]) return null;
-    return readAndTrack(r.filePaths[0], true);
+    approve(r.filePaths[0]);
+    return readFile(r.filePaths[0]);
   });
 
   // Open recent: a file opened or saved before.
-  ipcMain.handle('files:read', (e, file) => {
-    if (!allowed(file)) throw new Error('that file is not one GenGIS opened or saved');
-    return readAndTrack(file, false);
+  handle('files:read', (e, file) => readFile(file));
+
+  // The page opened a project from this file (as project `id`, after any migration): keep it there from now on.
+  handle('files:adopt', (e, { id, file } = {}) => {
+    if (typeof id !== 'string' || !id || !allowed(file)) throw new Error('not allowed');
+    load().projects[id] = path.resolve(file);
+    persist();
+    return true;
   });
 
-  ipcMain.handle('files:recent', () => load().recent.filter(f => fs.existsSync(f)).map(f => {
+  handle('files:recent', () => load().recent.filter(f => fs.existsSync(f) && allowed(f)).map(f => {
     const st = fs.statSync(f);
     return { file: f, name: path.basename(f), folder: path.dirname(f), modified: st.mtimeMs };
   }));
 
-  ipcMain.handle('files:file-of', (e, id) => { const f = load().projects[id]; return f && fs.existsSync(f) ? f : null; });
+  handle('files:file-of', (e, id) => { const f = load().projects[id]; return f && fs.existsSync(f) && allowed(f) ? f : null; });
 
-  ipcMain.handle('files:reveal', (e, file) => {
-    if (file && allowed(file) && fs.existsSync(file)) shell.showItemInFolder(file);
+  handle('files:reveal', (e, file) => {
+    if (file && allowed(file) && fs.existsSync(file)) shell.showItemInFolder(path.resolve(file));
     else { fs.mkdirSync(load().folder, { recursive: true }); shell.openPath(load().folder); }
   });
 }
 
-function writeProject({ id, name, json } = {}) {
-  if (typeof id !== 'string' || !id || typeof json !== 'string') throw new Error('bad request');
-  const p = projectJson(json);
-  if (p.id !== id) throw new Error('project id mismatch');
-  const st = load();
-  let file = st.projects[id];
-  if (!file || !allowed(file)) file = newFileFor(id, name);
-  writeAtomic(file, json);
-  st.projects[id] = file;
-  remember(file);
-  persist();
-  return file;
-}
-
-function readAndTrack(file, picked) {
-  const text = fs.readFileSync(file, 'utf8');
-  const st = load();
-  if (picked) approve(file);
-  remember(file);
-  try { const p = JSON.parse(text); if (p && p.format === 'gengis-project' && typeof p.id === 'string') st.projects[p.id] = path.resolve(file); } catch (e) { /* GeoJSON or not JSON: the page says */ }
-  persist();
-  return { file, name: path.basename(file), text };
-}
-
-module.exports = { register };
+module.exports = { register, APP_PAGE };

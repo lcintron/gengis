@@ -2,7 +2,8 @@
  * and checks every path). Runs sandboxed: only contextBridge and ipcRenderer are used. */
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('gengisDesktop', {
+// Only the app's own page gets it (the main process also refuses requests from anything else).
+if (location.protocol === 'file:' && /\/index\.html$/i.test(location.pathname)) contextBridge.exposeInMainWorld('gengisDesktop', {
   folder: () => ipcRenderer.invoke('files:folder'),
   chooseFolder: () => ipcRenderer.invoke('files:choose-folder'),
   write: (id, name, json) => ipcRenderer.invoke('files:write', { id, name, json }),
@@ -10,6 +11,7 @@ contextBridge.exposeInMainWorld('gengisDesktop', {
   saveAs: (id, name, json) => ipcRenderer.invoke('files:save-as', { id, name, json }),
   open: () => ipcRenderer.invoke('files:open'),
   read: file => ipcRenderer.invoke('files:read', file),
+  adopt: (id, file) => ipcRenderer.invoke('files:adopt', { id, file }),
   recent: () => ipcRenderer.invoke('files:recent'),
   fileOf: id => ipcRenderer.invoke('files:file-of', id),
   reveal: file => ipcRenderer.invoke('files:reveal', file),

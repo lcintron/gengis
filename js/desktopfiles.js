@@ -76,19 +76,22 @@ window.MB = window.MB || {};
     } catch (e) { MB.toast('Could not save: ' + (e.message || e), 5000); }
   };
 
-  F.open = async function () {
+  // Opening a file: the open project is saved first (database and file), then the file is read, so reopening the
+  // project's own file shows its latest version. The file becomes this project's only once it has opened, under
+  // the id it ended up with (an older file gets a new one).
+  async function openFrom(read) {
     try {
-      const r = await D.open();
-      if (r) await MB.openText(r.text, r.name);
+      if (!(await P().confirmReplace('Open the file'))) return;
+      const r = await read();
+      if (!r) return;
+      if ((await MB.openText(r.text, r.name)) !== 'project') return;
+      await D.adopt(MB.state.projectId, r.file);
+      F.file = r.file;
+      emit();
     } catch (e) { MB.toast('Could not open the file: ' + (e.message || e), 5000); }
-  };
-
-  F.openRecent = async function (file) {
-    try {
-      const r = await D.read(file);
-      await MB.openText(r.text, r.name);
-    } catch (e) { MB.toast('Could not open the file: ' + (e.message || e), 5000); }
-  };
+  }
+  F.open = () => openFrom(() => D.open());
+  F.openRecent = file => openFrom(() => D.read(file));
 
   F.recent = () => D.recent().catch(() => []);
   F.reveal = file => D.reveal(file || F.file || null);

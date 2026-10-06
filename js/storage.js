@@ -22,14 +22,15 @@ window.MB = window.MB || {};
     return file.text().then(txt => MB.openText(txt, file.name));
   };
 
-  // A project or GeoJSON file's text (from a file picker, or the desktop app's own dialogs).
+  // A project or GeoJSON file's text (from a file picker, or the desktop app's own dialogs). Resolves 'project' or
+  // 'geojson' for what was opened, or null.
   MB.openText = async function (txt, name) {
     try {
       const p = JSON.parse(txt);
-      if (MB.isProject(p)) { if (!(await MB.projects.beforeOpen(p))) return; MB.loadProject(p); MB.projects.markFileBacked(); MB.toast('Project loaded'); return; }
-      if (p && (p.type === 'FeatureCollection' || p.type === 'Feature')) { MB.importGeoJSON(p, name); return; }
+      if (MB.isProject(p)) { if (!(await MB.projects.beforeOpen(p))) return null; MB.loadProject(p); MB.projects.markFileBacked(); MB.toast('Project loaded'); return 'project'; }
+      if (p && (p.type === 'FeatureCollection' || p.type === 'Feature')) { MB.importGeoJSON(p, name); return 'geojson'; }
       throw new Error('Unrecognized file');
-    } catch (e) { MB.toast('Could not open file: ' + e.message); }
+    } catch (e) { MB.toast('Could not open file: ' + e.message); return null; }
   };
 
   /* ---------- GeoJSON ---------- */

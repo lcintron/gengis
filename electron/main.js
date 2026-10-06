@@ -37,8 +37,13 @@ function createWindow() {
     win.webContents.send('app:flush');
     setTimeout(done, 4000);
   });
-  // Open external links (attribution, about) in the system browser.
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  // The window shows the app and nothing else: links (attribution, about, a provider's own) open in the system
+  // browser, never in this window, so no other page ever runs where the project-file bridge is.
+  const external = url => { if (/^https?:\/\//i.test(url)) shell.openExternal(url); };
+  win.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
+  const stayHome = (e, url) => { if (String(url).split(/[?#]/)[0] !== files.APP_PAGE) { e.preventDefault(); external(url); } };
+  win.webContents.on('will-navigate', stayHome);
+  win.webContents.on('will-redirect', stayHome);
 }
 
 app.whenReady().then(() => {
