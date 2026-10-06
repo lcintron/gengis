@@ -70,9 +70,16 @@ window.MB = window.MB || {};
     return s === 'granted';
   }
 
-  // Write the open project to its file. force: overwrite even if the file changed elsewhere.
-  async function writeNow(force) {
+  // Write the open project to its file. force: overwrite even if the file changed elsewhere. Writes run one at a
+  // time; `writing` is the last one (for whoever must wait until the file holds the latest).
+  let writing = Promise.resolve(false);
+  function writeNow(force) {
     clearTimeout(timer); timer = null;
+    const run = writing.then(() => write(force));
+    writing = run.catch(() => false);
+    return run;
+  }
+  async function write(force) {
     if (!entry || P().readOnly || isDraft()) return false;
     if (!(await allowed(false))) { if (F.state !== 'conflict') show('paused'); return false; }
     const { p, text, unchanged } = current();
@@ -102,7 +109,7 @@ window.MB = window.MB || {};
   }
   F.schedule = function () { if (!entry) return; clearTimeout(timer); timer = setTimeout(() => writeNow(false), DELAY); };
   // Before another project replaces the open one: its file gets the last changes first.
-  F.writePending = () => (timer ? writeNow(false) : Promise.resolve(false));
+  F.writePending = () => (timer ? writeNow(false) : writing); // a timer still to fire, or a write under way
 
   // Link the open project to a file handle (after Save as or Open).
   async function adopt(handle) {
