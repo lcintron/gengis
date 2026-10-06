@@ -411,6 +411,7 @@ window.MB = window.MB || {};
     inp.addEventListener('blur', finish);
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { inp.value = cur; inp.blur(); } e.stopPropagation(); });
     inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('dblclick', e => e.stopPropagation()); // selecting a word in it must not start the rename over
   }
 
   function startRename(item, id) {
@@ -423,6 +424,7 @@ window.MB = window.MB || {};
     inp.addEventListener('blur', done);
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { inp.value = cur; inp.blur(); } e.stopPropagation(); });
     inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('dblclick', e => e.stopPropagation()); // selecting a word in it must not start the rename over
   }
 
   /* ================= style form ================= */
