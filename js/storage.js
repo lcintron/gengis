@@ -11,6 +11,7 @@ window.MB = window.MB || {};
 
   MB.saveToFile = function () {
     if (MB.desktopFiles && MB.desktopFiles.available) return MB.desktopFiles.save(); // the desktop app writes the file itself
+    if (MB.browserFiles && MB.browserFiles.available) return MB.browserFiles.save(); // so do Chrome and Edge (a file picked once)
     const p = MB.serializeProject();
     const name = (p.name || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map';
     MB.download(name + MB.PROJECT_EXT, JSON.stringify(p, null, 1));

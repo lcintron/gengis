@@ -187,6 +187,7 @@ window.MB = window.MB || {};
   P.confirmReplace = async function (what) {
     const safe = await P.flush();
     if (MB.desktopFiles && MB.desktopFiles.available) await MB.desktopFiles.writePending(); // its file too
+    if (MB.browserFiles && MB.browserFiles.available) await MB.browserFiles.writePending();
     if (safe) return true;
     return MB.ask('"' + MB.state.projectName + '" could not be saved in this browser\'s project storage' + (P.error ? ' (' + P.error + ')' : '') +
       ', so it will not be in Recent projects. ' + what + ' anyway?\n\nTo keep it, cancel and use Project \u2192 Save project.', what, 'Cancel');
@@ -491,8 +492,8 @@ window.MB = window.MB || {};
     dlg.classList.remove('hidden');
     await P.flush();
     const cur = MB.state.projectId;
-    const DF = MB.desktopFiles || {};
-    const [list, snaps, files] = await Promise.all([P.list(), P.snapshots(cur), DF.available ? DF.recent() : []]);
+    const DF = MB.desktopFiles || {}, BF = MB.browserFiles || {};
+    const [list, snaps, files, linked] = await Promise.all([P.list(), P.snapshots(cur), DF.available ? DF.recent() : [], BF.available ? BF.recent() : []]);
     const box = dlg.querySelector('.modal-box');
     const reason = r => ({ 'before opening a file': 'before a file replaced it', 'before restoring an earlier copy': 'before a restore' })[r] || '';
     box.innerHTML = `${MB.modalCloseHtml}<h2 id="recentTitle">Recent projects</h2>
@@ -510,8 +511,14 @@ window.MB = window.MB || {};
       <div class="recent-list">${files.length ? files.map(f => `<div class="recent-item">
           <div class="recent-main"><b>${esc(f.name)}</b><span class="dim" title="${esc(f.file)}">${esc(f.folder)} · ${esc(when(f.modified))}</span></div>
           <button class="btn small" data-file="${esc(f.file)}">Open</button>
-        </div>`).join('') : '<p class="note">Project files you open or save appear here.</p>'}</div>` : ''}`;
+        </div>`).join('') : '<p class="note">Project files you open or save appear here.</p>'}</div>` : ''}
+      ${BF.available ? `<h3>Files on this computer</h3>
+      <div class="recent-list">${linked.length ? linked.map(f => `<div class="recent-item">
+          <div class="recent-main"><b>${esc(f.name)}</b><span class="dim">${f.lastWritten ? esc(when(f.lastWritten)) : ''}</span></div>
+          <button class="btn small" data-linked="${esc(f.id)}">Open</button>
+        </div>`).join('') : '<p class="note">Project files you open or save from this browser appear here.</p>'}</div>` : ''}`;
     box.querySelectorAll('[data-file]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await DF.openRecent(b.dataset.file); }));
+    box.querySelectorAll('[data-linked]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await BF.openRecent(b.dataset.linked); }));
     box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await P.open(b.dataset.open); }));
     // Confirm inside the row: some embedded browsers (and in-app previews) suppress confirm() and read it as Cancel,
     // which made these buttons look dead.

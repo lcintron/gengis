@@ -166,8 +166,12 @@ window.MB = window.MB || {};
       case 'new': // nothing is lost: the open project stays in Recent projects (asked first when it could not be saved there)
         MB.projects.newMap();
         break;
-      case 'open': if (MB.desktopFiles.available) MB.desktopFiles.open(); else $('#fileOpen').click(); break;
-      case 'saveas': MB.desktopFiles.saveAs(); break;
+      case 'open':
+        if (MB.desktopFiles.available) MB.desktopFiles.open();
+        else if (MB.browserFiles.available) MB.browserFiles.open();
+        else $('#fileOpen').click();
+        break;
+      case 'saveas': if (MB.desktopFiles.available) MB.desktopFiles.saveAs(); else MB.browserFiles.saveAs(); break;
       case 'recent': MB.projects.openDialog(); break;
       case 'save': MB.saveToFile(); break;
       case 'geojson': MB.exportGeoJSON(); break;
@@ -999,7 +1003,7 @@ window.MB = window.MB || {};
       const view = {
         idle: ['', ''],
         saving: ['Saving…', 'Saving on this device'],
-        saved: ['Saved', `Saved on this device${at ? ' at ' + at : ''} (${st.where})${MB.desktopFiles.file ? '\nFile: ' + MB.desktopFiles.file : ''}`],
+        saved: ['Saved', `Saved on this device${at ? ' at ' + at : ''} (${st.where})${MB.desktopFiles.file ? '\nFile: ' + MB.desktopFiles.file : ''}${fileNote()}`],
         error: ['Not saved', 'Autosave failed: ' + st.error + '. Save the project to a file.'],
         readonly: ['Not saving', 'This map is open in another tab or window; changes here are not saved.']
       }[st.status] || ['', ''];
@@ -1010,18 +1014,49 @@ window.MB = window.MB || {};
     };
     MB.on('savestate', render);
     MB.on('desktopfiles', () => { render(MB.projects); MB.ui.renderDesktopFiles(); });
+    // Chrome and Edge: the project's file, and a button beside the status when saving to it needs a click
+    const BF = MB.browserFiles;
+    function fileNote() {
+      if (!BF.available || !BF.name) return '';
+      return '\nFile: ' + BF.name + ({ saving: '', paused: ' (paused: click "Resume saving to file")', conflict: ' (changed outside GenGIS: not saved to)', denied: ' (the browser did not allow saving to it)' }[BF.state] || '');
+    }
+    if (BF.available) {
+      const resume = document.createElement('button');
+      resume.type = 'button'; resume.id = 'fileResume'; resume.className = 'btn small file-resume'; resume.hidden = true;
+      el.insertAdjacentElement('afterend', resume);
+      resume.addEventListener('click', () => BF.resume());
+      MB.on('browserfiles', () => {
+        const need = BF.name && (BF.state === 'paused' || BF.state === 'denied' || BF.state === 'conflict');
+        resume.hidden = !need;
+        resume.textContent = BF.state === 'conflict' ? 'File changed: choose…' : 'Resume saving to file';
+        resume.title = BF.state === 'conflict' ? '"' + BF.name + '" was changed outside GenGIS' : 'Allow saving changes to "' + BF.name + '" again';
+        render(MB.projects); MB.ui.renderDesktopFiles();
+      });
+    }
     render(MB.projects);
-    // the desktop app: Save as, and Save project writes the project's file rather than downloading a copy
-    if (MB.desktopFiles.available) {
+    // the desktop app, Chrome and Edge: Save as, and Save project writes the project's file rather than downloading a copy
+    if (MB.desktopFiles.available || BF.available) {
       $$('[data-act="saveas"]').forEach(b => b.classList.remove('hidden'));
       $$('#menu [data-act="save"]').forEach(b => { b.textContent = 'Save project'; });
     }
   }
 
-  // Settings -> Project, desktop app: the projects folder and the open project's file.
+  // Settings -> Project, desktop app: the projects folder and the open project's file. Chrome and Edge: the file
+  // this project is saved to, if one was picked.
   MB.ui.renderDesktopFiles = function () {
-    const box = $('#desktopFilesBox'), F = MB.desktopFiles;
+    const box = $('#desktopFilesBox'), F = MB.desktopFiles, B = MB.browserFiles;
     if (!box) return;
+    if (!F.available && B.available) {
+      const state = { saving: 'saved a moment after every change', paused: 'paused until you allow it again', conflict: 'changed outside GenGIS: not saved to', denied: 'the browser did not allow saving to it' }[B.state] || '';
+      box.innerHTML = `<div class="desktop-files">
+          <div class="row"><label>File</label><span class="path" title="${esc(B.name || '')}">${B.name ? esc(B.name) + (state ? ' <span class="dim">· ' + esc(state) + '</span>' : '') : '<span class="dim">none: pick one with Save as…</span>'}</span></div>
+          <div class="btn-row"><button class="btn small" data-bf="saveas">Save as…</button>${B.name && B.state !== 'saving' ? '<button class="btn small" data-bf="resume">' + (B.state === 'conflict' ? 'Choose…' : 'Resume saving to file') + '</button>' : ''}${B.name ? '<button class="btn small ghost" data-bf="unlink">Stop saving to this file</button>' : ''}</div>
+          <p class="note">Pick a file once with Save as… (or open one) and this project is also saved to it, a moment after every change. After the browser restarts it asks again before writing.</p>
+        </div>`;
+      const on = (k, fn) => { const b = box.querySelector('[data-bf="' + k + '"]'); if (b) b.addEventListener('click', fn); };
+      on('saveas', () => B.saveAs()); on('resume', () => B.resume()); on('unlink', () => B.unlink());
+      return;
+    }
     if (!F.available) { box.innerHTML = ''; return; }
     box.innerHTML = `<div class="desktop-files">
         <div class="row"><label>Folder</label><span class="path" title="${esc(F.folder || '')}">${esc(F.folder || '…')}</span></div>
