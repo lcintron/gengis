@@ -116,6 +116,7 @@ window.MB = window.MB || {};
     const s = MB.state;
     const p = {
       format: FORMAT, schema: SCHEMA, generator: { name: MB.APP.name, version: MB.APP.version },
+      id: s.projectId, // which project this is: its saved copy on a device follows it (optional; older files have none)
       name: s.projectName,
       units: { system: s.units, shortDistances: s.shortUnit },
       editing: { showMeasurements: !!s.showMeasurements, continueDrawing: s.continueDrawing !== false, snapping: s.snapping !== false },
@@ -206,6 +207,8 @@ window.MB = window.MB || {};
     MB.clearAll();
     const units = p.units || {}, ed = p.editing || {};
     Object.assign(MB.state, {
+      // a file without an id (an older version's) becomes a project of its own; undo keeps the open one's
+      projectId: typeof p.id === 'string' && p.id ? p.id : (opts.keepHistory ? MB.state.projectId : MB.uid()),
       projectName: p.name || 'Untitled map',
       units: MB.unitSystems[units.system] ? units.system : 'metric',
       shortUnit: units.shortDistances === 'm' ? 'm' : 'ft',

@@ -321,6 +321,12 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .topbar-right { order: 2; flex: 0 0 auto; margin-left: 0; gap: 6px; }
   #presentBtn, .menu-wrap { display: none; } /* in the menu */
   #moreBtn { display: inline-flex; }
+  /* the save status shrinks to a dot (its words stay in the tooltip and for screen readers) */
+  .save-status { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); overflow: hidden; text-indent: 20px; }
+  .save-status[data-state="saved"] { background: var(--accent); }
+  .save-status[data-state="error"] { background: var(--danger); }
+  .save-status[data-state="readonly"] { background: var(--warn); }
+  .save-status[data-state="idle"] { display: none; }
   #main { position: relative; }
   /* side panel becomes a bottom sheet */
   #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: 56%; max-height: 70vh; border-left: 0; border-top: 1px solid var(--border);
@@ -499,6 +505,29 @@ button.link:hover { text-decoration: underline; }
   box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px);
 }
 .about-logo { width: 72px; height: auto; float: right; margin: 0 0 8px 12px; }
+
+/* ---------- saving: status, recent projects, a map open in another tab ---------- */
+.save-status { font-size: 11px; color: var(--text-dim); white-space: nowrap; flex: 0 0 auto; }
+.save-status[data-state="error"] { color: var(--danger); }
+.save-status[data-state="readonly"] { color: var(--warn); }
+.recent-box { max-width: 520px; }
+.recent-box h3 { margin-top: 16px; }
+.recent-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+.recent-item { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.recent-item.current { border-color: rgba(29,179,169,.6); }
+.recent-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.recent-main b, .recent-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-main .dim { font-size: 12px; }
+.mb-ask { z-index: 4500; }
+.mb-ask .modal-box { max-width: 440px; }
+.mb-ask .ask-text { white-space: pre-line; margin: 0 0 14px; }
+.recent-ask { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.recent-ask span { font-size: 12px; color: var(--text-dim); }
+#mb-readonly {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 8000; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--warn); border-radius: 10px; padding: 8px 8px 8px 14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px);
+}
 
 /* ---------- airport frequencies in popups ---------- */
 .mb-freqs { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }

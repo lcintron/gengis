@@ -250,6 +250,34 @@ window.MB = window.MB || {};
   };
 
   // A stored item, carrying over what an earlier version saved under its old key.
+  // A yes/no question in the app's own dialog; resolves true for yes. (confirm() is suppressed by some embedded
+  // browsers and in-app previews, which read it as "no" without showing anything.)
+  MB.ask = function (message, yes, no) {
+    return new Promise(resolve => {
+      const dlg = document.createElement('div');
+      dlg.className = 'modal mb-ask';
+      dlg.innerHTML = '<div class="modal-box" role="alertdialog" aria-modal="true"><p class="ask-text"></p><div class="row right"><button type="button" class="btn" data-no></button><button type="button" class="btn primary" data-yes></button></div></div>';
+      dlg.querySelector('.ask-text').textContent = message;
+      dlg.querySelector('[data-yes]').textContent = yes || 'OK';
+      dlg.querySelector('[data-no]').textContent = no || 'Cancel';
+      const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]');
+      const finish = v => { window.removeEventListener('keydown', onKey, true); dlg.remove(); resolve(v); };
+      // While it is open no key reaches the app (Delete must not delete the selection behind it). Enter and Space
+      // still press the focused button; Tab stays on the two buttons; Escape answers no.
+      const onKey = e => {
+        e.stopPropagation();
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        else if (e.key === 'Tab') { e.preventDefault(); (document.activeElement === yesBtn ? noBtn : yesBtn).focus(); }
+        else if (!dlg.contains(e.target)) e.preventDefault();
+      };
+      yesBtn.addEventListener('click', () => finish(true));
+      noBtn.addEventListener('click', () => finish(false));
+      window.addEventListener('keydown', onKey, true);
+      document.body.appendChild(dlg);
+      dlg.querySelector('[data-yes]').focus();
+    });
+  };
+
   MB.storedItem = function (key, oldKey) {
     let v = null;
     try {

@@ -144,12 +144,11 @@ window.MB = window.MB || {};
 
   MB.ui.menuAction = function (act) {
     switch (act) {
-      case 'new':
-        if (Object.keys(MB.featureLayers).length && !confirm('Start a new project? Unsaved changes are kept in undo history only until you reload.')) return;
-        MB.newProject();
-        MB.toast('New project');
+      case 'new': // nothing is lost: the open project stays in Recent projects (asked first when it could not be saved there)
+        MB.projects.newMap();
         break;
       case 'open': $('#fileOpen').click(); break;
+      case 'recent': MB.projects.openDialog(); break;
       case 'save': MB.saveToFile(); break;
       case 'geojson': MB.exportGeoJSON(); break;
       case 'install': if (MB.installPrompt) { MB.installPrompt.prompt(); MB.installPrompt = null; $('#installBtn').classList.add('hidden'); } break;
@@ -835,8 +834,9 @@ window.MB = window.MB || {};
       </div>
       <div class="section"><h3>Project</h3>
         <div class="btn-row"><button class="btn small" data-act="save">Save to file</button><button class="btn small" data-act="open">Open file</button><button class="btn small" data-act="geojson">Export GeoJSON</button></div>
-        <p class="note" style="margin-top:8px">Autosaved in this browser.</p>
-        <div class="btn-row"><button class="btn small danger" id="setReset">Reset everything</button><button class="btn small ghost" data-act="about">About</button></div>
+        <p class="note" style="margin-top:8px" id="saveWhere"></p>
+        <div class="btn-row"><button class="btn small" data-act="recent">Recent projects…</button><button class="btn small" id="setPersist" hidden>Keep on this device</button></div>
+        <div class="btn-row"><button class="btn small danger" id="setReset">Reset project</button><button class="btn small ghost" data-act="about">About</button></div>
       </div>
       <div class="section"><h3>About</h3>
         <div class="measure-box"><div><span>Application</span><span>${esc(MB.APP.name)} (${esc(MB.APP.aka)})</span></div><div><span>Version</span><span id="appVersion">${esc(MB.APP.version)}</span></div></div>
@@ -854,9 +854,48 @@ window.MB = window.MB || {};
     $('#setContinue', panel).addEventListener('change', e => { s.continueDrawing = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setSnap', panel).addEventListener('change', e => { s.snapping = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $$('[data-act]', panel).forEach(b => b.addEventListener('click', () => MB.ui.menuAction(b.dataset.act)));
-    $('#setReset', panel).addEventListener('click', () => {
-      if (confirm('Delete all layers, objects and the SVG library, and clear the browser autosave?')) { MB.clearAutosave(); MB.newProject(); MB.toast('Project reset'); }
+    $('#setReset', panel).addEventListener('click', async () => {
+      if (!confirm('Delete this project (its layers, objects and SVG library) and its saved copies on this device? Other projects stay.')) return;
+      await MB.projects.flush();
+      await MB.clearAutosave();
+      MB.projects.startFresh();
+      MB.toast('Project reset');
     });
+    $('#setPersist', panel).addEventListener('click', () => MB.projects.persist(true).then(ok => MB.toast(ok ? 'Kept on this device: the browser will not clear it to free space.' : 'The browser did not agree to keep it. Save important projects to a file.', 4500)));
+    MB.ui.renderSaveWhere();
+  };
+
+  /* ================= saving status ================= */
+
+  // Next to the project name: Saving… / Saved / Not saved, with the details on hover.
+  function initSaveStatus() {
+    const el = $('#saveStatus');
+    const render = st => {
+      const at = st.savedAt ? new Date(st.savedAt).toLocaleTimeString() : '';
+      const view = {
+        idle: ['', ''],
+        saving: ['Saving…', 'Saving on this device'],
+        saved: ['Saved', `Saved on this device${at ? ' at ' + at : ''} (${st.where})`],
+        error: ['Not saved', 'Autosave failed: ' + st.error + '. Save the project to a file.'],
+        readonly: ['Not saving', 'This map is open in another tab or window; changes here are not saved.']
+      }[st.status] || ['', ''];
+      el.textContent = view[0];
+      el.title = view[1];
+      el.dataset.state = st.status;
+      MB.ui.renderSaveWhere();
+    };
+    MB.on('savestate', render);
+    render(MB.projects);
+  }
+
+  // Settings → Project: where projects are kept and whether the browser may clear them.
+  MB.ui.renderSaveWhere = function () {
+    const p = MB.projects, note = $('#saveWhere'), btn = $('#setPersist');
+    if (!note) return;
+    const kept = p.persisted === true ? 'The browser will not clear them to free space.'
+      : (p.persisted === false ? 'The browser may clear them if the device runs low on space: save important projects to a file, or keep them on this device.' : '');
+    note.textContent = 'Projects are saved automatically on this device as you work; reopen them from Recent projects. ' + kept;
+    if (btn) btn.hidden = p.persisted !== false;
   };
 
   /* ================= scale + status controls ================= */
@@ -924,6 +963,7 @@ window.MB = window.MB || {};
 
   MB.ui.init = function () {
     initTopbar();
+    initSaveStatus();
     initSearch();
     initToolbar();
     initTabs();
