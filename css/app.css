@@ -80,6 +80,9 @@ html[data-titlebar="overlay"] #presentBar { top: 10px; right: calc(100vw - env(t
 html[data-titlebar="overlay"] body.presenting .leaflet-top.leaflet-right { top: env(titlebar-area-height, 51px); }
 html[data-titlebar="overlay"]:fullscreen #presentBar { right: 10px; } /* full screen: no window buttons */
 html[data-titlebar="overlay"]:fullscreen body.presenting .leaflet-top.leaflet-right { top: 0; }
+/* the top bar is hidden while presenting: the presenter bar moves the window instead (its buttons stay buttons) */
+html[data-titlebar] #presentBar { -webkit-app-region: drag; }
+html[data-titlebar] #presentBar button { -webkit-app-region: no-drag; }
 
 .btn {
   background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
