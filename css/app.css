@@ -465,6 +465,14 @@ body.presenting #presentBar { display: flex; }
 .data-item .subsets label.sub.off { color: var(--text-dim); text-decoration: line-through; }
 .data-item .subsets input { accent-color: var(--accent); width: 13px; height: 13px; margin: 0; }
 .data-item .subsets i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid rgba(255,255,255,.25); }
+/* chart-symbol swatches (sectional chart line styles), in the color --c */
+.data-item i.sym { width: 20px; height: 10px; border: 0; border-radius: 0; margin-right: 4px; background: none; }
+.data-item i.sym-solid { background: linear-gradient(var(--c), var(--c)) center / 100% 4px no-repeat; }
+.data-item i.sym-line { background: linear-gradient(var(--c), var(--c)) center / 100% 2px no-repeat; }
+.data-item i.sym-dashed { background: repeating-linear-gradient(90deg, var(--c) 0 5px, transparent 5px 8px) center / 100% 3px no-repeat; }
+.data-item i.sym-dashed-wide { background: repeating-linear-gradient(90deg, var(--c) 0 7px, transparent 7px 11px) center / 100% 4px no-repeat; }
+.data-item i.sym-vignette { background: linear-gradient(to top, var(--c), transparent); }
+.data-item i.sym-comb { background: linear-gradient(var(--c), var(--c)) bottom / 100% 2px no-repeat, repeating-linear-gradient(90deg, var(--c) 0 1.5px, transparent 1.5px 4px) top / 100% 8px no-repeat; }
 .data-item .sub-actions { flex: 1 0 100%; color: var(--text-dim); }
 button.link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 11px; }
 button.link:hover { text-decoration: underline; }

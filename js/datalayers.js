@@ -37,20 +37,34 @@ window.MB = window.MB || {};
     for (const [v] of CEIL) if (c <= v) return v;
     return 400;
   }
+  // Airspace as on the FAA's VFR sectional charts: blue and magenta; solid for Class B and C, dashed for Class D and
+  // surface Class E, a vignette (a band fading inward) for Class E with a floor above the surface (magenta: 700 ft AGL,
+  // blue: 1,200 ft AGL or higher), a thin line for the Mode C veil, and a comb (ticks on the inner side) for special
+  // use airspace (blue: prohibited, restricted, warning, danger; magenta: MOA, alert). The vignette and comb are
+  // drawn by the data renderer (band: in a style).
+  const BLUE = '#2c6bd1', MAGENTA = '#b23a7e';
   const CLASS_STYLE = {
-    B: { color: '#1f5fd6', weight: 2.5, fillColor: '#1f5fd6', fillOpacity: .06 },
-    C: { color: '#a12fb5', weight: 2.5, fillColor: '#a12fb5', fillOpacity: .06 },
-    D: { color: '#1f5fd6', weight: 2, dashArray: '6,4', fillColor: '#1f5fd6', fillOpacity: .04 },
-    E: { color: '#b76ad6', weight: 1.2, dashArray: '2,4', fillColor: '#b76ad6', fillOpacity: .03 }
+    B: { color: BLUE, weight: 3, fillColor: BLUE, fillOpacity: .05 },
+    C: { color: MAGENTA, weight: 3, fillColor: MAGENTA, fillOpacity: .05 },
+    D: { color: BLUE, weight: 2, dashArray: '8,5', fillColor: BLUE, fillOpacity: .04 },
+    E: { color: MAGENTA, weight: 2, dashArray: '8,5', fillColor: MAGENTA, fillOpacity: .03 },
+    E700: { color: MAGENTA, weight: .8, opacity: .55, fillOpacity: 0, band: 'vignette' },
+    E1200: { color: BLUE, weight: .8, opacity: .55, fillOpacity: 0, band: 'vignette' },
+    MODEC: { color: MAGENTA, weight: 1.2, fillOpacity: 0 }
   };
-  const classStyle = p => Object.assign({ opacity: .9 }, CLASS_STYLE[(p.CLASS || '').trim().toUpperCase()] || { color: '#888', weight: 1, fillOpacity: .03 });
+  // Which of those an area is: its class, and for Class E its floor (the surface, 700 ft, or higher).
+  function classKind(p) {
+    const c = String(p.CLASS || '').trim().toUpperCase();
+    if (c === 'E') { const lo = +p.LOWER_VAL; return !(lo > 0) ? 'E' : (lo === 700 ? 'E700' : 'E1200'); }
+    if (String(p.LOCAL_TYPE || '').trim().toUpperCase() === 'MODE C') return 'MODEC';
+    return c;
+  }
+  const classStyle = p => Object.assign({ opacity: .9 }, CLASS_STYLE[classKind(p)] || { color: '#888', weight: 1, fillOpacity: .03 });
+  const comb = (color, fill) => ({ color, weight: 1.5, fillColor: color, fillOpacity: fill, band: 'comb' });
   const SUA_STYLE = {
-    R: { color: '#d7263d', fillColor: '#d7263d', fillOpacity: .12, weight: 1.5 },
-    P: { color: '#d7263d', fillColor: '#d7263d', fillOpacity: .25, weight: 2 },
-    W: { color: '#f46036', fillColor: '#f46036', fillOpacity: .06, weight: 1.5, dashArray: '6,4' },
-    MOA: { color: '#c2185b', fillColor: '#c2185b', fillOpacity: .06, weight: 1.5, dashArray: '8,4' },
-    A: { color: '#f7b32b', fillColor: '#f7b32b', fillOpacity: .08, weight: 1.5 },
-    NSA: { color: '#6a1b9a', fillColor: '#6a1b9a', fillOpacity: .06, weight: 1.5, dashArray: '2,4' }
+    P: comb(BLUE, .08), R: comb(BLUE, .05), W: comb(BLUE, .03), D: comb(BLUE, .03),
+    MOA: comb(MAGENTA, .03), A: comb(MAGENTA, .03),
+    NSA: { color: MAGENTA, weight: 4, dashArray: '10,8', fillColor: MAGENTA, fillOpacity: .04 }
   };
   const suaStyle = p => Object.assign({ opacity: .9 }, SUA_STYLE[(p.TYPE_CODE || '').trim().toUpperCase()] || { color: '#888', fillColor: '#888', fillOpacity: .05, weight: 1 });
   const solid = (color, fill) => () => ({ color, weight: 2, opacity: .95, fillColor: color, fillOpacity: fill == null ? .18 : fill });
@@ -85,6 +99,14 @@ window.MB = window.MB || {};
     faa: { name: 'FAA UAS Data Delivery System', url: 'https://udds-faa.opendata.arcgis.com/', note: 'Live FAA airspace and UAS data for the visible area, cached on this device. Informational only.' },
     custom: { name: 'Custom ArcGIS layers', url: '', note: '' }
   };
+
+  // Subset rows: [key, label, color, chart symbol of its swatch]
+  const CLASS_ITEMS = [['B', 'Class B', BLUE, 'solid'], ['C', 'Class C', MAGENTA, 'solid'], ['D', 'Class D', BLUE, 'dashed'],
+    ['E', 'Class E from the surface', MAGENTA, 'dashed'], ['E700', 'Class E from 700 ft AGL', MAGENTA, 'vignette'],
+    ['E1200', 'Class E from 1,200 ft AGL or higher', BLUE, 'vignette'], ['MODEC', 'Mode C veil (30 NM)', MAGENTA, 'line']];
+  const SUA_ITEMS = [['P', 'Prohibited (P)', BLUE, 'comb'], ['R', 'Restricted (R)', BLUE, 'comb'], ['W', 'Warning (W)', BLUE, 'comb'],
+    ['D', 'Danger (D)', BLUE, 'comb'], ['MOA', 'Military Operations Area', MAGENTA, 'comb'], ['A', 'Alert (A)', MAGENTA, 'comb'],
+    ['NSA', 'National Security Area', MAGENTA, 'dashed-wide']];
 
   MB.dataCatalog = [
     // Both boundary layers draw borders only: the edges two neighbours share. A coastline is never traced (the base
@@ -122,8 +144,8 @@ window.MB = window.MB || {};
       queryFields: ['LOWER_VAL', 'LOWER_UOM', 'LOWER_CODE', 'UPPER_VAL', 'UPPER_UOM', 'UPPER_CODE'],
       rows: p => [['Floor', floorOf(p)], ['Ceiling', ceilingOf(p)]],
       rev: 1, // cells stored before the altitudes were requested are fetched again
-      legend: [['Class B', '#1f5fd6'], ['Class C', '#a12fb5'], ['Class D (dashed)', '#1f5fd6'], ['Class E (dotted)', '#b76ad6']], desc: '',
-      subsets: { key: p => (p.CLASS || '').trim().toUpperCase(), items: [['B', 'Class B', '#1f5fd6'], ['C', 'Class C', '#a12fb5'], ['D', 'Class D (dashed)', '#1f5fd6'], ['E', 'Class E (dotted)', '#b76ad6']], other: 'Other classes' } },
+      legend: CLASS_ITEMS.map(i => i.slice(1)), desc: 'Drawn as on VFR sectional charts.',
+      subsets: { key: classKind, items: CLASS_ITEMS, other: 'Other classes' } },
     { id: 'sua', group: 'Airspace', name: 'Special Use Airspace (R, W, MOA, A, NSA)', minZoom: 6, levels: DETAIL,
       source: 'faa', url: FAA + 'Special_Use_Airspace/FeatureServer/0', style: suaStyle,
       // an area can be several parts with the same name at other altitudes (R-2934: from the surface, and above 1,200 ft)
@@ -131,11 +153,11 @@ window.MB = window.MB || {};
       queryFields: ['LOWER_VAL', 'LOWER_UOM', 'LOWER_CODE', 'UPPER_VAL', 'UPPER_UOM', 'UPPER_CODE'],
       rows: p => [['Floor', floorOf(p)], ['Ceiling', ceilingOf(p)]],
       rev: 1,
-      legend: [['Restricted', '#d7263d'], ['Warning', '#f46036'], ['MOA', '#c2185b'], ['Alert', '#f7b32b'], ['NSA', '#6a1b9a']],
-      subsets: { key: p => (p.TYPE_CODE || '').trim().toUpperCase(), items: [['R', 'Restricted (R)', '#d7263d'], ['W', 'Warning (W)', '#f46036'], ['MOA', 'Military Operations Area', '#c2185b'], ['A', 'Alert (A)', '#f7b32b'], ['NSA', 'National Security Area', '#6a1b9a'], ['P', 'Prohibited (P)', '#b71c1c']], other: 'Other types' } },
+      legend: SUA_ITEMS.map(i => i.slice(1)), desc: 'Drawn as on VFR sectional charts.',
+      subsets: { key: p => (p.TYPE_CODE || '').trim().toUpperCase(), items: SUA_ITEMS, other: 'Other types' } },
     { id: 'prohibited', group: 'Airspace', name: 'Prohibited Areas', minZoom: 6, levels: DETAIL,
-      source: 'faa', url: FAA + 'Prohibited_Areas/FeatureServer/0', style: solid('#b71c1c', .3),
-      label: p => `${p.NAME || 'Prohibited'} ${feetDesc(p)}`, fields: ['NAME', 'LOWER_DESC', 'UPPER_DESC', 'TIMESOFUSE', 'CONT_AGENT', 'REMARKS'], legend: [['Prohibited', '#b71c1c']] },
+      source: 'faa', url: FAA + 'Prohibited_Areas/FeatureServer/0', style: () => Object.assign({ opacity: .9 }, SUA_STYLE.P),
+      label: p => `${p.NAME || 'Prohibited'} ${feetDesc(p)}`, fields: ['NAME', 'LOWER_DESC', 'UPPER_DESC', 'TIMESOFUSE', 'CONT_AGENT', 'REMARKS'], legend: [['Prohibited', BLUE, 'comb']] },
     { id: 'nsufr', group: 'UAS restrictions', name: 'National Security UAS Flight Restrictions (full-time)', minZoom: 7, levels: DETAIL,
       source: 'faa', url: FAA + 'DoD_Mar_13/FeatureServer/0', style: hatched('#e53935'),
       label: p => `${String(p.Facility || '').trim() || p.Base || 'NSUFR'} · ${p.Floor || 'SFC'}–${p.Ceiling || '400 ft'}`, fields: ['Facility', 'Base', 'Branch', 'Proponent', 'Reason', 'Floor', 'Ceiling', 'FAA_ID', 'State', 'POC'],
@@ -911,10 +933,33 @@ window.MB = window.MB || {};
   let regIds = new WeakMap(), regNext = 0;
   MB.data.registryId = e => { let id = regIds.get(e); if (id == null) regIds.set(e, id = ++regNext); return id; };
 
+  // A Canvas renderer that also draws the two chart symbols Leaflet has no style for, inside a polygon's outline only
+  // (clipped to it, so they never spill onto the neighbouring area): band: 'vignette', a band fading inward from the
+  // outline, and band: 'comb', ticks along the inner side of the outline. Both in the style's color.
+  const ChartCanvas = L.Canvas.extend({
+    _fillStroke(ctx, layer) {
+      const o = layer.options;
+      if (o.band && layer instanceof L.Polygon) {
+        ctx.save();
+        ctx.clip(o.fillRule || 'evenodd');
+        ctx.strokeStyle = o.color;
+        ctx.lineJoin = 'round';
+        if (o.band === 'comb') { // a dashed line twice as wide as the ticks are long: half of it is clipped away
+          ctx.setLineDash([1.6, 4.4]); ctx.lineCap = 'butt'; ctx.lineWidth = 14; ctx.globalAlpha = .9; ctx.stroke();
+        } else {                 // three widths over each other: darkest at the outline
+          ctx.setLineDash([]);
+          for (const [w, a] of [[26, .1], [16, .13], [7, .17]]) { ctx.lineWidth = w; ctx.globalAlpha = a; ctx.stroke(); }
+        }
+        ctx.restore();
+      }
+      L.Canvas.prototype._fillStroke.call(this, ctx, layer);
+    }
+  });
+
   // One shared Canvas renderer for every data layer: thousands of features become a single bitmap instead of
   // thousands of SVG nodes, which roughly halves paint and zoom cost and keeps the DOM small.
   function dataRenderer() {
-    if (!MB.data.renderer) MB.data.renderer = L.canvas({ pane: 'mb-data', padding: 0.5, tolerance: 3 });
+    if (!MB.data.renderer) MB.data.renderer = new ChartCanvas({ pane: 'mb-data', padding: 0.5, tolerance: 3 });
     return MB.data.renderer;
   }
   MB.data.dataRenderer = dataRenderer;
@@ -1255,9 +1300,9 @@ window.MB = window.MB || {};
           <div class="ds-head"><label class="check"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>${this.infoIcon(d.desc)}</div>
           ${d.custom ? `<button class="icon-btn mini danger" data-act="remove" title="Remove this service">${trashIcon}</button>` : ''}
           ${d.subsets
-            ? `<div class="subsets">${d.subsets.items.concat(d.subsets.other ? [['__other', d.subsets.other, '#888']] : []).map(([k, t, c]) => `<label class="sub${ds.off.has(k) ? ' off' : ''}"><input type="checkbox" data-sub="${esc(k)}"${ds.off.has(k) ? '' : ' checked'}${ds.enabled ? '' : ' disabled'}><i style="background:${c}"></i>${esc(t)}</label>`).join('')}
+            ? `<div class="subsets">${d.subsets.items.concat(d.subsets.other ? [['__other', d.subsets.other, '#888']] : []).map(([k, t, c, sym]) => `<label class="sub${ds.off.has(k) ? ' off' : ''}"><input type="checkbox" data-sub="${esc(k)}"${ds.off.has(k) ? '' : ' checked'}${ds.enabled ? '' : ' disabled'}>${swatch(c, sym)}${esc(t)}</label>`).join('')}
                <span class="sub-actions"><button type="button" class="link" data-act="sub-all">all</button> · <button type="button" class="link" data-act="sub-none">none</button></span></div>`
-            : `<div class="legend">${(d.legend || []).map(([t, c]) => `<span><i style="background:${c}"></i>${esc(t)}</span>`).join('')}</div>`}
+            : `<div class="legend">${(d.legend || []).map(([t, c, sym]) => `<span>${swatch(c, sym)}${esc(t)}</span>`).join('')}</div>`}
           <div class="dstatus${ds.error ? ' err' : ''}">${ds.error ? esc(ds.error) : statusLine}</div>
         </div>`;
       });
@@ -1360,6 +1405,8 @@ window.MB = window.MB || {};
     if (h < 48) return h + ' h ago';
     return Math.round(h / 24) + ' days ago';
   }
+  // A legend swatch: a color square, or a sample of the chart symbol (css: i.sym-*) in that color.
+  const swatch = (c, sym) => sym ? `<i class="sym sym-${esc(sym)}" style="--c:${esc(c)}"></i>` : `<i style="background:${esc(c)}"></i>`;
   const trashIcon = '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 
   MB.data.renderPanelSoon = MB.debounce(() => MB.data.renderPanel(), 250);
