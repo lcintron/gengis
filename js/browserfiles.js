@@ -146,10 +146,13 @@ window.MB = window.MB || {};
       const text = await file.text();
       let project = false;
       try { project = MB.isProject(JSON.parse(text)); } catch (e) { /* openText reports it */ }
-      // ask for leave to write while the click that chose the file still counts as one
+      // ask for leave to write while the click that chose the file still counts as one (this first read only says
+      // whether it is a project)
       const canWrite = project && (await handle.requestPermission(RW).catch(() => 'denied')) === 'granted';
       if (!(await P().confirmReplace('Open the file'))) return;
-      if ((await MB.openText(text, file.name)) !== 'project') return;
+      // read it again: replacing the open project first saved it, maybe to this very file
+      file = await handle.getFile();
+      if ((await MB.openText(await file.text(), file.name)) !== 'project') return;
       await adopt(handle);
       file = await handle.getFile();
       entry.lastWritten = file.lastModified; // what it holds now is what was opened
