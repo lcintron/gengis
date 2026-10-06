@@ -95,7 +95,15 @@ window.MB = window.MB || {};
     // so the top bar is a single row that never scrolls: a scrolling row clipped the Project dropdown and let the
     // base map list run over the units. So do narrow desktop-app windows, whose bar also holds the window buttons.
     const more = $('#moreMenu'), moreBtn = $('#moreBtn'), units = $('#unitsSeg'), right = $('.topbar-right');
-    const phone = window.matchMedia(document.documentElement.dataset.titlebar ? '(max-width: 1220px)' : '(max-width: 640px)');
+    // The desktop app keeps them there at every width, in a panel that slides in from the left (css), opened by the
+    // menu button at the bar's left end; Esc or a click elsewhere closes it.
+    const desktop = !!document.documentElement.dataset.titlebar;
+    const phone = window.matchMedia(desktop ? 'all' : '(max-width: 640px)');
+    if (desktop) {
+      $('#topbar').insertBefore(moreBtn, $('#topbar .brand'));
+      moreBtn.title = 'Units, base map and project';
+      window.addEventListener('keydown', e => { if (e.key === 'Escape' && !more.classList.contains('hidden')) { e.stopPropagation(); closeMore(); } }, true);
+    }
     const closeMore = () => { more.classList.add('hidden'); moreBtn.setAttribute('aria-expanded', 'false'); };
     const place = () => {
       if (phone.matches) {
@@ -989,6 +997,8 @@ window.MB = window.MB || {};
     document.addEventListener('keydown', e => {
       const t = e.target;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      // desktop app: Ctrl+F goes to the search (a browser keeps it for finding in the page)
+      if (document.documentElement.dataset.titlebar && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('#searchInput').focus(); $('#searchInput').select(); return; }
       if (e.key === 'Escape') {
         if (MB.contextMenu && MB.contextMenu.isOpen()) { MB.contextMenu.hide(); return; }
         if (MB.presenter && MB.presenter.active) { MB.presenter.exit(); return; }

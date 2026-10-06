@@ -64,17 +64,21 @@ html[data-titlebar] #topbar { -webkit-app-region: drag; user-select: none; }
 html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown) { -webkit-app-region: no-drag; }
 html[data-titlebar="overlay"] #topbar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="mac"] #topbar { padding-left: 84px; }
-/* The window buttons take part of the bar: narrower windows first drop the name beside the logo and narrow the
-   fields, then (as on phones, ui.js) move the units, base map and project menu behind the menu button. */
-@media (max-width: 1440px) {
-  html[data-titlebar] .brand-name { display: none; }
-  html[data-titlebar] .project-name { width: 140px; }
-  html[data-titlebar] .topbar-right #basemapSelect { max-width: 180px; }
+/* A quiet bar, mostly free to grab: the menu button, logo and project name at the left, the search in the middle
+   with room to drag on both sides of it (at least 44 px), undo/redo, presenter and the side panel at the right. The
+   units, base map and project menu are in a panel that slides in from the left under the menu button (ui.js). */
+html[data-titlebar] #moreBtn { display: inline-flex; }
+html[data-titlebar] .menu-wrap { display: none; }
+html[data-titlebar] .brand { margin-right: 32px; }
+html[data-titlebar] .search-wrap { flex: 0 1 520px; margin: 0 auto; }
+html[data-titlebar] #searchInput { min-width: 80px; }
+html[data-titlebar] .topbar-right { margin-left: 32px; }
+@media (max-width: 1100px) { html[data-titlebar] .brand-name { display: none; } }
+html[data-titlebar] .dropdown.more-menu {
+  position: fixed; top: var(--topbar-h); left: 0; right: auto; bottom: 0; width: 320px; max-height: none;
+  border-radius: 0; border-width: 0 1px 0 0; padding: 14px; animation: mb-drawer-in .16s ease-out;
 }
-@media (max-width: 1220px) {
-  html[data-titlebar] #presentBtn, html[data-titlebar] .menu-wrap { display: none; }
-  html[data-titlebar] #moreBtn { display: inline-flex; }
-}
+@keyframes mb-drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
 /* presenting (the top bar hidden): its bar sits beside the window buttons, the map's corner controls below them */
 html[data-titlebar="overlay"] #presentBar { top: 10px; right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="overlay"] body.presenting .leaflet-top.leaflet-right { top: env(titlebar-area-height, 51px); }
