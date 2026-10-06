@@ -112,15 +112,19 @@
       <div class="tabs" role="tablist">
         <button class="sheet-close" id="sheetClose" title="Hide panel" aria-label="Hide panel">✕</button>
         <button data-tab="layers" class="active">Layers</button>
-        <button data-tab="props">Properties</button>
         <button data-tab="svg">SVG</button>
         <button data-tab="places">Places</button>
         <button data-tab="data">Data</button>
         <button data-tab="settings">Settings</button>
       </div>
       <div class="tab-panels">
-        <section id="tab-layers" class="tab-panel active"></section>
-        <section id="tab-props" class="tab-panel"></section>
+        <section id="tab-layers" class="tab-panel active">
+          <div id="layerScroll" class="layer-scroll"></div>
+          <div id="propsSection" class="props-section">
+            <button type="button" id="propsToggle" class="props-toggle" aria-expanded="true" aria-controls="propsBody"><span class="chev">&#9662;</span><span class="props-title">Properties</span><span class="props-sub" id="propsSub"></span></button>
+            <div id="propsBody" class="props-body"></div>
+          </div>
+        </section>
         <section id="tab-svg" class="tab-panel"></section>
         <section id="tab-places" class="tab-panel"></section>
         <section id="tab-data" class="tab-panel"></section>

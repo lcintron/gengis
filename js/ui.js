@@ -231,7 +231,9 @@ window.MB = window.MB || {};
 
   /* ================= tabs ================= */
 
+  // Properties is a section of the Layers tab now: showing it opens that tab with the section expanded.
   MB.ui.showTab = function (name) {
+    if (name === 'props') { MB.ui.setPropsOpen(true); name = 'layers'; }
     $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     $$('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
     if (name === 'data' && MB.data) MB.data.renderPanel();
@@ -240,6 +242,42 @@ window.MB = window.MB || {};
   function initTabs() {
     // the tabs only: the phone sheet's close button shares the row, and showing a tab reopens the panel
     $$('.tabs button[data-tab]').forEach(b => b.addEventListener('click', () => MB.ui.showTab(b.dataset.tab)));
+    let open = true;
+    try { open = localStorage.getItem('gengis.propsOpen') !== '0'; } catch (e) { /* storage unavailable */ }
+    MB.ui.setPropsOpen(open, true);
+    $('#propsToggle').addEventListener('click', () => MB.ui.setPropsOpen($('#propsSection').classList.contains('closed')));
+    // Double-click an object in the list: its properties. Listened for on the list's own box, which outlives the rows
+    // (the first click selects the object, and that redraws the list).
+    $('#layerScroll').addEventListener('dblclick', e => {
+      const row = e.target.closest('.obj-item');
+      if (!row || e.target.closest('button, input')) return;
+      const f = MB.featureLayers[row.dataset.fid];
+      if (!f) return;
+      if (MB.selected !== f) selectQuietly(f);
+      MB.ui.setPropsOpen(true);
+    });
+  }
+
+  // Expand or collapse the Properties section (remembered on this device).
+  MB.ui.setPropsOpen = function (open, quiet) {
+    const sec = $('#propsSection');
+    if (!sec) return;
+    sec.classList.toggle('closed', !open);
+    $('#propsToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (!quiet) { try { localStorage.setItem('gengis.propsOpen', open ? '1' : '0'); } catch (e) { /* storage unavailable */ } }
+  };
+
+  // Select an object without opening its properties (a click in the layer list).
+  let quietSelect = false;
+  function selectQuietly(f, multi) {
+    quietSelect = true;
+    try { if (multi) MB.toggleMulti(f); else MB.selectFeature(f); } finally { quietSelect = false; }
+  }
+
+  // Scroll the layer list to the selected object's row, if it is out of view.
+  function revealSelectedRow() {
+    const row = $('#layerScroll .obj-item.selected');
+    if (row) row.scrollIntoView({ block: 'nearest' });
   }
 
   /* ================= layers panel ================= */
@@ -266,7 +304,7 @@ window.MB = window.MB || {};
     const m = f.mb;
     const hidden = m.visible === false, locked = !!m.locked;
     const sw = m.type === 'svg' ? 'transparent' : (m.type === 'text' ? m.style.textColor : m.style.color);
-    return `<div class="obj-item${MB.selected === f || (MB.multi && MB.multi.has(f)) ? ' selected' : ''}${hidden || layerHidden ? ' obj-hidden' : ''}" data-fid="${m.id}" title="${esc(MB.typeLabels[m.type])}">
+    return `<div class="obj-item${MB.selected === f || (MB.multi && MB.multi.has(f)) ? ' selected' : ''}${hidden || layerHidden ? ' obj-hidden' : ''}" data-fid="${m.id}" title="${esc(MB.typeLabels[m.type])} · click: select · double-click: properties">
       <span class="swatch" style="background:${sw}"></span>
       <span class="fname" data-act="rename">${esc(objectLabel(f))}</span>
       <button class="icon-btn mini${hidden ? '' : ' on'}" data-act="vis" title="${hidden ? 'Show' : 'Hide'} object">${hidden ? icons.eyeOff : icons.eye}</button>
@@ -278,7 +316,8 @@ window.MB = window.MB || {};
   }
 
   MB.ui.renderLayers = function () {
-    const panel = $('#tab-layers');
+    const panel = $('#layerScroll');
+    const scrollTop = panel.scrollTop;
     const layers = MB.state.layers.slice().reverse(); // top first
     const active = MB.activeLayer();
     let html = `<div class="panel-head"><h3>Layers</h3><button class="btn small" data-act="add-layer">+ Add layer</button></div>
@@ -305,6 +344,7 @@ window.MB = window.MB || {};
     });
     html += '</div>';
     panel.innerHTML = html;
+    panel.scrollTop = scrollTop;
 
     $('[data-act="add-layer"]', panel).addEventListener('click', () => { MB.createLayer(); MB.commit('add layer'); });
 
@@ -342,35 +382,14 @@ window.MB = window.MB || {};
         else if (act === 'del') MB.removeFeature(fid);
         else {
           if (MB.tools.current !== 'select' && MB.tools.current !== 'move') MB.tools.set('select');
-          if (e.shiftKey) { MB.toggleMulti(f); return; }
-          MB.selectFeature(f);
+          if (e.shiftKey) { selectQuietly(f, true); return; }
+          selectQuietly(f);
           const c = MB.featureCenter(f);
           if (c && !MB.map.getBounds().contains(c)) MB.zoomToFeature(f);
         }
       });
-      $('.fname', item).addEventListener('dblclick', e => { e.stopPropagation(); startObjectRename(item, fid); });
     });
   };
-
-  function startObjectRename(item, fid) {
-    const f = MB.featureLayers[fid];
-    if (!f) return;
-    const span = $('.fname', item);
-    const cur = f.mb.name || '';
-    span.innerHTML = `<input type="text" value="${esc(cur)}" placeholder="${esc(objectLabel(f))}">`;
-    const inp = span.querySelector('input');
-    inp.focus(); inp.select();
-    let done = false;
-    const finish = () => {
-      if (done) return; done = true;
-      const v = inp.value.trim();
-      if (v !== cur) { f.mb.name = v; MB.ui.bindNameTip(f); MB.commit('rename'); if (MB.selected === f) MB.emit('selection', f); }
-      MB.ui.renderLayers();
-    };
-    inp.addEventListener('blur', finish);
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { inp.value = cur; inp.blur(); } e.stopPropagation(); });
-    inp.addEventListener('click', e => e.stopPropagation());
-  }
 
   function startRename(item, id) {
     const span = $('.layer-name', item);
@@ -474,9 +493,10 @@ window.MB = window.MB || {};
   }
 
   MB.ui.renderProps = function () {
-    const panel = $('#tab-props');
+    const panel = $('#propsBody');
     const f = MB.selected;
     panel.innerHTML = '';
+    $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
     if (!f) {
       panel.innerHTML = `<div class="panel-head"><h3>New shapes</h3><span class="badge" title="Select an object to edit its own style">defaults</span></div>
@@ -525,6 +545,7 @@ window.MB = window.MB || {};
       m.name = e.target.value.trim();
       bindNameTip(f);
       MB.commit('rename'); MB.ui.renderLayers();
+      $('#propsSub').textContent = m.name || MB.typeLabels[m.type];
     });
     $('#propLayer', panel).addEventListener('change', e => MB.moveFeatureToLayer(m.id, e.target.value));
     MB.ui.renderMeasureBox();
@@ -1007,7 +1028,8 @@ window.MB = window.MB || {};
     MB.on('selection', l => {
       MB.ui.renderProps();
       MB.ui.renderLayers();
-      if (l || (MB.multi && MB.multi.size > 1)) MB.ui.showTab('props');
+      if (quietSelect) return; // picked in the layer list: selected, nothing else
+      if (l || (MB.multi && MB.multi.size > 1)) { MB.ui.showTab('props'); revealSelectedRow(); }
     });
     MB.on('multi-contextmenu', info => MB.menus.multi(info));
     MB.on('featurechange', l => { if (l === MB.selected) MB.ui.renderMeasureBox(); });
