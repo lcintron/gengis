@@ -246,6 +246,11 @@ window.MB = window.MB || {};
     try { open = localStorage.getItem('gengis.propsOpen') !== '0'; } catch (e) { /* storage unavailable */ }
     MB.ui.setPropsOpen(open, true);
     $('#propsToggle').addEventListener('click', () => MB.ui.setPropsOpen($('#propsSection').classList.contains('closed')));
+    // A button pressed while a name is being edited in the list: the field keeps focus until the click (its blur
+    // redraws the list, which would take the button away first), then the name is saved and the button does its job.
+    const editing = () => $('#layerScroll .fname input, #layerScroll .layer-name input');
+    $('#layerScroll').addEventListener('mousedown', e => { if (e.target.closest('button') && editing()) e.preventDefault(); });
+    $('#layerScroll').addEventListener('click', e => { const ed = editing(); if (ed && e.target.closest('button')) ed.blur(); }, true);
   }
 
   // Expand or collapse the Properties section (remembered on this device).
