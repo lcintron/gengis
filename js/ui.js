@@ -246,16 +246,6 @@ window.MB = window.MB || {};
     try { open = localStorage.getItem('gengis.propsOpen') !== '0'; } catch (e) { /* storage unavailable */ }
     MB.ui.setPropsOpen(open, true);
     $('#propsToggle').addEventListener('click', () => MB.ui.setPropsOpen($('#propsSection').classList.contains('closed')));
-    // Double-click an object in the list: its properties. Listened for on the list's own box, which outlives the rows
-    // (the first click selects the object, and that redraws the list).
-    $('#layerScroll').addEventListener('dblclick', e => {
-      const row = e.target.closest('.obj-item');
-      if (!row || e.target.closest('button, input')) return;
-      const f = MB.featureLayers[row.dataset.fid];
-      if (!f) return;
-      if (MB.selected !== f) selectQuietly(f);
-      MB.ui.setPropsOpen(true);
-    });
   }
 
   // Expand or collapse the Properties section (remembered on this device).
@@ -267,11 +257,14 @@ window.MB = window.MB || {};
     if (!quiet) { try { localStorage.setItem('gengis.propsOpen', open ? '1' : '0'); } catch (e) { /* storage unavailable */ } }
   };
 
-  // Select an object without opening its properties (a click in the layer list).
+  // Select an object from a click in the layer list and show its properties. The list stays where it is (the selection
+  // handler's reveal would scroll it to the first selected row); only the clicked row is kept in view.
   let quietSelect = false;
-  function selectQuietly(f, multi) {
+  function selectFromList(f, multi) {
     quietSelect = true;
     try { if (multi) MB.toggleMulti(f); else MB.selectFeature(f); } finally { quietSelect = false; }
+    MB.ui.setPropsOpen(true);
+    revealRow(f);
   }
 
   // Scroll the layer list to an object's row (or the first selected one), if it is out of view.
@@ -312,7 +305,7 @@ window.MB = window.MB || {};
     const m = f.mb;
     const hidden = m.visible === false, locked = !!m.locked;
     const sw = m.type === 'svg' ? 'transparent' : (m.type === 'text' ? m.style.textColor : m.style.color);
-    return `<div class="obj-item${MB.selected === f || (MB.multi && MB.multi.has(f)) ? ' selected' : ''}${hidden || layerHidden ? ' obj-hidden' : ''}" data-fid="${m.id}" title="${esc(MB.typeLabels[m.type])} · click: select · double-click: properties">
+    return `<div class="obj-item${MB.selected === f || (MB.multi && MB.multi.has(f)) ? ' selected' : ''}${hidden || layerHidden ? ' obj-hidden' : ''}" data-fid="${m.id}" title="${esc(MB.typeLabels[m.type])} · click: select and show properties · double-click name: rename">
       <span class="swatch" style="background:${sw}"></span>
       <span class="fname" data-act="rename">${esc(objectLabel(f))}</span>
       <button class="icon-btn mini${hidden ? '' : ' on'}" data-act="vis" title="${hidden ? 'Show' : 'Hide'} object">${hidden ? icons.eyeOff : icons.eye}</button>
@@ -390,14 +383,35 @@ window.MB = window.MB || {};
         else if (act === 'del') MB.removeFeature(fid);
         else {
           if (MB.tools.current !== 'select' && MB.tools.current !== 'move') MB.tools.set('select');
-          if (e.shiftKey) { selectQuietly(f, true); return; }
-          selectQuietly(f);
+          if (e.shiftKey) { selectFromList(f, true); return; }
+          selectFromList(f);
           const c = MB.featureCenter(f);
           if (c && !MB.map.getBounds().contains(c)) MB.zoomToFeature(f);
         }
       });
+      $('.fname', item).addEventListener('dblclick', e => { e.stopPropagation(); startObjectRename(item, fid); });
     });
   };
+
+  function startObjectRename(item, fid) {
+    const f = MB.featureLayers[fid];
+    if (!f) return;
+    const span = $('.fname', item);
+    const cur = f.mb.name || '';
+    span.innerHTML = `<input type="text" value="${esc(cur)}" placeholder="${esc(objectLabel(f))}">`;
+    const inp = span.querySelector('input');
+    inp.focus(); inp.select();
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      const v = inp.value.trim();
+      if (v !== cur) { f.mb.name = v; MB.ui.bindNameTip(f); MB.commit('rename'); if (MB.selected === f) MB.emit('selection', f); }
+      MB.ui.renderLayers();
+    };
+    inp.addEventListener('blur', finish);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { inp.value = cur; inp.blur(); } e.stopPropagation(); });
+    inp.addEventListener('click', e => e.stopPropagation());
+  }
 
   function startRename(item, id) {
     const span = $('.layer-name', item);
