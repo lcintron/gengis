@@ -777,9 +777,9 @@ window.MB = window.MB || {};
     const G = Math.max(eps * 2, 0.02);                       // index cell, degrees
     const items = entries.map((e, i) => {
       const p = (e.layer.feature && e.layer.feature.properties) || {};
-      // rings smaller than twice the tolerance are dropped: sub-pixel at the zooms that tolerance serves (most of a
+      // rings smaller than the shortest border stretch (1.5 tolerances) are dropped: sub-pixel at the zooms that tolerance serves (most of a
       // simplified world dataset is such islets), and too small to hold a border
-      const big = ring => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (const c of ring) { if (c[0] < x0) x0 = c[0]; if (c[0] > x1) x1 = c[0]; if (c[1] < y0) y0 = c[1]; if (c[1] > y1) y1 = c[1]; } return Math.hypot(x1 - x0, y1 - y0) >= 2 * eps; };
+      const big = ring => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (const c of ring) { if (c[0] < x0) x0 = c[0]; if (c[0] > x1) x1 = c[0]; if (c[1] < y0) y0 = c[1]; if (c[1] > y1) y1 = c[1]; } return Math.hypot(x1 - x0, y1 - y0) >= 1.5 * eps; }; // the shortest stretch matching accepts
       return { i, side: def.borders(p), label: def.label ? String(def.label(p)) : '', rings: polygonsOf(e.layer.feature && e.layer.feature.geometry).flat().filter(big) };
     });
     // The grid cells an edge passes through, widened by eps (numeric keys). A short edge takes the cells of its
@@ -787,16 +787,18 @@ window.MB = window.MB || {};
     // box) and the index stays proportional to the outlines' length.
     const key = (gx, gy) => (gx + 4096) * 8192 + (gy + 4096);
     const cellsAlong = (a, b) => {
-      const len = Math.hypot(b[0] - a[0], b[1] - a[1]), keys = [];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]), keys = new Set();
       const box = (xa, ya, xb, yb) => {
         const x0 = Math.floor((Math.min(xa, xb) - eps) / G), x1 = Math.floor((Math.max(xa, xb) + eps) / G);
         const y0 = Math.floor((Math.min(ya, yb) - eps) / G), y1 = Math.floor((Math.max(ya, yb) + eps) / G);
-        for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) { const k = key(gx, gy); if (keys.indexOf(k) < 0) keys.push(k); }
+        for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) keys.add(key(gx, gy));
       };
-      if (len <= G) { box(a[0], a[1], b[0], b[1]); return keys; }
-      const n = Math.ceil(len / G);
-      for (let k = 0; k < n; k++) box(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, a[0] + (b[0] - a[0]) * (k + 1) / n, a[1] + (b[1] - a[1]) * (k + 1) / n);
-      return keys;
+      if (len <= G) box(a[0], a[1], b[0], b[1]);
+      else {
+        const n = Math.ceil(len / G);
+        for (let k = 0; k < n; k++) box(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, a[0] + (b[0] - a[0]) * (k + 1) / n, a[1] + (b[1] - a[1]) * (k + 1) / n);
+      }
+      return Array.from(keys);
     };
     const grid = new Map();
     items.forEach(it => { it.edges = it.rings.map(ring => {
@@ -809,10 +811,15 @@ window.MB = window.MB || {};
       return edges;
     }); });
     // Which stretch of edge AB runs along edge CD: the part of CD within eps of the line through AB, projected onto
-    // AB (as parameters 0..1), or null. Edges that merely cross give a stretch shorter than the tolerance: ignored.
+    // AB (as parameters 0..1), or null. The two must run roughly the same way (within 25 degrees: a shared border
+    // simplified on each side separately stays close to parallel), so edges that cross are never a border, however
+    // shallow the crossing; and the stretch must be at least 1.5 eps long.
+    const MAX_SIN = Math.sin(25 * Math.PI / 180);
     const alongStretch = (A, B, C, D) => {
       const ux = B[0] - A[0], uy = B[1] - A[1], L = Math.hypot(ux, uy);
       if (!L) return null;
+      const vx = D[0] - C[0], vy = D[1] - C[1], M = Math.hypot(vx, vy);
+      if (!M || Math.abs(ux * vy - uy * vx) / (L * M) > MAX_SIN) return null;
       const nx = -uy / L, ny = ux / L;
       const dC = (C[0] - A[0]) * nx + (C[1] - A[1]) * ny, dD = (D[0] - A[0]) * nx + (D[1] - A[1]) * ny, dd = dD - dC;
       let s0 = 0, s1 = 1;
