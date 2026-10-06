@@ -129,13 +129,36 @@ window.MB = window.MB || {};
       setTimeout(() => MB.map.invalidateSize(), 50);
     });
 
-    // About and Data sources dialogs: closed by their ✕ or a click on the backdrop
+    // About and Data sources dialogs: closed by their ✕, Esc or a click on the backdrop; Tab stays inside them
     const av = $('#aboutVersion'); if (av) av.textContent = MB.APP.version;
     const sv = $('#splash .ver'); if (sv) sv.textContent = 'Version ' + MB.APP.version;
     ['#aboutDialog', '#sourcesDialog'].forEach(sel => {
       const dlg = $(sel);
-      dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-act="close"]')) dlg.classList.add('hidden'); });
+      dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-act="close"]')) closeDialog(dlg); });
+      dlg.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeDialog(dlg); return; }
+        if (e.key !== 'Tab') return;
+        const f = $$('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])', dlg).filter(x => !x.disabled && x.getClientRects().length);
+        if (!f.length) return;
+        const i = f.indexOf(document.activeElement);
+        if (e.shiftKey ? i <= 0 : (i === -1 || i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+      });
     });
+  }
+
+  // A dialog takes the keyboard while open (focus on its ✕) and gives it back where it was when it closes (the menu
+  // that opened it is gone by then: the menu button instead).
+  function openDialog(dlg) {
+    dlg._back = document.activeElement;
+    dlg.classList.remove('hidden');
+    const x = dlg.querySelector('.modal-x');
+    if (x) x.focus();
+  }
+  function closeDialog(dlg) {
+    dlg.classList.add('hidden');
+    const back = dlg._back && dlg._back.isConnected && dlg._back.getClientRects().length ? dlg._back : $('#moreBtn');
+    dlg._back = null;
+    if (back && back.focus) back.focus();
   }
 
   MB.ui.menuAction = function (act) {
@@ -149,8 +172,8 @@ window.MB = window.MB || {};
       case 'save': MB.saveToFile(); break;
       case 'geojson': MB.exportGeoJSON(); break;
       case 'install': if (MB.installPrompt) { MB.installPrompt.prompt(); MB.installPrompt = null; $('#installBtn').classList.add('hidden'); } break;
-      case 'about': $('#aboutDialog').classList.remove('hidden'); break;
-      case 'sources': $('#sourcesDialog').classList.remove('hidden'); break;
+      case 'about': openDialog($('#aboutDialog')); break;
+      case 'sources': openDialog($('#sourcesDialog')); break;
       case 'present': MB.presenter.enter(); break;
       case 'apis': MB.settingsDialog.open(); break;
     }
