@@ -231,8 +231,9 @@ window.MB = window.MB || {};
       const shift = e.originalEvent && e.originalEvent.shiftKey;
       if (t !== 'present' && !MB.isFeatureLocked(layer)) {
         L.DomEvent.stopPropagation(e);
-        if (shift) { MB.toggleMulti(layer); return; }
-        MB.selectFeature(layer);
+        if (shift) MB.toggleMulti(layer); else MB.selectFeature(layer);
+        if (MB.ui && MB.ui.revealFeature) MB.ui.revealFeature(layer);
+        if (shift) return;
       }
       // Objects draw above the data layers, so the data under one is only reachable from here: the same popup as
       // a click on the data, with the objects at this point listed first. Nothing opens where there is no data, nor

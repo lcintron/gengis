@@ -274,11 +274,19 @@ window.MB = window.MB || {};
     try { if (multi) MB.toggleMulti(f); else MB.selectFeature(f); } finally { quietSelect = false; }
   }
 
-  // Scroll the layer list to the selected object's row, if it is out of view.
-  function revealSelectedRow() {
-    const row = $('#layerScroll .obj-item.selected');
+  // Scroll the layer list to an object's row (or the first selected one), if it is out of view.
+  function revealRow(f) {
+    const row = f && f.mb ? $(`#layerScroll .obj-item[data-fid="${CSS.escape(f.mb.id)}"]`) : $('#layerScroll .obj-item.selected');
     if (row) row.scrollIntoView({ block: 'nearest' });
   }
+  // An object picked on the map: its properties and its row, opening its layer if collapsed. Also when the selection
+  // did not change (it was already selected) or when the pick was a shift-click into a multiple selection.
+  MB.ui.revealFeature = function (f) {
+    if (!f || !f.mb) return;
+    if (MB.ui.collapsed.delete(f.mb.layerId)) MB.ui.renderLayers();
+    MB.ui.showTab('props');
+    revealRow(f);
+  };
 
   /* ================= layers panel ================= */
 
@@ -1031,7 +1039,7 @@ window.MB = window.MB || {};
       if (reveal && l && l.mb) MB.ui.collapsed.delete(l.mb.layerId);
       MB.ui.renderProps();
       MB.ui.renderLayers();
-      if (reveal) { MB.ui.showTab('props'); revealSelectedRow(); }
+      if (reveal) { MB.ui.showTab('props'); revealRow(l); }
     });
     MB.on('multi-contextmenu', info => MB.menus.multi(info));
     MB.on('featurechange', l => { if (l === MB.selected) MB.ui.renderMeasureBox(); });

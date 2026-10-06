@@ -1158,6 +1158,7 @@ window.MB = window.MB || {};
       // the object may have been deleted (or undone away) since the popup opened
       if (MB.featureLayers[h.layer.mb.id] !== h.layer) { MB.toast('That object no longer exists.'); return; }
       MB.selectFeature(h.layer);
+      if (MB.ui && MB.ui.revealFeature) MB.ui.revealFeature(h.layer);
     }));
     root.querySelectorAll('details.mb-ident').forEach(d => {
       const h = hits[+d.dataset.i];
