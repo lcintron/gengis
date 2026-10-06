@@ -25,6 +25,9 @@ window.MB = window.MB || {};
 
   /* ================= top bar ================= */
 
+  // In the desktop app the top bar is also the window's title bar (css: html[data-titlebar]).
+  if (window.gengisDesktop && window.gengisDesktop.titleBar) document.documentElement.dataset.titlebar = window.gengisDesktop.titleBar;
+
   function initTopbar() {
     const nameInput = $('#projectName');
     nameInput.addEventListener('change', () => {
@@ -90,9 +93,9 @@ window.MB = window.MB || {};
 
     // Phones: the units, the base map and the project menu (presenter mode included) move behind the menu button,
     // so the top bar is a single row that never scrolls: a scrolling row clipped the Project dropdown and let the
-    // base map list run over the units.
+    // base map list run over the units. So do narrow desktop-app windows, whose bar also holds the window buttons.
     const more = $('#moreMenu'), moreBtn = $('#moreBtn'), units = $('#unitsSeg'), right = $('.topbar-right');
-    const phone = window.matchMedia('(max-width: 640px)');
+    const phone = window.matchMedia(document.documentElement.dataset.titlebar ? '(max-width: 1220px)' : '(max-width: 640px)');
     const closeMore = () => { more.classList.add('hidden'); moreBtn.setAttribute('aria-expanded', 'false'); };
     const place = () => {
       if (phone.matches) {

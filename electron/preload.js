@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // Only the app's own page gets it (the main process also refuses requests from anything else).
 if (location.protocol === 'file:' && /\/index\.html$/i.test(location.pathname)) contextBridge.exposeInMainWorld('gengisDesktop', {
+  titleBar: process.platform === 'darwin' ? 'mac' : 'overlay', // where the window buttons are (electron/main.js)
   folder: () => ipcRenderer.invoke('files:folder'),
   chooseFolder: () => ipcRenderer.invoke('files:choose-folder'),
   write: (id, name, json) => ipcRenderer.invoke('files:write', { id, name, json }),

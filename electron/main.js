@@ -17,13 +17,20 @@ function parseArgs() {
   return q;
 }
 
+// No system frame: the app's top bar is the window's title bar (css: html[data-titlebar]). On Windows and Linux the
+// system's own window buttons are drawn over the bar's right end, in the bar's colors (as VS Code does); macOS keeps
+// its traffic lights, at the bar's left. The overlay is the bar's height less its bottom border.
+const TITLE_BAR = process.platform === 'darwin'
+  ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 18 } }
+  : { titleBarStyle: 'hidden', titleBarOverlay: { color: '#10171f', symbolColor: '#e6ebf2', height: 51 } };
+
 function createWindow() {
-  const win = new BrowserWindow({
+  const win = new BrowserWindow(Object.assign({
     width: 1400, height: 900, minWidth: 800, minHeight: 500,
     title: 'GenGIS', backgroundColor: '#0b1118', autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'icons', process.platform === 'win32' ? 'icon.ico' : 'icon-512.png'),
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js') }
-  });
+  }, TITLE_BAR));
   win.loadFile(path.join(__dirname, '..', 'index.html'), { query: parseArgs() });
   // Closing: the page first saves what is pending (its database and the project file), then the window closes.
   // A page that does not answer within 4 s does not hold the window.

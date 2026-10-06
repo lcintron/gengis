@@ -56,6 +56,31 @@ kbd { background: var(--bg-3); border: 1px solid var(--border); border-bottom-wi
 
 .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
+/* Desktop app: the top bar is the window's title bar (electron/main.js). Its empty parts move the window and a
+   double-click on them maximizes it; its controls stay clickable. The system's window buttons sit over its right
+   end (Windows, Linux: where env(titlebar-area-*) ends; about 138 px if the browser does not say) or, on macOS, its
+   left end. */
+html[data-titlebar] #topbar { -webkit-app-region: drag; user-select: none; }
+html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown) { -webkit-app-region: no-drag; }
+html[data-titlebar="overlay"] #topbar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
+html[data-titlebar="mac"] #topbar { padding-left: 84px; }
+/* The window buttons take part of the bar: narrower windows first drop the name beside the logo and narrow the
+   fields, then (as on phones, ui.js) move the units, base map and project menu behind the menu button. */
+@media (max-width: 1440px) {
+  html[data-titlebar] .brand-name { display: none; }
+  html[data-titlebar] .project-name { width: 140px; }
+  html[data-titlebar] .topbar-right #basemapSelect { max-width: 180px; }
+}
+@media (max-width: 1220px) {
+  html[data-titlebar] #presentBtn, html[data-titlebar] .menu-wrap { display: none; }
+  html[data-titlebar] #moreBtn { display: inline-flex; }
+}
+/* presenting (the top bar hidden): its bar sits beside the window buttons, the map's corner controls below them */
+html[data-titlebar="overlay"] #presentBar { top: 10px; right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
+html[data-titlebar="overlay"] body.presenting .leaflet-top.leaflet-right { top: env(titlebar-area-height, 51px); }
+html[data-titlebar="overlay"]:fullscreen #presentBar { right: 10px; } /* full screen: no window buttons */
+html[data-titlebar="overlay"]:fullscreen body.presenting .leaflet-top.leaflet-right { top: 0; }
+
 .btn {
   background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
   color: var(--text); line-height: 1.2; white-space: nowrap;
