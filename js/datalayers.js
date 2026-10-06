@@ -77,6 +77,9 @@ window.MB = window.MB || {};
   /* ---------- catalog ---------- */
   const ESRI = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/';
   const boundaryStyle = (color, weight, dash) => () => ({ color, weight, opacity: .85, fill: false, dashArray: dash || null, lineJoin: 'round' });
+  // A simplification tolerance (degrees) of half a pixel at zoom z, at latitudes up to about 55 degrees: what the
+  // eye cannot tell from the full outline. The FAA layers keep to the same budget (DETAIL).
+  const halfPx = z => 0.5 * 360 / (256 * Math.pow(2, z)) * Math.cos(55 * Math.PI / 180);
 
   MB.dataSources = {
     faa: { name: 'FAA UAS Data Delivery System', url: 'https://udds-faa.opendata.arcgis.com/', note: 'Live FAA airspace and UAS data for the visible area, cached on this device. Informational only.' },
@@ -84,15 +87,22 @@ window.MB = window.MB || {};
   };
 
   MB.dataCatalog = [
-    { id: 'countries', group: 'Boundaries', name: 'Country boundaries', minZoom: 0, defaultOn: true,
-      levels: [{ maxZoom: 4, whole: true, offset: 0.05 }, { maxZoom: 7, cellSize: 20, offset: 0.01 }, { cellSize: 10, offset: 0 }],
+    // Both boundary layers draw borders only: the edges two neighbours share. A coastline is never traced (the base
+    // map draws its own, and a boundary dataset's coast is tens to hundreds of metres off it, up to kilometres for
+    // the simplified world countries). With the coast gone, the simplified world countries are good enough at every
+    // zoom: their land borders are as close as the detailed data's, and their polygons take in lakes, so borders
+    // across lakes (US-Canada) are kept. The state outlines stop at the shore: borders across water are not there.
+    { id: 'countries', group: 'Boundaries', name: 'Country borders', minZoom: 0, defaultOn: true, rev: 1,
+      borders: p => p.COUNTRY || '',
+      levels: [{ maxZoom: 4, whole: true, offset: halfPx(4) }, { maxZoom: 7, cellSize: 20, offset: halfPx(7) }, { cellSize: 10, offset: 0 }],
       url: ESRI + 'World_Countries_(Generalized)/FeatureServer/0', style: boundaryStyle('#1b1f27', 1.6),
-      label: p => p.COUNTRY || '', fields: ['COUNTRY', 'ISO', 'COUNTRYAFF'], legend: [['Country', '#1b1f27']], desc: 'Esri Living Atlas.' },
-    { id: 'admin1', group: 'Boundaries', name: 'State / province boundaries', minZoom: 0, defaultOn: true,
-      levels: [{ maxZoom: 3, whole: true, offset: 0.3 }, { maxZoom: 5, cellSize: 20, offset: 0.05 }, { maxZoom: 7, cellSize: 10, offset: 0.01 }, { cellSize: 5, offset: 0 }],
+      label: p => p.COUNTRY || '', fields: ['COUNTRY', 'ISO', 'COUNTRYAFF'], legend: [['Country border', '#1b1f27']], desc: 'Esri Living Atlas. Land borders; coastlines are left to the base map.' },
+    { id: 'admin1', group: 'Boundaries', name: 'State / province borders', minZoom: 0, maxZoom: 13, defaultOn: true, rev: 1,
+      borders: p => (p.NAME || '') + '|' + (p.COUNTRY || ''),
+      levels: [{ maxZoom: 3, whole: true, offset: halfPx(3) }, { maxZoom: 5, cellSize: 20, offset: halfPx(5) }, { maxZoom: 7, cellSize: 10, offset: halfPx(7) }, { cellSize: 5, offset: 0 }],
       url: ESRI + 'World_Administrative_Divisions/FeatureServer/0', style: boundaryStyle('#4a4f5c', 1.1, '5,4'),
-      label: p => `${p.NAME || ''}${p.COUNTRY ? ', ' + p.COUNTRY : ''}`, fields: ['NAME', 'COUNTRY', 'ADMINTYPE', 'ISO_CODE', 'AUTONOMOUS', 'DISPUTED'], legend: [['State / province (dashed)', '#4a4f5c']],
-      desc: 'States, provinces, regions. Full detail from zoom 8.' },
+      label: p => p.NAME || '', fields: ['NAME', 'COUNTRY', 'ADMINTYPE', 'ISO_CODE', 'AUTONOMOUS', 'DISPUTED'], legend: [['State / province border (dashed)', '#4a4f5c']],
+      desc: 'States, provinces, regions: land borders, full detail from zoom 8, shown to zoom 13.' },
     { id: 'fria', group: 'Remote ID', name: 'FAA-Recognized Identification Areas (FRIA)', minZoom: 7, cellSize: 1,
       source: 'faa', url: FAA + 'FAA_Recognized_Identification_Areas/FeatureServer/0', style: solid('#2ecc71', .25),
       label: p => p.title || p.orgName || 'FRIA', fields: ['title', 'orgName', 'address1', 'city', 'state', 'zipcode', 'startDate', 'endDate', 'refNumber'],
@@ -291,6 +301,7 @@ window.MB = window.MB || {};
       if (!ds || !ds.enabled) return;
       ds.enabled = false;
       if (ds.group) { MB.map.removeLayer(ds.group); ds.group.clearLayers(); }
+      ds.bordersDirty = true; // its border lines were cleared with the rest
       ds.cells.forEach(c => { c.shown = false; });
       ds.feats.forEach(e => { e.refs = 0; });
       if (MB.state.dataLayers) { const st = this.stateFor(id); st.on = false; }
@@ -410,8 +421,8 @@ window.MB = window.MB || {};
       const zoom = MB.map.getZoom(), bounds = MB.map.getBounds();
       this.catalog().forEach(ds => {
         if (!ds.enabled || ds.checking) return; // wait until the update stamp is known before caching anything
-        if (zoom < ds.def.minZoom) {
-          ds.status = 'Zoom in to level ' + ds.def.minZoom + ' or closer to load';
+        if (zoom < ds.def.minZoom || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) {
+          ds.status = zoom < ds.def.minZoom ? 'Zoom in to level ' + ds.def.minZoom + ' or closer to load' : 'Shown up to zoom ' + ds.def.maxZoom;
           ds.cells.forEach(c => hideCell(ds, c));
           return;
         }
@@ -441,7 +452,7 @@ window.MB = window.MB || {};
     settle(ds) {
       if (!ds.enabled || !ds.group) return;
       const zoom = MB.map.getZoom(), view = MB.map.getBounds();
-      if (zoom < ds.def.minZoom) { ds.cells.forEach(c => hideCell(ds, c)); return; }
+      if (zoom < ds.def.minZoom || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) { ds.cells.forEach(c => hideCell(ds, c)); return; }
       const level = this.levelFor(ds.def, zoom), prefix = 'L' + level.idx + ':';
       const cells = level.whole ? [{ key: 'all' }] : cellsFor(view, level.cellSize);
       if (cells.length > MAX_CELLS) return; // view too large for this dataset: leave what is shown
@@ -497,7 +508,7 @@ window.MB = window.MB || {};
       if (geojson) {
         const prev = ds.cells.get(memKey);
         if (prev) dropCell(ds, prev); // loaded again (offline pre-loading, a retry): replace, never stack
-        ds.cells.set(memKey, { keys: registerCell(ds, geojson), bounds: cell.bounds, shown: false, used: Date.now(), fromCache, stale, n: (geojson.features || []).length });
+        ds.cells.set(memKey, { keys: registerCell(ds, geojson, level), bounds: cell.bounds, shown: false, used: Date.now(), fromCache, stale, n: (geojson.features || []).length });
       } else ds.failed.add(memKey);
       this.settle(ds);
       if (!ds.loading.size) ds.status = ds.error ? '' : '';
@@ -513,7 +524,7 @@ window.MB = window.MB || {};
       return keys.length;
     },
 
-    featureCount(ds) { let n = 0; if (ds.group) ds.feats.forEach(e => { if (e.refs > 0 && ds.group.hasLayer(e.layer)) n++; }); return n; }
+    featureCount(ds) { let n = 0; if (ds.group) ds.feats.forEach(e => { if (e.refs > 0 && (ds.def.borders || ds.group.hasLayer(e.layer))) n++; }); return n; }
   };
   MB.data.refreshSoon = MB.debounce(() => MB.data.refresh(), 350);
   MB.data.cellsFor = cellsFor;
@@ -683,7 +694,7 @@ window.MB = window.MB || {};
   }
 
   // Build layers for the features of a cell that are not known yet; returns the keys of every feature in the cell.
-  function registerCell(ds, geojson) {
+  function registerCell(ds, geojson, level) {
     const keys = new Set(), fresh = [], keyOf = new Map();
     (geojson.features || []).forEach(f => {
       if (!f || !f.geometry) return;
@@ -701,14 +712,16 @@ window.MB = window.MB || {};
       built.clearLayers();
       layers.forEach(l => {
         const k = keyOf.get(l.feature);
-        if (k) ds.feats.set(k, { layer: l, cells: 1, refs: 0 });
+        if (k) ds.feats.set(k, { layer: l, cells: 1, refs: 0, level: level ? level.idx : 0, offset: level ? level.offset : 0 });
       });
+      if (ds.def.borders) ds.bordersDirty = true;
     }
     return Array.from(keys).filter(k => ds.feats.has(k)); // a geometry Leaflet could not build has no entry
   }
 
   function sync(ds, e) {
     if (!ds.group) return;
+    if (ds.def.borders) { scheduleBorders(ds); return; } // drawn as shared edges, not as the polygons themselves
     const on = ds.group.hasLayer(e.layer);
     const want = e.refs > 0 && !(ds.def.subsets && ds.off.has(MB.data.subsetKey(ds, e.layer.feature && e.layer.feature.properties)));
     if (want && !on) ds.group.addLayer(e.layer);
@@ -727,16 +740,127 @@ window.MB = window.MB || {};
   // Forget a cell: its features go too once no other loaded cell contains them.
   function dropCell(ds, c) {
     hideCell(ds, c);
-    c.keys.forEach(k => { const e = ds.feats.get(k); if (e && --e.cells <= 0) ds.feats.delete(k); });
+    c.keys.forEach(k => { const e = ds.feats.get(k); if (e && --e.cells <= 0) { ds.feats.delete(k); ds.bordersDirty = true; } });
   }
   function forget(ds) {
     if (ds.group) ds.group.clearLayers();
+    ds.borderLines = null; ds.bordersShown = null; ds.bordersDirty = true;
     ds.cells.clear();
     ds.feats.clear();
     ds.failed.clear();
   }
   // Apply the dataset's sub-element toggles to what is on the map.
   function applyFilter(ds) { ds.feats.forEach(e => sync(ds, e)); }
+
+  /* ----- land borders: the edges two neighbouring polygons share -----
+   * For a dataset with `borders` (a function naming a feature's side: its country, its state), the polygons are
+   * not drawn. Each edge of a polygon that lies along another polygon of a different side becomes part of a border
+   * line between the two; edges along nothing (coastlines) are dropped. Neighbours simplified separately do not
+   * share vertices any more, so "along" is judged within a tolerance of a few times the simplification. Each border
+   * is drawn once for its pair, and hovering it names both sides. */
+  function scheduleBorders(ds) {
+    if (ds.bordersTimer) return;
+    ds.bordersTimer = setTimeout(() => { ds.bordersTimer = null; updateBorders(ds); }, 30);
+  }
+
+  function polygonsOf(g) {
+    if (!g) return [];
+    if (g.type === 'Polygon') return [g.coordinates];
+    if (g.type === 'MultiPolygon') return g.coordinates;
+    return [];
+  }
+
+  // Shared edges of the shown features of one detail level, as polylines per pair of sides.
+  function buildBorders(ds, entries, offset) {
+    const def = ds.def;
+    const eps = Math.max(2.5 * offset, 2e-5);                // degrees
+    const G = Math.max(eps * 4, 0.05);                       // index cell, degrees
+    const items = entries.map((e, i) => {
+      const p = (e.layer.feature && e.layer.feature.properties) || {};
+      return { i, side: def.borders(p), label: def.label ? String(def.label(p)) : '', rings: polygonsOf(e.layer.feature && e.layer.feature.geometry).flat() };
+    });
+    // index every edge by the grid cells its (tolerance-widened) box covers
+    const grid = new Map();
+    const put = (gx, gy, v) => { const k = gx + ',' + gy; let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(v); };
+    items.forEach(it => it.rings.forEach(ring => {
+      for (let s = 1; s < ring.length; s++) {
+        const a = ring[s - 1], b = ring[s];
+        const x0 = Math.floor((Math.min(a[0], b[0]) - eps) / G), x1 = Math.floor((Math.max(a[0], b[0]) + eps) / G);
+        const y0 = Math.floor((Math.min(a[1], b[1]) - eps) / G), y1 = Math.floor((Math.max(a[1], b[1]) + eps) / G);
+        if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) continue; // a degenerate, very long edge: never a shared border anyway
+        const v = { it, a, b };
+        for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) put(gx, gy, v);
+      }
+    }));
+    const distSeg = (px, py, a, b) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / L2)) : 0;
+      return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+    };
+    // the neighbour (of another side) an edge lies along, or null
+    const along = (it, a, b) => {
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      const cand = grid.get(Math.floor(mx / G) + ',' + Math.floor(my / G)) || [];
+      let best = null, bestD = eps;
+      for (const v of cand) {
+        if (v.it.side === it.side) continue;
+        const d = distSeg(mx, my, v.a, v.b);
+        if (d <= bestD && distSeg(a[0], a[1], v.a, v.b) <= eps * 2 && distSeg(b[0], b[1], v.a, v.b) <= eps * 2) { best = v.it; bestD = d; }
+      }
+      // an edge longer than the neighbour's matching edge: its ends may be along other edges of that neighbour
+      if (!best) for (const v of cand) {
+        if (v.it.side === it.side || distSeg(mx, my, v.a, v.b) > eps) continue;
+        best = v.it; break;
+      }
+      return best;
+    };
+    // walk each ring, gathering runs of edges along the same neighbour; a pair is drawn from one side only
+    const pairs = new Map();
+    items.forEach(it => it.rings.forEach(ring => {
+      let run = null, runWith = null;
+      const flush = () => { if (run && run.length > 1) { const key = it.side + '\u0000' + runWith.side; let p = pairs.get(key); if (!p) pairs.set(key, p = { a: it, b: runWith, lines: [] }); p.lines.push(run); } run = null; runWith = null; };
+      for (let s = 1; s < ring.length; s++) {
+        const a = ring[s - 1], b = ring[s];
+        const n = along(it, a, b);
+        if (!n || it.side > n.side) { flush(); continue; } // nothing there (a coast), or drawn from the other side
+        if (n !== runWith) { flush(); runWith = n; run = [[a[1], a[0]]]; }
+        run.push([b[1], b[0]]);
+      }
+      flush();
+    }));
+    const style = def.style({});
+    const lines = [];
+    pairs.forEach(p => {
+      const line = L.polyline(p.lines, Object.assign({}, style, { pane: 'mb-data', renderer: dataRenderer(), pmIgnore: true, interactive: true }));
+      const names = [p.a.label, p.b.label].filter(Boolean);
+      if (names.length) line.bindTooltip(names.join(' / '), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
+      lines.push(line);
+    });
+    return lines;
+  }
+
+  // Put the borders of what is shown now on the map (rebuilt when the shown features change).
+  function updateBorders(ds) {
+    if (!ds.group) return;
+    const shown = [];
+    ds.feats.forEach(e => { if (e.refs > 0) shown.push(e); });
+    const sig = shown.length + ':' + shown.map(e => MB.data.registryId(e)).join(',');
+    if (!ds.bordersDirty && sig === ds.bordersSig) return;
+    ds.bordersDirty = false;
+    ds.bordersSig = sig;
+    (ds.bordersShown || []).forEach(l => ds.group.removeLayer(l));
+    const byLevel = new Map();
+    shown.forEach(e => { let a = byLevel.get(e.level); if (!a) byLevel.set(e.level, a = []); a.push(e); });
+    const t0 = performance.now();
+    let lines = [];
+    byLevel.forEach(entries => { lines = lines.concat(buildBorders(ds, entries, entries[0].offset || 0)); });
+    ds.bordersMs = Math.round(performance.now() - t0);
+    lines.forEach(l => ds.group.addLayer(l));
+    ds.bordersShown = lines;
+  }
+  // A stable id per registry entry (for knowing when the shown set changed).
+  let regIds = new WeakMap(), regNext = 0;
+  MB.data.registryId = e => { let id = regIds.get(e); if (id == null) regIds.set(e, id = ++regNext); return id; };
 
   // One shared Canvas renderer for every data layer: thousands of features become a single bitmap instead of
   // thousands of SVG nodes, which roughly halves paint and zoom cost and keeps the DOM small.
