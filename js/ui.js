@@ -1026,10 +1026,12 @@ window.MB = window.MB || {};
     MB.on('layers', () => { MB.ui.renderLayers(); if (MB.selected) MB.ui.renderProps(); });
     MB.on('features', () => MB.ui.renderLayers());
     MB.on('selection', l => {
+      // Picked on the map (not in the layer list): show its properties and its row, opening its layer if collapsed.
+      const reveal = !quietSelect && !!(l || (MB.multi && MB.multi.size > 1));
+      if (reveal && l && l.mb) MB.ui.collapsed.delete(l.mb.layerId);
       MB.ui.renderProps();
       MB.ui.renderLayers();
-      if (quietSelect) return; // picked in the layer list: selected, nothing else
-      if (l || (MB.multi && MB.multi.size > 1)) { MB.ui.showTab('props'); revealSelectedRow(); }
+      if (reveal) { MB.ui.showTab('props'); revealSelectedRow(); }
     });
     MB.on('multi-contextmenu', info => MB.menus.multi(info));
     MB.on('featurechange', l => { if (l === MB.selected) MB.ui.renderMeasureBox(); });

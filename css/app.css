@@ -427,7 +427,7 @@ body.presenting #presentBar { display: flex; }
 /* The Layers tab: the layer list scrolls on its own above the Properties section, which stays in view (and has
    its own scroll bar when it is taller than its share). */
 #tab-layers.active { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; padding-bottom: 0; }
-.layer-scroll { flex: 1 1 0; min-height: 96px; overflow: auto; margin: 0 -4px; padding: 0 4px 8px; }
+.layer-scroll { flex: 1 1 0; min-height: 96px; overflow: auto; margin: 0 -4px; padding: 0 4px 8px; scroll-padding-top: 40px; } /* a revealed row clears the sticky header */
 .layer-scroll .panel-head { position: sticky; top: 0; z-index: 1; background: var(--bg-2); margin-bottom: 0; padding-bottom: 8px; }
 .props-section { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; max-height: 62%; margin: 0 -12px; border-top: 1px solid var(--border); background: var(--bg-2); }
 .props-section.closed { max-height: none; }
@@ -440,6 +440,14 @@ body.presenting #presentBar { display: flex; }
 .props-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px; }
 .props-section.closed .props-body { display: none; }
 @media (max-width: 640px) { .props-section { margin: 0 -10px; } .props-body { padding: 10px; } }
+/* Too short to share (a landscape phone, a small window): the list and Properties scroll together as one page. */
+@media (max-height: 480px), (max-width: 640px) and (max-height: 600px) {
+  .tab-panels { scroll-padding-top: 40px; }
+  #tab-layers.active { flex: 0 0 auto; }
+  .layer-scroll { flex: 0 0 auto; min-height: 0; overflow: visible; }
+  .props-section { flex: 0 0 auto; max-height: none; }
+  .props-body { overflow: visible; }
+}
 .layer-tree { display: flex; flex-direction: column; gap: 6px; }
 .layer-node { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .layer-node.active { border-color: var(--accent); }
