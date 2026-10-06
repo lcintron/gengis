@@ -430,6 +430,7 @@ body.presenting #presentBar { display: flex; }
 #tab-layers.active { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; padding: 0; }
 .pane-section { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
 .pane-section.closed { flex: 0 0 auto; }
+.pane-section:not(.closed) { min-height: 72px; } /* an open section keeps its header and a little more, whatever the split or panel height */
 #propsSection { border-top: 1px solid var(--border); }
 .section-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding-right: 12px; background: var(--bg-3); }
 .section-toggle { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 9px 12px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; text-align: left;
