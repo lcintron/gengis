@@ -273,6 +273,9 @@ window.MB = window.MB || {};
       MB.state.dataLayers = MB.state.dataLayers || {};
       let e = MB.state.dataLayers[id];
       if (e === true || !e || typeof e !== 'object') e = { on: !!e, off: [] };
+      if (id === 'classAirspace' && Array.isArray(e.off) && e.off.includes('E')) {
+        e.off = Array.from(new Set(e.off.concat(['E700', 'E1200'])));
+      }
       MB.state.dataLayers[id] = e;
       return e;
     },
@@ -338,7 +341,7 @@ window.MB = window.MB || {};
     applyState() {
       const want = (MB.state.dataLayers) || {};
       Object.keys(this.sets).forEach(id => {
-        const e = want[id];
+        const e = want[id] === undefined ? undefined : this.stateFor(id);
         const on = e === undefined ? !!this.sets[id].def.defaultOn : (e === true || (e && e.on));
         if (on && !this.sets[id].enabled) this.enable(id);
         else if (!on && this.sets[id].enabled) this.disable(id);
@@ -939,20 +942,52 @@ window.MB = window.MB || {};
   const ChartCanvas = L.Canvas.extend({
     _fillStroke(ctx, layer) {
       const o = layer.options;
+      L.Canvas.prototype._fillStroke.call(this, ctx, layer);
       if (o.band && layer instanceof L.Polygon) {
         ctx.save();
+        ctx.beginPath();
+        for (const part of layer._parts) {
+          if (!part.length) continue;
+          ctx.moveTo(part[0].x, part[0].y);
+          for (let i = 1; i < part.length; i++) ctx.lineTo(part[i].x, part[i].y);
+          ctx.closePath();
+        }
         ctx.clip(o.fillRule || 'evenodd');
         ctx.strokeStyle = o.color;
         ctx.lineJoin = 'round';
-        if (o.band === 'comb') { // a dashed line twice as wide as the ticks are long: half of it is clipped away
-          ctx.setLineDash([1.6, 4.4]); ctx.lineCap = 'butt'; ctx.lineWidth = 14; ctx.globalAlpha = .9; ctx.stroke();
-        } else {                 // three widths over each other: darkest at the outline
+        if (o.band === 'comb') {
+          ctx.beginPath();
+          for (const part of layer._parts) {
+            if (part.length < 2) continue;
+            let distance = 0, nextTick = 4;
+            for (let i = 0; i < part.length; i++) {
+              const a = part[i], b = part[(i + 1) % part.length];
+              const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
+              while (length > 0 && nextTick < distance + length) {
+                const along = nextTick - distance, x = a.x + dx * along / length, y = a.y + dy * along / length;
+                const nx = -dy * 7 / length, ny = dx * 7 / length;
+                ctx.moveTo(x - nx, y - ny);
+                ctx.lineTo(x + nx, y + ny);
+                nextTick += 8;
+              }
+              distance += length;
+            }
+          }
+          ctx.lineCap = 'butt'; ctx.lineWidth = o.weight; ctx.globalAlpha = o.opacity; ctx.stroke();
+        } else {
+          ctx.beginPath();
+          for (const part of layer._parts) {
+            if (!part.length) continue;
+            ctx.moveTo(part[0].x, part[0].y);
+            for (let i = 1; i < part.length; i++) ctx.lineTo(part[i].x, part[i].y);
+            ctx.closePath();
+          }
           ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
           for (const [w, a] of [[26, .1], [16, .13], [7, .17]]) { ctx.lineWidth = w; ctx.globalAlpha = a; ctx.stroke(); }
         }
         ctx.restore();
       }
-      L.Canvas.prototype._fillStroke.call(this, ctx, layer);
     }
   });
 
