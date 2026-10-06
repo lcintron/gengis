@@ -41,10 +41,12 @@ window.MB = window.MB || {};
     tileUrl(layer, x, y, z) {
       if (layer instanceof L.TileLayer.WMS) return layer.getTileUrl({ x, y, z });
       const o = layer.options;
-      let zz = z + (o.zoomOffset || 0);
-      if (o.zoomReverse) zz = o.maxZoom - zz;
+      // as Leaflet 1.9.4's _getZoomForUrl: reversed first, then offset
+      const zz = (o.zoomReverse ? o.maxZoom - z : z) + (o.zoomOffset || 0);
       const data = {
-        r: o.detectRetina && L.Browser.retina && o.maxZoom > 0 ? '@2x' : '',
+        // as Leaflet 1.9.4's getTileUrl: "@2x" on any high-density screen, whatever detectRetina says (the map
+        // requests those tiles there, so offline areas and prefetching must fetch the same ones)
+        r: L.Browser.retina ? '@2x' : '',
         s: layer._getSubdomain({ x, y }), x, y, z: zz
       };
       if (layer._map && !layer._map.options.crs.infinite) { const inv = layer._globalTileRange.max.y - y; if (o.tms) data.y = inv; data['-y'] = inv; }
