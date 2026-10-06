@@ -129,11 +129,12 @@ window.MB = window.MB || {};
       setTimeout(() => MB.map.invalidateSize(), 50);
     });
 
-    // About dialog
+    // About and Data sources dialogs: closed by their ✕ or a click on the backdrop
     const av = $('#aboutVersion'); if (av) av.textContent = MB.APP.version;
     const sv = $('#splash .ver'); if (sv) sv.textContent = 'Version ' + MB.APP.version;
-    $('#aboutDialog').addEventListener('click', e => {
-      if (e.target.id === 'aboutDialog' || e.target.dataset.act === 'close') $('#aboutDialog').classList.add('hidden');
+    ['#aboutDialog', '#sourcesDialog'].forEach(sel => {
+      const dlg = $(sel);
+      dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-act="close"]')) dlg.classList.add('hidden'); });
     });
   }
 
@@ -149,6 +150,7 @@ window.MB = window.MB || {};
       case 'geojson': MB.exportGeoJSON(); break;
       case 'install': if (MB.installPrompt) { MB.installPrompt.prompt(); MB.installPrompt = null; $('#installBtn').classList.add('hidden'); } break;
       case 'about': $('#aboutDialog').classList.remove('hidden'); break;
+      case 'sources': $('#sourcesDialog').classList.remove('hidden'); break;
       case 'present': MB.presenter.enter(); break;
       case 'apis': MB.settingsDialog.open(); break;
     }
@@ -934,7 +936,7 @@ window.MB = window.MB || {};
         <p class="note" style="margin-top:8px" id="saveWhere"></p>
         <div id="desktopFilesBox"></div>
         <div class="btn-row"><button class="btn small" data-act="recent">Recent projects…</button><button class="btn small" id="setPersist" hidden>Keep on this device</button></div>
-        <div class="btn-row"><button class="btn small danger" id="setReset">Reset project</button><button class="btn small ghost" data-act="about">About</button></div>
+        <div class="btn-row"><button class="btn small danger" id="setReset">Reset project</button><button class="btn small ghost" data-act="sources">Data sources</button><button class="btn small ghost" data-act="about">About</button></div>
       </div>
       <div class="section"><h3>About</h3>
         <div class="measure-box"><div><span>Application</span><span>${esc(MB.APP.name)} (${esc(MB.APP.aka)})</span></div><div><span>Version</span><span id="appVersion">${esc(MB.APP.version)}</span></div></div>
@@ -966,7 +968,7 @@ window.MB = window.MB || {};
 
   /* ================= saving status ================= */
 
-  // Next to the project name: Saving… / Saved / Not saved, with the details on hover.
+  // At the top bar's right, before undo: Saving… / Saved / Not saved, with the details on hover.
   function initSaveStatus() {
     const el = $('#saveStatus');
     const render = st => {

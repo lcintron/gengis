@@ -108,7 +108,7 @@ select:focus { outline: none; border-color: var(--accent); }
    the right. The units, base map and project menu are in a panel that slides in from the left (ui.js). */
 .menu-wrap { display: none; } /* the project menu's items, shown in the panel */
 #moreBtn { display: inline-flex; }
-.brand { margin-right: 32px; flex: 0 0 auto; } /* the search gives way, never the name and save status */
+.brand { margin-right: 32px; flex: 0 0 auto; } /* the search gives way, never the name */
 .search-wrap { flex: 0 1 520px; margin: 0 auto; min-width: 0; }
 #searchInput { min-width: 80px; }
 .topbar-right { margin-left: 32px; }
@@ -329,6 +329,16 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .modal-box h3 { margin: 14px 0 6px; font-size: 13px; }
 .modal-box ul { padding-left: 18px; margin: 0; }
 .modal-box li { margin-bottom: 4px; }
+/* every dialog's close button (MB.modalCloseHtml): an ✕ in the box's top-right corner that stays in view while the
+   box scrolls (sticky's top counts from the box's content edge, so -12px lets it ride up into the padding); the title
+   beside it wraps around it */
+.modal-x {
+  float: right; position: sticky; top: -12px; z-index: 1; width: 30px; height: 30px; margin: -6px -10px 6px 10px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--bg-3);
+  border: 1px solid var(--border); color: var(--text-dim); cursor: pointer; font-size: 14px; line-height: 1;
+}
+.modal-x:hover { background: #363d4e; color: var(--text); }
+.modal-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .kbd-list { line-height: 2; }
 
 @media (max-width: 860px) {
@@ -378,6 +388,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .form-grid { grid-template-columns: 1fr; gap: 4px 0; }
   .form-grid label { margin-top: 6px; }
   .modal-box { padding: 14px; max-height: 92vh; }
+  .modal-x { width: 34px; height: 34px; margin: -6px -6px 6px 10px; } /* a finger-sized target */
   .btn, .icon-btn { min-height: 36px; }
   .layer-node .icon-btn.mini, .obj-item .icon-btn.mini { width: 28px; height: 28px; }
   #presentBar { top: auto; bottom: calc(10px + env(safe-area-inset-bottom)); right: 10px; }
@@ -569,10 +580,14 @@ button.link:hover { text-decoration: underline; }
   background: var(--bg-2); color: var(--text); border: 1px solid var(--accent); border-radius: 10px; padding: 8px 8px 8px 14px;
   box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px);
 }
-.about-logo { width: 72px; height: auto; float: right; margin: 0 0 8px 12px; }
+.about-head { text-align: center; margin-bottom: 14px; }
+.about-head .about-logo { width: 72px; height: auto; display: block; margin: 4px auto 10px; }
+.about-head h2 { margin: 0 0 2px; }
+.about-head p { margin: 0; }
 
 /* ---------- saving: status, recent projects, a map open in another tab ---------- */
-.save-status { font-size: 11px; color: var(--text-dim); white-space: nowrap; flex: 0 0 auto; }
+.save-status { font-size: 11px; color: var(--text-dim); white-space: nowrap; flex: 0 0 auto; margin-right: 2px; } /* in .topbar-right, before undo */
+.save-status:empty { display: none; } /* idle: no gap before undo */
 .save-status[data-state="error"] { color: var(--danger); }
 .save-status[data-state="readonly"] { color: var(--warn); }
 .recent-box { max-width: 520px; }

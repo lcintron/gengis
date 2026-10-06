@@ -39,7 +39,6 @@
       <img class="logo" src="icons/logo-on-dark.svg" alt="GenGIS" title="GenGIS (G²)">
       <span class="brand-name" title="GenGIS (G²)">GenGIS</span>
       <input id="projectName" class="project-name" value="Untitled map" title="Project name" spellcheck="false">
-      <span id="saveStatus" class="save-status" role="status" aria-live="polite"></span>
     </div>
 
     <div class="search-wrap">
@@ -50,6 +49,7 @@
     </div>
 
     <div class="topbar-right">
+      <span id="saveStatus" class="save-status" role="status" aria-live="polite"></span>
       <button id="undoBtn" class="icon-btn" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 24 24" width="18" height="18"><path d="M9 14L4 9l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h9a6 6 0 0 1 0 12h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       <button id="redoBtn" class="icon-btn" title="Redo (Ctrl+Y)" disabled><svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 14l5-5-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9h-9a6 6 0 0 0 0 12h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       <button id="presentBtn" class="icon-btn" title="Presenter mode (F)"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="4" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 8.5v4l3.5-2z" fill="currentColor"/><path d="M8 21h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
@@ -67,7 +67,8 @@
           <button data-act="apis">Map &amp; search APIs…</button>
           <hr>
           <button data-act="install" id="installBtn" class="hidden">Install as app</button>
-          <button data-act="about">About &amp; data sources</button>
+          <button data-act="sources">Data sources…</button>
+          <button data-act="about">About GenGIS</button>
         </div>
       </div>
       <button id="sidebarToggle" class="icon-btn" title="Toggle side panel"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
@@ -146,22 +147,32 @@
   <input type="file" id="svgUpload" accept=".svg,image/svg+xml" multiple hidden>
 </div>
 
+<!-- Project menu dialogs (ui.js): each closes with its ✕ (or a click on the backdrop) -->
 <div id="aboutDialog" class="modal hidden">
-  <div class="modal-box">
-    <img class="about-logo" src="icons/logo-on-dark.svg" alt="">
-    <h2>GenGIS <span class="dim">(G<sup>2</sup>)</span></h2>
-    <p class="dim" style="margin-top:-4px">Version <span id="aboutVersion"></span></p>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <button type="button" class="modal-x" data-act="close" aria-label="Close" title="Close">✕</button>
+    <div class="about-head">
+      <img class="about-logo" src="icons/logo-on-dark.svg" alt="">
+      <h2 id="aboutTitle">GenGIS <span class="dim">(G<sup>2</sup>)</span></h2>
+      <p class="dim">Version <span id="aboutVersion"></span></p>
+    </div>
     <p>A standalone map building tool. Works offline as an installed Progressive Web App (map tiles you have viewed are cached) or inside Electron.</p>
-    <h3>Data sources (free, no API keys)</h3>
+    <h3>Shortcuts</h3>
+    <p class="kbd-list"><kbd>V</kbd> select · <kbd>G</kbd> move · <kbd>F</kbd> presenter · <kbd>M</kbd> marker · <kbd>T</kbd> text · <kbd>L</kbd> line · <kbd>P</kbd> polygon · <kbd>R</kbd> rectangle · <kbd>C</kbd> circle · <kbd>S</kbd> SVG · <kbd>D</kbd> distance · <kbd>A</kbd> area · <kbd>Esc</kbd> cancel · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save file · <kbd>/</kbd> search</p>
+    <p class="dim">Open with URL parameters: <code>?q=Eiffel+Tower</code>, <code>?lat=48.858&amp;lon=2.294&amp;zoom=16</code>, <code>?center=48.858,2.294</code>, <code>?poi=cafe</code>.</p>
+  </div>
+</div>
+
+<div id="sourcesDialog" class="modal hidden">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="sourcesTitle">
+    <button type="button" class="modal-x" data-act="close" aria-label="Close" title="Close">✕</button>
+    <h2 id="sourcesTitle">Data sources</h2>
+    <p class="dim">Free, no API keys.</p>
     <ul>
       <li>Map tiles: OpenStreetMap, OSM Humanitarian, OpenTopoMap, CyclOSM, CARTO, Esri World Imagery. Each has its own usage policy and attribution shown on the map.</li>
       <li>Address and place search: <a href="https://nominatim.org/release-docs/latest/api/Overview/" target="_blank" rel="noopener">Nominatim</a> (OpenStreetMap). Fair use: no bulk or automated queries.</li>
       <li>Points of interest: <a href="https://wiki.openstreetmap.org/wiki/Overpass_API" target="_blank" rel="noopener">Overpass API</a>.</li>
     </ul>
-    <h3>Shortcuts</h3>
-    <p class="kbd-list"><kbd>V</kbd> select · <kbd>G</kbd> move · <kbd>F</kbd> presenter · <kbd>M</kbd> marker · <kbd>T</kbd> text · <kbd>L</kbd> line · <kbd>P</kbd> polygon · <kbd>R</kbd> rectangle · <kbd>C</kbd> circle · <kbd>S</kbd> SVG · <kbd>D</kbd> distance · <kbd>A</kbd> area · <kbd>Esc</kbd> cancel · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save file · <kbd>/</kbd> search</p>
-    <p class="dim">Open with URL parameters: <code>?q=Eiffel+Tower</code>, <code>?lat=48.858&amp;lon=2.294&amp;zoom=16</code>, <code>?center=48.858,2.294</code>, <code>?poi=cafe</code>.</p>
-    <div class="row right"><button class="btn" data-act="close">Close</button></div>
   </div>
 </div>
 

@@ -76,15 +76,15 @@ window.MB = window.MB || {};
       const el = document.createElement('div');
       el.className = 'modal hidden';
       el.id = 'apiDialog';
-      el.innerHTML = `<div class="modal-box wide">
-        <div class="panel-head"><h2 style="margin:0">Map &amp; search APIs</h2><button class="icon-btn" data-act="close" title="Close">✕</button></div>
+      el.innerHTML = `<div class="modal-box wide" role="dialog" aria-modal="true" aria-labelledby="apiDialogTitle">
+        ${MB.modalCloseHtml}<h2 id="apiDialogTitle">Map &amp; search APIs</h2>
         <div class="tabs" style="margin:10px 0 14px"><button data-t="providers" class="active">Map providers</button><button data-t="search">Search services</button></div>
         <div data-panel="providers"></div>
         <div data-panel="search" class="hidden"></div>
         <p class="note" style="margin-top:14px">Keys stay in this browser and go only to their provider.</p>
       </div>`;
       el.addEventListener('click', e => {
-        if (e.target === el || (e.target.dataset && e.target.dataset.act === 'close')) this.close();
+        if (e.target === el || e.target.closest('[data-act="close"]')) this.close();
         const tb = e.target.closest('.tabs button[data-t]');
         if (tb) { this.tab = tb.dataset.t; this.render(); }
       });
