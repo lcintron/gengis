@@ -111,8 +111,8 @@ select:focus { outline: none; border-color: var(--accent); }
    the right. The units, base map and project menu are in a panel that slides in from the left (ui.js). */
 .menu-wrap { display: none; } /* the project menu's items, shown in the panel */
 #moreBtn { display: inline-flex; }
-.brand { margin-right: 32px; }
-.search-wrap { flex: 0 1 520px; margin: 0 auto; }
+.brand { margin-right: 32px; flex: 0 0 auto; } /* the search gives way, never the name and save status */
+.search-wrap { flex: 0 1 520px; margin: 0 auto; min-width: 0; }
 #searchInput { min-width: 80px; }
 .topbar-right { margin-left: 32px; }
 .dropdown.more-menu {

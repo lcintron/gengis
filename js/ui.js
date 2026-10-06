@@ -97,6 +97,7 @@ window.MB = window.MB || {};
     const more = $('#moreMenu'), moreBtn = $('#moreBtn');
     const closeMore = () => { more.classList.add('hidden'); moreBtn.setAttribute('aria-expanded', 'false'); };
     window.addEventListener('keydown', e => { if (e.key === 'Escape' && !more.classList.contains('hidden')) { e.stopPropagation(); closeMore(); } }, true);
+    MB.on('presenter', closeMore); // the bar it hangs from is hidden
     const placeMore = () => { more.style.top = $('#topbar').getBoundingClientRect().bottom + 'px'; }; // under the bar (two rows on phones)
     window.addEventListener('resize', () => { if (!more.classList.contains('hidden')) placeMore(); });
     moreBtn.addEventListener('click', e => {
@@ -980,8 +981,14 @@ window.MB = window.MB || {};
     document.addEventListener('keydown', e => {
       const t = e.target;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
-      // desktop app: Ctrl+F goes to the search (a browser keeps it for finding in the page)
-      if (document.documentElement.dataset.titlebar && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('#searchInput').focus(); $('#searchInput').select(); return; }
+      // desktop app: Ctrl+F goes to the search (a browser keeps it for finding in the page), unless a dialog or
+      // presenter mode covers it
+      if (document.documentElement.dataset.titlebar && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        const covered = (MB.presenter && MB.presenter.active) || $$('.modal').some(m => m.getClientRects().length);
+        if (!covered) { $('#searchInput').focus(); $('#searchInput').select(); }
+        return;
+      }
       if (e.key === 'Escape') {
         if (MB.contextMenu && MB.contextMenu.isOpen()) { MB.contextMenu.hide(); return; }
         if (MB.presenter && MB.presenter.active) { MB.presenter.exit(); return; }
