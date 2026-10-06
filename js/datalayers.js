@@ -774,57 +774,99 @@ window.MB = window.MB || {};
   function buildBorders(ds, entries, offset) {
     const def = ds.def;
     const eps = Math.max(2.5 * offset, 2e-5);                // degrees
-    const G = Math.max(eps * 4, 0.05);                       // index cell, degrees
+    const G = Math.max(eps * 2, 0.02);                       // index cell, degrees
     const items = entries.map((e, i) => {
       const p = (e.layer.feature && e.layer.feature.properties) || {};
-      return { i, side: def.borders(p), label: def.label ? String(def.label(p)) : '', rings: polygonsOf(e.layer.feature && e.layer.feature.geometry).flat() };
+      // rings smaller than twice the tolerance are dropped: sub-pixel at the zooms that tolerance serves (most of a
+      // simplified world dataset is such islets), and too small to hold a border
+      const big = ring => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (const c of ring) { if (c[0] < x0) x0 = c[0]; if (c[0] > x1) x1 = c[0]; if (c[1] < y0) y0 = c[1]; if (c[1] > y1) y1 = c[1]; } return Math.hypot(x1 - x0, y1 - y0) >= 2 * eps; };
+      return { i, side: def.borders(p), label: def.label ? String(def.label(p)) : '', rings: polygonsOf(e.layer.feature && e.layer.feature.geometry).flat().filter(big) };
     });
-    // index every edge by the grid cells its (tolerance-widened) box covers
+    // The grid cells an edge passes through, widened by eps (numeric keys). A short edge takes the cells of its
+    // widened box; a long one is sampled along its length, so it is in every cell along it (not in its whole bounding
+    // box) and the index stays proportional to the outlines' length.
+    const key = (gx, gy) => (gx + 4096) * 8192 + (gy + 4096);
+    const cellsAlong = (a, b) => {
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]), keys = [];
+      const box = (xa, ya, xb, yb) => {
+        const x0 = Math.floor((Math.min(xa, xb) - eps) / G), x1 = Math.floor((Math.max(xa, xb) + eps) / G);
+        const y0 = Math.floor((Math.min(ya, yb) - eps) / G), y1 = Math.floor((Math.max(ya, yb) + eps) / G);
+        for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) { const k = key(gx, gy); if (keys.indexOf(k) < 0) keys.push(k); }
+      };
+      if (len <= G) { box(a[0], a[1], b[0], b[1]); return keys; }
+      const n = Math.ceil(len / G);
+      for (let k = 0; k < n; k++) box(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, a[0] + (b[0] - a[0]) * (k + 1) / n, a[1] + (b[1] - a[1]) * (k + 1) / n);
+      return keys;
+    };
     const grid = new Map();
-    const put = (gx, gy, v) => { const k = gx + ',' + gy; let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(v); };
-    items.forEach(it => it.rings.forEach(ring => {
+    items.forEach(it => { it.edges = it.rings.map(ring => {
+      const edges = [];
       for (let s = 1; s < ring.length; s++) {
-        const a = ring[s - 1], b = ring[s];
-        const x0 = Math.floor((Math.min(a[0], b[0]) - eps) / G), x1 = Math.floor((Math.max(a[0], b[0]) + eps) / G);
-        const y0 = Math.floor((Math.min(a[1], b[1]) - eps) / G), y1 = Math.floor((Math.max(a[1], b[1]) + eps) / G);
-        if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) continue; // a degenerate, very long edge: never a shared border anyway
-        const v = { it, a, b };
-        for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) put(gx, gy, v);
+        const v = { it, a: ring[s - 1], b: ring[s], keys: cellsAlong(ring[s - 1], ring[s]) }; // its cells, kept for the lookup below
+        v.keys.forEach(k => { let arr = grid.get(k); if (!arr) grid.set(k, arr = []); arr.push(v); });
+        edges.push(v);
       }
-    }));
-    const distSeg = (px, py, a, b) => {
-      const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
-      const t = L2 ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / L2)) : 0;
-      return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+      return edges;
+    }); });
+    // Which stretch of edge AB runs along edge CD: the part of CD within eps of the line through AB, projected onto
+    // AB (as parameters 0..1), or null. Edges that merely cross give a stretch shorter than the tolerance: ignored.
+    const alongStretch = (A, B, C, D) => {
+      const ux = B[0] - A[0], uy = B[1] - A[1], L = Math.hypot(ux, uy);
+      if (!L) return null;
+      const nx = -uy / L, ny = ux / L;
+      const dC = (C[0] - A[0]) * nx + (C[1] - A[1]) * ny, dD = (D[0] - A[0]) * nx + (D[1] - A[1]) * ny, dd = dD - dC;
+      let s0 = 0, s1 = 1;
+      if (Math.abs(dd) < 1e-15) { if (Math.abs(dC) > eps) return null; }
+      else { let lo = (-eps - dC) / dd, hi = (eps - dC) / dd; if (lo > hi) [lo, hi] = [hi, lo]; s0 = Math.max(0, lo); s1 = Math.min(1, hi); if (s0 >= s1) return null; }
+      const t = s => (((C[0] + (D[0] - C[0]) * s) - A[0]) * ux + ((C[1] + (D[1] - C[1]) * s) - A[1]) * uy) / (L * L);
+      let t0 = t(s0), t1 = t(s1);
+      if (t0 > t1) [t0, t1] = [t1, t0];
+      t0 = Math.max(0, t0); t1 = Math.min(1, t1);
+      return (t1 - t0) * L > 1.5 * eps ? [t0, t1] : null;
     };
-    // the neighbour (of another side) an edge lies along, or null
-    const along = (it, a, b) => {
-      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
-      const cand = grid.get(Math.floor(mx / G) + ',' + Math.floor(my / G)) || [];
-      let best = null, bestD = eps;
-      for (const v of cand) {
-        if (v.it.side === it.side) continue;
-        const d = distSeg(mx, my, v.a, v.b);
-        if (d <= bestD && distSeg(a[0], a[1], v.a, v.b) <= eps * 2 && distSeg(b[0], b[1], v.a, v.b) <= eps * 2) { best = v.it; bestD = d; }
+    // For each edge, the stretches along each neighbour of another side (merged), in order along the edge.
+    let stamp = 0;
+    const stretches = (it, edge) => {
+      const a = edge.a, b = edge.b, byN = new Map(), mark = ++stamp;
+      const minX = Math.min(a[0], b[0]) - eps, maxX = Math.max(a[0], b[0]) + eps, minY = Math.min(a[1], b[1]) - eps, maxY = Math.max(a[1], b[1]) + eps;
+      for (const k of edge.keys) {
+        const arr = grid.get(k);
+        if (!arr) continue;
+        for (const v of arr) {
+          if (v.seen === mark || v.it === it || v.it.side === it.side) continue;
+          v.seen = mark;
+          // cheap rejection: boxes apart by more than eps
+          if (Math.max(v.a[0], v.b[0]) < minX || Math.min(v.a[0], v.b[0]) > maxX || Math.max(v.a[1], v.b[1]) < minY || Math.min(v.a[1], v.b[1]) > maxY) continue;
+          const r = alongStretch(a, b, v.a, v.b);
+          if (r) { let rs = byN.get(v.it); if (!rs) byN.set(v.it, rs = []); rs.push(r); }
+        }
       }
-      // an edge longer than the neighbour's matching edge: its ends may be along other edges of that neighbour
-      if (!best) for (const v of cand) {
-        if (v.it.side === it.side || distSeg(mx, my, v.a, v.b) > eps) continue;
-        best = v.it; break;
-      }
-      return best;
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, gap = eps / L, out = [];
+      byN.forEach((arr, n) => {
+        arr.sort((x, y) => x[0] - y[0]);
+        let cur = null;
+        arr.forEach(r => { if (cur && r[0] <= cur[1] + gap) cur[1] = Math.max(cur[1], r[1]); else { if (cur) out.push({ n, t0: cur[0], t1: cur[1] }); cur = r.slice(); } });
+        if (cur) out.push({ n, t0: cur[0], t1: cur[1] });
+      });
+      return out.sort((x, y) => x.t0 - y.t0);
     };
-    // walk each ring, gathering runs of edges along the same neighbour; a pair is drawn from one side only
+    // Walk each ring, joining stretches along the same neighbour into lines; a pair is drawn from one side only.
     const pairs = new Map();
-    items.forEach(it => it.rings.forEach(ring => {
-      let run = null, runWith = null;
-      const flush = () => { if (run && run.length > 1) { const key = it.side + '\u0000' + runWith.side; let p = pairs.get(key); if (!p) pairs.set(key, p = { a: it, b: runWith, lines: [] }); p.lines.push(run); } run = null; runWith = null; };
-      for (let s = 1; s < ring.length; s++) {
-        const a = ring[s - 1], b = ring[s];
-        const n = along(it, a, b);
-        if (!n || it.side > n.side) { flush(); continue; } // nothing there (a coast), or drawn from the other side
-        if (n !== runWith) { flush(); runWith = n; run = [[a[1], a[0]]]; }
-        run.push([b[1], b[0]]);
+    items.forEach(it => it.edges.forEach(edges => {
+      let run = null, runWith = null, runOpenEnd = false;
+      const flush = () => { if (run && run.length > 1) { const key = it.side + '\u0000' + runWith.side; let p = pairs.get(key); if (!p) pairs.set(key, p = { a: it, b: runWith, lines: [] }); p.lines.push(run); } run = null; runWith = null; runOpenEnd = false; };
+      for (const edge of edges) {
+        const a = edge.a, b = edge.b, L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, near = eps / L;
+        const at = t => [a[1] + (b[1] - a[1]) * t, a[0] + (b[0] - a[0]) * t]; // [lat, lng]
+        let continued = false;
+        for (const st of stretches(it, edge)) {
+          if (it.side > st.n.side) continue; // drawn from the other side
+          if (run && runWith === st.n && runOpenEnd && st.t0 <= near) run.push(at(st.t1)); // goes on from the previous edge
+          else { flush(); runWith = st.n; run = [at(st.t0), at(st.t1)]; }
+          runOpenEnd = st.t1 >= 1 - near;
+          continued = true;
+        }
+        if (!continued || !runOpenEnd) flush();
       }
       flush();
     }));
