@@ -25,6 +25,9 @@ window.MB = window.MB || {};
 
   /* ================= top bar ================= */
 
+  // In the desktop app the top bar is also the window's title bar (css: html[data-titlebar]).
+  if (window.gengisDesktop && window.gengisDesktop.titleBar) document.documentElement.dataset.titlebar = window.gengisDesktop.titleBar;
+
   function initTopbar() {
     const nameInput = $('#projectName');
     nameInput.addEventListener('change', () => {
@@ -88,22 +91,15 @@ window.MB = window.MB || {};
       MB.ui.menuAction(act);
     });
 
-    // Phones: the units, the base map and the project menu (presenter mode included) move behind the menu button,
-    // so the top bar is a single row that never scrolls: a scrolling row clipped the Project dropdown and let the
-    // base map list run over the units.
-    const more = $('#moreMenu'), moreBtn = $('#moreBtn'), units = $('#unitsSeg'), right = $('.topbar-right');
-    const phone = window.matchMedia('(max-width: 640px)');
+    // The units, the base map and the project menu (presenter mode included) are in a panel that slides in from the
+    // left, under the menu button at the bar's left end, so the bar keeps the search and a few buttons: one row that
+    // never scrolls (and, in the desktop app, room to grab the window). Esc or a click elsewhere closes it.
+    const more = $('#moreMenu'), moreBtn = $('#moreBtn');
     const closeMore = () => { more.classList.add('hidden'); moreBtn.setAttribute('aria-expanded', 'false'); };
-    const place = () => {
-      if (phone.matches) {
-        $('[data-slot="units"]', more).appendChild(units);
-        $('[data-slot="basemap"]', more).appendChild(bm);
-      } else {
-        right.insertBefore(units, $('#undoBtn'));
-        right.insertBefore(bm, $('#undoBtn'));
-        closeMore();
-      }
-    };
+    window.addEventListener('keydown', e => { if (e.key === 'Escape' && !more.classList.contains('hidden')) { e.stopPropagation(); closeMore(); } }, true);
+    MB.on('presenter', closeMore); // the bar it hangs from is hidden
+    const placeMore = () => { more.style.top = $('#topbar').getBoundingClientRect().bottom + 'px'; }; // under the bar (two rows on phones)
+    window.addEventListener('resize', () => { if (!more.classList.contains('hidden')) placeMore(); });
     moreBtn.addEventListener('click', e => {
       e.stopPropagation();
       if (!more.classList.contains('hidden')) { closeMore(); return; }
@@ -111,6 +107,7 @@ window.MB = window.MB || {};
       const items = $('.more-items', more);
       items.innerHTML = '';
       Array.from(menu.children).forEach(c => items.appendChild(c.cloneNode(true)));
+      placeMore();
       more.classList.remove('hidden');
       moreBtn.setAttribute('aria-expanded', 'true');
     });
@@ -119,8 +116,6 @@ window.MB = window.MB || {};
       if (b && b.dataset.act) { closeMore(); MB.ui.menuAction(b.dataset.act); }
     });
     document.addEventListener('click', e => { if (!e.target.closest('#moreMenu, #moreBtn')) closeMore(); });
-    if (phone.addEventListener) phone.addEventListener('change', place); else phone.addListener(place);
-    place();
 
     $('#fileOpen').addEventListener('change', e => {
       const f = e.target.files[0];
@@ -986,6 +981,14 @@ window.MB = window.MB || {};
     document.addEventListener('keydown', e => {
       const t = e.target;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      // desktop app: Ctrl+F goes to the search (a browser keeps it for finding in the page), unless a dialog or
+      // presenter mode covers it
+      if (document.documentElement.dataset.titlebar && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        const covered = (MB.presenter && MB.presenter.active) || $$('.modal').some(m => m.getClientRects().length);
+        if (!covered) { $('#searchInput').focus(); $('#searchInput').select(); }
+        return;
+      }
       if (e.key === 'Escape') {
         if (MB.contextMenu && MB.contextMenu.isOpen()) { MB.contextMenu.hide(); return; }
         if (MB.presenter && MB.presenter.active) { MB.presenter.exit(); return; }
