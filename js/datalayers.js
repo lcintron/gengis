@@ -47,7 +47,7 @@ window.MB = window.MB || {};
     B: { color: BLUE, weight: 3, fillColor: BLUE, fillOpacity: .05 },
     C: { color: MAGENTA, weight: 3, fillColor: MAGENTA, fillOpacity: .05 },
     D: { color: BLUE, weight: 2, dashArray: '8,5', fillColor: BLUE, fillOpacity: .04 },
-    E: { color: MAGENTA, weight: 2, dashArray: '8,5', fillColor: MAGENTA, fillOpacity: .03 },
+    ESFC: { color: MAGENTA, weight: 2, dashArray: '8,5', fillColor: MAGENTA, fillOpacity: .03 },
     E700: { color: MAGENTA, weight: .8, opacity: .55, fillOpacity: 0, band: 'vignette' },
     E1200: { color: BLUE, weight: .8, opacity: .55, fillOpacity: 0, band: 'vignette' },
     MODEC: { color: MAGENTA, weight: 1.2, fillOpacity: 0 }
@@ -55,7 +55,7 @@ window.MB = window.MB || {};
   // Which of those an area is: its class, and for Class E its floor (the surface, 700 ft, or higher).
   function classKind(p) {
     const c = String(p.CLASS || '').trim().toUpperCase();
-    if (c === 'E') { const lo = +p.LOWER_VAL; return !(lo > 0) ? 'E' : (lo === 700 ? 'E700' : 'E1200'); }
+    if (c === 'E') { const lo = +p.LOWER_VAL; return !(lo > 0) ? 'ESFC' : (lo === 700 ? 'E700' : 'E1200'); }
     if (String(p.LOCAL_TYPE || '').trim().toUpperCase() === 'MODE C') return 'MODEC';
     return c;
   }
@@ -102,7 +102,7 @@ window.MB = window.MB || {};
 
   // Subset rows: [key, label, color, chart symbol of its swatch]
   const CLASS_ITEMS = [['B', 'Class B', BLUE, 'solid'], ['C', 'Class C', MAGENTA, 'solid'], ['D', 'Class D', BLUE, 'dashed'],
-    ['E', 'Class E from the surface', MAGENTA, 'dashed'], ['E700', 'Class E from 700 ft AGL', MAGENTA, 'vignette'],
+    ['ESFC', 'Class E from the surface', MAGENTA, 'dashed'], ['E700', 'Class E from 700 ft AGL', MAGENTA, 'vignette'],
     ['E1200', 'Class E from 1,200 ft AGL or higher', BLUE, 'vignette'], ['MODEC', 'Mode C veil (30 NM)', MAGENTA, 'line']];
   const SUA_ITEMS = [['P', 'Prohibited (P)', BLUE, 'comb'], ['R', 'Restricted (R)', BLUE, 'comb'], ['W', 'Warning (W)', BLUE, 'comb'],
     ['D', 'Danger (D)', BLUE, 'comb'], ['MOA', 'Military Operations Area', MAGENTA, 'comb'], ['A', 'Alert (A)', MAGENTA, 'comb'],
@@ -273,8 +273,9 @@ window.MB = window.MB || {};
       MB.state.dataLayers = MB.state.dataLayers || {};
       let e = MB.state.dataLayers[id];
       if (e === true || !e || typeof e !== 'object') e = { on: !!e, off: [] };
+      // Class E was one subset, 'E', before it was split by floor (ESFC, E700, E1200): hiding it hid every floor.
       if (id === 'classAirspace' && Array.isArray(e.off) && e.off.includes('E')) {
-        e.off = Array.from(new Set(e.off.concat(['E700', 'E1200'])));
+        e.off = Array.from(new Set(e.off.filter(k => k !== 'E').concat(['ESFC', 'E700', 'E1200'])));
       }
       MB.state.dataLayers[id] = e;
       return e;
@@ -945,17 +946,10 @@ window.MB = window.MB || {};
       L.Canvas.prototype._fillStroke.call(this, ctx, layer);
       if (o.band && layer instanceof L.Polygon) {
         ctx.save();
-        ctx.beginPath();
-        for (const part of layer._parts) {
-          if (!part.length) continue;
-          ctx.moveTo(part[0].x, part[0].y);
-          for (let i = 1; i < part.length; i++) ctx.lineTo(part[i].x, part[i].y);
-          ctx.closePath();
-        }
-        ctx.clip(o.fillRule || 'evenodd');
+        ctx.clip(o.fillRule || 'evenodd'); // the outline is still the current path: filling and stroking keep it
         ctx.strokeStyle = o.color;
-        ctx.lineJoin = 'round';
-        if (o.band === 'comb') {
+        ctx.setLineDash([]);
+        if (o.band === 'comb') { // a tick every 8 px across the outline, 7 px each way: the half outside is clipped away
           ctx.beginPath();
           for (const part of layer._parts) {
             if (part.length < 2) continue;
@@ -974,16 +968,8 @@ window.MB = window.MB || {};
             }
           }
           ctx.lineCap = 'butt'; ctx.lineWidth = o.weight; ctx.globalAlpha = o.opacity; ctx.stroke();
-        } else {
-          ctx.beginPath();
-          for (const part of layer._parts) {
-            if (!part.length) continue;
-            ctx.moveTo(part[0].x, part[0].y);
-            for (let i = 1; i < part.length; i++) ctx.lineTo(part[i].x, part[i].y);
-            ctx.closePath();
-          }
-          ctx.setLineDash([]);
-          ctx.globalAlpha = 1;
+        } else {                 // the outline three widths over each other: darkest at the outline
+          ctx.lineJoin = 'round';
           for (const [w, a] of [[26, .1], [16, .13], [7, .17]]) { ctx.lineWidth = w; ctx.globalAlpha = a; ctx.stroke(); }
         }
         ctx.restore();
