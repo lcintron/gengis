@@ -483,8 +483,8 @@ window.MB = window.MB || {};
       dlg = document.createElement('div');
       dlg.id = 'recentDialog';
       dlg.className = 'modal';
-      dlg.innerHTML = '<div class="modal-box recent-box" role="dialog" aria-modal="true" aria-labelledby="recentTitle"></div>';
-      dlg.addEventListener('click', e => { if (e.target === dlg) dlg.classList.add('hidden'); });
+      dlg.innerHTML = '<div class="modal-box recent-box" role="dialog" aria-modal="true" aria-labelledby="recentTitle">' + MB.modalCloseHtml + '</div>';
+      dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-act="close"]')) dlg.classList.add('hidden'); });
       document.addEventListener('keydown', e => { if (e.key === 'Escape') dlg.classList.add('hidden'); });
       document.body.appendChild(dlg);
     }
@@ -495,7 +495,7 @@ window.MB = window.MB || {};
     const [list, snaps, files] = await Promise.all([P.list(), P.snapshots(cur), DF.available ? DF.recent() : []]);
     const box = dlg.querySelector('.modal-box');
     const reason = r => ({ 'before opening a file': 'before a file replaced it', 'before restoring an earlier copy': 'before a restore' })[r] || '';
-    box.innerHTML = `<h2 id="recentTitle">Recent projects</h2>
+    box.innerHTML = `${MB.modalCloseHtml}<h2 id="recentTitle">Recent projects</h2>
       <p class="dim">Saved automatically on this device as you work.</p>
       <div class="recent-list">${list.length ? list.map(r => `<div class="recent-item${r.id === cur ? ' current' : ''}">
           <div class="recent-main"><b>${esc(r.name)}</b><span class="dim">${esc(when(r.savedAt))} · ${objects(r.objects)}</span></div>
@@ -510,9 +510,7 @@ window.MB = window.MB || {};
       <div class="recent-list">${files.length ? files.map(f => `<div class="recent-item">
           <div class="recent-main"><b>${esc(f.name)}</b><span class="dim" title="${esc(f.file)}">${esc(f.folder)} · ${esc(when(f.modified))}</span></div>
           <button class="btn small" data-file="${esc(f.file)}">Open</button>
-        </div>`).join('') : '<p class="note">Project files you open or save appear here.</p>'}</div>` : ''}
-      <div class="row right"><button class="btn" data-close>Close</button></div>`;
-    box.querySelector('[data-close]').addEventListener('click', () => dlg.classList.add('hidden'));
+        </div>`).join('') : '<p class="note">Project files you open or save appear here.</p>'}</div>` : ''}`;
     box.querySelectorAll('[data-file]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await DF.openRecent(b.dataset.file); }));
     box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await P.open(b.dataset.open); }));
     // Confirm inside the row: some embedded browsers (and in-app previews) suppress confirm() and read it as Cancel,

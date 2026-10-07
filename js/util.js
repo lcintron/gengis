@@ -252,26 +252,36 @@ window.MB = window.MB || {};
   // A stored item, carrying over what an earlier version saved under its old key.
   // A yes/no question in the app's own dialog; resolves true for yes. (confirm() is suppressed by some embedded
   // browsers and in-app previews, which read it as "no" without showing anything.)
+  // Every dialog's close button: an ✕ in the box's top-right corner (css .modal-x). It is the box's first child and
+  // carries data-act="close", so a dialog that closes on [data-act="close"] clicks needs nothing more.
+  MB.modalCloseHtml = '<button type="button" class="modal-x" data-act="close" aria-label="Close" title="Close">✕</button>';
+
   MB.ask = function (message, yes, no) {
     return new Promise(resolve => {
       const dlg = document.createElement('div');
       dlg.className = 'modal mb-ask';
-      dlg.innerHTML = '<div class="modal-box" role="alertdialog" aria-modal="true"><p class="ask-text"></p><div class="row right"><button type="button" class="btn" data-no></button><button type="button" class="btn primary" data-yes></button></div></div>';
+      dlg.innerHTML = '<div class="modal-box" role="alertdialog" aria-modal="true">' + MB.modalCloseHtml + '<p class="ask-text"></p><div class="row right"><button type="button" class="btn" data-no></button><button type="button" class="btn primary" data-yes></button></div></div>';
       dlg.querySelector('.ask-text').textContent = message;
       dlg.querySelector('[data-yes]').textContent = yes || 'OK';
       dlg.querySelector('[data-no]').textContent = no || 'Cancel';
-      const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]');
+      const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]'), xBtn = dlg.querySelector('.modal-x');
       const finish = v => { window.removeEventListener('keydown', onKey, true); dlg.remove(); resolve(v); };
       // While it is open no key reaches the app (Delete must not delete the selection behind it). Enter and Space
-      // still press the focused button; Tab stays on the two buttons; Escape answers no.
+      // still press the focused button; Tab stays on the dialog's buttons; Escape, like the ✕, answers no.
+      const order = [xBtn, noBtn, yesBtn];
       const onKey = e => {
         e.stopPropagation();
         if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-        else if (e.key === 'Tab') { e.preventDefault(); (document.activeElement === yesBtn ? noBtn : yesBtn).focus(); }
+        else if (e.key === 'Tab') {
+          e.preventDefault();
+          const i = order.indexOf(document.activeElement);
+          order[(i < 0 ? order.length - 1 : i + (e.shiftKey ? order.length - 1 : 1)) % order.length].focus();
+        }
         else if (!dlg.contains(e.target)) e.preventDefault();
       };
       yesBtn.addEventListener('click', () => finish(true));
       noBtn.addEventListener('click', () => finish(false));
+      xBtn.addEventListener('click', () => finish(false));
       window.addEventListener('keydown', onKey, true);
       document.body.appendChild(dlg);
       dlg.querySelector('[data-yes]').focus();

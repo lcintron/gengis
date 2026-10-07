@@ -192,8 +192,8 @@ window.MB = window.MB || {};
       const anyData = MB.data.catalog().some(ds => ds.enabled);
       const el = document.createElement('div');
       el.className = 'modal';
-      el.innerHTML = `<div class="modal-box">
-        <div class="panel-head"><h2 style="margin:0">Download area for offline use</h2><button class="icon-btn" data-act="close" title="Close">✕</button></div>
+      el.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="oaTitle">
+        ${MB.modalCloseHtml}<h2 id="oaTitle">Download area for offline use</h2>
         <p class="note">Current view, <b>${esc(currentBasemapName())}</b>.${community ? ' Volunteer-run server: capped at ' + cap.toLocaleString() + ' tiles; use a keyed provider for large areas.' : ''}</p>
         <div class="row"><label>Name</label><input type="text" id="oaName" value="${esc(existing ? existing.name : 'Area ' + (this.areas.length + 1))}"></div>
         <div class="row"><label>Min zoom</label><input type="range" id="oaMin" min="${Math.max(2, zNow - 6)}" max="${maxZ}" value="${existing ? existing.zMin : Math.max(2, zNow - 2)}"><span class="val" id="oaMinVal"></span></div>
@@ -218,7 +218,7 @@ window.MB = window.MB || {};
       $('#oaMin').addEventListener('input', update); $('#oaMax').addEventListener('input', update);
       update();
       const close = () => { if (this.job) this.cancel(); el.remove(); };
-      el.addEventListener('click', e => { if (e.target === el || (e.target.dataset && e.target.dataset.act === 'close')) close(); });
+      el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-act="close"]')) close(); });
       $('#oaStart').addEventListener('click', async () => {
         const { zMin, zMax, tiles } = update();
         $('#oaStart').disabled = true; $('#oaMin').disabled = true; $('#oaMax').disabled = true;
