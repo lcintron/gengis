@@ -532,7 +532,8 @@ window.MB = window.MB || {};
       const tog = (k, label, title) => `<button type="button" class="tog${st[k] ? ' on' : ''}" data-toggle="${k}" title="${title}">${label}</button>`;
       const seg = (k, opts) => `<div class="seg small" data-set="${k}">${opts.map(o => `<button type="button" data-v="${o[0]}"${(st[k] || '') === o[0] ? ' class="active"' : ''} title="${o[2] || o[1]}">${o[1]}</button>`).join('')}</div>`;
       html += `<div class="section"><h3>Text</h3>
-        <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><input type="range" data-k="textSize" min="8" max="64" step="1" value="${st.textSize}"><span class="val" data-val="textSize">${st.textSize}px</span></div>
+        <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><input type="range" data-k="textSize" min="8" max="64" step="1" value="${MB.textShownSize(st)}"><span class="val" data-val="textSize">${MB.textShownSize(st)}px</span></div>
+        <div class="row" title="Fixed pixels: the same size at every zoom. Scale with map: grows and shrinks with the map, like a label printed on it"><label>Sizing</label>${seg('textScale', [['screen', 'Fixed pixels'], ['map', 'Scale with map']])}</div>
         <div class="row"><label>Format</label><div class="tog-group">${tog('textBold', '<b>B</b>', 'Bold')}${tog('textItalic', '<i>I</i>', 'Italic')}${tog('textUnderline', '<u>U</u>', 'Underline')}${tog('textStrike', '<s>S</s>', 'Strikethrough')}</div></div>
         <div class="row"><label>Align</label>${seg('textAlign', [['left', '&#8676;', 'Left'], ['center', '&#8801;', 'Center'], ['right', '&#8677;', 'Right']])}</div>
         <div class="row" title="Which side of the text sits on its map point"><label>Anchor H</label>${seg('textHAnchor', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
@@ -1177,6 +1178,8 @@ window.MB = window.MB || {};
       if (reveal) { MB.ui.showTab('props'); revealRow(l); }
     });
     MB.on('multi-contextmenu', info => MB.menus.multi(info));
+    // a selected text that scales with the map: its size slider follows the zoom
+    MB.map.on('zoomend', () => { const f = MB.selected; if (f && f.mb.type === 'text' && f.mb.style.textScale === 'map') MB.ui.renderProps(); });
     MB.on('featurechange', l => { if (l === MB.selected) MB.ui.renderMeasureBox(); });
     MB.on('project', () => { MB.ui.renderSettings(); MB.ui.renderSvgPanel(); $('#basemapSelect').value = MB.state.basemap; });
     MB.on('poi-request', term => { MB.ui.showTab('places'); setTimeout(() => MB.ui.runPoiSearch(term), 800); });
