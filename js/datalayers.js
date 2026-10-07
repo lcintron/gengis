@@ -10,7 +10,7 @@ window.MB = window.MB || {};
   const esc = MB.escapeHtml;
   const FAA = 'https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/';
   const CELL = 0.5;            // degrees
-  const MAX_CELLS = 24;        // refuse to load when the view spans more cells than this
+  const MAX_CELLS = 24;        // refuse to load when the view spans more cells than this (a dataset's maxCells: its own)
   const MAX_CACHED_LAYERS = 80; // in-memory cells kept per dataset (LRU)
   const CACHE_REV = 2;          // part of every stored cell's key; bump when what a cell holds changes (2: detail follows the zoom)
   // Detail follows the zoom. The FAA polygons carry thousands of vertices each at 10 cm precision: far more than
@@ -90,7 +90,9 @@ window.MB = window.MB || {};
 
   /* ---------- catalog ---------- */
   const ESRI = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/';
-  const boundaryStyle = (color, weight, dash) => () => ({ color, weight, opacity: .85, fill: false, dashArray: dash || null, lineJoin: 'round' });
+  // A border: a light line on a dark casing (buildBorders draws the casing under it), seen on imagery and light maps.
+  const boundaryStyle = (color, weight, dash) => () => ({ color, weight, opacity: .95, fill: false, dashArray: dash || null, lineJoin: 'round',
+    casing: { color: '#0b1118', weight: weight + 2.5, opacity: .55 } });
   // A simplification tolerance (degrees) of half a pixel at zoom z, at latitudes up to about 55 degrees: what the
   // eye cannot tell from the full outline. The FAA layers keep to the same budget (DETAIL).
   const halfPx = z => 0.5 * 360 / (256 * Math.pow(2, z)) * Math.cos(55 * Math.PI / 180);
@@ -114,17 +116,19 @@ window.MB = window.MB || {};
     // the simplified world countries). With the coast gone, the simplified world countries are good enough at every
     // zoom: their land borders are as close as the detailed data's, and their polygons take in lakes, so borders
     // across lakes (US-Canada) are kept. The state outlines stop at the shore: borders across water are not there.
-    { id: 'countries', group: 'Boundaries', name: 'Country borders', minZoom: 0, defaultOn: true, rev: 1,
+    // Borders are shown at every zoom and for any view: they come from Esri's services (not the FAA's metered
+    // quota) and are cached, so a wide view may take up to 200 cells (the whole world is 162 at their 20 degrees).
+    { id: 'countries', group: 'Boundaries', name: 'Country borders', minZoom: 0, maxCells: 200, defaultOn: true, rev: 1,
       borders: p => p.COUNTRY || '',
       levels: [{ maxZoom: 4, whole: true, offset: halfPx(4) }, { maxZoom: 7, cellSize: 20, offset: halfPx(7) }, { cellSize: 10, offset: 0 }],
-      url: ESRI + 'World_Countries_(Generalized)/FeatureServer/0', style: boundaryStyle('#1b1f27', 1.6),
-      label: p => p.COUNTRY || '', fields: ['COUNTRY', 'ISO', 'COUNTRYAFF'], legend: [['Country border', '#1b1f27']], desc: 'Esri Living Atlas. Land borders; coastlines are left to the base map.' },
-    { id: 'admin1', group: 'Boundaries', name: 'State / province borders', minZoom: 0, maxZoom: 13, defaultOn: true, rev: 1,
+      url: ESRI + 'World_Countries_(Generalized)/FeatureServer/0', style: boundaryStyle('#ffffff', 2),
+      label: p => p.COUNTRY || '', fields: ['COUNTRY', 'ISO', 'COUNTRYAFF'], legend: [['Country border', '#ffffff']], desc: 'Esri Living Atlas. Land borders at every zoom; coastlines are left to the base map.' },
+    { id: 'admin1', group: 'Boundaries', name: 'State / province borders', minZoom: 0, maxCells: 200, defaultOn: true, rev: 1,
       borders: p => (p.NAME || '') + '|' + (p.COUNTRY || ''),
       levels: [{ maxZoom: 3, whole: true, offset: halfPx(3) }, { maxZoom: 5, cellSize: 20, offset: halfPx(5) }, { maxZoom: 7, cellSize: 10, offset: halfPx(7) }, { cellSize: 5, offset: 0 }],
-      url: ESRI + 'World_Administrative_Divisions/FeatureServer/0', style: boundaryStyle('#4a4f5c', 1.1, '5,4'),
-      label: p => p.NAME || '', fields: ['NAME', 'COUNTRY', 'ADMINTYPE', 'ISO_CODE', 'AUTONOMOUS', 'DISPUTED'], legend: [['State / province border (dashed)', '#4a4f5c']],
-      desc: 'States, provinces, regions: land borders, full detail from zoom 8, shown to zoom 13.' },
+      url: ESRI + 'World_Administrative_Divisions/FeatureServer/0', style: boundaryStyle('#d6dde8', 1.4, '6,4'),
+      label: p => p.NAME || '', fields: ['NAME', 'COUNTRY', 'ADMINTYPE', 'ISO_CODE', 'AUTONOMOUS', 'DISPUTED'], legend: [['State / province border (dashed)', '#d6dde8']],
+      desc: 'States, provinces, regions: land borders at every zoom, full detail from zoom 8.' },
     { id: 'fria', group: 'Remote ID', name: 'FAA-Recognized Identification Areas (FRIA)', minZoom: 7, cellSize: 1,
       source: 'faa', url: FAA + 'FAA_Recognized_Identification_Areas/FeatureServer/0', style: solid('#2ecc71', .25),
       label: p => p.title || p.orgName || 'FRIA', fields: ['title', 'orgName', 'address1', 'city', 'state', 'zipcode', 'startDate', 'endDate', 'refNumber'],
@@ -324,6 +328,7 @@ window.MB = window.MB || {};
 
     disable(id) {
       const ds = this.sets[id];
+      if (ds && this.picked && this.picked.ds === ds) this.pick(null);
       if (!ds || !ds.enabled) return;
       ds.enabled = false;
       if (ds.group) { MB.map.removeLayer(ds.group); ds.group.clearLayers(); }
@@ -453,8 +458,9 @@ window.MB = window.MB || {};
           return;
         }
         const level = this.levelFor(ds.def, zoom);
-        const cells = level.whole ? [{ key: 'all', bounds: L.latLngBounds([-90, -180], [90, 180]) }] : cellsFor(bounds, level.cellSize);
-        if (cells.length > MAX_CELLS) { ds.status = 'View too large: zoom in'; return; }
+        const max = ds.def.maxCells || MAX_CELLS;
+        const cells = level.whole ? [{ key: 'all', bounds: L.latLngBounds([-90, -180], [90, 180]) }] : cellsFor(bounds, level.cellSize, max);
+        if (cells.length > max) { ds.status = 'View too large: zoom in'; return; }
         const prefix = 'L' + level.idx + ':';
         cells.forEach(cell => {
           const c = ds.cells.get(prefix + cell.key);
@@ -480,8 +486,9 @@ window.MB = window.MB || {};
       const zoom = MB.map.getZoom(), view = MB.map.getBounds();
       if (zoom < ds.def.minZoom || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) { ds.cells.forEach(c => hideCell(ds, c)); return; }
       const level = this.levelFor(ds.def, zoom), prefix = 'L' + level.idx + ':';
-      const cells = level.whole ? [{ key: 'all' }] : cellsFor(view, level.cellSize);
-      if (cells.length > MAX_CELLS) return; // view too large for this dataset: leave what is shown
+      const max = ds.def.maxCells || MAX_CELLS;
+      const cells = level.whole ? [{ key: 'all' }] : cellsFor(view, level.cellSize, max);
+      if (cells.length > max) return; // view too large for this dataset: leave what is shown
       const need = cells.map(c => prefix + c.key), needed = new Set(need);
       // out of view: this level's cells at once, another level's as soon as they no longer touch the view
       ds.cells.forEach((c, key) => { if (c.shown && !needed.has(key) && (key.startsWith(prefix) || !view.intersects(c.bounds))) hideCell(ds, c); });
@@ -567,8 +574,8 @@ window.MB = window.MB || {};
     });
   };
 
-  function cellsFor(bounds, size) {
-    size = size || CELL;
+  function cellsFor(bounds, size, max) {
+    size = size || CELL; max = max || MAX_CELLS;
     const out = [];
     const s = Math.max(-90, Math.floor(bounds.getSouth() / size) * size), n = Math.min(90, bounds.getNorth());
     const w = Math.max(-180, Math.floor(bounds.getWest() / size) * size), e = Math.min(180, bounds.getEast());
@@ -576,7 +583,7 @@ window.MB = window.MB || {};
       for (let lng = w; lng < e; lng += size) {
         const la = +lat.toFixed(2), lo = +lng.toFixed(2);
         out.push({ key: la + '_' + lo, bounds: L.latLngBounds([la, lo], [la + size, lo + size]) });
-        if (out.length > MAX_CELLS + 1) return out;
+        if (out.length > max + 1) return out;
       }
     }
     return out;
@@ -903,9 +910,11 @@ window.MB = window.MB || {};
       }
       flush();
     }));
-    const style = def.style({});
+    const style = def.style({}), casing = style.casing;
     const lines = [];
     pairs.forEach(p => {
+      // the casing first (drawn under the line), solid, not clickable
+      if (casing) lines.push(L.polyline(p.lines, Object.assign({ fill: false, lineJoin: 'round' }, casing, { pane: 'mb-data', renderer: dataRenderer(), pmIgnore: true, interactive: false })));
       const line = L.polyline(p.lines, Object.assign({}, style, { pane: 'mb-data', renderer: dataRenderer(), pmIgnore: true, interactive: true }));
       const names = [p.a.label, p.b.label].filter(Boolean);
       if (names.length) line.bindTooltip(names.join(' / '), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
@@ -1231,7 +1240,7 @@ window.MB = window.MB || {};
       d.addEventListener('mouseenter', () => highlight(h));
       d.addEventListener('mouseleave', () => { if (pinned) highlight(pinned); else clearHighlight(); });
       d.addEventListener('toggle', () => {
-        if (d.open) { pinned = h; highlight(h); return; }
+        if (d.open) { pinned = h; highlight(h); if (!h.own) MB.data.pick(h); return; }
         if (pinned !== h) return;
         const still = Array.from(root.querySelectorAll('details.mb-ident[open]')).pop(); // fall back to another entry that is still expanded
         pinned = still ? hits[+still.dataset.i] : null;
@@ -1246,8 +1255,82 @@ window.MB = window.MB || {};
       }).catch(err => { const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.textContent = 'Frequencies unavailable: ' + err.message; if (popup.isOpen()) popup.update(); } });
     });
     if (pinned) highlight(pinned);
+    // Properties shows the expanded entry, or the top-most data feature (not over a selected object of one's own)
+    const shown = pinned && !pinned.own ? pinned : hits.find(h => !h.own);
+    if (shown && !own.length) MB.data.pick(shown);
     return true;
   };
+
+  /* ---------- a data feature in Properties ----------
+   * The feature expanded in the identify popup is described in the Layers tab's Properties: where it comes from,
+   * its geometry and measurements, and all its attributes. */
+
+  MB.data.picked = null;
+  MB.data.pick = function (h) {
+    const was = this.picked;
+    if (!h && !was) return;
+    if (h && MB.selected) MB.deselect(); // Properties shows one thing: the data feature now
+    this.picked = h ? { ds: h.ds, layer: h.layer, layers: h.layers || [h.layer], props: h.props, html: describe(h) } : null;
+    MB.emit('datapick', this.picked);
+  };
+
+  const PUBLISHERS = { faa: 'FAA UAS Data Delivery System (UDDS)', esri: 'Esri Living Atlas of the World' };
+  // Fields that are the service's bookkeeping, not data: object ids, global ids, and the service's own shape
+  // measurements (in Web Mercator units, not true ones).
+  const BOOKKEEPING = /^(OBJECTID|FID|GLOBAL_?ID|Shape__|Shape_(Area|Length|Leng)$|SHAPE_(AREA|LEN))/i;
+
+  function describe(h) {
+    const ds = h.ds, def = ds.def, p = h.props || {};
+    const row = (k, v, title) => v == null || v === '' ? '' : `<tr${title ? ` title="${esc(title)}"` : ''}><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`;
+    const date = v => v && v !== 'offline' ? new Date(v).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+    let label = '';
+    try { label = def.label ? String(def.label(p)) : firstText(p); } catch (e) { /* ignore */ }
+
+    // the source
+    const publisher = def.custom ? 'Custom ArcGIS layer' : PUBLISHERS[def.source || (def.group === 'Boundaries' ? 'esri' : '')] || '';
+    const service = (ds.meta && ds.meta.serviceName) || ((def.url || '').match(/services\/([^/]+)\/(?:Feature|Map)Server/) || [])[1] || '';
+    let host = '';
+    try { host = def.custom ? new URL(def.url).hostname : ''; } catch (e) { /* ignore */ }
+    const src = [row('Dataset', def.name), row('Publisher', publisher), row('Host', host), row('Service', service.replace(/_/g, ' ')),
+      row('Category', def.group), row('Source updated', date(ds.meta && ds.meta.lastEdit)), row('Last checked', date(ds.meta && ds.meta.checkedAt)),
+      row('Coordinates', 'WGS 84 (EPSG:4326)')].join('');
+
+    // the geometry: what is loaded now (generalized when zoomed out)
+    const geo = (h.layer.feature && h.layer.feature.geometry) || {};
+    const kinds = { Polygon: 'Polygon', MultiPolygon: 'Multipart polygon', LineString: 'Line', MultiLineString: 'Multipart line', Point: 'Point', MultiPoint: 'Multipoint' };
+    const parts = /^Multi/.test(geo.type) ? (geo.coordinates || []).length : 1;
+    let vertices = 0;
+    const count = c => { if (typeof c[0] === 'number') vertices++; else c.forEach(count); };
+    try { count(geo.coordinates || []); } catch (e) { /* ignore */ }
+    let measures = '', where = '';
+    try {
+      const l = h.layer;
+      if (l instanceof L.Polygon) {
+        const ll = l.getLatLngs(), outer = ll.map(x => MB.isLatLng(x[0]) ? x : x[0]); // each part's outer ring
+        measures = row('Area', MB.formatArea(MB.polygonArea(ll))) + row('Perimeter', MB.formatDistance(MB.pathLength(MB.isLatLng(ll[0]) ? ll : outer, true)));
+      } else if (l instanceof L.Polyline) measures = row('Length', MB.formatDistance(MB.pathLength(l.getLatLngs())));
+      if (l.getBounds) {
+        const b = l.getBounds(), c = b.getCenter();
+        where = row('Center', MB.formatLatLng(c)) +
+          row('Extent', `N ${b.getNorth().toFixed(4)}, S ${b.getSouth().toFixed(4)}, E ${b.getEast().toFixed(4)}, W ${b.getWest().toFixed(4)}`, 'Bounding box, degrees') +
+          row('Size', `${MB.formatDistance(L.latLng(c.lat, b.getWest()).distanceTo(L.latLng(c.lat, b.getEast())))} × ${MB.formatDistance(L.latLng(b.getSouth(), c.lng).distanceTo(L.latLng(b.getNorth(), c.lng)))}`, 'Bounding box, east-west × north-south');
+      } else if (l.getLatLng) where = row('Position', MB.formatLatLng(l.getLatLng()));
+    } catch (e) { /* ignore */ }
+    const level = MB.data.levelFor(def, MB.map.getZoom());
+    const generalized = level && level.offset > 0;
+    const geom = row('Geometry', kinds[geo.type] || geo.type) + (parts > 1 ? row('Parts', parts) : '') + row('Vertices', vertices ? vertices.toLocaleString() : '') + measures + where;
+
+    // the attributes: the dataset's chosen fields first, then the rest, then what is worked out from them
+    const keys = (def.fields || []).filter(k => k in p).concat(Object.keys(p).filter(k => !(def.fields || []).includes(k))).filter(k => !BOOKKEEPING.test(k));
+    let attrs = keys.map(k => row(k, fmtVal(k, p[k]))).join('');
+    if (def.rows) { try { attrs += def.rows(p).map(([k, v]) => row(k, v)).join(''); } catch (e) { /* ignore */ } }
+
+    return `<div class="panel-head"><h3>${esc(def.name)}</h3><span class="badge">data</span><button type="button" class="icon-btn mini" data-act="close-data" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
+      ${label ? `<div class="data-pick-label">${esc(label)}</div>` : ''}
+      <div class="section"><h3>Source</h3><table class="mb-datatable">${src}</table>${/^https?:\/\//i.test(def.url || '') ? `<div class="btn-row"><a class="btn small" href="${esc(def.url)}" target="_blank" rel="noopener" title="The service's description, fields and extent">Service page</a></div>` : ''}</div>
+      <div class="section"><h3>Geometry</h3><table class="mb-datatable">${geom}</table>${generalized ? '<p class="note">Measured on the outline loaded at this zoom, simplified for display: zoom in for full detail.</p>' : ''}</div>
+      <div class="section"><h3>Attributes</h3>${attrs ? `<table class="mb-datatable">${attrs}</table>` : '<p class="note">No attributes.</p>'}</div>`;
+  }
 
   /* ---------- panel ---------- */
   MB.data.ui = { q: '', filter: 'all', closed: new Set() };
@@ -1386,7 +1469,7 @@ window.MB = window.MB || {};
       e.preventDefault();
       const f = e.target.elements;
       const url = f.url.value.trim();
-      if (!/FeatureServer\/\d+/i.test(url)) { MB.toast('URL must end with /FeatureServer/<layer id>'); return; }
+      if (!/^https?:\/\//i.test(url) || !/FeatureServer\/\d+/i.test(url)) { MB.toast('URL must be a web address (https://…) ending with /FeatureServer/<layer id>'); return; }
       MB.settings.dataServices = MB.settings.dataServices || [];
       const entry = { id: MB.uid(), name: f.name.value.trim(), url, color: f.color.value, minZoom: +f.minZoom.value || 8, point: f.point.checked };
       MB.settings.dataServices.push(entry);

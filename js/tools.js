@@ -9,16 +9,20 @@ window.MB = window.MB || {};
     current: 'select',
     shapes: { marker: 'Marker', text: 'Text', line: 'Line', polygon: 'Polygon', rectangle: 'Rectangle', circle: 'Circle' },
 
+    // The tools that pick objects on the map (rather than add them): Select edits, Move drags, Scale resizes.
+    picks(name) { return name === 'select' || name === 'move' || name === 'scale'; },
+
     set(name) {
       if (name === this.current && name !== 'select') name = 'select';
       MB.map.pm.disableDraw();
       MB.measure.stop();
       MB.svgPlace.stop();
-      const keep = (name === 'select' || name === 'move') ? MB.selected : null;
+      const keep = MB.tools.picks(name) ? MB.selected : null;
       if (keep) MB.deselect();
       this.current = name;
-      MB.map.getContainer().classList.toggle('mb-crosshair', name !== 'select' && name !== 'move');
+      MB.map.getContainer().classList.toggle('mb-crosshair', !MB.tools.picks(name));
       MB.map.getContainer().classList.toggle('mb-move', name === 'move');
+      MB.map.getContainer().classList.toggle('mb-scale-tool', name === 'scale');
       if (keep) MB.selectFeature(keep); // re-select so edit vs. drag-only mode matches the tool
       if (this.shapes[name]) { MB.deselect(); this.startDraw(name); }
       else if (name === 'measure-distance') { MB.deselect(); MB.measure.start('distance'); }
@@ -115,7 +119,8 @@ window.MB = window.MB || {};
       MB.map.on('click', e => {
         if (this.current === 'text' && this.textWaits) { MB.noteHiddenText(); return; }
         if (e.originalEvent && e.originalEvent.shiftKey) return; // keep a multi-selection while shift is held
-        if (this.current === 'select') MB.deselect();
+        if (this.current === 'select') { MB.deselect(); MB.data.pick(null); }
+        else if (this.current === 'scale') MB.deselect();
       });
       MB.on('layers', () => this.refreshDraw()); // the active layer, or whether it is shown, changed
       // Geoman's text tool re-arms itself when a text box loses focus while drawing continues: not while it waits

@@ -220,4 +220,4 @@ function register() {
   });
 }
 
-module.exports = { register, APP_PAGE };
+module.exports = { register, APP_PAGE, trusted };

@@ -25,7 +25,20 @@ window.MB = window.MB || {};
   /* ---------- event bus ---------- */
   const listeners = {};
   MB.on = function (ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); };
-  MB.emit = function (ev, data) { (listeners[ev] || []).forEach(fn => { try { fn(data); } catch (e) { console.error(e); } }); };
+  // 'layers' and 'features' only say "show the layers / objects again": inside MB.batch (a project loaded, an undo,
+  // an import) they are held and sent once at its end, not once per object.
+  const HOLDABLE = ['layers', 'features'], held = new Set();
+  let batching = 0;
+  MB.emit = function (ev, data) {
+    if (batching && data === undefined && HOLDABLE.includes(ev)) { held.add(ev); return; }
+    (listeners[ev] || []).forEach(fn => { try { fn(data); } catch (e) { console.error(e); } });
+  };
+  MB.batch = function (fn) {
+    batching++;
+    try { return fn(); } finally {
+      if (!--batching) { const evs = HOLDABLE.filter(ev => held.has(ev)); held.clear(); evs.forEach(ev => MB.emit(ev)); }
+    }
+  };
 
   /* ---------- basemaps (no API keys required) ---------- */
   MB.basemaps = {
@@ -261,7 +274,10 @@ window.MB = window.MB || {};
   };
 
   /* ---------- history (undo / redo) ---------- */
-  const history = { undo: [], redo: [], max: 80 };
+  // At most 80 steps, and at most about 64 MB of them (characters of project JSON; a change empties redo, so this is
+  // all of them): a large project keeps fewer steps rather than hundreds of megabytes of copies. The current state
+  // is always kept.
+  const history = { undo: [], redo: [], max: 80, maxChars: 64 * 1024 * 1024 };
   MB.history = history;
 
   MB.commit = function (label) {
@@ -269,8 +285,9 @@ window.MB = window.MB || {};
     const top = history.undo[history.undo.length - 1];
     if (top && top.json === json) return;
     history.undo.push({ json, label: label || '' });
-    if (history.undo.length > history.max) history.undo.shift();
     history.redo.length = 0;
+    let chars = history.undo.reduce((s, h) => s + h.json.length, 0);
+    while (history.undo.length > 1 && (history.undo.length > history.max || chars > history.maxChars)) chars -= history.undo.shift().json.length;
     MB.emit('history');
     MB.autosave();
   };

@@ -6,7 +6,8 @@ window.MB = window.MB || {};
   MB.defaultStyle = {
     color: '#e4572e', weight: 3, opacity: 1, dash: 'solid',
     fill: true, fillColor: '#e4572e', fillOpacity: 0.25,
-    textColor: '#ffffff', textSize: 14, textBg: '#1b1f27', textBgOn: true,
+    textColor: '#ffffff', textSize: 14, textBg: '#1b1f27', textBgOn: true, textBgOpacity: 1, textFont: 'default',
+    textShadowOn: true, textShadowColor: '#000000', textShadowOpacity: 0.6, textShadowBlur: 2, textShadowOffset: 0,
     textBold: false, textItalic: false, textUnderline: false, textStrike: false,
     textAlign: 'center', textHAnchor: 'center', textVAnchor: 'middle',
     textScale: 'screen' // 'screen': the same size at every zoom; 'map': grows and shrinks with the map (textSize at textRefZoom)
@@ -43,6 +44,26 @@ window.MB = window.MB || {};
   }
   MB.newShapeStyle = take => withNextColor(MB.currentStyle, take);
   MB.newMeasureStyle = take => withNextColor(MB.measureStyle, take);
+
+  // The fonts a text can use: web-safe ones, found on every desktop and phone without downloading anything.
+  MB.textFonts = {
+    default: ['Default', 'var(--font)'],
+    arial: ['Arial', 'Arial, Helvetica, sans-serif'],
+    verdana: ['Verdana', 'Verdana, Geneva, sans-serif'],
+    trebuchet: ['Trebuchet MS', '"Trebuchet MS", Helvetica, sans-serif'],
+    georgia: ['Georgia', 'Georgia, serif'],
+    times: ['Times New Roman', '"Times New Roman", Times, serif'],
+    courier: ['Courier New', '"Courier New", Courier, monospace'],
+    impact: ['Impact', 'Impact, "Arial Black", sans-serif']
+  };
+
+  // '#rrggbb' at an opacity, as css
+  MB.rgba = function (hex, a) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return hex;
+    const n = parseInt(m[1], 16);
+    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a == null ? 1 : +a})`;
+  };
 
   MB.dashStyles = {
     solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted', dashdot: 'Dash-dot', longdash: 'Long dash'
@@ -104,6 +125,7 @@ window.MB = window.MB || {};
     MB.applyStyle(layer, {}, { noCommit: true });
     bindFeatureEvents(layer);
     MB.updateTooltip(layer);
+    if (layer.mb.name && MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(layer); // its name on hover (opened, imported, undone)
     if (!shownNow(layer)) { removeSegLabels(layer); g.removeLayer(layer); MB.updateLabel(layer); }
     hookZoom();
     MB.applyZOrderSoon();
@@ -278,7 +300,7 @@ window.MB = window.MB || {};
     layer._mbBound = true;
     layer.on('click', e => {
       const t = MB.tools.current;
-      if (t !== 'select' && t !== 'move' && t !== 'present') return;
+      if (!MB.tools.picks(t) && t !== 'present') return;
       const shift = e.originalEvent && e.originalEvent.shiftKey;
       if (t !== 'present' && !MB.isFeatureLocked(layer)) {
         L.DomEvent.stopPropagation(e);
@@ -289,7 +311,7 @@ window.MB = window.MB || {};
       // Objects draw above the data layers, so the data under one is only reachable from here: the same popup as
       // a click on the data, with the objects at this point listed first. Nothing opens where there is no data, nor
       // with the Move tool (a click there ends a drag).
-      if (shift || t === 'move' || !MB.data || !MB.data.identify) return;
+      if (shift || t === 'move' || t === 'scale' || !MB.data || !MB.data.identify) return;
       // where the pointer was: a marker's event carries its anchor (a keyboard activation has no pointer)
       const oe = e.originalEvent, pointer = oe && oe.clientX != null && (oe.clientX || oe.clientY);
       const latlng = pointer ? MB.map.mouseEventToLatLng(oe) : e.latlng, cp = pointer ? MB.map.mouseEventToContainerPoint(oe) : e.containerPoint;
@@ -299,7 +321,7 @@ window.MB = window.MB || {};
     layer.on('pm:unsnap pm:markerdragend pm:dragend', () => MB.snap.hide());
     layer.on('contextmenu', e => {
       if (MB.presenter && MB.presenter.active) return;
-      if (MB.tools.current !== 'select' && MB.tools.current !== 'move') return;
+      if (!MB.tools.picks(MB.tools.current)) return;
       const tgt = e.originalEvent && e.originalEvent.target;
       if (tgt && tgt.tagName === 'TEXTAREA' && !tgt.readOnly && document.activeElement === tgt) return; // native menu while typing
       L.DomEvent.stop(e);
@@ -391,13 +413,17 @@ window.MB = window.MB || {};
     const st = layer.mb.style;
     const ta = layer.pm && layer.pm.textArea;
     if (!ta) return;
+    const v = k => (st[k] == null ? MB.defaultStyle[k] : st[k]); // texts made before a setting existed get its default
     if (st.textScale === 'map' && st.textRefZoom == null) st.textRefZoom = zoomNow(); // placed while scaling with the map
     if (!zoomHooked && MB.map) { MB.map.on('zoom zoomend', rescaleTexts); zoomHooked = true; }
     ta.style.color = st.textColor;
     ta.style.fontSize = st.textSize + 'px';
     ta.style.lineHeight = '1.2';
-    ta.style.background = st.textBgOn ? st.textBg : 'transparent';
+    ta.style.background = st.textBgOn ? MB.rgba(st.textBg, v('textBgOpacity')) : 'transparent';
     ta.style.padding = st.textBgOn ? '2px 6px' : '0';
+    ta.style.fontFamily = (MB.textFonts[v('textFont')] || MB.textFonts.default)[1];
+    const off = +v('textShadowOffset') || 0;
+    ta.style.textShadow = v('textShadowOn') ? `${off}px ${off}px ${+v('textShadowBlur') || 0}px ${MB.rgba(v('textShadowColor'), v('textShadowOpacity'))}` : 'none';
     ta.style.borderRadius = '4px';
     ta.style.fontWeight = st.textBold ? '700' : '500';
     ta.style.fontStyle = st.textItalic ? 'italic' : 'normal';
@@ -519,6 +545,7 @@ window.MB = window.MB || {};
     const moveOnly = MB.tools.current === 'move';
     const editable = !MB.isFeatureLocked(layer) && MB.map.hasLayer(layer);
     if (!editable) { /* locked or hidden: selectable for the Properties panel only */ }
+    else if (MB.tools.current === 'scale') MB.scaler.attach(layer); // a box with handles, no vertex editing or dragging
     else if (t === 'svg') {
       if (layer.dragging) layer.dragging.enable();
       if (layer.setBounds) addGroundHandle(layer);
@@ -540,6 +567,7 @@ window.MB = window.MB || {};
     const l = MB.selected;
     if (!l) { if (hadMulti) MB.emit('selection', null); return; }
     MB.selected = null;
+    MB.scaler.detach();
     try { if (l.pm && l.pm.enabled && l.pm.enabled()) l.pm.disable(); } catch (e) { /* ignore */ }
     try { if (l.pm && l.pm.layerDragEnabled && l.pm.layerDragEnabled()) l.pm.disableLayerDrag(); } catch (e) { /* ignore */ }
     if (l.mb && l.mb.type === 'svg') {

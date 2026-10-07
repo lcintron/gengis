@@ -124,6 +124,10 @@ window.MB = window.MB || {};
           MB.tools.set(MB.tools.current === 'move' ? 'select' : 'move');
           MB.selectFeature(layer);
         } },
+        ...(MB.canScale(layer) && MB.tools.current !== 'scale' ? [{ label: 'Resize (Scale tool)', hint: 'K', disabled: locked, action: () => {
+          MB.tools.set('scale');
+          MB.selectFeature(layer);
+        } }] : []),
         { sep: true }
       );
       if (m.type !== 'svg') {
@@ -157,6 +161,7 @@ window.MB = window.MB || {};
         { sep: true },
         { label: 'Join lines', disabled: lines.length < 1, hint: lines.length + ' line' + (lines.length === 1 ? '' : 's'), action: () => MB.joinLines(MB.multi) },
         { label: 'Create polygon from lines (keep lines)', disabled: lines.length < 1, action: () => MB.joinLines(MB.multi, { keepLines: true }) },
+        ...(list.filter(MB.isJoinableShape).length >= 2 ? [{ label: 'Join shapes', disabled: !MB.shapeUnion(list).polygon, action: () => MB.joinShapes(MB.multi) }] : []),
         { sep: true },
         { label: 'Move to layer', children: MB.state.layers.slice().reverse().map(l => ({ label: l.name, action: () => MB.moveMultiToLayer(l.id) })) },
         { label: 'Copy coordinates', hint: MB.formatLatLng(info.latlng, 5), action: () => MB.copyText(MB.formatLatLng(info.latlng, 6)) },

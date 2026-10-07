@@ -10,6 +10,7 @@ window.MB = window.MB || {};
   const toolHints = {
     select: '',
     move: 'Click an object, then drag it to move it. Use Select to edit vertices.',
+    scale: 'Click an object, then drag a handle to resize it. Shift keeps its proportions, Alt resizes from its center, Esc puts it back.',
     marker: 'Click the map to place a marker.',
     text: 'Click the map to place a text label, type your text, then click elsewhere.',
     line: 'Click to add points. Double-click (or click the last point) to finish. Click the first point to close it into a polygon.',
@@ -274,6 +275,7 @@ window.MB = window.MB || {};
   // Point at a hidden layer: its row in the Layers panel, and the warning under the toolbar, pulse.
   function flashHidden(layer) {
     setTimeout(() => {
+      MB.ui.flushLayers();
       [$(`#layerScroll .layer-node[data-id="${CSS.escape(layer.id)}"]`), $('#toolHint .hint-warn')].forEach(el => {
         if (!el) return;
         el.classList.remove('flash-hidden'); void el.offsetWidth; el.classList.add('flash-hidden');
@@ -319,6 +321,7 @@ window.MB = window.MB || {};
     $('#propsToggle').addEventListener('click', () => MB.ui.setPropsOpen($('#propsSection').classList.contains('closed')));
     $('#addLayerBtn').addEventListener('click', () => { MB.createLayer(); MB.commit('add layer'); MB.ui.setLayersOpen(true); });
     initDivider();
+    initLayerList();
     // A button pressed while a name is being edited in the list: the field keeps focus until the click (its blur
     // redraws the list, which would take the button away first), then the name is saved and the button does its job.
     const editing = () => $('#layerScroll .fname input, #layerScroll .layer-name input');
@@ -393,6 +396,7 @@ window.MB = window.MB || {};
 
   // Scroll the layer list to an object's row (or the first selected one), if it is out of view.
   function revealRow(f) {
+    MB.ui.flushLayers();
     const row = f && f.mb ? $(`#layerScroll .obj-item[data-fid="${CSS.escape(f.mb.id)}"]`) : $('#layerScroll .obj-item.selected');
     if (row) row.scrollIntoView({ block: 'nearest' });
   }
@@ -419,6 +423,20 @@ window.MB = window.MB || {};
     edit: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>'
   };
 
+  // The list's icons are css masks (one rule each, made here from the drawings above), not inline drawings: hundreds of
+  // rows with five buttons each would otherwise carry, parse and lay out thousands of svg elements on every redraw.
+  (function iconMasks() {
+    const css = Object.keys(icons).map(k => {
+      const svg = icons[k].replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ').replace(/currentColor/g, '#000');
+      const url = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+      return `.mbi-${k} { -webkit-mask-image: ${url}; mask-image: ${url}; }`;
+    }).join('\n');
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.appendChild(style);
+    Object.keys(icons).forEach(k => { icons[k] = `<i class="mbi mbi-${k}" aria-hidden="true"></i>`; });
+  })();
+
   MB.ui.collapsed = MB.ui.collapsed || new Set();
 
   function objectLabel(f) {
@@ -444,7 +462,26 @@ window.MB = window.MB || {};
     </div>`;
   }
 
+  // Redraws asked for by events (objects, layers, history, zoom display) are merged into one per frame: a burst of
+  // them (an edit and its history entry, a selection change) costs one redraw. A direct redraw drops the pending one.
+  let listFrame = 0;
+  MB.ui.renderLayersSoon = function () {
+    if (!listFrame) listFrame = requestAnimationFrame(() => { listFrame = 0; MB.ui.renderLayers(); });
+  };
+  // The list as it is now (a pending redraw done), before its rows are looked up.
+  MB.ui.flushLayers = function () { if (listFrame) MB.ui.renderLayers(); };
+
+  // The selection's rows marked, without a redraw.
+  function markSelectedRows() {
+    const panel = $('#layerScroll');
+    panel.querySelectorAll('.obj-item.selected').forEach(r => r.classList.remove('selected'));
+    const sel = new Set(MB.multi || []);
+    if (MB.selected) sel.add(MB.selected);
+    sel.forEach(f => { const r = f.mb && panel.querySelector(`.obj-item[data-fid="${CSS.escape(f.mb.id)}"]`); if (r) r.classList.add('selected'); });
+  }
+
   MB.ui.renderLayers = function () {
+    if (listFrame) { cancelAnimationFrame(listFrame); listFrame = 0; }
     const panel = $('#layerScroll');
     const scrollTop = panel.scrollTop;
     const layers = MB.state.layers.slice().reverse(); // top first
@@ -473,57 +510,68 @@ window.MB = window.MB || {};
     html += '</div>';
     panel.innerHTML = html;
     panel.scrollTop = scrollTop;
-
-
-    $$('.layer-item', panel).forEach(item => {
-      const id = item.closest('.layer-node').dataset.id;
-      item.addEventListener('click', e => {
-        const actEl = e.target.closest('[data-act]');
-        const act = actEl && actEl.dataset.act;
-        if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
-        if (act === 'rename-btn') { // the row as it is now: saving another name being edited may have redrawn the list
-          startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`) || item, id); return;
-        }
-        if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
-        else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
-        else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
-        else if (act === 'down') { MB.moveLayer(id, -1); MB.commit('reorder layers'); }
-        else if (act === 'del') {
-          const n = MB.layerFeatureCount(id);
-          if (!n || confirm(`Delete layer "${MB.getLayer(id).name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); }
-        }
-        else { MB.setActiveLayer(id); MB.tools.refreshDraw(); }
-      });
-      $('.layer-name', item).addEventListener('dblclick', e => { e.stopPropagation(); startRename(item, id); });
-    });
-
-    $$('.obj-item', panel).forEach(item => {
-      const fid = item.dataset.fid;
-      item.addEventListener('click', e => {
-        const f = MB.featureLayers[fid];
-        if (!f) return;
-        const actEl = e.target.closest('[data-act]');
-        const act = actEl && actEl.tagName === 'BUTTON' && actEl.dataset.act;
-        if (act === 'vis') MB.setFeatureVisible(fid, f.mb.visible === false);
-        else if (act === 'lock') MB.setFeatureLocked(fid, !f.mb.locked);
-        else if (act === 'up') MB.moveFeature(fid, +1);
-        else if (act === 'down') MB.moveFeature(fid, -1);
-        else if (act === 'del') MB.removeFeature(fid);
-        else {
-          if (MB.tools.current !== 'select' && MB.tools.current !== 'move') MB.tools.set('select');
-          if (e.shiftKey) { selectFromList(f, true); return; }
-          selectFromList(f);
-          const c = MB.featureCenter(f);
-          if (c && !MB.map.getBounds().contains(c)) MB.zoomToFeature(f);
-        }
-      });
-      $('.fname', item).addEventListener('dblclick', e => { e.stopPropagation(); startObjectRename(item, fid); });
-    });
   };
+
+  // The list's clicks: one listener for all its rows, set up once.
+  function initLayerList() {
+    const panel = $('#layerScroll');
+    panel.addEventListener('click', e => {
+      const obj = e.target.closest('.obj-item');
+      if (obj) { objectClick(e, obj); return; }
+      const item = e.target.closest('.layer-item');
+      if (item) layerClick(e, item);
+    });
+    panel.addEventListener('dblclick', e => {
+      const fname = e.target.closest('.obj-item .fname');
+      if (fname) { e.stopPropagation(); const item = fname.closest('.obj-item'); startObjectRename(item, item.dataset.fid); return; }
+      const lname = e.target.closest('.layer-item .layer-name');
+      if (lname) { e.stopPropagation(); const item = lname.closest('.layer-item'); startRename(item, item.closest('.layer-node').dataset.id); }
+    });
+  }
+
+  function layerClick(e, item) {
+    const id = item.closest('.layer-node').dataset.id;
+    const actEl = e.target.closest('[data-act]');
+    const act = actEl && actEl.dataset.act;
+    if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
+    if (act === 'rename-btn') { // the row as it is now: saving another name being edited may have redrawn the list
+      startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`) || item, id); return;
+    }
+    if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
+    else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
+    else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
+    else if (act === 'down') { MB.moveLayer(id, -1); MB.commit('reorder layers'); }
+    else if (act === 'del') {
+      const n = MB.layerFeatureCount(id);
+      if (!n || confirm(`Delete layer "${MB.getLayer(id).name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); }
+    }
+    else { MB.setActiveLayer(id); MB.tools.refreshDraw(); }
+  }
+
+  function objectClick(e, item) {
+    const fid = item.dataset.fid, f = MB.featureLayers[fid];
+    if (!f) return;
+    const actEl = e.target.closest('[data-act]');
+    const act = actEl && actEl.tagName === 'BUTTON' && actEl.dataset.act;
+    if (act === 'vis') MB.setFeatureVisible(fid, f.mb.visible === false);
+    else if (act === 'lock') MB.setFeatureLocked(fid, !f.mb.locked);
+    else if (act === 'up') MB.moveFeature(fid, +1);
+    else if (act === 'down') MB.moveFeature(fid, -1);
+    else if (act === 'del') MB.removeFeature(fid);
+    else {
+      if (!MB.tools.picks(MB.tools.current)) MB.tools.set('select');
+      if (e.shiftKey) { selectFromList(f, true); return; }
+      selectFromList(f);
+      const c = MB.featureCenter(f);
+      if (c && !MB.map.getBounds().contains(c)) MB.zoomToFeature(f);
+    }
+  }
 
   function startObjectRename(item, fid) {
     const f = MB.featureLayers[fid];
     if (!f) return;
+    MB.ui.flushLayers(); // a redraw still to come would take the field away: the row as drawn now
+    item = $(`#layerScroll .obj-item[data-fid="${CSS.escape(fid)}"]`) || item;
     const span = $('.fname', item);
     const cur = f.mb.name || '';
     span.innerHTML = `<input type="text" value="${esc(cur)}" placeholder="${esc(objectLabel(f))}">`;
@@ -543,6 +591,8 @@ window.MB = window.MB || {};
   }
 
   function startRename(item, id) {
+    MB.ui.flushLayers(); // a redraw still to come would take the field away: the row as drawn now
+    item = $(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`) || item;
     const span = $('.layer-name', item);
     const cur = MB.getLayer(id).name;
     span.innerHTML = `<input type="text" value="${esc(cur)}">`;
@@ -556,6 +606,8 @@ window.MB = window.MB || {};
   }
 
   /* ================= style form ================= */
+
+  const PX_KEYS = ['weight', 'textSize', 'textShadowBlur', 'textShadowOffset']; // slider readouts in px (the rest: %)
 
   function styleForm(sections, getStyle, onChange) {
     const st = Object.assign({}, MB.defaultStyle, getStyle()); // defaults fill in fields older objects lack
@@ -582,11 +634,15 @@ window.MB = window.MB || {};
       html += `<div class="section"><h3>Text</h3>
         <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><input type="range" data-k="textSize" min="${Math.max(1, Math.min(8, MB.textShownSize(st)))}" max="${Math.max(64, MB.textShownSize(st))}" step="1" value="${MB.textShownSize(st)}" title="The size it shows at now (a text that scales with the map can be any size)"><span class="val" data-val="textSize">${MB.textShownSize(st)}px</span></div>
         <div class="row" title="Fixed pixels: the same size at every zoom. Scale with map: grows and shrinks with the map, like a label printed on it"><label>Sizing</label>${seg('textScale', [['screen', 'Fixed pixels'], ['map', 'Scale with map']])}</div>
+        <div class="row"><label>Font</label><select data-k="textFont">${Object.keys(MB.textFonts).map(k => `<option value="${k}" style="font-family:${esc(MB.textFonts[k][1])}"${st.textFont === k ? ' selected' : ''}>${MB.textFonts[k][0]}</option>`).join('')}</select></div>
         <div class="row"><label>Format</label><div class="tog-group">${tog('textBold', '<b>B</b>', 'Bold')}${tog('textItalic', '<i>I</i>', 'Italic')}${tog('textUnderline', '<u>U</u>', 'Underline')}${tog('textStrike', '<s>S</s>', 'Strikethrough')}</div></div>
         <div class="row"><label>Align</label>${seg('textAlign', [['left', '&#8676;', 'Left'], ['center', '&#8801;', 'Center'], ['right', '&#8677;', 'Right']])}</div>
         <div class="row" title="Which side of the text sits on its map point"><label>Anchor H</label>${seg('textHAnchor', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
         <div class="row" title="Which side of the text sits on its map point"><label>Anchor V</label>${seg('textVAnchor', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
-        <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}"><span class="grow"></span></div>
+        <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}" title="Background color"><input type="range" data-k="textBgOpacity" min="0" max="1" step="0.05" value="${st.textBgOpacity}" title="Background opacity"><span class="val" data-val="textBgOpacity">${Math.round(st.textBgOpacity * 100)}%</span></div>
+        <div class="row"><label>Shadow</label><input type="checkbox" data-k="textShadowOn"${st.textShadowOn ? ' checked' : ''} title="Show shadow"><input type="color" data-k="textShadowColor" value="${st.textShadowColor}" title="Shadow color"><input type="range" data-k="textShadowOpacity" min="0" max="1" step="0.05" value="${st.textShadowOpacity}" title="Shadow opacity"><span class="val" data-val="textShadowOpacity">${Math.round(st.textShadowOpacity * 100)}%</span></div>
+        <div class="row" title="How soft the shadow is"><label>Shadow blur</label><input type="range" data-k="textShadowBlur" min="0" max="16" step="1" value="${st.textShadowBlur}"><span class="val" data-val="textShadowBlur">${st.textShadowBlur}px</span></div>
+        <div class="row" title="How far the shadow falls below and right of the text"><label>Shadow offset</label><input type="range" data-k="textShadowOffset" min="0" max="10" step="1" value="${st.textShadowOffset}"><span class="val" data-val="textShadowOffset">${st.textShadowOffset}px</span></div>
       </div>`;
     }
     const wrap = document.createElement('div');
@@ -599,7 +655,7 @@ window.MB = window.MB || {};
         else if (inp.type === 'range' || inp.type === 'number') v = +inp.value;
         else v = inp.value;
         const valEl = $(`[data-val="${k}"]`, wrap);
-        if (valEl) valEl.textContent = (k === 'weight' || k === 'textSize') ? v + 'px' : Math.round(v * 100) + '%';
+        if (valEl) valEl.textContent = PX_KEYS.includes(k) ? v + 'px' : Math.round(v * 100) + '%';
         const patch = {}; patch[k] = v;
         onChange(patch);
       };
@@ -625,12 +681,17 @@ window.MB = window.MB || {};
   function renderMulti(panel) {
     const list = Array.from(MB.multi);
     const lines = list.filter(l => l.mb.type === 'line' || l.mb.type === 'measure-line');
+    const union = MB.shapeUnion(list); // shown when two or more shapes are selected: joinable when they overlap
     panel.innerHTML = `<div class="panel-head"><h3>${list.length} objects selected</h3><button class="btn small ghost" data-act="clear">Clear</button></div>
       <div class="feature-list" style="max-height:180px">${list.map(l => `<div class="feature-item"><span class="swatch" style="background:${l.mb.type === 'svg' ? 'transparent' : l.mb.style.color}"></span><span class="fname">${esc(l.mb.name || MB.typeLabels[l.mb.type])}</span><span class="ftype">${MB.typeLabels[l.mb.type]}</span></div>`).join('')}</div>
       <div class="section" style="margin-top:12px"><h3>Lines (${lines.length})</h3>
         <div class="btn-row"><button class="btn small primary" data-act="join"${lines.length < 1 ? ' disabled' : ''}>Join lines</button><button class="btn small" data-act="poly"${lines.length < 1 ? ' disabled' : ''}>Polygon from lines (keep lines)</button></div>
         <p class="note">Ends must touch. A closed chain becomes a polygon.</p>
       </div>
+      ${union.shapes.length >= 2 ? `<div class="section"><h3>Shapes (${union.shapes.length})</h3>
+        <div class="btn-row"><button class="btn small primary" data-act="join-shapes"${union.polygon ? '' : ' disabled'}>Join shapes</button></div>
+        <p class="note">${union.polygon ? 'Overlapping shapes become one polygon (its style from the first one picked).' : esc(union.error)}</p>
+      </div>` : ''}
       <div class="section"><h3>All selected</h3>
         <div class="row"><label>Move to layer</label><select id="multiLayer"><option value="">— choose —</option>${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div>
         <div class="btn-row"><button class="btn small danger" data-act="delete">Delete ${list.length} objects</button></div>
@@ -640,6 +701,7 @@ window.MB = window.MB || {};
       if (act === 'clear') MB.deselect();
       else if (act === 'join') MB.joinLines(MB.multi);
       else if (act === 'poly') MB.joinLines(MB.multi, { keepLines: true });
+      else if (act === 'join-shapes') MB.joinShapes(MB.multi);
       else if (act === 'delete') MB.deleteMulti();
     }));
     $('#multiLayer', panel).addEventListener('change', e => { if (e.target.value) MB.moveMultiToLayer(e.target.value); });
@@ -651,6 +713,12 @@ window.MB = window.MB || {};
     panel.innerHTML = '';
     $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
+    if (!f && MB.data.picked) { // a data feature picked on the map (datalayers.js)
+      $('#propsSub').textContent = 'data feature';
+      panel.innerHTML = MB.data.picked.html;
+      $('[data-act="close-data"]', panel).addEventListener('click', () => MB.data.pick(null));
+      return;
+    }
     if (!f) {
       panel.innerHTML = `<div class="panel-head"><h3>New shapes</h3><span class="badge" title="Select an object to edit its own style">defaults</span></div>
         <label class="check" title="Each new line, shape, marker and measurement takes the next color of the palette; pick a color below to use that one instead"><input type="checkbox" id="setAutoColor"${MB.state.autoColor !== false ? ' checked' : ''}> A different color for each new object</label>`;
@@ -1026,7 +1094,7 @@ window.MB = window.MB || {};
       all.className = 'btn-row';
       all.innerHTML = `<button class="btn small">Add all ${pois.length} as markers to "${esc(MB.activeLayer().name)}"</button>`;
       all.querySelector('button').addEventListener('click', () => {
-        const added = pois.map(p => addPoi(p, true)).filter(Boolean);
+        const added = MB.batch(() => pois.map(p => addPoi(p, true)).filter(Boolean));
         MB.commit('add pois'); MB.ui.clearPoiResults();
         if (!MB.noteAdded(added[0], added.length)) MB.toast(added.length + ' markers added');
       });
@@ -1065,13 +1133,9 @@ window.MB = window.MB || {};
       </div>
       <div class="section"><h3>Project</h3>
         <div class="btn-row"><button class="btn small" data-act="save">Save to file</button><button class="btn small" data-act="open">Open file</button><button class="btn small" data-act="geojson">Export GeoJSON</button></div>
-        <p class="note" style="margin-top:8px" id="saveWhere"></p>
+        <div class="info-line" id="saveWhere"></div>
         <div id="desktopFilesBox"></div>
-        <div class="btn-row"><button class="btn small" data-act="recent">Recent projects…</button><button class="btn small" id="setPersist" hidden>Keep on this device</button></div>
-        <div class="btn-row"><button class="btn small danger" id="setReset">Reset project</button><button class="btn small ghost" data-act="sources">Data sources</button><button class="btn small ghost" data-act="about">About</button></div>
-      </div>
-      <div class="section"><h3>About</h3>
-        <div class="measure-box"><div><span>Application</span><span>${esc(MB.APP.name)} (${esc(MB.APP.aka)})</span></div><div><span>Version</span><span id="appVersion">${esc(MB.APP.version)}</span></div></div>
+        <div class="btn-row"><button class="btn small" id="setPersist" hidden>Keep on this device</button><button class="btn small danger" id="setReset">Reset project</button></div>
       </div>
       <div class="section"><h3>Services</h3>
         <div class="btn-row"><button class="btn small" data-act="apis" title="Tile providers, API keys, geocoder and Overpass endpoints">Map &amp; search APIs…</button><button class="btn small" data-act="present">Presenter mode</button></div>
@@ -1146,28 +1210,49 @@ window.MB = window.MB || {};
     }
   }
 
+  // An explanation behind an "i" (hover, or a tap on a touch screen), as in the Data panel; its box needs .info-line.
+  const infoTip = text => `<span class="ds-info" tabindex="0" role="img" aria-label="${esc(text)}">i</span><span class="ds-tip" role="tooltip">${esc(text)}</span>`;
+  const fileIcons = {
+    file: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 3h8l4 4v14H6z M14 3v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    folder: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    saveAs: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    choose: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 11v6M9 14h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    reveal: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    resume: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg>',
+    unlink: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 15l-2 2a3 3 0 0 1-4-4l3-3a3 3 0 0 1 4 0M15 9l2-2a3 3 0 0 1 4 4l-3 3a3 3 0 0 1-4 0M4 4l16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    ok: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 12l5 5 9-10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+  };
+  const iconBtn = (attr, key, title) => `<button type="button" class="icon-btn mini" ${attr} title="${esc(title)}" aria-label="${esc(title)}">${fileIcons[key]}</button>`;
+  const baseName = p => String(p || '').split(/[\\/]/).pop();
+
   // Settings -> Project, desktop app: the projects folder and the open project's file. Chrome and Edge: the file
-  // this project is saved to, if one was picked.
+  // this project is saved to, if one was picked. One line each, actions as icons, the explanations behind an "i".
   MB.ui.renderDesktopFiles = function () {
     const box = $('#desktopFilesBox'), F = MB.desktopFiles, B = MB.browserFiles;
     if (!box) return;
     if (!F.available && B.available) {
-      const state = { saving: 'saved a moment after every change', paused: 'paused until you allow it again', conflict: 'changed outside GenGIS: not saved to', denied: 'the browser did not allow saving to it' }[B.state] || '';
-      box.innerHTML = `<div class="desktop-files">
-          <div class="row"><label>File</label><span class="path" title="${esc(B.name || '')}">${B.name ? esc(B.name) + (state ? ' <span class="dim">· ' + esc(state) + '</span>' : '') : '<span class="dim">none: pick one with Save as…</span>'}</span></div>
-          <div class="btn-row"><button class="btn small" data-bf="saveas">Save as…</button>${B.name && B.state !== 'saving' ? '<button class="btn small" data-bf="resume">' + (B.state === 'conflict' ? 'Choose…' : 'Resume saving to file') + '</button>' : ''}${B.name ? '<button class="btn small ghost" data-bf="unlink">Stop saving to this file</button>' : ''}</div>
-          <p class="note">Pick a file once with Save as… (or open one) and this project is also saved to it, a moment after every change. After the browser restarts it asks again before writing.</p>
-        </div>`;
+      const st = { saving: ['ok', 'Saved to it a moment after every change'], paused: ['pause', 'Paused: resume to save to it again'],
+        conflict: ['warn', 'Changed outside GenGIS: not saved to'], denied: ['warn', 'The browser did not allow saving to it'] }[B.state];
+      const resume = B.name && B.state !== 'saving' ? iconBtn('data-bf="resume"', 'resume', B.state === 'conflict' ? 'The file changed outside GenGIS: choose what to do' : 'Resume saving to this file') : '';
+      box.innerHTML = `<div class="desktop-files"><div class="info-line">
+          <span class="file-ic">${fileIcons.file}</span>
+          <span class="file-name"${B.name ? ` title="${esc(B.name)}"` : ''}>${B.name ? esc(B.name) : '<span class="dim">No file</span>'}</span>
+          ${B.name && st ? `<span class="file-state ${esc(B.state)}" title="${esc(st[1])}" role="img" aria-label="${esc(st[1])}">${fileIcons[st[0]]}</span>` : ''}
+          ${resume}${iconBtn('data-bf="saveas"', 'saveAs', 'Save as… (pick a file to keep this project in)')}${B.name ? iconBtn('data-bf="unlink"', 'unlink', 'Stop saving to this file (the file stays as it is)') : ''}
+          ${infoTip('Pick a file with Save as… (or open one) and this project is also saved to it, a moment after every change. After the browser restarts it asks once before writing again.')}
+        </div></div>`;
       const on = (k, fn) => { const b = box.querySelector('[data-bf="' + k + '"]'); if (b) b.addEventListener('click', fn); };
       on('saveas', () => B.saveAs()); on('resume', () => B.resume()); on('unlink', () => B.unlink());
       return;
     }
     if (!F.available) { box.innerHTML = ''; return; }
     box.innerHTML = `<div class="desktop-files">
-        <div class="row"><label>Folder</label><span class="path" title="${esc(F.folder || '')}">${esc(F.folder || '…')}</span></div>
-        <div class="row"><label>This project</label><span class="path" title="${esc(F.file || '')}">${F.file ? esc(F.file) : '<span class="dim">gets a file once it is named or saved</span>'}</span></div>
-        <div class="btn-row"><button class="btn small" data-df="folder">Change folder…</button><button class="btn small" data-df="show">Show in folder</button><button class="btn small" data-df="saveas">Save as…</button></div>
-        <p class="note">Each named project is also kept as a file here, saved a moment after every change.</p>
+        <div class="info-line"><span class="file-ic">${fileIcons.folder}</span><span class="path" title="${esc(F.folder || '')}">${esc(F.folder || '…')}</span>
+          ${iconBtn('data-df="folder"', 'choose', 'Change the projects folder…')}${iconBtn('data-df="show"', 'reveal', 'Show in folder')}</div>
+        <div class="info-line"><span class="file-ic">${fileIcons.file}</span><span class="file-name"${F.file ? ` title="${esc(F.file)}"` : ''}>${F.file ? esc(baseName(F.file)) : '<span class="dim">No file yet</span>'}</span>
+          ${iconBtn('data-df="saveas"', 'saveAs', 'Save as…')}${infoTip('Each named project is also kept as a file in this folder, saved a moment after every change. An untitled map gets one once it is named or saved.')}</div>
       </div>`;
     box.querySelector('[data-df="folder"]').addEventListener('click', () => F.chooseFolder());
     box.querySelector('[data-df="show"]').addEventListener('click', () => F.reveal());
@@ -1178,9 +1263,10 @@ window.MB = window.MB || {};
   MB.ui.renderSaveWhere = function () {
     const p = MB.projects, note = $('#saveWhere'), btn = $('#setPersist');
     if (!note) return;
-    const kept = p.persisted === true ? 'The browser will not clear them to free space.'
-      : (p.persisted === false ? 'The browser may clear them if the device runs low on space: save important projects to a file, or keep them on this device.' : '');
-    note.textContent = 'Projects are saved automatically on this device as you work; reopen them from Recent projects. ' + kept;
+    const kept = p.persisted === true ? ' The browser will not clear them to free space.'
+      : (p.persisted === false ? ' The browser may clear them if the device runs low on space: save important projects to a file, or keep them on this device.' : '');
+    const html = `<span class="note">Saved on this device as you work.</span>${infoTip('Projects are saved automatically on this device as you work; reopen them from Project → Recent projects.' + kept)}`;
+    if (note._html !== html) { note.innerHTML = html; note._html = html; } // a rebuild would close an open tip
     if (btn) btn.hidden = p.persisted !== false;
   };
 
@@ -1233,6 +1319,7 @@ window.MB = window.MB || {};
         if (MB.measure.active && MB.measure.pts.length) { MB.measure.cancel(); return; }
         if (MB.tools.current !== 'select') { MB.tools.set('select'); return; }
         if (MB.selected || (MB.multi && MB.multi.size)) { MB.deselect(); return; }
+        if (MB.data.picked) { MB.data.pick(null); return; }
         MB.search.clearMarker();
         return;
       }
@@ -1247,7 +1334,7 @@ window.MB = window.MB || {};
       if (e.key === 'Enter' && MB.measure.active) { MB.measure.finish(); return; }
       if (e.key === '/') { e.preventDefault(); $('#searchInput').focus(); $('#searchInput').select(); return; }
       if (e.key.toLowerCase() === 'f') { e.preventDefault(); MB.presenter.enter(); return; }
-      const map = { v: 'select', g: 'move', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', d: 'measure-distance', a: 'measure-area' };
+      const map = { v: 'select', g: 'move', k: 'scale', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', d: 'measure-distance', a: 'measure-area' };
       const tool = map[e.key.toLowerCase()];
       if (tool) { e.preventDefault(); MB.tools.set(tool); }
     });
@@ -1271,21 +1358,26 @@ window.MB = window.MB || {};
     MB.ui.renderPlaces();
     MB.ui.renderSettings();
 
-    MB.on('layers', () => { MB.ui.renderLayers(); if (MB.selected) MB.ui.renderProps(); });
-    MB.on('features', () => MB.ui.renderLayers());
+    MB.on('layers', () => { MB.ui.renderLayersSoon(); if (MB.selected) MB.ui.renderProps(); });
+    MB.on('features', () => MB.ui.renderLayersSoon());
+    MB.on('datapick', picked => {
+      MB.ui.renderProps();
+      if (picked && !$('#sidebar').classList.contains('collapsed')) MB.ui.showTab('props'); // a closed panel (the phone's sheet) stays closed
+    });
     MB.on('selection', l => {
+      if (l && MB.data.picked) MB.data.picked = null; // an object of one's own replaces a data feature in Properties
       // Picked on the map (not in the layer list): show its properties and its row, opening its layer if collapsed.
       const reveal = !quietSelect && !!(l || (MB.multi && MB.multi.size > 1));
-      if (reveal && l && l.mb) MB.ui.collapsed.delete(l.mb.layerId);
+      const opened = reveal && l && l.mb && MB.ui.collapsed.delete(l.mb.layerId);
       MB.ui.renderProps();
-      MB.ui.renderLayers();
+      if (opened) MB.ui.renderLayers(); else markSelectedRows(); // a pending redraw marks them too
       if (reveal) { MB.ui.showTab('props'); revealRow(l); }
     });
     MB.on('multi-contextmenu', info => MB.menus.multi(info));
     // a selected text that scales with the map: its size slider follows the zoom
     MB.map.on('zoomend', () => { const f = MB.selected; if (f && f.mb.type === 'text' && f.mb.style.textScale === 'map') MB.ui.renderProps(); });
     // zoom display: the list dims what the zoom hides, the selected object's note says whether it is shown
-    MB.on('zoomdisplay', () => MB.ui.renderLayers());
+    MB.on('zoomdisplay', () => MB.ui.renderLayersSoon());
     MB.map.on('zoomend', () => MB.ui.renderZoomNote());
     MB.on('featurechange', l => { if (l === MB.selected) MB.ui.renderMeasureBox(); });
     MB.on('project', () => { MB.ui.renderSettings(); MB.ui.renderSvgPanel(); $('#basemapSelect').value = MB.state.basemap; });
@@ -1293,10 +1385,6 @@ window.MB = window.MB || {};
     MB.on('feature-contextmenu', info => MB.menus.feature(info));
     MB.map.on('contextmenu', e => { if (MB.presenter.active) return; MB.menus.map(e); });
     $('#presentBtn').addEventListener('click', () => MB.presenter.enter());
-    MB.on('history', () => {
-      // keep name tips in sync after undo/redo, and refresh the layer list (color swatches, labels)
-      Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; if (f.mb.name && !f.getTooltip()) bindNameTip(f); });
-      MB.ui.renderLayers();
-    });
+    MB.on('history', () => MB.ui.renderLayersSoon()); // the layer list after any change (color swatches, labels)
   };
 })(window.MB);

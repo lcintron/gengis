@@ -32,6 +32,13 @@ function createWindow() {
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js') }
   }, TITLE_BAR));
   win.loadFile(path.join(__dirname, '..', 'index.html'), { query: parseArgs() });
+  // The window's own full screen (F11, the View menu) is not the page's (no :fullscreen, no fullscreenchange): the
+  // page is told, so presenter mode follows it, and may ask to leave it.
+  // (by the event, not isFullScreen(): on Windows that still says the old state while these fire)
+  const sendFullScreen = on => () => { if (!win.webContents.isDestroyed()) win.webContents.send('app:fullscreen', on); };
+  win.on('enter-full-screen', sendFullScreen(true));
+  win.on('leave-full-screen', sendFullScreen(false));
+  win.webContents.on('did-finish-load', () => sendFullScreen(win.isFullScreen())()); // a reload starts not knowing (settled by then)
   // Closing: the page first saves what is pending (its database and the project file), then the window closes.
   // A page that does not answer within 4 s does not hold the window.
   let saved = false;
@@ -55,6 +62,10 @@ function createWindow() {
 
 app.whenReady().then(() => {
   files.register(); // project files on disk: electron/files.js
+  ipcMain.on('app:leave-fullscreen', e => {
+    const win = files.trusted(e) && BrowserWindow.fromWebContents(e.sender);
+    if (win) win.setFullScreen(false);
+  });
   // Nominatim and Overpass ask clients to identify themselves.
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: ['https://nominatim.openstreetmap.org/*', 'https://overpass-api.de/*'] },

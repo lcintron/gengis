@@ -67,7 +67,8 @@ window.MB = window.MB || {};
     MB.toast('GeoJSON exported (' + features.length + ' features)');
   };
 
-  MB.importGeoJSON = function (gj, sourceName) {
+  MB.importGeoJSON = (gj, sourceName) => MB.batch(() => importGeoJSON(gj, sourceName)); // one redraw at the end
+  function importGeoJSON(gj, sourceName) {
     const feats = gj.type === 'Feature' ? [gj] : (gj.features || []);
     const layerName = (sourceName || 'Imported').replace(/\.(geo)?json$/i, '');
     const layer = MB.createLayer(layerName);
@@ -111,7 +112,7 @@ window.MB = window.MB || {};
     MB.toast('Imported ' + n + ' features into "' + layerName + '"');
     const g = MB.groups[layer.id];
     if (g && g.getBounds().isValid()) MB.map.fitBounds(g.getBounds().pad(0.2));
-  };
+  }
 
   // Support the common "simplestyle" GeoJSON properties (stroke, fill, ...).
   function styleFromSimpleStyle(p) {

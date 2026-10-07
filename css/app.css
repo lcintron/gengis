@@ -64,14 +64,18 @@ html[data-titlebar] #topbar { -webkit-app-region: drag; user-select: none; }
 html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown) { -webkit-app-region: no-drag; }
 html[data-titlebar="overlay"] #topbar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="mac"] #topbar { padding-left: 84px; }
-/* presenting (the top bar hidden): its bar sits beside the window buttons, the map's corner controls below them */
-html[data-titlebar="overlay"] #presentBar { top: 10px; right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
+/* presenting (the top bar hidden): the map's corner controls below the window buttons (the logo clear of macOS's),
+   and a strip along the top (left of them) to move the window by; in full screen there are no window buttons and
+   nothing to move */
 html[data-titlebar="overlay"] body.presenting .leaflet-top.leaflet-right { top: env(titlebar-area-height, 51px); }
-html[data-titlebar="overlay"]:fullscreen #presentBar { right: 10px; } /* full screen: no window buttons */
-html[data-titlebar="overlay"]:fullscreen body.presenting .leaflet-top.leaflet-right { top: 0; }
-/* the top bar is hidden while presenting: the presenter bar moves the window instead (its buttons stay buttons) */
-html[data-titlebar] #presentBar { -webkit-app-region: drag; }
-html[data-titlebar] #presentBar button { -webkit-app-region: no-drag; }
+html[data-titlebar="mac"] body.presenting .leaflet-top.leaflet-right { top: 40px; }
+html[data-titlebar="mac"] body.presenting .present-logo { left: 84px; }
+html[data-titlebar] body.presenting #presentDrag { display: block; position: fixed; left: 0; top: 0; z-index: 3000; -webkit-app-region: drag;
+  height: env(titlebar-area-height, 51px); right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
+html[data-titlebar="mac"] body.presenting #presentDrag { height: 40px; right: 0; }
+html[data-titlebar]:fullscreen body.presenting #presentDrag, html.win-fullscreen body.presenting #presentDrag { display: none; }
+html[data-titlebar]:fullscreen body.presenting .leaflet-top.leaflet-right, html.win-fullscreen body.presenting .leaflet-top.leaflet-right { top: 0; }
+html[data-titlebar]:fullscreen body.presenting .present-logo, html.win-fullscreen body.presenting .present-logo { left: 12px; }
 
 .btn {
   background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
@@ -143,6 +147,22 @@ select:focus { outline: none; border-color: var(--accent); }
 #mapwrap { position: relative; flex: 1 1 auto; min-width: 0; z-index: 0; }
 #map { position: absolute; inset: 0; background: #0f1218; }
 #map.mb-crosshair, #map.mb-crosshair .leaflet-interactive { cursor: crosshair !important; }
+/* the Scale tool: a box around the selected object, a handle at each corner and side (scaletool.js) */
+.mb-scale-box { position: absolute; display: none; z-index: 650; pointer-events: none; outline: 1px dashed var(--accent); outline-offset: 3px; }
+.mb-scale-h { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #fff; border: 2px solid var(--accent); border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: auto; touch-action: none; box-sizing: border-box; }
+.mb-scale-h[data-h="nw"] { left: -3px; top: -3px; cursor: nwse-resize; }
+.mb-scale-h[data-h="n"] { left: 50%; top: -3px; cursor: ns-resize; }
+.mb-scale-h[data-h="ne"] { left: calc(100% + 3px); top: -3px; cursor: nesw-resize; }
+.mb-scale-h[data-h="e"] { left: calc(100% + 3px); top: 50%; cursor: ew-resize; }
+.mb-scale-h[data-h="se"] { left: calc(100% + 3px); top: calc(100% + 3px); cursor: nwse-resize; }
+.mb-scale-h[data-h="s"] { left: 50%; top: calc(100% + 3px); cursor: ns-resize; }
+.mb-scale-h[data-h="sw"] { left: -3px; top: calc(100% + 3px); cursor: nesw-resize; }
+.mb-scale-h[data-h="w"] { left: -3px; top: 50%; cursor: ew-resize; }
+.mb-scale-box.dragging .mb-scale-h { opacity: .6; }
+#map.mb-scale-tool .leaflet-interactive, #map.mb-scale-tool .mb-svg-pin, #map.mb-scale-tool .pm-text-marker { cursor: pointer !important; }
+body.presenting .mb-scale-box { display: none !important; }
+@media (pointer: coarse) { .mb-scale-h { width: 18px; height: 18px; margin: -9px 0 0 -9px; } }
 
 #toolbar {
   position: absolute; left: 12px; top: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 4px;
@@ -230,7 +250,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 }
 
 .pm-text-marker .pm-textarea {
-  font-family: var(--font); font-weight: 600; text-shadow: 0 0 2px rgba(0,0,0,.6);
+  font-family: var(--font); font-weight: 600; /* its shadow: the text's style (features.js) */
   border: 1px solid transparent; outline: none; resize: none; box-sizing: content-box;
 }
 .pm-text-marker .pm-textarea:not(.pm-disabled) { border-color: var(--accent); cursor: text; }
@@ -389,8 +409,8 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   #toolbar button svg { width: 20px; height: 20px; }
   .tool-hint { left: 54px; top: 10px; max-width: calc(100vw - 70px); font-size: 11px; }
   .leaflet-control-zoom { display: none; }
-  .leaflet-touch .mb-locate a, .mb-locate a { width: 40px; height: 40px; line-height: 40px; } /* a finger-sized target: the zoom buttons are hidden here */
-  .mb-locate a svg { width: 22px; height: 22px; }
+  .leaflet-touch .mb-locate a, .mb-locate a, .leaflet-touch .mb-present-ctl a, .mb-present-ctl a { width: 40px; height: 40px; line-height: 40px; } /* a finger-sized target: the zoom buttons are hidden here */
+  .mb-locate a svg, .mb-present-ctl a svg { width: 22px; height: 22px; }
   .mb-status { font-size: 10px; margin: 0 0 8px 8px !important; }
   .mb-scale { margin: 0 8px 8px 0 !important; }
   .leaflet-control-attribution { max-width: 60vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -400,13 +420,13 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .modal-box { padding: 14px; max-height: 92vh; }
   .modal-x { width: 34px; height: 34px; margin: -6px -6px 6px 10px; } /* a finger-sized target */
   .btn, .icon-btn { min-height: 36px; }
-  .layer-node .icon-btn.mini, .obj-item .icon-btn.mini { width: 28px; height: 28px; }
-  #presentBar { top: auto; bottom: calc(10px + env(safe-area-inset-bottom)); right: 10px; }
+  .layer-node .icon-btn.mini, .obj-item .icon-btn.mini, .info-line .icon-btn.mini { width: 28px; height: 28px; min-height: 28px; }
 }
 @media (hover: none) and (pointer: coarse) {
   /* touch: bigger hit areas, no hover-only affordances */
   .svg-card .del { display: block; }
   .layer-item, .obj-item { padding-top: 6px; padding-bottom: 6px; }
+  #layerScroll .obj-item { contain-intrinsic-size: auto 40px; } /* a row's size until drawn: taller here */
   .mb-ctx li { padding: 10px 12px; }
 }
 
@@ -433,13 +453,12 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 /* ---------- presenter mode ---------- */
 body.presenting #topbar, body.presenting #toolbar, body.presenting #sidebar, body.presenting #toolHint, body.presenting .mb-status,
 body.presenting .mb-measure-tip { display: none !important; }
-#presentBar {
-  position: fixed; top: 10px; right: 10px; z-index: 3000; display: none; align-items: center; gap: 8px;
-  background: rgba(27,31,39,.9); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px 4px 14px; font-size: 12px;
-  opacity: .45; transition: opacity .2s; box-shadow: 0 6px 20px rgba(0,0,0,.4);
-}
-#presentBar:hover { opacity: 1; }
-body.presenting #presentBar { display: flex; }
+/* its controls: exit and full screen, map buttons at the top of the map's top right corner (presenter.js), and the
+   app's logo in the top left corner (in a window and in full screen) */
+.mb-present-ctl, #presentDrag, .present-logo { display: none; }
+body.presenting .mb-present-ctl, body.presenting .present-logo { display: block; }
+.mb-present-ctl a { display: flex; align-items: center; justify-content: center; }
+.present-logo { position: fixed; top: 12px; left: 12px; z-index: 3000; height: 40px; width: auto; pointer-events: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
 
 /* ---------- context menu ---------- */
 .mb-ctx {
@@ -529,6 +548,15 @@ body.presenting #presentBar { display: flex; }
 .obj-item .fname input { width: 100%; background: var(--bg-3); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 4px; font-size: 12px; }
 .obj-item .icon-btn.mini, .layer-node .icon-btn.mini { width: 22px; height: 22px; }
 .obj-item .icon-btn.mini svg, .layer-node .icon-btn.mini svg { width: 14px; height: 14px; }
+/* the list's icons: masks over the button's text color (ui.js) */
+.mbi { display: inline-block; flex: none; width: 14px; height: 14px; background-color: currentColor;
+  -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+@media (forced-colors: active) { /* high contrast: a mask over a background color would be drawn as an empty box */
+  .mbi { forced-color-adjust: none; background-color: ButtonText; }
+  .icon-btn:disabled .mbi { background-color: GrayText; }
+}
+/* rows out of view are not laid out or painted until scrolled to (the list can hold hundreds) */
+.obj-item { content-visibility: auto; contain-intrinsic-size: auto 26px; }
 .obj-item .icon-btn.mini:disabled { opacity: .25; }
 
 /* ---------- FAA / data layers panel ---------- */
@@ -544,6 +572,13 @@ body.presenting #presentBar { display: flex; }
 .mb-datatable { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .mb-datatable td { padding: 2px 6px 2px 0; vertical-align: top; }
 .mb-datatable td:first-child { color: var(--text-dim); white-space: nowrap; }
+/* a data feature in Properties (datalayers.js) */
+#propsBody .panel-head .badge + .icon-btn { margin-left: auto; }
+#propsBody .panel-head h3 + .badge { margin-left: 8px; }
+.data-pick-label { font-weight: 600; margin: -2px 0 10px; overflow-wrap: anywhere; }
+#propsBody .mb-datatable { width: 100%; table-layout: fixed; }
+#propsBody .mb-datatable td:first-child { width: 38%; overflow: hidden; text-overflow: ellipsis; }
+#propsBody .mb-datatable td:last-child { overflow-wrap: anywhere; }
 
 /* sub-element toggles inside a dataset */
 .data-item .subsets { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 5px 0 2px 23px; font-size: 11px; color: var(--text); align-items: center; }
@@ -619,7 +654,19 @@ button.link:hover { text-decoration: underline; }
 .mb-ask { z-index: 4500; }
 .mb-ask .modal-box { max-width: 440px; }
 .mb-ask .ask-text { white-space: pre-line; margin: 0 0 14px; }
-.desktop-files { margin-top: 8px; }
+.desktop-files { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+/* Settings: a line of text or a file with its actions as icons, and an "i" whose explanation opens below the line */
+.info-line { position: relative; display: flex; align-items: center; gap: 6px; min-height: 26px; margin: 6px 0; }
+.info-line .note { margin: 0; }
+.info-line .ds-tip { top: calc(100% + 2px); }
+.desktop-files .info-line { margin: 0; }
+.file-ic { flex: 0 0 auto; display: inline-flex; color: var(--text-dim); }
+.file-name { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-state { flex: 0 0 auto; display: inline-flex; }
+.file-state.saving { color: var(--accent); }
+.file-state.paused { color: var(--warn); }
+.file-state.conflict, .file-state.denied { color: var(--danger); }
+#tab-settings > .section + .section { border-top: 1px solid var(--border); padding-top: 14px; } /* a line between the sections */
 .file-resume { padding: 3px 8px; font-size: 11px; white-space: nowrap; } /* beside the save status, when saving to the file needs a click */
 .desktop-files .path { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .recent-ask { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
