@@ -8,7 +8,7 @@
  *     only chore/docs/ci/style/refactor/test/build commits -> no release (exit 0, released=false)
  * - --ci: non-interactive mode for GitHub Actions; writes released/tag/version to $GITHUB_OUTPUT
  * - Writes the new version everywhere it is displayed: package.json, js/util.js (MB.APP.version, shown in
- *   Settings and About), sw.js (cache name), index.html (splash) and README.md
+ *   the About dialog), sw.js (cache name), index.html (splash) and README.md
  * - Commits "chore(release): vX.Y.Z", tags vX.Y.Z and pushes. The GitHub "Release" workflow, which runs this
  *   script when started by hand, then builds the Windows, macOS and Linux installers, publishes the GitHub
  *   Release and deploys GitHub Pages from that tag.
