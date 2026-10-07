@@ -157,6 +157,10 @@ window.MB = window.MB || {};
       // whether it is a project)
       const canWrite = project && (await handle.requestPermission(RW).catch(() => 'denied')) === 'granted';
       if (!(await P().confirmReplace('Open the file'))) return;
+      // the open project's own file, without its latest changes (writing them failed or is paused): opening it would
+      // go back to what the file holds
+      if (entry && (await entry.handle.isSameEntry(handle).catch(() => false)) && !current().unchanged &&
+          !(await MB.ask('The latest changes to "' + entry.name + '" are not in the file yet, so opening it shows the file without them. Open it anyway?', 'Open the file', 'Cancel'))) return;
       // read it again: replacing the open project first saved it, maybe to this very file
       file = await handle.getFile();
       if ((await MB.openText(await file.text(), file.name)) !== 'project') return;
@@ -169,11 +173,17 @@ window.MB = window.MB || {};
       if (canWrite) MB.toast('Changes are saved to "' + handle.name + '" automatically.', 3500);
     } catch (e) { MB.toast('Could not open the file: ' + (e.message || e), 5000); }
   };
-  // Recent projects -> a file linked before (asks for leave to read it again if needed).
+  // Recent projects -> a file linked before. Asks for leave to edit it again; refused, it still opens if it may be
+  // read (and is not saved to until allowed).
   F.openRecent = async function (id) {
     const e = await getEntry(id);
     if (!e) return;
-    try { if ((await e.handle.requestPermission(RW)) === 'denied') { MB.toast('The browser did not allow opening "' + e.name + '".', 5000); return; } } catch (err) { /* reading may still work */ }
+    try {
+      if ((await e.handle.requestPermission(RW)) !== 'granted' && (await e.handle.requestPermission({ mode: 'read' })) !== 'granted') {
+        MB.toast('The browser did not allow opening "' + e.name + '".', 5000);
+        return;
+      }
+    } catch (err) { /* F.open reports what fails */ }
     return F.open(e.handle);
   };
 
