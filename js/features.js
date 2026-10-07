@@ -89,7 +89,8 @@ window.MB = window.MB || {};
       style: meta.style ? MB.deepClone(meta.style) : MB.deepClone(MB.currentStyle),
       text: meta.text, svg: meta.svg ? MB.deepClone(meta.svg) : undefined,
       visible: meta.visible !== false, locked: !!meta.locked,
-      label: meta.label ? MB.deepClone(meta.label) : undefined
+      label: meta.label ? MB.deepClone(meta.label) : undefined,
+      zoom: meta.zoom ? MB.deepClone(meta.zoom) : undefined
     };
     MB.featureLayers[id] = layer;
     const g = MB.groups[layerId];
@@ -100,11 +101,49 @@ window.MB = window.MB || {};
     MB.applyStyle(layer, {}, { noCommit: true });
     bindFeatureEvents(layer);
     MB.updateTooltip(layer);
-    if (!layer.mb.visible) { removeSegLabels(layer); g.removeLayer(layer); }
+    if (!shownNow(layer)) { removeSegLabels(layer); g.removeLayer(layer); MB.updateLabel(layer); }
+    hookZoom();
     MB.applyZOrderSoon();
     MB.emit('features');
     return layer;
   };
+
+  /* ---------- zoom display ---------- */
+  // An object can be shown only above or below a zoom level: mb.zoom = { on, op: '>' | '<', level }. The comparison
+  // is strict ('>' 12: from 12.5 on, the map zooms in half steps).
+  MB.zoomAllows = function (layer, zoom) {
+    const z = layer.mb && layer.mb.zoom;
+    if (!z || !z.on || !isFinite(+z.level) || !MB.map) return true;
+    const at = zoom == null ? MB.map.getZoom() : zoom;
+    return z.op === '<' ? at < +z.level : at > +z.level;
+  };
+  // On the map: its own eye on and the zoom allowing it (the layer's eye is its group's business). The selected
+  // object stays shown, so the rule being edited does not take it away.
+  function shownNow(l) { return l.mb.visible !== false && (MB.zoomAllows(l) || MB.selected === l); }
+  MB.shownNow = shownNow;
+  // Put an object on or off its layer for its zoom rule (after a zoom, a selection change or an edit of the rule).
+  MB.applyZoomDisplay = function (l) {
+    const g = MB.groups[l.mb.layerId];
+    if (!g || l.mb.visible === false) return;
+    const show = shownNow(l);
+    if (show && !g.hasLayer(l)) {
+      g.addLayer(l); MB.updateTooltip(l); updateSegLabels(l); MB.updateLabel(l); MB.applyFeatureOrder(l.mb.layerId);
+    } else if (!show && g.hasLayer(l)) {
+      removeSegLabels(l); g.removeLayer(l); MB.updateLabel(l);
+    }
+  };
+  const ruled = () => Object.keys(MB.featureLayers).map(id => MB.featureLayers[id]).filter(l => l.mb.zoom && l.mb.zoom.on);
+  let zoomHooked = false;
+  function hookZoom() {
+    if (zoomHooked || !MB.map) return;
+    zoomHooked = true;
+    MB.map.on('zoomend', () => {
+      const list = ruled();
+      list.forEach(MB.applyZoomDisplay);
+      if (list.length) MB.emit('zoomdisplay');
+    });
+    MB.on('selection', () => ruled().forEach(MB.applyZoomDisplay)); // the object left behind may hide now
+  }
 
   MB.isFeatureLocked = function (layer) {
     const lay = MB.getLayer(layer.mb.layerId);
@@ -122,8 +161,9 @@ window.MB = window.MB || {};
     l.mb.visible = !!visible;
     const g = MB.groups[l.mb.layerId];
     if (visible) {
-      if (!g.hasLayer(l)) g.addLayer(l);
+      if (shownNow(l) && !g.hasLayer(l)) g.addLayer(l);
       MB.updateTooltip(l);
+      MB.updateLabel(l);
       MB.applyFeatureOrder(l.mb.layerId);
     } else {
       if (MB.selected === l) MB.deselect();
@@ -205,7 +245,7 @@ window.MB = window.MB || {};
     MB.groups[l.mb.layerId].removeLayer(l);
     l.mb.layerId = layerId;
     placeFeature(id, true); // it lands on top of the objects of its new layer
-    if (l.mb.visible !== false) { MB.groups[layerId].addLayer(l); updateSegLabels(l); MB.updateLabel(l); }
+    if (shownNow(l)) { MB.groups[layerId].addLayer(l); updateSegLabels(l); MB.updateLabel(l); }
     MB.applyZOrder();
     if (wasSelected && MB.getLayer(layerId).visible) MB.selectFeature(l);
     MB.emit('features');
@@ -464,6 +504,7 @@ window.MB = window.MB || {};
     if (!layer || MB.selected === layer) return;
     MB.deselect();
     MB.selected = layer;
+    MB.applyZoomDisplay(layer); // an object its zoom rule hides is shown while selected (and can be edited)
     const t = layer.mb.type;
     const moveOnly = MB.tools.current === 'move';
     const editable = !MB.isFeatureLocked(layer) && MB.map.hasLayer(layer);
@@ -636,7 +677,7 @@ window.MB = window.MB || {};
     const m = layer.mb;
     if (!m || !MB.labelTypes.includes(m.type)) return;
     const lb = MB.getLabel(layer), g = MB.groups[m.layerId];
-    if (!lb.show || !m.name || m.visible === false || !g) { removeLabel(layer); return; }
+    if (!lb.show || !m.name || !shownNow(layer) || !g) { removeLabel(layer); return; }
     // Anchor: a point on the object's bounding box (shapes) or a pixel offset around the icon (markers, fixed-size SVGs).
     let bounds = null, latlng, dx = 0, dy = 0;
     if (m.type === 'circle') bounds = layer.getLatLng().toBounds(layer.getRadius() * 2);
@@ -704,6 +745,7 @@ window.MB = window.MB || {};
     if (m.visible === false) d.visible = false;
     if (m.locked) d.locked = true;
     if (m.label) d.label = MB.deepClone(m.label);
+    if (m.zoom) d.zoom = MB.deepClone(m.zoom);
     switch (m.type) {
       case 'marker': d.latlng = toArr(layer.getLatLng()); break;
       case 'text':

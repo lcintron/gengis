@@ -430,9 +430,12 @@ window.MB = window.MB || {};
     const m = f.mb;
     const hidden = m.visible === false, locked = !!m.locked;
     const sw = m.type === 'svg' ? 'transparent' : (m.type === 'text' ? m.style.textColor : m.style.color);
-    return `<div class="obj-item${MB.selected === f || (MB.multi && MB.multi.has(f)) ? ' selected' : ''}${hidden || layerHidden ? ' obj-hidden' : ''}" data-fid="${m.id}" title="${esc(MB.typeLabels[m.type])} · click: select and show properties · double-click name: rename">
+    // a zoom display rule: its badge, and dimmed while the zoom hides the object
+    const zr = m.zoom && m.zoom.on ? m.zoom : null, zoomHidden = zr && !MB.zoomAllows(f);
+    const zbadge = zr ? `<span class="zoom-badge" title="Shown only when the zoom is ${zr.op === '<' ? 'less' : 'greater'} than ${zr.level}${zoomHidden ? ' (hidden at this zoom)' : ''}">z${zr.op}${zr.level}</span>` : '';
+    return `<div class="obj-item${MB.selected === f || (MB.multi && MB.multi.has(f)) ? ' selected' : ''}${hidden || layerHidden ? ' obj-hidden' : ''}${zoomHidden ? ' obj-zoomhidden' : ''}" data-fid="${m.id}" title="${esc(MB.typeLabels[m.type])} · click: select and show properties · double-click name: rename">
       <span class="swatch" style="background:${sw}"></span>
-      <span class="fname" data-act="rename">${esc(objectLabel(f))}</span>
+      <span class="fname" data-act="rename">${esc(objectLabel(f))}</span>${zbadge}
       <button class="icon-btn mini${hidden ? '' : ' on'}" data-act="vis" title="${hidden ? 'Show' : 'Hide'} object">${hidden ? icons.eyeOff : icons.eye}</button>
       <button class="icon-btn mini${locked || layerLocked ? ' on' : ''}" data-act="lock" title="${locked ? 'Unlock' : 'Lock'} object${layerLocked ? ' (layer is locked)' : ''}">${locked || layerLocked ? icons.lock : icons.unlock}</button>
       <button class="icon-btn mini" data-act="up" title="Bring forward" ${i === 0 ? 'disabled' : ''}>${icons.up}</button>
@@ -691,6 +694,7 @@ window.MB = window.MB || {};
       <div class="row"><label>Layer</label><select id="propLayer">${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}"${l.id === m.layerId ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>
       <div class="measure-box" id="propMeasure"></div>`;
     panel.appendChild(head);
+    panel.appendChild(zoomForm(f));
     $('#propName', panel).addEventListener('change', e => {
       m.name = e.target.value.trim();
       bindNameTip(f);
@@ -802,6 +806,43 @@ window.MB = window.MB || {};
     const c = MB.svgCenter(f);
     rows.push(['Position', MB.formatLatLng(f.getLatLng ? f.getLatLng() : (f.getBounds ? f.getBounds().getCenter() : c))]);
     box.innerHTML = rows.map(r => `<div><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+  };
+
+  // Zoom display: show the object only when the map zoom is greater or less than a level (features.js).
+  function zoomForm(f) {
+    const m = f.mb, z = m.zoom || {};
+    const wrap = document.createElement('div');
+    wrap.className = 'section zoom-display';
+    const level = z.level != null ? z.level : Math.round(MB.map.getZoom());
+    wrap.innerHTML = `<label class="check" title="Show this object only above or below a zoom level"><input type="checkbox" id="propZoomOn"${z.on ? ' checked' : ''}> <b>Zoom display</b></label>
+      <div class="row"><label>Show when zoom is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
+      <div class="row"><label>Zoom level</label><input type="number" id="propZoomLevel" min="0" max="22" step="0.5" value="${level}"${z.on ? '' : ' disabled'}></div>
+      <p class="note" id="propZoomNote"></p>`;
+    const on = $('#propZoomOn', wrap), op = $('#propZoomOp', wrap), lv = $('#propZoomLevel', wrap);
+    const apply = () => {
+      const v = parseFloat(lv.value);
+      m.zoom = { on: on.checked, op: op.value, level: isFinite(v) ? Math.max(0, Math.min(22, v)) : Math.round(MB.map.getZoom()) };
+      op.disabled = lv.disabled = !on.checked;
+      MB.applyZoomDisplay(f);
+      MB.ui.renderZoomNote();
+      MB.ui.renderLayers();
+      MB.commit('zoom display');
+    };
+    on.addEventListener('change', apply);
+    op.addEventListener('change', apply);
+    lv.addEventListener('change', apply);
+    setTimeout(() => MB.ui.renderZoomNote(), 0);
+    return wrap;
+  }
+  // Under the zoom display fields: the zoom now, and whether the rule shows the object at it.
+  MB.ui.renderZoomNote = function () {
+    const note = $('#propZoomNote'), f = MB.selected;
+    if (!note || !f) return;
+    const z = f.mb.zoom, now = +MB.map.getZoom().toFixed(1);
+    if (!z || !z.on) { note.textContent = `Always shown (the zoom is now ${now}).`; return; }
+    note.textContent = MB.zoomAllows(f)
+      ? `Shown at the zoom now (${now}).`
+      : `Hidden at the zoom now (${now}); shown while selected.`;
   };
 
   function svgProps(f) {
@@ -1230,6 +1271,9 @@ window.MB = window.MB || {};
     MB.on('multi-contextmenu', info => MB.menus.multi(info));
     // a selected text that scales with the map: its size slider follows the zoom
     MB.map.on('zoomend', () => { const f = MB.selected; if (f && f.mb.type === 'text' && f.mb.style.textScale === 'map') MB.ui.renderProps(); });
+    // zoom display: the list dims what the zoom hides, the selected object's note says whether it is shown
+    MB.on('zoomdisplay', () => MB.ui.renderLayers());
+    MB.map.on('zoomend', () => MB.ui.renderZoomNote());
     MB.on('featurechange', l => { if (l === MB.selected) MB.ui.renderMeasureBox(); });
     MB.on('project', () => { MB.ui.renderSettings(); MB.ui.renderSvgPanel(); $('#basemapSelect').value = MB.state.basemap; });
     MB.on('poi-request', term => { MB.ui.showTab('places'); setTimeout(() => MB.ui.runPoiSearch(term), 800); });

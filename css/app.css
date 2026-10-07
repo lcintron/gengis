@@ -515,6 +515,14 @@ body.presenting #presentBar { display: flex; }
 .obj-item:hover { background: var(--bg-3); }
 .obj-item.selected { background: rgba(29,179,169,.18); border-left-color: var(--accent); }
 .obj-item.obj-hidden .fname { color: var(--text-dim); text-decoration: line-through; }
+/* zoom display: the rule's badge in the list, the object dimmed while the zoom hides it */
+.obj-item .zoom-badge { flex: 0 0 auto; font-size: 10px; line-height: 1; padding: 2px 4px; border-radius: 4px; background: var(--bg-3); color: var(--text-dim); border: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.obj-item.obj-zoomhidden .fname, .obj-item.obj-zoomhidden .swatch { opacity: .45; }
+.obj-item.obj-zoomhidden .zoom-badge { color: var(--warn); border-color: rgba(255,209,102,.4); }
+.zoom-display .row { margin-top: 6px; }
+.zoom-display .row label { min-width: 0; flex: 1 1 auto; }
+.zoom-display .row select, .zoom-display .row input { flex: 0 0 140px; }
+.zoom-display .note { margin: 6px 0 0; }
 .obj-item .swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; border: 1px solid rgba(255,255,255,.25); }
 .obj-item .fname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .obj-item .fname input { width: 100%; background: var(--bg-3); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 4px; font-size: 12px; }
