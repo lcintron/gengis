@@ -432,7 +432,7 @@ window.MB = window.MB || {};
     const sw = m.type === 'svg' ? 'transparent' : (m.type === 'text' ? m.style.textColor : m.style.color);
     // a zoom display rule: its badge, and dimmed while the zoom hides the object
     const zr = m.zoom && m.zoom.on ? m.zoom : null, zoomHidden = zr && !MB.zoomAllows(f);
-    const zbadge = zr ? `<span class="zoom-badge" title="Shown only when the zoom is ${zr.op === '<' ? 'less' : 'greater'} than ${zr.level}${zoomHidden ? ' (hidden at this zoom)' : ''}">z${zr.op}${zr.level}</span>` : '';
+    const zbadge = zr ? `<span class="zoom-badge" title="Shown only when the zoom is ${zr.op === '<' ? 'less' : 'greater'} than ${esc(String(zr.level))}${zoomHidden ? ' (hidden at this zoom)' : ''}">z${zr.op === '<' ? '&lt;' : '&gt;'}${esc(String(zr.level))}</span>` : '';
     return `<div class="obj-item${MB.selected === f || (MB.multi && MB.multi.has(f)) ? ' selected' : ''}${hidden || layerHidden ? ' obj-hidden' : ''}${zoomHidden ? ' obj-zoomhidden' : ''}" data-fid="${m.id}" title="${esc(MB.typeLabels[m.type])} · click: select and show properties · double-click name: rename">
       <span class="swatch" style="background:${sw}"></span>
       <span class="fname" data-act="rename">${esc(objectLabel(f))}</span>${zbadge}
@@ -813,15 +813,19 @@ window.MB = window.MB || {};
     const m = f.mb, z = m.zoom || {};
     const wrap = document.createElement('div');
     wrap.className = 'section zoom-display';
-    const level = z.level != null ? z.level : Math.round(MB.map.getZoom());
+    const zoomNow = () => Math.round(MB.map.getZoom() * 2) / 2; // the map zooms in half steps
+    const level = z.level != null ? z.level : zoomNow();
     wrap.innerHTML = `<label class="check" title="Show this object only above or below a zoom level"><input type="checkbox" id="propZoomOn"${z.on ? ' checked' : ''}> <b>Zoom display</b></label>
       <div class="row"><label>Show when zoom is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
-      <div class="row"><label>Zoom level</label><input type="number" id="propZoomLevel" min="0" max="22" step="0.5" value="${level}"${z.on ? '' : ' disabled'}></div>
+      <div class="row"><label>Zoom level</label><input type="number" id="propZoomLevel" min="0" max="22" step="0.5" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
       <p class="note" id="propZoomNote"></p>`;
     const on = $('#propZoomOn', wrap), op = $('#propZoomOp', wrap), lv = $('#propZoomLevel', wrap);
-    const apply = () => {
+    const apply = e => {
+      // first switched on: from the zoom now (the map may have moved since the panel was drawn)
+      if (e && e.target === on && on.checked && (!m.zoom || m.zoom.level == null)) lv.value = zoomNow();
       const v = parseFloat(lv.value);
-      m.zoom = { on: on.checked, op: op.value, level: isFinite(v) ? Math.max(0, Math.min(22, v)) : Math.round(MB.map.getZoom()) };
+      m.zoom = MB.normZoomRule({ on: on.checked, op: op.value, level: isFinite(v) ? v : zoomNow() });
+      lv.value = m.zoom.level;
       op.disabled = lv.disabled = !on.checked;
       MB.applyZoomDisplay(f);
       MB.ui.renderZoomNote();

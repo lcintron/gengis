@@ -90,7 +90,7 @@ window.MB = window.MB || {};
       text: meta.text, svg: meta.svg ? MB.deepClone(meta.svg) : undefined,
       visible: meta.visible !== false, locked: !!meta.locked,
       label: meta.label ? MB.deepClone(meta.label) : undefined,
-      zoom: meta.zoom ? MB.deepClone(meta.zoom) : undefined
+      zoom: MB.normZoomRule(meta.zoom)
     };
     MB.featureLayers[id] = layer;
     const g = MB.groups[layerId];
@@ -109,11 +109,17 @@ window.MB = window.MB || {};
   };
 
   /* ---------- zoom display ---------- */
+  // A zoom rule as stored, whatever a project file held: on, '>' or '<', and a level 0-22 in half steps (or none).
+  MB.normZoomRule = function (z) {
+    if (!z || typeof z !== 'object') return undefined;
+    const v = parseFloat(z.level), level = isFinite(v) ? Math.max(0, Math.min(22, Math.round(v * 2) / 2)) : null;
+    return { on: !!z.on && level != null, op: z.op === '<' ? '<' : '>', level }; // no level: no rule
+  };
   // An object can be shown only above or below a zoom level: mb.zoom = { on, op: '>' | '<', level }. The comparison
   // is strict ('>' 12: from 12.5 on, the map zooms in half steps).
   MB.zoomAllows = function (layer, zoom) {
     const z = layer.mb && layer.mb.zoom;
-    if (!z || !z.on || !isFinite(+z.level) || !MB.map) return true;
+    if (!z || !z.on || z.level == null || !isFinite(+z.level) || !MB.map) return true;
     const at = zoom == null ? MB.map.getZoom() : zoom;
     return z.op === '<' ? at < +z.level : at > +z.level;
   };
@@ -126,10 +132,11 @@ window.MB = window.MB || {};
     const g = MB.groups[l.mb.layerId];
     if (!g || l.mb.visible === false) return;
     const show = shownNow(l);
+    // (its tooltips stay bound while it is off the map: a permanent one reopens as it comes back, a hover name is kept)
     if (show && !g.hasLayer(l)) {
-      g.addLayer(l); MB.updateTooltip(l); updateSegLabels(l); MB.updateLabel(l); MB.applyFeatureOrder(l.mb.layerId);
-    } else if (!show && g.hasLayer(l)) {
-      removeSegLabels(l); g.removeLayer(l); MB.updateLabel(l);
+      g.addLayer(l); updateSegLabels(l); MB.updateLabel(l); MB.applyFeatureOrder(l.mb.layerId);
+    } else if (!show) {
+      removeSegLabels(l); if (g.hasLayer(l)) g.removeLayer(l); MB.updateLabel(l);
     }
   };
   const ruled = () => Object.keys(MB.featureLayers).map(id => MB.featureLayers[id]).filter(l => l.mb.zoom && l.mb.zoom.on);
@@ -633,6 +640,7 @@ window.MB = window.MB || {};
     if (!layer.mb || layer.mb.type !== 'measure-line') return;
     const g = MB.groups[layer.mb.layerId];
     if (!g) return;
+    if (!g.hasLayer(layer)) { removeSegLabels(layer); return; } // off the map (hidden, or its zoom rule): no labels
     layer._mbSeg = layer._mbSeg || [];
     let pts = layer.getLatLngs();
     if (pts.length && !MB.isLatLng(pts[0])) pts = pts[0];
