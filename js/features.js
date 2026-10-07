@@ -300,8 +300,11 @@ window.MB = window.MB || {};
   // Text that scales with the map: its size is textSize at zoom textRefZoom, doubling with each zoom step in.
   const zoomNow = () => (MB.map ? MB.map.getZoom() : 0);
   const mapScale = st => (st.textScale === 'map' && st.textRefZoom != null ? Math.pow(2, zoomNow() - st.textRefZoom) : 1);
-  // The size it shows at now, in px (what the size slider shows and sets).
-  MB.textShownSize = st => Math.round((+st.textSize || 14) * mapScale(st));
+  // The size it shows at now, in px (what the size slider shows and sets, and what it keeps when switching to fixed
+  // pixels): scaled, but never beyond MAX_SHOWN, where drawing stops growing.
+  const MAX_SHOWN = 2000;
+  const shown = st => Math.min((+st.textSize || 14) * mapScale(st), Math.max(MAX_SHOWN, +st.textSize || 14));
+  MB.textShownSize = st => Math.round(shown(st));
   // A style change on a text: switching to 'map' keeps the size it shows (from this zoom on); back to 'screen', it
   // keeps the size it shows now; a new size while scaling with the map is the size at this zoom.
   function textSizing(st, patch) {
@@ -321,10 +324,10 @@ window.MB = window.MB || {};
     const st = layer.mb.style, ta = layer.pm && layer.pm.textArea;
     if (!ta) return;
     const [hx, ox] = ANCHOR_X[st.textHAnchor || 'center'], [vy, oy] = ANCHOR_Y[st.textVAnchor || 'middle'];
-    const s = mapScale(st), shown = (+st.textSize || 14) * s;
+    const px = shown(st), s = px / (+st.textSize || 14);
     ta.style.transformOrigin = ox + ' ' + oy;
-    ta.style.transform = `translate(${hx}, ${vy})` + (s !== 1 ? ` scale(${Math.min(s, 2000 / (+st.textSize || 14))})` : '');
-    ta.style.visibility = shown < 3 ? 'hidden' : '';
+    ta.style.transform = `translate(${hx}, ${vy})` + (s !== 1 ? ` scale(${s})` : '');
+    ta.style.visibility = px < 3 ? 'hidden' : '';
   };
   let zoomHooked = false;
   function rescaleTexts() {
