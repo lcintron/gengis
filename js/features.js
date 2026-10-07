@@ -357,9 +357,10 @@ window.MB = window.MB || {};
     try { layer.pm.setText(layer.pm.getText()); } catch (e) { /* not yet on map */ }
   };
 
-  // Geoman sizes a text box to its scrollWidth/scrollHeight, which include the padding, and then the padding is
-  // added again around that (content-box): an empty strip at the bottom (and right) of a text with a background.
-  // Size the content to the text alone.
+  // Geoman sizes a text box to its scrollHeight/scrollWidth, and then the padding is added again around that
+  // (content-box): an empty strip at the bottom of a text with a background. scrollHeight holds both vertical
+  // paddings; a text area's scrollWidth holds only the left one (and rounds down: one pixel more, or the text spills
+  // into the right padding). Size the content to the text alone.
   if (L.PM && L.PM.Edit && L.PM.Edit.Text && L.PM.Edit.Text.prototype._autoResize) {
     const autoResize = L.PM.Edit.Text.prototype._autoResize;
     L.PM.Edit.Text.prototype._autoResize = function () {
@@ -368,7 +369,7 @@ window.MB = window.MB || {};
       if (cs.boxSizing !== 'content-box') return;
       const px = v => parseFloat(v) || 0;
       ta.style.height = Math.max(1, px(ta.style.height) - px(cs.paddingTop) - px(cs.paddingBottom)) + 'px';
-      ta.style.width = Math.max(1, px(ta.style.width) - px(cs.paddingLeft) - px(cs.paddingRight)) + 'px';
+      ta.style.width = Math.max(1, px(ta.style.width) - px(cs.paddingLeft) + 1) + 'px';
     };
   }
 
