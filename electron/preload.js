@@ -16,6 +16,9 @@ if (location.protocol === 'file:' && /\/index\.html$/i.test(location.pathname)) 
   recent: () => ipcRenderer.invoke('files:recent'),
   fileOf: id => ipcRenderer.invoke('files:file-of', id),
   reveal: file => ipcRenderer.invoke('files:reveal', file),
+  // the window's own full screen (F11, the View menu), which the page cannot see otherwise
+  onFullScreen: fn => ipcRenderer.on('app:fullscreen', (e, on) => fn(!!on)),
+  leaveFullScreen: () => ipcRenderer.send('app:leave-fullscreen'),
   // closing the window: the page saves what is pending, then says so
   onFlush: fn => ipcRenderer.on('app:flush', () => Promise.resolve().then(fn).catch(() => {}).then(() => ipcRenderer.send('app:flushed')))
 });

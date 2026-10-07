@@ -1142,8 +1142,6 @@ window.MB = window.MB || {};
     }
   }
 
-  // Settings -> Project, desktop app: the projects folder and the open project's file. Chrome and Edge: the file
-  // this project is saved to, if one was picked.
   // An explanation behind an "i" (hover, or a tap on a touch screen), as in the Data panel; its box needs .info-line.
   const infoTip = text => `<span class="ds-info" tabindex="0" role="img" aria-label="${esc(text)}">i</span><span class="ds-tip" role="tooltip">${esc(text)}</span>`;
   const fileIcons = {
@@ -1172,7 +1170,7 @@ window.MB = window.MB || {};
       const resume = B.name && B.state !== 'saving' ? iconBtn('data-bf="resume"', 'resume', B.state === 'conflict' ? 'The file changed outside GenGIS: choose what to do' : 'Resume saving to this file') : '';
       box.innerHTML = `<div class="desktop-files"><div class="info-line">
           <span class="file-ic">${fileIcons.file}</span>
-          <span class="file-name" title="${esc(B.name || '')}">${B.name ? esc(B.name) : '<span class="dim">No file</span>'}</span>
+          <span class="file-name"${B.name ? ` title="${esc(B.name)}"` : ''}>${B.name ? esc(B.name) : '<span class="dim">No file</span>'}</span>
           ${B.name && st ? `<span class="file-state ${esc(B.state)}" title="${esc(st[1])}" role="img" aria-label="${esc(st[1])}">${fileIcons[st[0]]}</span>` : ''}
           ${resume}${iconBtn('data-bf="saveas"', 'saveAs', 'Save as… (pick a file to keep this project in)')}${B.name ? iconBtn('data-bf="unlink"', 'unlink', 'Stop saving to this file (the file stays as it is)') : ''}
           ${infoTip('Pick a file with Save as… (or open one) and this project is also saved to it, a moment after every change. After the browser restarts it asks once before writing again.')}
@@ -1185,7 +1183,7 @@ window.MB = window.MB || {};
     box.innerHTML = `<div class="desktop-files">
         <div class="info-line"><span class="file-ic">${fileIcons.folder}</span><span class="path" title="${esc(F.folder || '')}">${esc(F.folder || '…')}</span>
           ${iconBtn('data-df="folder"', 'choose', 'Change the projects folder…')}${iconBtn('data-df="show"', 'reveal', 'Show in folder')}</div>
-        <div class="info-line"><span class="file-ic">${fileIcons.file}</span><span class="file-name" title="${esc(F.file || '')}">${F.file ? esc(baseName(F.file)) : '<span class="dim">No file yet</span>'}</span>
+        <div class="info-line"><span class="file-ic">${fileIcons.file}</span><span class="file-name"${F.file ? ` title="${esc(F.file)}"` : ''}>${F.file ? esc(baseName(F.file)) : '<span class="dim">No file yet</span>'}</span>
           ${iconBtn('data-df="saveas"', 'saveAs', 'Save as…')}${infoTip('Each named project is also kept as a file in this folder, saved a moment after every change. An untitled map gets one once it is named or saved.')}</div>
       </div>`;
     box.querySelector('[data-df="folder"]').addEventListener('click', () => F.chooseFolder());
@@ -1199,7 +1197,8 @@ window.MB = window.MB || {};
     if (!note) return;
     const kept = p.persisted === true ? ' The browser will not clear them to free space.'
       : (p.persisted === false ? ' The browser may clear them if the device runs low on space: save important projects to a file, or keep them on this device.' : '');
-    note.innerHTML = `<span class="note">Saved on this device as you work.</span>${infoTip('Projects are saved automatically on this device as you work; reopen them from Project → Recent projects.' + kept)}`;
+    const html = `<span class="note">Saved on this device as you work.</span>${infoTip('Projects are saved automatically on this device as you work; reopen them from Project → Recent projects.' + kept)}`;
+    if (note._html !== html) { note.innerHTML = html; note._html = html; } // a rebuild would close an open tip
     if (btn) btn.hidden = p.persisted !== false;
   };
 

@@ -53,15 +53,18 @@ window.MB = window.MB || {};
       logo.className = 'present-logo'; logo.src = 'icons/logo-on-dark.svg'; logo.alt = MB.APP.name;
       document.body.appendChild(logo);
       const drag = document.createElement('div');
-      drag.id = 'presentDrag'; drag.title = 'Drag to move the window';
+      drag.id = 'presentDrag';
       document.body.appendChild(drag);
       document.addEventListener('fullscreenchange', () => { this.renderFs(); setTimeout(() => MB.map.invalidateSize(), 100); });
     },
 
+    // Full screen: the page's own (the button) or, in the desktop app, the window's (F11), marked on <html> for css.
+    isFull() { return !!document.fullscreenElement || document.documentElement.classList.contains('win-fullscreen'); },
+
     // The full screen button: enter or leave, as it is now.
     renderFs() {
       if (!this.fsBtn) return;
-      const full = !!document.fullscreenElement, title = full ? 'Exit full screen' : 'Full screen';
+      const full = this.isFull(), title = full ? 'Exit full screen' : 'Full screen';
       this.fsBtn.innerHTML = full ? ICONS.unfull : ICONS.full;
       this.fsBtn.title = title; this.fsBtn.setAttribute('aria-label', title);
     },
@@ -78,10 +81,20 @@ window.MB = window.MB || {};
     },
 
     toggleFullscreen() {
-      if (!document.fullscreenElement) {
-        const el = document.documentElement;
-        if (el.requestFullscreen) el.requestFullscreen().catch(() => MB.toast('Full screen not available here'));
-      } else if (document.exitFullscreen) document.exitFullscreen();
+      if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen(); return; }
+      if (document.documentElement.classList.contains('win-fullscreen') && window.gengisDesktop) { window.gengisDesktop.leaveFullScreen(); return; }
+      const el = document.documentElement;
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => MB.toast('Full screen not available here'));
     }
   };
+
+  // The desktop app's window full screen (F11): marked on <html>, so the logo, the controls and the drag strip
+  // follow it as they follow the page's own.
+  if (window.gengisDesktop && window.gengisDesktop.onFullScreen) {
+    window.gengisDesktop.onFullScreen(on => {
+      document.documentElement.classList.toggle('win-fullscreen', on);
+      MB.presenter.renderFs();
+      if (MB.map) setTimeout(() => MB.map.invalidateSize(), 100);
+    });
+  }
 })(window.MB);

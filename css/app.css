@@ -70,7 +70,8 @@ html[data-titlebar="overlay"] body.presenting .leaflet-top.leaflet-right { top: 
 html[data-titlebar] body.presenting #presentDrag { display: block; position: fixed; left: 0; top: 0; z-index: 3000; -webkit-app-region: drag;
   height: env(titlebar-area-height, 51px); right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
 html[data-titlebar="mac"] body.presenting #presentDrag { height: 40px; right: 0; }
-html[data-titlebar]:fullscreen body.presenting #presentDrag { display: none; }
+html[data-titlebar="mac"] body.presenting .leaflet-top.leaflet-right { top: 40px; }
+html[data-titlebar]:fullscreen body.presenting #presentDrag, html.win-fullscreen body.presenting #presentDrag { display: none; }
 
 .btn {
   background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
@@ -399,7 +400,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .modal-box { padding: 14px; max-height: 92vh; }
   .modal-x { width: 34px; height: 34px; margin: -6px -6px 6px 10px; } /* a finger-sized target */
   .btn, .icon-btn { min-height: 36px; }
-  .layer-node .icon-btn.mini, .obj-item .icon-btn.mini { width: 28px; height: 28px; }
+  .layer-node .icon-btn.mini, .obj-item .icon-btn.mini, .info-line .icon-btn.mini { width: 28px; height: 28px; min-height: 28px; }
 }
 @media (hover: none) and (pointer: coarse) {
   /* touch: bigger hit areas, no hover-only affordances */
@@ -437,8 +438,8 @@ body.presenting .mb-present-ctl { display: block; }
 .mb-present-ctl a { display: flex; align-items: center; justify-content: center; }
 /* full screen: the app's logo in the top right corner, the map's corner controls under it */
 .present-logo { position: fixed; top: 12px; right: 12px; z-index: 3000; height: 40px; width: auto; pointer-events: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
-:root:fullscreen body.presenting .present-logo { display: block; }
-:root:fullscreen body.presenting .leaflet-top.leaflet-right { top: 60px; }
+:root:fullscreen body.presenting .present-logo, html.win-fullscreen body.presenting .present-logo { display: block; }
+:root:fullscreen body.presenting .leaflet-top.leaflet-right, html.win-fullscreen body.presenting .leaflet-top.leaflet-right { top: 60px; }
 
 /* ---------- context menu ---------- */
 .mb-ctx {
