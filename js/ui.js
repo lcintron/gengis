@@ -241,17 +241,62 @@ window.MB = window.MB || {};
     $$('#toolbar button[data-tool]').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool)));
     MB.on('tool', name => {
       $$('#toolbar button[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
-      const hint = $('#toolHint');
-      let text = toolHints[name] || '';
-      if (name === 'svg' && MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) {
-        text = 'Click the map to place "' + MB.state.svgLibrary[MB.svgPlace.svgId].name + '". Choose a different SVG in the SVG panel.';
-      }
-      hint.textContent = text;
-      hint.classList.toggle('hidden', !text);
+      renderToolHint();
       if (name === 'svg') MB.ui.showTab('svg');
       MB.ui.renderSvgPanel();
     });
+    MB.on('layers', renderToolHint); // the active layer, or whether it is shown, changed
+    $('#toolHint').addEventListener('click', e => {
+      if (!e.target.closest('[data-act="show-layer"]')) return;
+      MB.setLayerVisible(MB.activeLayer().id, true);
+      MB.commit('layer visibility');
+    });
   }
+
+  // The tools that add something to the active layer.
+  const ADDING_TOOLS = ['marker', 'text', 'line', 'polygon', 'rectangle', 'circle', 'svg', 'measure-distance', 'measure-area'];
+
+  // The hint under the toolbar: how to use the tool, and a warning when what it adds goes to a hidden layer.
+  function renderToolHint() {
+    const hint = $('#toolHint'), name = MB.tools.current;
+    let text = toolHints[name] || '';
+    if (name === 'svg' && MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) {
+      text = 'Click the map to place "' + MB.state.svgLibrary[MB.svgPlace.svgId].name + '". Choose a different SVG in the SVG panel.';
+    }
+    const layer = MB.activeLayer();
+    const hidden = ADDING_TOOLS.includes(name) && layer && !layer.visible;
+    hint.innerHTML = (text ? `<div>${esc(text)}</div>` : '') + (hidden
+      ? `<div class="hint-warn" role="alert"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>Layer “${esc(layer.name)}” is hidden: what you add won't show.</span><button type="button" class="btn small" data-act="show-layer">Show layer</button></div>` : '');
+    hint.classList.toggle('hidden', !text && !hidden);
+  }
+
+  // Point at a hidden layer: its row in the Layers panel, and the warning under the toolbar, pulse.
+  function flashHidden(layer) {
+    setTimeout(() => {
+      [$(`#layerScroll .layer-node[data-id="${CSS.escape(layer.id)}"]`), $('#toolHint .hint-warn')].forEach(el => {
+        if (!el) return;
+        el.classList.remove('flash-hidden'); void el.offsetWidth; el.classList.add('flash-hidden');
+      });
+      const row = $(`#layerScroll .layer-node[data-id="${CSS.escape(layer.id)}"]`);
+      if (row) row.scrollIntoView({ block: 'nearest' });
+    }, 0);
+  }
+  // Something the user just added (count: how many, for several at once): if its layer is hidden, say so (it
+  // vanished as it was made) and point at the layer. Whether it did.
+  MB.noteAdded = function (f, count) {
+    const layer = f && f.mb && MB.getLayer(f.mb.layerId);
+    if (!layer || layer.visible) return false;
+    MB.toast(`Added ${count > 1 ? count + ' objects ' : ''}to layer “${layer.name}”, which is hidden. Show the layer to see ${count > 1 ? 'them' : 'it'}.`, 4500);
+    flashHidden(layer);
+    return true;
+  };
+  // A click to place text while the active layer is hidden: nothing is made (it could not be typed in).
+  MB.noteHiddenText = function () {
+    const layer = MB.activeLayer();
+    MB.toast(`Layer “${layer.name}” is hidden. Show it to add text there.`, 4500);
+    flashHidden(layer);
+  };
 
   /* ================= tabs ================= */
 
@@ -532,7 +577,8 @@ window.MB = window.MB || {};
       const tog = (k, label, title) => `<button type="button" class="tog${st[k] ? ' on' : ''}" data-toggle="${k}" title="${title}">${label}</button>`;
       const seg = (k, opts) => `<div class="seg small" data-set="${k}">${opts.map(o => `<button type="button" data-v="${o[0]}"${(st[k] || '') === o[0] ? ' class="active"' : ''} title="${o[2] || o[1]}">${o[1]}</button>`).join('')}</div>`;
       html += `<div class="section"><h3>Text</h3>
-        <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><input type="range" data-k="textSize" min="8" max="64" step="1" value="${st.textSize}"><span class="val" data-val="textSize">${st.textSize}px</span></div>
+        <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><input type="range" data-k="textSize" min="${Math.max(1, Math.min(8, MB.textShownSize(st)))}" max="${Math.max(64, MB.textShownSize(st))}" step="1" value="${MB.textShownSize(st)}" title="The size it shows at now (a text that scales with the map can be any size)"><span class="val" data-val="textSize">${MB.textShownSize(st)}px</span></div>
+        <div class="row" title="Fixed pixels: the same size at every zoom. Scale with map: grows and shrinks with the map, like a label printed on it"><label>Sizing</label>${seg('textScale', [['screen', 'Fixed pixels'], ['map', 'Scale with map']])}</div>
         <div class="row"><label>Format</label><div class="tog-group">${tog('textBold', '<b>B</b>', 'Bold')}${tog('textItalic', '<i>I</i>', 'Italic')}${tog('textUnderline', '<u>U</u>', 'Underline')}${tog('textStrike', '<s>S</s>', 'Strikethrough')}</div></div>
         <div class="row"><label>Align</label>${seg('textAlign', [['left', '&#8676;', 'Left'], ['center', '&#8801;', 'Center'], ['right', '&#8677;', 'Right']])}</div>
         <div class="row" title="Which side of the text sits on its map point"><label>Anchor H</label>${seg('textHAnchor', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
@@ -925,7 +971,11 @@ window.MB = window.MB || {};
       const all = document.createElement('div');
       all.className = 'btn-row';
       all.innerHTML = `<button class="btn small">Add all ${pois.length} as markers to "${esc(MB.activeLayer().name)}"</button>`;
-      all.querySelector('button').addEventListener('click', () => { pois.forEach(p => addPoi(p, true)); MB.commit('add pois'); MB.ui.clearPoiResults(); MB.toast(pois.length + ' markers added'); });
+      all.querySelector('button').addEventListener('click', () => {
+        const added = pois.map(p => addPoi(p, true)).filter(Boolean);
+        MB.commit('add pois'); MB.ui.clearPoiResults();
+        if (!MB.noteAdded(added[0], added.length)) MB.toast(added.length + ' markers added');
+      });
       out.appendChild(all);
       out.appendChild(list);
       if (g.getBounds().isValid() && !MB.map.getBounds().contains(g.getBounds())) MB.map.fitBounds(g.getBounds().pad(0.1));
@@ -933,7 +983,8 @@ window.MB = window.MB || {};
     function addPoi(p, silent) {
       const f = MB.restoreFeature({ type: 'marker', latlng: [p.latlng.lat, p.latlng.lng], name: p.name, style: MB.newShapeStyle(true) });
       if (f) bindNameTip(f);
-      if (!silent) { MB.commit('add poi'); MB.toast('Added "' + p.name + '"'); }
+      if (!silent) { MB.commit('add poi'); if (!MB.noteAdded(f)) MB.toast('Added "' + p.name + '"'); }
+      return f;
     }
   };
 
@@ -1177,6 +1228,8 @@ window.MB = window.MB || {};
       if (reveal) { MB.ui.showTab('props'); revealRow(l); }
     });
     MB.on('multi-contextmenu', info => MB.menus.multi(info));
+    // a selected text that scales with the map: its size slider follows the zoom
+    MB.map.on('zoomend', () => { const f = MB.selected; if (f && f.mb.type === 'text' && f.mb.style.textScale === 'map') MB.ui.renderProps(); });
     MB.on('featurechange', l => { if (l === MB.selected) MB.ui.renderMeasureBox(); });
     MB.on('project', () => { MB.ui.renderSettings(); MB.ui.renderSvgPanel(); $('#basemapSelect').value = MB.state.basemap; });
     MB.on('poi-request', term => { MB.ui.showTab('places'); setTimeout(() => MB.ui.runPoiSearch(term), 800); });

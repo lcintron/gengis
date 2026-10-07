@@ -8,7 +8,8 @@ window.MB = window.MB || {};
     fill: true, fillColor: '#e4572e', fillOpacity: 0.25,
     textColor: '#ffffff', textSize: 14, textBg: '#1b1f27', textBgOn: true,
     textBold: false, textItalic: false, textUnderline: false, textStrike: false,
-    textAlign: 'center', textHAnchor: 'center', textVAnchor: 'middle'
+    textAlign: 'center', textHAnchor: 'center', textVAnchor: 'middle',
+    textScale: 'screen' // 'screen': the same size at every zoom; 'map': grows and shrinks with the map (textSize at textRefZoom)
   };
   MB.currentStyle = MB.deepClone(MB.defaultStyle);
 
@@ -281,8 +282,9 @@ window.MB = window.MB || {};
 
   MB.applyStyle = function (layer, patch, opts) {
     opts = opts || {};
-    const st = Object.assign(layer.mb.style, patch || {});
     const t = layer.mb.type;
+    if (t === 'text' && patch) textSizing(layer.mb.style, patch = Object.assign({}, patch));
+    const st = Object.assign(layer.mb.style, patch || {});
     if (layer instanceof L.Path) {
       const ls = MB.toLeafletStyle(st);
       if (t === 'line' || t === 'measure-line') ls.fill = false; // open lines are never filled
@@ -295,10 +297,52 @@ window.MB = window.MB || {};
     if (!opts.noCommit) MB.commitDebounced('style');
   };
 
+  // Text that scales with the map: its size is textSize at zoom textRefZoom, doubling with each zoom step in.
+  const zoomNow = () => (MB.map ? MB.map.getZoom() : 0);
+  const mapScale = st => (st.textScale === 'map' && st.textRefZoom != null ? Math.pow(2, zoomNow() - st.textRefZoom) : 1);
+  // The size it shows at now, in px (what the size slider shows and sets, and what it keeps when switching to fixed
+  // pixels): scaled, but never beyond MAX_SHOWN, where drawing stops growing.
+  const MAX_SHOWN = 2000;
+  const shown = st => Math.min((+st.textSize || 14) * mapScale(st), Math.max(MAX_SHOWN, +st.textSize || 14));
+  MB.textShownSize = st => Math.round(shown(st));
+  // A style change on a text: switching to 'map' keeps the size it shows (from this zoom on); back to 'screen', it
+  // keeps the size it shows now; a new size while scaling with the map is the size at this zoom.
+  function textSizing(st, patch) {
+    const mode = patch.textScale || st.textScale;
+    if (patch.textScale && patch.textScale !== st.textScale) {
+      if (mode === 'map') patch.textRefZoom = zoomNow();
+      else { if (!('textSize' in patch)) patch.textSize = Math.max(1, MB.textShownSize(st)); patch.textRefZoom = null; }
+    }
+    if ('textSize' in patch && mode === 'map') patch.textRefZoom = zoomNow();
+  }
+
+  // Where the text block sits relative to its map point (its anchor), and its scale for 'map' sizing (about the
+  // anchor, so the text grows from the point it is pinned to). Too small to read, it is not drawn.
+  const ANCHOR_X = { left: ['0', '0%'], center: ['-50%', '50%'], right: ['-100%', '100%'] };
+  const ANCHOR_Y = { top: ['0', '0%'], middle: ['-50%', '50%'], bottom: ['-100%', '100%'] };
+  MB.textTransform = function (layer) {
+    const st = layer.mb.style, ta = layer.pm && layer.pm.textArea;
+    if (!ta) return;
+    const [hx, ox] = ANCHOR_X[st.textHAnchor || 'center'], [vy, oy] = ANCHOR_Y[st.textVAnchor || 'middle'];
+    const px = shown(st), s = px / (+st.textSize || 14);
+    ta.style.transformOrigin = ox + ' ' + oy;
+    ta.style.transform = `translate(${hx}, ${vy})` + (s !== 1 ? ` scale(${s})` : '');
+    ta.style.visibility = px < 3 ? 'hidden' : '';
+  };
+  let zoomHooked = false;
+  function rescaleTexts() {
+    Object.keys(MB.featureLayers).forEach(id => {
+      const f = MB.featureLayers[id];
+      if (f.mb && f.mb.type === 'text' && f.mb.style.textScale === 'map') MB.textTransform(f);
+    });
+  }
+
   MB.applyTextStyle = function (layer) {
     const st = layer.mb.style;
     const ta = layer.pm && layer.pm.textArea;
     if (!ta) return;
+    if (st.textScale === 'map' && st.textRefZoom == null) st.textRefZoom = zoomNow(); // placed while scaling with the map
+    if (!zoomHooked && MB.map) { MB.map.on('zoom zoomend', rescaleTexts); zoomHooked = true; }
     ta.style.color = st.textColor;
     ta.style.fontSize = st.textSize + 'px';
     ta.style.lineHeight = '1.2';
@@ -309,12 +353,25 @@ window.MB = window.MB || {};
     ta.style.fontStyle = st.textItalic ? 'italic' : 'normal';
     ta.style.textDecoration = [st.textUnderline && 'underline', st.textStrike && 'line-through'].filter(Boolean).join(' ') || 'none';
     ta.style.textAlign = st.textAlign || 'center';
-    // Anchor: where the text block sits relative to its map point.
-    const hx = { left: '0', center: '-50%', right: '-100%' }[st.textHAnchor || 'center'];
-    const vy = { top: '0', middle: '-50%', bottom: '-100%' }[st.textVAnchor || 'middle'];
-    ta.style.transform = `translate(${hx}, ${vy})`;
+    MB.textTransform(layer);
     try { layer.pm.setText(layer.pm.getText()); } catch (e) { /* not yet on map */ }
   };
+
+  // Geoman sizes a text box to its scrollHeight/scrollWidth, and then the padding is added again around that
+  // (content-box): an empty strip at the bottom of a text with a background. scrollHeight holds both vertical
+  // paddings; a text area's scrollWidth holds only the left one (and rounds down: one pixel more, or the text spills
+  // into the right padding). Size the content to the text alone.
+  if (L.PM && L.PM.Edit && L.PM.Edit.Text && L.PM.Edit.Text.prototype._autoResize) {
+    const autoResize = L.PM.Edit.Text.prototype._autoResize;
+    L.PM.Edit.Text.prototype._autoResize = function () {
+      autoResize.call(this);
+      const ta = this.textArea, cs = getComputedStyle(ta);
+      if (cs.boxSizing !== 'content-box') return;
+      const px = v => parseFloat(v) || 0;
+      ta.style.height = Math.max(1, px(ta.style.height) - px(cs.paddingTop) - px(cs.paddingBottom)) + 'px';
+      ta.style.width = Math.max(1, px(ta.style.width) - px(cs.paddingLeft) + 1) + 'px';
+    };
+  }
 
   /* ---------- SVG features ---------- */
 
