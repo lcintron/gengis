@@ -311,7 +311,7 @@ window.MB = window.MB || {};
     const mode = patch.textScale || st.textScale;
     if (patch.textScale && patch.textScale !== st.textScale) {
       if (mode === 'map') patch.textRefZoom = zoomNow();
-      else { patch.textSize = Math.max(1, MB.textShownSize(st)); patch.textRefZoom = null; }
+      else { if (!('textSize' in patch)) patch.textSize = Math.max(1, MB.textShownSize(st)); patch.textRefZoom = null; }
     }
     if ('textSize' in patch && mode === 'map') patch.textRefZoom = zoomNow();
   }
