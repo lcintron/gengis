@@ -113,8 +113,8 @@ window.MB = window.MB || {};
 
   // Does the file hold the open project as it is now (whatever its formatting, key order and save time)?
   const sorted = v => Array.isArray(v) ? v.map(sorted)
-    : (v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = sorted(v[k]); return o; }, {}) : v);
-  const canon = p => { const c = Object.assign({}, p); delete c.savedAt; return JSON.stringify(sorted(c)); };
+    : (v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = sorted(v[k]); return o; }, Object.create(null)) : v); // no prototype: a "__proto__" key stays a key
+  const canon = p => { const c = sorted(p); delete c.savedAt; return JSON.stringify(c); };
   async function holdsCurrent(handle) {
     try { return canon(JSON.parse(await (await handle.getFile()).text())) === canon(current().p); } catch (e) { return false; }
   }
