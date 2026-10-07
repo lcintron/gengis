@@ -64,14 +64,17 @@ html[data-titlebar] #topbar { -webkit-app-region: drag; user-select: none; }
 html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown) { -webkit-app-region: no-drag; }
 html[data-titlebar="overlay"] #topbar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="mac"] #topbar { padding-left: 84px; }
-/* presenting (the top bar hidden): the map's corner controls below the window buttons, and a strip along the top
-   (left of them) to move the window by; in full screen there are no window buttons and nothing to move */
-html[data-titlebar="overlay"] body.presenting .leaflet-top.leaflet-right { top: env(titlebar-area-height, 51px); }
+/* presenting (the top bar hidden): the logo and the map's corner controls below the window buttons, and a strip
+   along the top (left of them) to move the window by; in full screen there are no window buttons and nothing to move */
+html[data-titlebar="overlay"] body.presenting .present-logo { top: calc(env(titlebar-area-height, 51px) + 8px); }
+html[data-titlebar="overlay"] body.presenting .leaflet-top.leaflet-right { top: calc(env(titlebar-area-height, 51px) + 56px); }
 html[data-titlebar] body.presenting #presentDrag { display: block; position: fixed; left: 0; top: 0; z-index: 3000; -webkit-app-region: drag;
   height: env(titlebar-area-height, 51px); right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
 html[data-titlebar="mac"] body.presenting #presentDrag { height: 40px; right: 0; }
-html[data-titlebar="mac"] body.presenting .leaflet-top.leaflet-right { top: 40px; }
 html[data-titlebar]:fullscreen body.presenting #presentDrag, html.win-fullscreen body.presenting #presentDrag { display: none; }
+html[data-titlebar="overlay"]:fullscreen body.presenting .present-logo, html[data-titlebar="overlay"].win-fullscreen body.presenting .present-logo { top: 12px; }
+html[data-titlebar="overlay"]:fullscreen body.presenting .leaflet-top.leaflet-right,
+html[data-titlebar="overlay"].win-fullscreen body.presenting .leaflet-top.leaflet-right { top: 60px; }
 
 .btn {
   background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
@@ -432,14 +435,13 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 /* ---------- presenter mode ---------- */
 body.presenting #topbar, body.presenting #toolbar, body.presenting #sidebar, body.presenting #toolHint, body.presenting .mb-status,
 body.presenting .mb-measure-tip { display: none !important; }
-/* its controls: exit and full screen, map buttons under the location button (presenter.js) */
+/* its controls: exit and full screen, map buttons at the top of the map's top right corner (presenter.js), and the
+   app's logo in that corner above all of them (in a window and in full screen) */
 .mb-present-ctl, #presentDrag, .present-logo { display: none; }
-body.presenting .mb-present-ctl { display: block; }
+body.presenting .mb-present-ctl, body.presenting .present-logo { display: block; }
 .mb-present-ctl a { display: flex; align-items: center; justify-content: center; }
-/* full screen: the app's logo in the top right corner, the map's corner controls under it */
 .present-logo { position: fixed; top: 12px; right: 12px; z-index: 3000; height: 40px; width: auto; pointer-events: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
-:root:fullscreen body.presenting .present-logo, html.win-fullscreen body.presenting .present-logo { display: block; }
-:root:fullscreen body.presenting .leaflet-top.leaflet-right, html.win-fullscreen body.presenting .leaflet-top.leaflet-right { top: 60px; }
+body.presenting .leaflet-top.leaflet-right { top: 60px; }
 
 /* ---------- context menu ---------- */
 .mb-ctx {

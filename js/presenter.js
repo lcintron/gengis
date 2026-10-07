@@ -26,9 +26,9 @@ window.MB = window.MB || {};
       MB.emit('presenter', true);
     },
 
-    // The presenter's controls: exit and full screen, as map buttons under the location button (css shows them
-    // only while presenting), the app's logo for full screen, and, in the desktop app, a strip at the top to move
-    // the window by (its title bar is hidden while presenting).
+    // The presenter's controls: exit and full screen, as map buttons at the top of the map's top right corner (css
+    // shows them only while presenting), the app's logo above them, and, in the desktop app, a strip at the top to
+    // move the window by (its title bar is hidden while presenting).
     build() {
       const self = this;
       const Ctl = L.Control.extend({
@@ -42,13 +42,15 @@ window.MB = window.MB || {};
             L.DomEvent.on(a, 'click', e => { L.DomEvent.preventDefault(e); if (act === 'exit') self.exit(); else self.toggleFullscreen(); });
             return a;
           };
-          button('exit', ICONS.exit, 'Exit presenter mode (Esc)'); // right under the location button
+          button('exit', ICONS.exit, 'Exit presenter mode (Esc)');
           self.fsBtn = button('fs', ICONS.full, 'Full screen');
           L.DomEvent.disableClickPropagation(bar);
           return bar;
         }
       });
-      this.ctl = new Ctl().addTo(MB.map); // added after the location button: under it
+      this.ctl = new Ctl().addTo(MB.map);
+      const box = this.ctl.getContainer(); // first in the corner: above the zoom and location buttons
+      box.parentNode.insertBefore(box, box.parentNode.firstChild);
       const logo = document.createElement('img');
       logo.className = 'present-logo'; logo.src = 'icons/logo-on-dark.svg'; logo.alt = MB.APP.name;
       document.body.appendChild(logo);

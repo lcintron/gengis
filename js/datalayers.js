@@ -10,7 +10,7 @@ window.MB = window.MB || {};
   const esc = MB.escapeHtml;
   const FAA = 'https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/';
   const CELL = 0.5;            // degrees
-  const MAX_CELLS = 24;        // refuse to load when the view spans more cells than this
+  const MAX_CELLS = 24;        // refuse to load when the view spans more cells than this (a dataset's maxCells: its own)
   const MAX_CACHED_LAYERS = 80; // in-memory cells kept per dataset (LRU)
   const CACHE_REV = 2;          // part of every stored cell's key; bump when what a cell holds changes (2: detail follows the zoom)
   // Detail follows the zoom. The FAA polygons carry thousands of vertices each at 10 cm precision: far more than
@@ -90,7 +90,9 @@ window.MB = window.MB || {};
 
   /* ---------- catalog ---------- */
   const ESRI = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/';
-  const boundaryStyle = (color, weight, dash) => () => ({ color, weight, opacity: .85, fill: false, dashArray: dash || null, lineJoin: 'round' });
+  // A border: a light line on a dark casing (buildBorders draws the casing under it), seen on imagery and light maps.
+  const boundaryStyle = (color, weight, dash) => () => ({ color, weight, opacity: .95, fill: false, dashArray: dash || null, lineJoin: 'round',
+    casing: { color: '#0b1118', weight: weight + 2.5, opacity: .55 } });
   // A simplification tolerance (degrees) of half a pixel at zoom z, at latitudes up to about 55 degrees: what the
   // eye cannot tell from the full outline. The FAA layers keep to the same budget (DETAIL).
   const halfPx = z => 0.5 * 360 / (256 * Math.pow(2, z)) * Math.cos(55 * Math.PI / 180);
@@ -114,17 +116,19 @@ window.MB = window.MB || {};
     // the simplified world countries). With the coast gone, the simplified world countries are good enough at every
     // zoom: their land borders are as close as the detailed data's, and their polygons take in lakes, so borders
     // across lakes (US-Canada) are kept. The state outlines stop at the shore: borders across water are not there.
-    { id: 'countries', group: 'Boundaries', name: 'Country borders', minZoom: 0, defaultOn: true, rev: 1,
+    // Borders are shown at every zoom and for any view: they come from Esri's services (not the FAA's metered
+    // quota) and are cached, so a wide view may take up to 200 cells (the whole world is 162 at their 20 degrees).
+    { id: 'countries', group: 'Boundaries', name: 'Country borders', minZoom: 0, maxCells: 200, defaultOn: true, rev: 1,
       borders: p => p.COUNTRY || '',
       levels: [{ maxZoom: 4, whole: true, offset: halfPx(4) }, { maxZoom: 7, cellSize: 20, offset: halfPx(7) }, { cellSize: 10, offset: 0 }],
-      url: ESRI + 'World_Countries_(Generalized)/FeatureServer/0', style: boundaryStyle('#1b1f27', 1.6),
-      label: p => p.COUNTRY || '', fields: ['COUNTRY', 'ISO', 'COUNTRYAFF'], legend: [['Country border', '#1b1f27']], desc: 'Esri Living Atlas. Land borders; coastlines are left to the base map.' },
-    { id: 'admin1', group: 'Boundaries', name: 'State / province borders', minZoom: 0, maxZoom: 13, defaultOn: true, rev: 1,
+      url: ESRI + 'World_Countries_(Generalized)/FeatureServer/0', style: boundaryStyle('#ffffff', 2),
+      label: p => p.COUNTRY || '', fields: ['COUNTRY', 'ISO', 'COUNTRYAFF'], legend: [['Country border', '#ffffff']], desc: 'Esri Living Atlas. Land borders at every zoom; coastlines are left to the base map.' },
+    { id: 'admin1', group: 'Boundaries', name: 'State / province borders', minZoom: 0, maxCells: 200, defaultOn: true, rev: 1,
       borders: p => (p.NAME || '') + '|' + (p.COUNTRY || ''),
       levels: [{ maxZoom: 3, whole: true, offset: halfPx(3) }, { maxZoom: 5, cellSize: 20, offset: halfPx(5) }, { maxZoom: 7, cellSize: 10, offset: halfPx(7) }, { cellSize: 5, offset: 0 }],
-      url: ESRI + 'World_Administrative_Divisions/FeatureServer/0', style: boundaryStyle('#4a4f5c', 1.1, '5,4'),
-      label: p => p.NAME || '', fields: ['NAME', 'COUNTRY', 'ADMINTYPE', 'ISO_CODE', 'AUTONOMOUS', 'DISPUTED'], legend: [['State / province border (dashed)', '#4a4f5c']],
-      desc: 'States, provinces, regions: land borders, full detail from zoom 8, shown to zoom 13.' },
+      url: ESRI + 'World_Administrative_Divisions/FeatureServer/0', style: boundaryStyle('#d6dde8', 1.4, '6,4'),
+      label: p => p.NAME || '', fields: ['NAME', 'COUNTRY', 'ADMINTYPE', 'ISO_CODE', 'AUTONOMOUS', 'DISPUTED'], legend: [['State / province border (dashed)', '#d6dde8']],
+      desc: 'States, provinces, regions: land borders at every zoom, full detail from zoom 8.' },
     { id: 'fria', group: 'Remote ID', name: 'FAA-Recognized Identification Areas (FRIA)', minZoom: 7, cellSize: 1,
       source: 'faa', url: FAA + 'FAA_Recognized_Identification_Areas/FeatureServer/0', style: solid('#2ecc71', .25),
       label: p => p.title || p.orgName || 'FRIA', fields: ['title', 'orgName', 'address1', 'city', 'state', 'zipcode', 'startDate', 'endDate', 'refNumber'],
@@ -453,8 +457,9 @@ window.MB = window.MB || {};
           return;
         }
         const level = this.levelFor(ds.def, zoom);
-        const cells = level.whole ? [{ key: 'all', bounds: L.latLngBounds([-90, -180], [90, 180]) }] : cellsFor(bounds, level.cellSize);
-        if (cells.length > MAX_CELLS) { ds.status = 'View too large: zoom in'; return; }
+        const max = ds.def.maxCells || MAX_CELLS;
+        const cells = level.whole ? [{ key: 'all', bounds: L.latLngBounds([-90, -180], [90, 180]) }] : cellsFor(bounds, level.cellSize, max);
+        if (cells.length > max) { ds.status = 'View too large: zoom in'; return; }
         const prefix = 'L' + level.idx + ':';
         cells.forEach(cell => {
           const c = ds.cells.get(prefix + cell.key);
@@ -480,8 +485,9 @@ window.MB = window.MB || {};
       const zoom = MB.map.getZoom(), view = MB.map.getBounds();
       if (zoom < ds.def.minZoom || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) { ds.cells.forEach(c => hideCell(ds, c)); return; }
       const level = this.levelFor(ds.def, zoom), prefix = 'L' + level.idx + ':';
-      const cells = level.whole ? [{ key: 'all' }] : cellsFor(view, level.cellSize);
-      if (cells.length > MAX_CELLS) return; // view too large for this dataset: leave what is shown
+      const max = ds.def.maxCells || MAX_CELLS;
+      const cells = level.whole ? [{ key: 'all' }] : cellsFor(view, level.cellSize, max);
+      if (cells.length > max) return; // view too large for this dataset: leave what is shown
       const need = cells.map(c => prefix + c.key), needed = new Set(need);
       // out of view: this level's cells at once, another level's as soon as they no longer touch the view
       ds.cells.forEach((c, key) => { if (c.shown && !needed.has(key) && (key.startsWith(prefix) || !view.intersects(c.bounds))) hideCell(ds, c); });
@@ -567,8 +573,8 @@ window.MB = window.MB || {};
     });
   };
 
-  function cellsFor(bounds, size) {
-    size = size || CELL;
+  function cellsFor(bounds, size, max) {
+    size = size || CELL; max = max || MAX_CELLS;
     const out = [];
     const s = Math.max(-90, Math.floor(bounds.getSouth() / size) * size), n = Math.min(90, bounds.getNorth());
     const w = Math.max(-180, Math.floor(bounds.getWest() / size) * size), e = Math.min(180, bounds.getEast());
@@ -576,7 +582,7 @@ window.MB = window.MB || {};
       for (let lng = w; lng < e; lng += size) {
         const la = +lat.toFixed(2), lo = +lng.toFixed(2);
         out.push({ key: la + '_' + lo, bounds: L.latLngBounds([la, lo], [la + size, lo + size]) });
-        if (out.length > MAX_CELLS + 1) return out;
+        if (out.length > max + 1) return out;
       }
     }
     return out;
@@ -903,9 +909,11 @@ window.MB = window.MB || {};
       }
       flush();
     }));
-    const style = def.style({});
+    const style = def.style({}), casing = style.casing;
     const lines = [];
     pairs.forEach(p => {
+      // the casing first (drawn under the line), solid, not clickable
+      if (casing) lines.push(L.polyline(p.lines, Object.assign({ fill: false, lineJoin: 'round' }, casing, { pane: 'mb-data', renderer: dataRenderer(), pmIgnore: true, interactive: false })));
       const line = L.polyline(p.lines, Object.assign({}, style, { pane: 'mb-data', renderer: dataRenderer(), pmIgnore: true, interactive: true }));
       const names = [p.a.label, p.b.label].filter(Boolean);
       if (names.length) line.bindTooltip(names.join(' / '), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
