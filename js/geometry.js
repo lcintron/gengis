@@ -196,6 +196,63 @@ window.MB = window.MB || {};
     return n;
   };
 
+  /* ================= joining shapes ================= */
+  // Overlapping (or touching) polygons, rectangles, circles and area measurements become one polygon: their union,
+  // holes kept. The union is worked out in Web Mercator, where the shapes' edges are drawn straight (a circle as a
+  // 72-sided polygon), with polygon-clipping (vendor/).
+
+  const SHAPE_TYPES = ['polygon', 'rectangle', 'circle', 'measure-area'];
+  MB.isJoinableShape = l => SHAPE_TYPES.includes(l.mb.type);
+  const merc = L.Projection.SphericalMercator;
+  const closeRing = r => (r.length && (r[0][0] !== r[r.length - 1][0] || r[0][1] !== r[r.length - 1][1]) ? r.concat([r[0]]) : r);
+  const ringXY = lls => closeRing(lls.map(p => { const q = merc.project(p); return [q.x, q.y]; }));
+
+  // A shape as polygon-clipping's multipolygon: [polygon [ring [x, y]]]
+  function shapeGeom(l) {
+    if (l.mb.type === 'circle') {
+      const c = l.getLatLng(), r = l.getRadius();
+      return [[ringXY(Array.from({ length: 72 }, (_, i) => MB.destination(c, i * 5, r)))]];
+    }
+    const ll = l.getLatLngs();
+    if (MB.isLatLng(ll[0])) return [[ringXY(ll)]];                    // one ring
+    if (ll[0] && MB.isLatLng(ll[0][0])) return [ll.map(ringXY)];       // a ring and its holes
+    return ll.map(poly => poly.map(ringXY));                            // several parts
+  }
+
+  // The union of the selected shapes, or why there is none.
+  MB.shapeUnion = function (layers) {
+    const shapes = Array.from(layers).filter(MB.isJoinableShape);
+    if (shapes.length < 2) return { shapes, error: 'Select two or more overlapping shapes to join' };
+    if (!window.polygonClipping) return { shapes, error: 'Joining shapes is not available' };
+    let result;
+    try { result = window.polygonClipping.union(...shapes.map(shapeGeom)); } catch (e) { return { shapes, error: 'These shapes could not be joined' }; }
+    if (result.length !== 1) return { shapes, error: "These shapes don't all overlap: move them together and try again" };
+    return { shapes, polygon: result[0] };
+  };
+
+  MB.joinShapes = function (layers) {
+    const u = MB.shapeUnion(layers);
+    if (!u.polygon) { MB.toast(u.error, 5000); return null; }
+    const shapes = u.shapes, first = shapes[0].mb;
+    const rings = u.polygon.map(r => r.slice(0, -1).map(p => toArr(merc.unproject(L.point(p[0], p[1])))));
+    const named = shapes.find(l => l.mb.name);
+    const d = { type: shapes.every(l => l.mb.type === 'measure-area') ? 'measure-area' : 'polygon', layerId: first.layerId,
+      name: named ? named.mb.name : '', style: MB.deepClone(first.style), label: first.label ? MB.deepClone(first.label) : undefined, latlngs: rings };
+    const idx = Object.keys(MB.featureLayers).indexOf(first.id);
+    MB.deselect();
+    shapes.forEach(l => MB.removeFeature(l.mb.id, { silent: true }));
+    const n = MB.restoreFeature(d);
+    reinsert(n.mb.id, idx); // where the first shape was
+    MB.applyFeatureOrder(n.mb.layerId);
+    if (MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(n);
+    MB.emit('features');
+    MB.commit('join shapes');
+    if (!MB.tools.picks(MB.tools.current)) MB.tools.set('select');
+    MB.selectFeature(n);
+    MB.toast(`Joined ${shapes.length} shapes: area ${MB.formatArea(MB.polygonArea(n.getLatLngs()))}` + (rings.length > 1 ? ` (${rings.length - 1} hole${rings.length > 2 ? 's' : ''} kept)` : ''), 4000);
+    return n;
+  };
+
   /* ================= snap indicator ================= */
 
   MB.snap = {

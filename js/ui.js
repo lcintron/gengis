@@ -632,12 +632,17 @@ window.MB = window.MB || {};
   function renderMulti(panel) {
     const list = Array.from(MB.multi);
     const lines = list.filter(l => l.mb.type === 'line' || l.mb.type === 'measure-line');
+    const union = MB.shapeUnion(list); // shown when two or more shapes are selected: joinable when they overlap
     panel.innerHTML = `<div class="panel-head"><h3>${list.length} objects selected</h3><button class="btn small ghost" data-act="clear">Clear</button></div>
       <div class="feature-list" style="max-height:180px">${list.map(l => `<div class="feature-item"><span class="swatch" style="background:${l.mb.type === 'svg' ? 'transparent' : l.mb.style.color}"></span><span class="fname">${esc(l.mb.name || MB.typeLabels[l.mb.type])}</span><span class="ftype">${MB.typeLabels[l.mb.type]}</span></div>`).join('')}</div>
       <div class="section" style="margin-top:12px"><h3>Lines (${lines.length})</h3>
         <div class="btn-row"><button class="btn small primary" data-act="join"${lines.length < 1 ? ' disabled' : ''}>Join lines</button><button class="btn small" data-act="poly"${lines.length < 1 ? ' disabled' : ''}>Polygon from lines (keep lines)</button></div>
         <p class="note">Ends must touch. A closed chain becomes a polygon.</p>
       </div>
+      ${union.shapes.length >= 2 ? `<div class="section"><h3>Shapes (${union.shapes.length})</h3>
+        <div class="btn-row"><button class="btn small primary" data-act="join-shapes"${union.polygon ? '' : ' disabled'}>Join shapes</button></div>
+        <p class="note">${union.polygon ? 'Overlapping shapes become one polygon (its style from the first one picked).' : esc(union.error)}</p>
+      </div>` : ''}
       <div class="section"><h3>All selected</h3>
         <div class="row"><label>Move to layer</label><select id="multiLayer"><option value="">— choose —</option>${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div>
         <div class="btn-row"><button class="btn small danger" data-act="delete">Delete ${list.length} objects</button></div>
@@ -647,6 +652,7 @@ window.MB = window.MB || {};
       if (act === 'clear') MB.deselect();
       else if (act === 'join') MB.joinLines(MB.multi);
       else if (act === 'poly') MB.joinLines(MB.multi, { keepLines: true });
+      else if (act === 'join-shapes') MB.joinShapes(MB.multi);
       else if (act === 'delete') MB.deleteMulti();
     }));
     $('#multiLayer', panel).addEventListener('change', e => { if (e.target.value) MB.moveMultiToLayer(e.target.value); });
@@ -1305,7 +1311,10 @@ window.MB = window.MB || {};
 
     MB.on('layers', () => { MB.ui.renderLayers(); if (MB.selected) MB.ui.renderProps(); });
     MB.on('features', () => MB.ui.renderLayers());
-    MB.on('datapick', picked => { MB.ui.renderProps(); if (picked) MB.ui.showTab('props'); });
+    MB.on('datapick', picked => {
+      MB.ui.renderProps();
+      if (picked && !$('#sidebar').classList.contains('collapsed')) MB.ui.showTab('props'); // a closed panel (the phone's sheet) stays closed
+    });
     MB.on('selection', l => {
       if (l && MB.data.picked) MB.data.picked = null; // an object of one's own replaces a data feature in Properties
       // Picked on the map (not in the layer list): show its properties and its row, opening its layer if collapsed.

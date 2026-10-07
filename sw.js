@@ -16,6 +16,7 @@ const SHELL = [
   './vendor/leaflet/images/marker-icon.png', './vendor/leaflet/images/marker-icon-2x.png', './vendor/leaflet/images/marker-shadow.png',
   './vendor/leaflet/images/layers.png', './vendor/leaflet/images/layers-2x.png',
   './vendor/geoman/leaflet-geoman.min.js', './vendor/geoman/leaflet-geoman.css',
+  './vendor/polygon-clipping/polygon-clipping.umd.min.js',
   './icons/icon.svg', './icons/logo.svg', './icons/logo-on-dark.svg', './icons/favicon.ico', './icons/favicon-32.png',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
   './icons/apple-touch-icon.png', './icons/splash-wordmark.png'
