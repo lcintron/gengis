@@ -241,17 +241,60 @@ window.MB = window.MB || {};
     $$('#toolbar button[data-tool]').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool)));
     MB.on('tool', name => {
       $$('#toolbar button[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
-      const hint = $('#toolHint');
-      let text = toolHints[name] || '';
-      if (name === 'svg' && MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) {
-        text = 'Click the map to place "' + MB.state.svgLibrary[MB.svgPlace.svgId].name + '". Choose a different SVG in the SVG panel.';
-      }
-      hint.textContent = text;
-      hint.classList.toggle('hidden', !text);
+      renderToolHint();
       if (name === 'svg') MB.ui.showTab('svg');
       MB.ui.renderSvgPanel();
     });
+    MB.on('layers', renderToolHint); // the active layer, or whether it is shown, changed
+    $('#toolHint').addEventListener('click', e => {
+      if (!e.target.closest('[data-act="show-layer"]')) return;
+      MB.setLayerVisible(MB.activeLayer().id, true);
+      MB.commit('layer visibility');
+    });
   }
+
+  // The tools that add something to the active layer.
+  const ADDING_TOOLS = ['marker', 'text', 'line', 'polygon', 'rectangle', 'circle', 'svg', 'measure-distance', 'measure-area'];
+
+  // The hint under the toolbar: how to use the tool, and a warning when what it adds goes to a hidden layer.
+  function renderToolHint() {
+    const hint = $('#toolHint'), name = MB.tools.current;
+    let text = toolHints[name] || '';
+    if (name === 'svg' && MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) {
+      text = 'Click the map to place "' + MB.state.svgLibrary[MB.svgPlace.svgId].name + '". Choose a different SVG in the SVG panel.';
+    }
+    const layer = MB.activeLayer();
+    const hidden = ADDING_TOOLS.includes(name) && layer && !layer.visible;
+    hint.innerHTML = (text ? `<div>${esc(text)}</div>` : '') + (hidden
+      ? `<div class="hint-warn" role="alert"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>Layer “${esc(layer.name)}” is hidden: what you add won't show.</span><button type="button" class="btn small" data-act="show-layer">Show layer</button></div>` : '');
+    hint.classList.toggle('hidden', !text && !hidden);
+  }
+
+  // Point at a hidden layer: its row in the Layers panel, and the warning under the toolbar, pulse.
+  function flashHidden(layer) {
+    setTimeout(() => {
+      [$(`#layerScroll .layer-node[data-id="${CSS.escape(layer.id)}"]`), $('#toolHint .hint-warn')].forEach(el => {
+        if (!el) return;
+        el.classList.remove('flash-hidden'); void el.offsetWidth; el.classList.add('flash-hidden');
+      });
+      const row = $(`#layerScroll .layer-node[data-id="${CSS.escape(layer.id)}"]`);
+      if (row) row.scrollIntoView({ block: 'nearest' });
+    }, 0);
+  }
+  // Something the user just added: if its layer is hidden, say so (it vanished as it was made) and point at the layer.
+  MB.noteAdded = function (f) {
+    const layer = f && f.mb && MB.getLayer(f.mb.layerId);
+    if (!layer || layer.visible) return;
+    MB.toast(`Added to layer “${layer.name}”, which is hidden. Show the layer to see it.`, 4500);
+    flashHidden(layer);
+  };
+  // A click to place text while the active layer is hidden: nothing is made (it could not be typed in).
+  MB.noteHiddenText = function () {
+    const layer = MB.activeLayer();
+    MB.toast(`Layer “${layer.name}” is hidden. Show it to add text there.`, 4500);
+    flashHidden(layer);
+  };
 
   /* ================= tabs ================= */
 
@@ -934,7 +977,7 @@ window.MB = window.MB || {};
     function addPoi(p, silent) {
       const f = MB.restoreFeature({ type: 'marker', latlng: [p.latlng.lat, p.latlng.lng], name: p.name, style: MB.newShapeStyle(true) });
       if (f) bindNameTip(f);
-      if (!silent) { MB.commit('add poi'); MB.toast('Added "' + p.name + '"'); }
+      if (!silent) { MB.commit('add poi'); MB.toast('Added "' + p.name + '"'); MB.noteAdded(f); }
     }
   };
 

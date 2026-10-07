@@ -178,17 +178,17 @@ window.MB = window.MB || {};
         { sep: true },
         { label: 'Add marker here', action: () => {
           const f = MB.restoreFeature({ type: 'marker', latlng: [ll.lat, ll.lng], style: MB.newShapeStyle(true) });
-          MB.commit('add marker'); MB.tools.set('select'); if (f) MB.selectFeature(f);
+          MB.commit('add marker'); MB.tools.set('select'); if (f) MB.selectFeature(f); MB.noteAdded(f);
         } },
         { label: 'Add text here', action: () => {
           const f = MB.restoreFeature({ type: 'text', latlng: [ll.lat, ll.lng], text: 'Label', style: MB.deepClone(MB.currentStyle) });
-          MB.commit('add text'); MB.tools.set('select');
+          MB.commit('add text'); MB.tools.set('select'); MB.noteAdded(f);
           if (f) { MB.selectFeature(f); try { f.pm.focus(); f.pm.textArea.select(); } catch (err) { /* ignore */ } }
         } },
         { label: 'Place SVG here', disabled: !hasSvg, action: () => {
           const id = (MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) ? MB.svgPlace.svgId : Object.keys(MB.state.svgLibrary)[0];
           const f = MB.createSvgFeature(ll, id);
-          MB.commit('place svg'); MB.tools.set('select'); if (f) MB.selectFeature(f);
+          MB.commit('place svg'); MB.tools.set('select'); if (f) MB.selectFeature(f); MB.noteAdded(f);
         } },
         { label: 'Measure from here', action: () => {
           MB.tools.set('measure-distance');

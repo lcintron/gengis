@@ -44,6 +44,10 @@ window.MB = window.MB || {};
     },
 
     startDraw(name) {
+      // A text box on a hidden layer is never on the map, so it cannot be typed in (Geoman fails making it): the
+      // text tool waits instead, and a click on the map says why (see the click handler below).
+      this.textWaits = name === 'text' && !MB.activeLayer().visible;
+      if (this.textWaits) { MB.map.pm.disableDraw(); return; }
       const group = MB.groups[MB.activeLayer().id];
       MB.map.pm.setGlobalOptions({ layerGroup: group });
       const opts = this.drawOptions();
@@ -53,6 +57,8 @@ window.MB = window.MB || {};
 
     // Called when the default style or active layer changes while a draw tool is active.
     refreshDraw() {
+      // the text tool waiting for its layer to be shown, or its layer just hidden
+      if (this.current === 'text' && this.textWaits !== !MB.activeLayer().visible) { this.startDraw('text'); return; }
       if (this.shapes[this.current]) {
         const group = MB.groups[MB.activeLayer().id];
         MB.map.pm.setGlobalOptions({ layerGroup: group });
@@ -91,6 +97,7 @@ window.MB = window.MB || {};
             MB.commit('draw closed line as polygon');
             this.refreshDraw(); // the next object gets the next color
             MB.toast('Closed outline: saved as a polygon (' + MB.formatArea(MB.polygonArea(poly.getLatLngs())) + ')', 3500);
+            MB.noteAdded(poly);
             if (!MB.state.continueDrawing) { this.set('select'); MB.selectFeature(poly); }
             return;
           }
@@ -98,6 +105,7 @@ window.MB = window.MB || {};
         MB.addFeature(layer, { type, layerId: MB.activeLayer().id, style: MB.newShapeStyle(true) });
         if (type === 'text' && layer.pm) layer.mb.text = layer.pm.getText();
         MB.commit('draw ' + type);
+        MB.noteAdded(layer);
         this.refreshDraw(); // the next object gets the next color
         if (!MB.state.continueDrawing) {
           this.set('select');
@@ -105,9 +113,19 @@ window.MB = window.MB || {};
         }
       });
       MB.map.on('click', e => {
+        if (this.current === 'text' && this.textWaits) { MB.noteHiddenText(); return; }
         if (e.originalEvent && e.originalEvent.shiftKey) return; // keep a multi-selection while shift is held
         if (this.current === 'select') MB.deselect();
       });
+      MB.on('layers', () => this.refreshDraw()); // the active layer, or whether it is shown, changed
+      // Geoman's text tool re-arms itself when a text box loses focus while drawing continues: not while it waits
+      // for a hidden layer (and, armed anyway, it makes nothing: its text box would never reach the map)
+      const TextDraw = L.PM && L.PM.Draw && L.PM.Draw.Text && L.PM.Draw.Text.prototype;
+      if (TextDraw && TextDraw.enable && TextDraw._createMarker) {
+        const enable = TextDraw.enable, create = TextDraw._createMarker;
+        TextDraw.enable = function (...a) { if (MB.tools.textWaits) return; return enable.apply(this, a); };
+        TextDraw._createMarker = function (e) { if (MB.tools.textWaits) return; return create.call(this, e); };
+      }
     }
   };
 
@@ -220,6 +238,7 @@ window.MB = window.MB || {};
         latlngs: pts.map(p => [p.lat, p.lng])
       });
       MB.commit('measure');
+      MB.noteAdded(f);
       this.pts = [];
       this._clearTemp();
       this._buildTemp();
@@ -254,6 +273,7 @@ window.MB = window.MB || {};
       const layer = MB.createSvgFeature(e.latlng, this.svgId);
       if (!layer) return;
       MB.commit('place svg');
+      MB.noteAdded(layer);
       if (!MB.state.continueDrawing) { MB.tools.set('select'); MB.selectFeature(layer); }
     }
   };

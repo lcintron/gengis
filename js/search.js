@@ -93,6 +93,7 @@ window.MB = window.MB || {};
         if (act === 'add') {
           const f = MB.restoreFeature({ type: 'marker', latlng: [latlng.lat, latlng.lng], name: label.split(',')[0], style: MB.newShapeStyle(true) });
           MB.commit('add search marker');
+          MB.noteAdded(f);
           this.clearMarker();
           if (f) MB.selectFeature(f);
         } else if (act === 'copy') {

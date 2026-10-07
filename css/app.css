@@ -161,6 +161,15 @@ select:focus { outline: none; border-color: var(--accent); }
   position: absolute; left: 64px; top: 16px; z-index: 1000; background: rgba(27,31,39,.92); border: 1px solid var(--border);
   padding: 6px 10px; border-radius: 8px; font-size: 12px; color: var(--text); pointer-events: none; max-width: 420px;
 }
+/* the active layer is hidden: what the tool adds will not show */
+.tool-hint .hint-warn { display: flex; align-items: center; gap: 6px; color: var(--warn); pointer-events: auto; }
+.tool-hint div + .hint-warn { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.tool-hint .hint-warn svg { flex: 0 0 auto; }
+.tool-hint .hint-warn .btn { margin-left: auto; padding: 2px 8px; font-size: 11px; }
+/* a layer that just received something while hidden */
+@keyframes mb-flash-hidden { 0%, 100% { box-shadow: none; } 30%, 70% { box-shadow: 0 0 0 2px var(--warn); } }
+.layer-node.flash-hidden, .tool-hint .hint-warn.flash-hidden { animation: mb-flash-hidden 1.6s ease-in-out 1; }
+.tool-hint .hint-warn.flash-hidden { border-radius: 6px; }
 
 .leaflet-container { font-family: var(--font); }
 .leaflet-top.leaflet-right { top: 0; }
