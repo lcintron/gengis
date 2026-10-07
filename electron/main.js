@@ -38,6 +38,7 @@ function createWindow() {
   const sendFullScreen = on => () => { if (!win.webContents.isDestroyed()) win.webContents.send('app:fullscreen', on); };
   win.on('enter-full-screen', sendFullScreen(true));
   win.on('leave-full-screen', sendFullScreen(false));
+  win.webContents.on('did-finish-load', () => sendFullScreen(win.isFullScreen())()); // a reload starts not knowing (settled by then)
   // Closing: the page first saves what is pending (its database and the project file), then the window closes.
   // A page that does not answer within 4 s does not hold the window.
   let saved = false;
