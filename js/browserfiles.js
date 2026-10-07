@@ -111,13 +111,12 @@ window.MB = window.MB || {};
   // Before another project replaces the open one: its file gets the last changes first.
   F.writePending = () => (timer ? writeNow(false) : writing); // a timer still to fire, or a write under way
 
-  // Does the file hold the open project as it is now (whatever its formatting and save time)?
+  // Does the file hold the open project as it is now (whatever its formatting, key order and save time)?
+  const sorted = v => Array.isArray(v) ? v.map(sorted)
+    : (v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = sorted(v[k]); return o; }, {}) : v);
+  const canon = p => { const c = Object.assign({}, p); delete c.savedAt; return JSON.stringify(sorted(c)); };
   async function holdsCurrent(handle) {
-    try {
-      const p = JSON.parse(await (await handle.getFile()).text());
-      delete p.savedAt;
-      return JSON.stringify(p) === current().text;
-    } catch (e) { return false; }
+    try { return canon(JSON.parse(await (await handle.getFile()).text())) === canon(current().p); } catch (e) { return false; }
   }
 
   // Link the open project to a file handle (after Save as or Open).
