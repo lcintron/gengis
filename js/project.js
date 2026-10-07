@@ -201,7 +201,9 @@ window.MB = window.MB || {};
     MB.adsb.applyConf();
   }
 
-  MB.loadProject = function (p, opts) {
+  // Every object of the project rebuilt: one redraw of the layers and objects at the end (MB.batch).
+  MB.loadProject = (p, opts) => MB.batch(() => loadProject(p, opts));
+  function loadProject(p, opts) {
     opts = opts || {};
     p = migrate(p || {});
     MB.clearAll();
@@ -250,7 +252,7 @@ window.MB = window.MB || {};
     MB.emit('features');
     MB.emit('project');
     if (!opts.keepHistory) MB.resetHistory();
-  };
+  }
 
   MB.newProject = function () {
     MB.loadProject({ format: FORMAT, schema: SCHEMA, name: 'Untitled map', units: { system: MB.state.units, shortDistances: MB.state.shortUnit },

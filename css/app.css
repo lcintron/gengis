@@ -426,6 +426,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   /* touch: bigger hit areas, no hover-only affordances */
   .svg-card .del { display: block; }
   .layer-item, .obj-item { padding-top: 6px; padding-bottom: 6px; }
+  #layerScroll .obj-item { contain-intrinsic-size: auto 40px; } /* a row's size until drawn: taller here */
   .mb-ctx li { padding: 10px 12px; }
 }
 
@@ -547,6 +548,11 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .obj-item .fname input { width: 100%; background: var(--bg-3); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 4px; font-size: 12px; }
 .obj-item .icon-btn.mini, .layer-node .icon-btn.mini { width: 22px; height: 22px; }
 .obj-item .icon-btn.mini svg, .layer-node .icon-btn.mini svg { width: 14px; height: 14px; }
+/* the list's icons: masks over the button's text color (ui.js) */
+.mbi { display: inline-block; flex: none; width: 14px; height: 14px; background-color: currentColor;
+  -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+/* rows out of view are not laid out or painted until scrolled to (the list can hold hundreds) */
+.obj-item { content-visibility: auto; contain-intrinsic-size: auto 26px; }
 .obj-item .icon-btn.mini:disabled { opacity: .25; }
 
 /* ---------- FAA / data layers panel ---------- */

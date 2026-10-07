@@ -275,6 +275,7 @@ window.MB = window.MB || {};
   // Point at a hidden layer: its row in the Layers panel, and the warning under the toolbar, pulse.
   function flashHidden(layer) {
     setTimeout(() => {
+      MB.ui.flushLayers();
       [$(`#layerScroll .layer-node[data-id="${CSS.escape(layer.id)}"]`), $('#toolHint .hint-warn')].forEach(el => {
         if (!el) return;
         el.classList.remove('flash-hidden'); void el.offsetWidth; el.classList.add('flash-hidden');
@@ -320,6 +321,7 @@ window.MB = window.MB || {};
     $('#propsToggle').addEventListener('click', () => MB.ui.setPropsOpen($('#propsSection').classList.contains('closed')));
     $('#addLayerBtn').addEventListener('click', () => { MB.createLayer(); MB.commit('add layer'); MB.ui.setLayersOpen(true); });
     initDivider();
+    initLayerList();
     // A button pressed while a name is being edited in the list: the field keeps focus until the click (its blur
     // redraws the list, which would take the button away first), then the name is saved and the button does its job.
     const editing = () => $('#layerScroll .fname input, #layerScroll .layer-name input');
@@ -394,6 +396,7 @@ window.MB = window.MB || {};
 
   // Scroll the layer list to an object's row (or the first selected one), if it is out of view.
   function revealRow(f) {
+    MB.ui.flushLayers();
     const row = f && f.mb ? $(`#layerScroll .obj-item[data-fid="${CSS.escape(f.mb.id)}"]`) : $('#layerScroll .obj-item.selected');
     if (row) row.scrollIntoView({ block: 'nearest' });
   }
@@ -420,6 +423,20 @@ window.MB = window.MB || {};
     edit: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>'
   };
 
+  // The list's icons are css masks (one rule each, made here from the drawings above), not inline drawings: hundreds of
+  // rows with five buttons each would otherwise carry, parse and lay out thousands of svg elements on every redraw.
+  (function iconMasks() {
+    const css = Object.keys(icons).map(k => {
+      const svg = icons[k].replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ').replace(/currentColor/g, '#000');
+      const url = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+      return `.mbi-${k} { -webkit-mask-image: ${url}; mask-image: ${url}; }`;
+    }).join('\n');
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.appendChild(style);
+    Object.keys(icons).forEach(k => { icons[k] = `<i class="mbi mbi-${k}" aria-hidden="true"></i>`; });
+  })();
+
   MB.ui.collapsed = MB.ui.collapsed || new Set();
 
   function objectLabel(f) {
@@ -445,7 +462,26 @@ window.MB = window.MB || {};
     </div>`;
   }
 
+  // Redraws asked for by events (objects, layers, history, zoom display) are merged into one per frame: a burst of
+  // them (an edit and its history entry, a selection change) costs one redraw. A direct redraw drops the pending one.
+  let listFrame = 0;
+  MB.ui.renderLayersSoon = function () {
+    if (!listFrame) listFrame = requestAnimationFrame(() => { listFrame = 0; MB.ui.renderLayers(); });
+  };
+  // The list as it is now (a pending redraw done), before its rows are looked up.
+  MB.ui.flushLayers = function () { if (listFrame) MB.ui.renderLayers(); };
+
+  // The selection's rows marked, without a redraw.
+  function markSelectedRows() {
+    const panel = $('#layerScroll');
+    panel.querySelectorAll('.obj-item.selected').forEach(r => r.classList.remove('selected'));
+    const sel = new Set(MB.multi || []);
+    if (MB.selected) sel.add(MB.selected);
+    sel.forEach(f => { const r = f.mb && panel.querySelector(`.obj-item[data-fid="${CSS.escape(f.mb.id)}"]`); if (r) r.classList.add('selected'); });
+  }
+
   MB.ui.renderLayers = function () {
+    if (listFrame) { cancelAnimationFrame(listFrame); listFrame = 0; }
     const panel = $('#layerScroll');
     const scrollTop = panel.scrollTop;
     const layers = MB.state.layers.slice().reverse(); // top first
@@ -474,57 +510,68 @@ window.MB = window.MB || {};
     html += '</div>';
     panel.innerHTML = html;
     panel.scrollTop = scrollTop;
-
-
-    $$('.layer-item', panel).forEach(item => {
-      const id = item.closest('.layer-node').dataset.id;
-      item.addEventListener('click', e => {
-        const actEl = e.target.closest('[data-act]');
-        const act = actEl && actEl.dataset.act;
-        if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
-        if (act === 'rename-btn') { // the row as it is now: saving another name being edited may have redrawn the list
-          startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`) || item, id); return;
-        }
-        if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
-        else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
-        else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
-        else if (act === 'down') { MB.moveLayer(id, -1); MB.commit('reorder layers'); }
-        else if (act === 'del') {
-          const n = MB.layerFeatureCount(id);
-          if (!n || confirm(`Delete layer "${MB.getLayer(id).name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); }
-        }
-        else { MB.setActiveLayer(id); MB.tools.refreshDraw(); }
-      });
-      $('.layer-name', item).addEventListener('dblclick', e => { e.stopPropagation(); startRename(item, id); });
-    });
-
-    $$('.obj-item', panel).forEach(item => {
-      const fid = item.dataset.fid;
-      item.addEventListener('click', e => {
-        const f = MB.featureLayers[fid];
-        if (!f) return;
-        const actEl = e.target.closest('[data-act]');
-        const act = actEl && actEl.tagName === 'BUTTON' && actEl.dataset.act;
-        if (act === 'vis') MB.setFeatureVisible(fid, f.mb.visible === false);
-        else if (act === 'lock') MB.setFeatureLocked(fid, !f.mb.locked);
-        else if (act === 'up') MB.moveFeature(fid, +1);
-        else if (act === 'down') MB.moveFeature(fid, -1);
-        else if (act === 'del') MB.removeFeature(fid);
-        else {
-          if (!MB.tools.picks(MB.tools.current)) MB.tools.set('select');
-          if (e.shiftKey) { selectFromList(f, true); return; }
-          selectFromList(f);
-          const c = MB.featureCenter(f);
-          if (c && !MB.map.getBounds().contains(c)) MB.zoomToFeature(f);
-        }
-      });
-      $('.fname', item).addEventListener('dblclick', e => { e.stopPropagation(); startObjectRename(item, fid); });
-    });
   };
+
+  // The list's clicks: one listener for all its rows, set up once.
+  function initLayerList() {
+    const panel = $('#layerScroll');
+    panel.addEventListener('click', e => {
+      const obj = e.target.closest('.obj-item');
+      if (obj) { objectClick(e, obj); return; }
+      const item = e.target.closest('.layer-item');
+      if (item) layerClick(e, item);
+    });
+    panel.addEventListener('dblclick', e => {
+      const fname = e.target.closest('.obj-item .fname');
+      if (fname) { e.stopPropagation(); const item = fname.closest('.obj-item'); startObjectRename(item, item.dataset.fid); return; }
+      const lname = e.target.closest('.layer-item .layer-name');
+      if (lname) { e.stopPropagation(); const item = lname.closest('.layer-item'); startRename(item, item.closest('.layer-node').dataset.id); }
+    });
+  }
+
+  function layerClick(e, item) {
+    const id = item.closest('.layer-node').dataset.id;
+    const actEl = e.target.closest('[data-act]');
+    const act = actEl && actEl.dataset.act;
+    if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
+    if (act === 'rename-btn') { // the row as it is now: saving another name being edited may have redrawn the list
+      startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`) || item, id); return;
+    }
+    if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
+    else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
+    else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
+    else if (act === 'down') { MB.moveLayer(id, -1); MB.commit('reorder layers'); }
+    else if (act === 'del') {
+      const n = MB.layerFeatureCount(id);
+      if (!n || confirm(`Delete layer "${MB.getLayer(id).name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); }
+    }
+    else { MB.setActiveLayer(id); MB.tools.refreshDraw(); }
+  }
+
+  function objectClick(e, item) {
+    const fid = item.dataset.fid, f = MB.featureLayers[fid];
+    if (!f) return;
+    const actEl = e.target.closest('[data-act]');
+    const act = actEl && actEl.tagName === 'BUTTON' && actEl.dataset.act;
+    if (act === 'vis') MB.setFeatureVisible(fid, f.mb.visible === false);
+    else if (act === 'lock') MB.setFeatureLocked(fid, !f.mb.locked);
+    else if (act === 'up') MB.moveFeature(fid, +1);
+    else if (act === 'down') MB.moveFeature(fid, -1);
+    else if (act === 'del') MB.removeFeature(fid);
+    else {
+      if (!MB.tools.picks(MB.tools.current)) MB.tools.set('select');
+      if (e.shiftKey) { selectFromList(f, true); return; }
+      selectFromList(f);
+      const c = MB.featureCenter(f);
+      if (c && !MB.map.getBounds().contains(c)) MB.zoomToFeature(f);
+    }
+  }
 
   function startObjectRename(item, fid) {
     const f = MB.featureLayers[fid];
     if (!f) return;
+    MB.ui.flushLayers(); // a redraw still to come would take the field away: the row as drawn now
+    item = $(`#layerScroll .obj-item[data-fid="${CSS.escape(fid)}"]`) || item;
     const span = $('.fname', item);
     const cur = f.mb.name || '';
     span.innerHTML = `<input type="text" value="${esc(cur)}" placeholder="${esc(objectLabel(f))}">`;
@@ -544,6 +591,8 @@ window.MB = window.MB || {};
   }
 
   function startRename(item, id) {
+    MB.ui.flushLayers(); // a redraw still to come would take the field away: the row as drawn now
+    item = $(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`) || item;
     const span = $('.layer-name', item);
     const cur = MB.getLayer(id).name;
     span.innerHTML = `<input type="text" value="${esc(cur)}">`;
@@ -1045,7 +1094,7 @@ window.MB = window.MB || {};
       all.className = 'btn-row';
       all.innerHTML = `<button class="btn small">Add all ${pois.length} as markers to "${esc(MB.activeLayer().name)}"</button>`;
       all.querySelector('button').addEventListener('click', () => {
-        const added = pois.map(p => addPoi(p, true)).filter(Boolean);
+        const added = MB.batch(() => pois.map(p => addPoi(p, true)).filter(Boolean));
         MB.commit('add pois'); MB.ui.clearPoiResults();
         if (!MB.noteAdded(added[0], added.length)) MB.toast(added.length + ' markers added');
       });
@@ -1309,8 +1358,8 @@ window.MB = window.MB || {};
     MB.ui.renderPlaces();
     MB.ui.renderSettings();
 
-    MB.on('layers', () => { MB.ui.renderLayers(); if (MB.selected) MB.ui.renderProps(); });
-    MB.on('features', () => MB.ui.renderLayers());
+    MB.on('layers', () => { MB.ui.renderLayersSoon(); if (MB.selected) MB.ui.renderProps(); });
+    MB.on('features', () => MB.ui.renderLayersSoon());
     MB.on('datapick', picked => {
       MB.ui.renderProps();
       if (picked && !$('#sidebar').classList.contains('collapsed')) MB.ui.showTab('props'); // a closed panel (the phone's sheet) stays closed
@@ -1319,16 +1368,16 @@ window.MB = window.MB || {};
       if (l && MB.data.picked) MB.data.picked = null; // an object of one's own replaces a data feature in Properties
       // Picked on the map (not in the layer list): show its properties and its row, opening its layer if collapsed.
       const reveal = !quietSelect && !!(l || (MB.multi && MB.multi.size > 1));
-      if (reveal && l && l.mb) MB.ui.collapsed.delete(l.mb.layerId);
+      const opened = reveal && l && l.mb && MB.ui.collapsed.delete(l.mb.layerId);
       MB.ui.renderProps();
-      MB.ui.renderLayers();
+      if (opened) MB.ui.renderLayers(); else markSelectedRows(); // a pending redraw marks them too
       if (reveal) { MB.ui.showTab('props'); revealRow(l); }
     });
     MB.on('multi-contextmenu', info => MB.menus.multi(info));
     // a selected text that scales with the map: its size slider follows the zoom
     MB.map.on('zoomend', () => { const f = MB.selected; if (f && f.mb.type === 'text' && f.mb.style.textScale === 'map') MB.ui.renderProps(); });
     // zoom display: the list dims what the zoom hides, the selected object's note says whether it is shown
-    MB.on('zoomdisplay', () => MB.ui.renderLayers());
+    MB.on('zoomdisplay', () => MB.ui.renderLayersSoon());
     MB.map.on('zoomend', () => MB.ui.renderZoomNote());
     MB.on('featurechange', l => { if (l === MB.selected) MB.ui.renderMeasureBox(); });
     MB.on('project', () => { MB.ui.renderSettings(); MB.ui.renderSvgPanel(); $('#basemapSelect').value = MB.state.basemap; });
@@ -1336,10 +1385,10 @@ window.MB = window.MB || {};
     MB.on('feature-contextmenu', info => MB.menus.feature(info));
     MB.map.on('contextmenu', e => { if (MB.presenter.active) return; MB.menus.map(e); });
     $('#presentBtn').addEventListener('click', () => MB.presenter.enter());
-    MB.on('history', () => {
-      // keep name tips in sync after undo/redo, and refresh the layer list (color swatches, labels)
-      Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; if (f.mb.name && !f.getTooltip()) bindNameTip(f); });
-      MB.ui.renderLayers();
+    MB.on('history', h => {
+      // after an undo or redo (every object rebuilt) the name tips; after any change the layer list (color swatches, labels)
+      if (h && h.restored) Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; if (f.mb.name && !f.getTooltip()) bindNameTip(f); });
+      MB.ui.renderLayersSoon();
     });
   };
 })(window.MB);
