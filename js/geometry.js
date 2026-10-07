@@ -223,6 +223,9 @@ window.MB = window.MB || {};
   MB.shapeUnion = function (layers) {
     const shapes = Array.from(layers).filter(MB.isJoinableShape);
     if (shapes.length < 2) return { shapes, error: 'Select two or more overlapping shapes to join' };
+    // a locked or hidden shape is never joined away (a lock or a hide can come after the shape was selected)
+    if (shapes.some(l => MB.isFeatureLocked(l))) return { shapes, error: 'A selected shape is locked: unlock it to join' };
+    if (shapes.some(l => !MB.map.hasLayer(l))) return { shapes, error: 'A selected shape is hidden: show it to join' };
     if (!window.polygonClipping) return { shapes, error: 'Joining shapes is not available' };
     let result;
     try { result = window.polygonClipping.union(...shapes.map(shapeGeom)); } catch (e) { return { shapes, error: 'These shapes could not be joined' }; }
@@ -237,10 +240,12 @@ window.MB = window.MB || {};
     const rings = u.polygon.map(r => r.slice(0, -1).map(p => toArr(merc.unproject(L.point(p[0], p[1])))));
     const named = shapes.find(l => l.mb.name);
     const d = { type: shapes.every(l => l.mb.type === 'measure-area') ? 'measure-area' : 'polygon', layerId: first.layerId,
-      name: named ? named.mb.name : '', style: MB.deepClone(first.style), label: first.label ? MB.deepClone(first.label) : undefined, latlngs: rings };
-    const idx = Object.keys(MB.featureLayers).indexOf(first.id);
+      name: named ? named.mb.name : '', style: MB.deepClone(first.style), label: first.label ? MB.deepClone(first.label) : undefined,
+      showMeasures: first.showMeasures ? first.showMeasures.slice() : undefined, latlngs: rings };
     MB.deselect();
-    shapes.forEach(l => MB.removeFeature(l.mb.id, { silent: true }));
+    shapes.slice(1).forEach(l => MB.removeFeature(l.mb.id, { silent: true }));
+    const idx = Object.keys(MB.featureLayers).indexOf(first.id); // where the first shape is, once the others are gone
+    MB.removeFeature(first.id, { silent: true });
     const n = MB.restoreFeature(d);
     reinsert(n.mb.id, idx); // where the first shape was
     MB.applyFeatureOrder(n.mb.layerId);
