@@ -92,6 +92,9 @@ window.MB = window.MB || {};
       label: meta.label ? MB.deepClone(meta.label) : undefined,
       zoom: MB.normZoomRule(meta.zoom)
     };
+    // measurements ticked to show on the map (only those the type has: a converted object may have carried others)
+    const shown = MB.measureKeys(layer.mb.type).filter(k => (meta.showMeasures || []).includes(k));
+    if (shown.length) layer.mb.showMeasures = shown;
     MB.featureLayers[id] = layer;
     const g = MB.groups[layerId];
     if (!g.hasLayer(layer)) {
@@ -315,7 +318,7 @@ window.MB = window.MB || {};
     layer.on('pm:edit', () => changed('edit'));
     layer.on('pm:dragend', () => changed('move'));
     layer.on('dragend', () => changed('move'));
-    layer.on('drag pm:drag', () => MB.updateLabel(layer));
+    layer.on('drag pm:drag', () => MB.updateTooltip(layer)); // name and measurement labels follow the drag
     layer.on('pm:textchange', e => { layer.mb.text = e.text; MB.commitDebounced('text'); });
     layer.on('pm:textblur', () => {
       const txt = layer.pm ? layer.pm.getText() : '';
@@ -459,7 +462,7 @@ window.MB = window.MB || {};
       layer.setIcon(MB.svgPinIcon(lib, svg));
       if (MB.selected === layer && layer.getElement()) L.DomUtil.addClass(layer.getElement(), 'mb-selected');
     }
-    MB.updateLabel(layer);
+    MB.updateTooltip(layer); // the name label and a position label sit around the (resized) image
   };
 
   // Rebuild a feature from its serialized form (needed when an SVG switches pin <-> ground).
@@ -603,9 +606,60 @@ window.MB = window.MB || {};
     return parts.join(' · ');
   };
 
+  /* ---------- measurement labels on the map ----------
+   * Each object can show some of the rows of its Properties measurement box on the map (ticked there, stored as
+   * mb.showMeasures, e.g. ['area', 'radius']). Ticked rows win over the global "Measurement labels on shapes"
+   * setting, which still labels the shapes that have nothing ticked. Measurements show their own results. */
+
+  MB.measureNames = { length: 'Length', perimeter: 'Perimeter', area: 'Area', radius: 'Radius', position: 'Position' };
+  // The measurements an object type can show on the map, in the order of the measurement box.
+  MB.measureKeys = function (type) {
+    if (type === 'line') return ['length', 'position'];
+    if (type === 'polygon' || type === 'rectangle') return ['perimeter', 'area', 'position'];
+    if (type === 'circle') return ['perimeter', 'area', 'radius', 'position'];
+    if (type === 'marker' || type === 'svg') return ['position']; // a text object is a label already
+    return [];
+  };
+  MB.shownMeasures = layer => layer.mb.showMeasures || [];
+
+  MB.setShowMeasure = function (layer, key, on) {
+    const keys = MB.shownMeasures(layer).filter(k => k !== key).concat(on ? [key] : []);
+    const shown = MB.measureKeys(layer.mb.type).filter(k => keys.includes(k));
+    if (shown.length) layer.mb.showMeasures = shown; else delete layer.mb.showMeasures;
+    MB.updateTooltip(layer);
+    MB.commit('measurement label');
+  };
+
+  // The label text: the ticked measurements one per line, or the global summary for a shape with none ticked.
+  MB.measureLabelText = function (layer) {
+    const keys = MB.shownMeasures(layer);
+    if (!keys.length) return layer instanceof L.Path && MB.state.showMeasurements ? MB.measureText(layer) : '';
+    const m = MB.featureMeasure(layer);
+    return keys.map(k => {
+      const v = k === 'area' ? MB.formatArea(m.area) : k === 'position' ? MB.formatLatLng(MB.featureCenter(layer)) : MB.formatDistance(m[k]);
+      return `<span class="k">${MB.measureNames[k]}</span> ${v}`;
+    }).join('<br>');
+  };
+
+  // Where the label sits: inside a shape, under a pin or a fixed-size image; below the name label where that one
+  // takes the same place (the middle of a shape, under a point).
+  function measureLabelPlace(layer) {
+    const m = layer.mb, lb = MB.labelTypes.includes(m.type) && m.name ? MB.getLabel(layer) : null;
+    const nameH = lb && lb.show && lb.h === 'center' ? (+lb.size || 12) * 1.35 + 4 : 0; // see .mb-name-label
+    const point = m.type === 'marker' || (m.type === 'svg' && !layer.setBounds);
+    if (point) {
+      const under = lb && lb.v === 'bottom' ? nameH + 2 : 0;
+      if (m.type === 'marker') return { direction: 'bottom', offset: [0, 32 + under] }; // the pin's tooltip anchor is near its top
+      const lib = MB.state.svgLibrary[m.svg.svgId] || { aspect: 1 };
+      return { direction: 'bottom', offset: [0, (+m.svg.width || 48) / (lib.aspect || 1) / 2 + under] };
+    }
+    if (lb && lb.v === 'middle' && nameH) return { direction: 'bottom', offset: [0, Math.round(nameH / 2) - 3] };
+    return { direction: 'center', offset: [0, 0] };
+  }
+  const isMeasureLabel = tt => !!tt && tt.options.className === 'mb-measure-label';
+
   MB.updateTooltip = function (layer) {
     MB.updateLabel(layer);
-    if (!(layer instanceof L.Path)) return;
     if (MB.isMeasureType(layer.mb.type)) {
       const mm = MB.featureMeasure(layer);
       const txt = layer.mb.type === 'measure-area'
@@ -621,17 +675,21 @@ window.MB = window.MB || {};
       updateSegLabels(layer);
       return;
     }
-    if (MB.state.showMeasurements) {
-      const txt = MB.measureText(layer);
-      const tt = layer.getTooltip();
-      if (tt) {
+    // One tooltip per object: a measurement label replaces the name tip while it is shown, and gives it back after.
+    const txt = MB.measureLabelText(layer), tt = layer.getTooltip();
+    if (txt) {
+      const place = measureLabelPlace(layer);
+      if (isMeasureLabel(tt)) {
+        Object.assign(tt.options, place);
         tt.setContent(txt);
         if (layer.isTooltipOpen()) { layer.closeTooltip(); layer.openTooltip(); }
       } else {
-        layer.bindTooltip(txt, { permanent: true, direction: 'center', className: 'mb-measure-label', interactive: false });
+        if (tt) layer.unbindTooltip();
+        layer.bindTooltip(txt, Object.assign({ permanent: true, className: 'mb-measure-label', interactive: false }, place));
       }
-    } else if (layer.getTooltip()) {
+    } else if (isMeasureLabel(tt)) {
       layer.unbindTooltip();
+      if (MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(layer);
     }
   };
 
@@ -754,6 +812,7 @@ window.MB = window.MB || {};
     if (m.locked) d.locked = true;
     if (m.label) d.label = MB.deepClone(m.label);
     if (m.zoom) d.zoom = MB.deepClone(m.zoom);
+    if (m.showMeasures) d.showMeasures = m.showMeasures.slice();
     switch (m.type) {
       case 'marker': d.latlng = toArr(layer.getLatLng()); break;
       case 'text':

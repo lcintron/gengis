@@ -206,6 +206,7 @@ select:focus { outline: none; border-color: var(--accent); }
 }
 .leaflet-tooltip.mb-measure-result { border-color: var(--warn); }
 .leaflet-tooltip.mb-measure-label::before, .leaflet-tooltip.mb-measure-result::before { display: none; }
+.leaflet-tooltip.mb-measure-label .k { color: rgba(255,255,255,.65); }
 .leaflet-tooltip.mb-name-tip { background: var(--bg-2); color: var(--text); border-color: var(--border); }
 
 .mb-seg-label span {
@@ -641,6 +642,11 @@ button.link:hover { text-decoration: underline; }
 
 .measure-box .alt { color: var(--text-dim); font-size: 11px; margin-left: 6px; }
 .measure-box div span:last-child { text-align: right; }
+/* a "show on map" box before each row an object can label itself with; the other rows keep the names aligned */
+.measure-box .mm-show { display: flex; align-items: center; gap: 6px; color: var(--text-dim); cursor: pointer; white-space: nowrap; }
+.measure-box .mm-show input { accent-color: var(--accent); width: 13px; height: 13px; margin: 0; cursor: pointer; }
+.measure-box .mm-name { color: var(--text-dim); }
+.measure-box.with-show .mm-name { padding-left: 19px; }
 
 /* ---------- busy indicator (under the coordinates readout) ---------- */
 .mb-busy { display: flex; align-items: center; gap: 6px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; white-space: nowrap; }
