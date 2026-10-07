@@ -147,6 +147,22 @@ select:focus { outline: none; border-color: var(--accent); }
 #mapwrap { position: relative; flex: 1 1 auto; min-width: 0; z-index: 0; }
 #map { position: absolute; inset: 0; background: #0f1218; }
 #map.mb-crosshair, #map.mb-crosshair .leaflet-interactive { cursor: crosshair !important; }
+/* the Scale tool: a box around the selected object, a handle at each corner and side (scaletool.js) */
+.mb-scale-box { position: absolute; display: none; z-index: 650; pointer-events: none; outline: 1px dashed var(--accent); outline-offset: 3px; }
+.mb-scale-h { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #fff; border: 2px solid var(--accent); border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: auto; touch-action: none; box-sizing: border-box; }
+.mb-scale-h[data-h="nw"] { left: -3px; top: -3px; cursor: nwse-resize; }
+.mb-scale-h[data-h="n"] { left: 50%; top: -3px; cursor: ns-resize; }
+.mb-scale-h[data-h="ne"] { left: calc(100% + 3px); top: -3px; cursor: nesw-resize; }
+.mb-scale-h[data-h="e"] { left: calc(100% + 3px); top: 50%; cursor: ew-resize; }
+.mb-scale-h[data-h="se"] { left: calc(100% + 3px); top: calc(100% + 3px); cursor: nwse-resize; }
+.mb-scale-h[data-h="s"] { left: 50%; top: calc(100% + 3px); cursor: ns-resize; }
+.mb-scale-h[data-h="sw"] { left: -3px; top: calc(100% + 3px); cursor: nesw-resize; }
+.mb-scale-h[data-h="w"] { left: -3px; top: 50%; cursor: ew-resize; }
+.mb-scale-box.dragging .mb-scale-h { opacity: .6; }
+#map.mb-scale-tool .leaflet-interactive, #map.mb-scale-tool .mb-svg-pin, #map.mb-scale-tool .pm-text-marker { cursor: pointer !important; }
+body.presenting .mb-scale-box { display: none !important; }
+@media (pointer: coarse) { .mb-scale-h { width: 18px; height: 18px; margin: -9px 0 0 -9px; } }
 
 #toolbar {
   position: absolute; left: 12px; top: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 4px;
@@ -234,7 +250,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 }
 
 .pm-text-marker .pm-textarea {
-  font-family: var(--font); font-weight: 600; text-shadow: 0 0 2px rgba(0,0,0,.6);
+  font-family: var(--font); font-weight: 600; /* its shadow: the text's style (features.js) */
   border: 1px solid transparent; outline: none; resize: none; box-sizing: content-box;
 }
 .pm-text-marker .pm-textarea:not(.pm-disabled) { border-color: var(--accent); cursor: text; }
@@ -546,6 +562,13 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .mb-datatable { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .mb-datatable td { padding: 2px 6px 2px 0; vertical-align: top; }
 .mb-datatable td:first-child { color: var(--text-dim); white-space: nowrap; }
+/* a data feature in Properties (datalayers.js) */
+#propsBody .panel-head .badge + .icon-btn { margin-left: auto; }
+#propsBody .panel-head h3 + .badge { margin-left: 8px; }
+.data-pick-label { font-weight: 600; margin: -2px 0 10px; overflow-wrap: anywhere; }
+#propsBody .mb-datatable { width: 100%; table-layout: fixed; }
+#propsBody .mb-datatable td:first-child { width: 38%; overflow: hidden; text-overflow: ellipsis; }
+#propsBody .mb-datatable td:last-child { overflow-wrap: anywhere; }
 
 /* sub-element toggles inside a dataset */
 .data-item .subsets { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 5px 0 2px 23px; font-size: 11px; color: var(--text); align-items: center; }

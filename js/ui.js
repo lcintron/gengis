@@ -10,6 +10,7 @@ window.MB = window.MB || {};
   const toolHints = {
     select: '',
     move: 'Click an object, then drag it to move it. Use Select to edit vertices.',
+    scale: 'Click an object, then drag a handle to resize it. Shift keeps its proportions, Alt resizes from its center, Esc puts it back.',
     marker: 'Click the map to place a marker.',
     text: 'Click the map to place a text label, type your text, then click elsewhere.',
     line: 'Click to add points. Double-click (or click the last point) to finish. Click the first point to close it into a polygon.',
@@ -510,7 +511,7 @@ window.MB = window.MB || {};
         else if (act === 'down') MB.moveFeature(fid, -1);
         else if (act === 'del') MB.removeFeature(fid);
         else {
-          if (MB.tools.current !== 'select' && MB.tools.current !== 'move') MB.tools.set('select');
+          if (!MB.tools.picks(MB.tools.current)) MB.tools.set('select');
           if (e.shiftKey) { selectFromList(f, true); return; }
           selectFromList(f);
           const c = MB.featureCenter(f);
@@ -557,6 +558,8 @@ window.MB = window.MB || {};
 
   /* ================= style form ================= */
 
+  const PX_KEYS = ['weight', 'textSize', 'textShadowBlur', 'textShadowOffset']; // slider readouts in px (the rest: %)
+
   function styleForm(sections, getStyle, onChange) {
     const st = Object.assign({}, MB.defaultStyle, getStyle()); // defaults fill in fields older objects lack
     let html = '';
@@ -582,11 +585,15 @@ window.MB = window.MB || {};
       html += `<div class="section"><h3>Text</h3>
         <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><input type="range" data-k="textSize" min="${Math.max(1, Math.min(8, MB.textShownSize(st)))}" max="${Math.max(64, MB.textShownSize(st))}" step="1" value="${MB.textShownSize(st)}" title="The size it shows at now (a text that scales with the map can be any size)"><span class="val" data-val="textSize">${MB.textShownSize(st)}px</span></div>
         <div class="row" title="Fixed pixels: the same size at every zoom. Scale with map: grows and shrinks with the map, like a label printed on it"><label>Sizing</label>${seg('textScale', [['screen', 'Fixed pixels'], ['map', 'Scale with map']])}</div>
+        <div class="row"><label>Font</label><select data-k="textFont">${Object.keys(MB.textFonts).map(k => `<option value="${k}" style="font-family:${esc(MB.textFonts[k][1])}"${st.textFont === k ? ' selected' : ''}>${MB.textFonts[k][0]}</option>`).join('')}</select></div>
         <div class="row"><label>Format</label><div class="tog-group">${tog('textBold', '<b>B</b>', 'Bold')}${tog('textItalic', '<i>I</i>', 'Italic')}${tog('textUnderline', '<u>U</u>', 'Underline')}${tog('textStrike', '<s>S</s>', 'Strikethrough')}</div></div>
         <div class="row"><label>Align</label>${seg('textAlign', [['left', '&#8676;', 'Left'], ['center', '&#8801;', 'Center'], ['right', '&#8677;', 'Right']])}</div>
         <div class="row" title="Which side of the text sits on its map point"><label>Anchor H</label>${seg('textHAnchor', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
         <div class="row" title="Which side of the text sits on its map point"><label>Anchor V</label>${seg('textVAnchor', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
-        <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}"><span class="grow"></span></div>
+        <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}" title="Background color"><input type="range" data-k="textBgOpacity" min="0" max="1" step="0.05" value="${st.textBgOpacity}" title="Background opacity"><span class="val" data-val="textBgOpacity">${Math.round(st.textBgOpacity * 100)}%</span></div>
+        <div class="row"><label>Shadow</label><input type="checkbox" data-k="textShadowOn"${st.textShadowOn ? ' checked' : ''} title="Show shadow"><input type="color" data-k="textShadowColor" value="${st.textShadowColor}" title="Shadow color"><input type="range" data-k="textShadowOpacity" min="0" max="1" step="0.05" value="${st.textShadowOpacity}" title="Shadow opacity"><span class="val" data-val="textShadowOpacity">${Math.round(st.textShadowOpacity * 100)}%</span></div>
+        <div class="row" title="How soft the shadow is"><label>Shadow blur</label><input type="range" data-k="textShadowBlur" min="0" max="16" step="1" value="${st.textShadowBlur}"><span class="val" data-val="textShadowBlur">${st.textShadowBlur}px</span></div>
+        <div class="row" title="How far the shadow falls below and right of the text"><label>Shadow offset</label><input type="range" data-k="textShadowOffset" min="0" max="10" step="1" value="${st.textShadowOffset}"><span class="val" data-val="textShadowOffset">${st.textShadowOffset}px</span></div>
       </div>`;
     }
     const wrap = document.createElement('div');
@@ -599,7 +606,7 @@ window.MB = window.MB || {};
         else if (inp.type === 'range' || inp.type === 'number') v = +inp.value;
         else v = inp.value;
         const valEl = $(`[data-val="${k}"]`, wrap);
-        if (valEl) valEl.textContent = (k === 'weight' || k === 'textSize') ? v + 'px' : Math.round(v * 100) + '%';
+        if (valEl) valEl.textContent = PX_KEYS.includes(k) ? v + 'px' : Math.round(v * 100) + '%';
         const patch = {}; patch[k] = v;
         onChange(patch);
       };
@@ -651,6 +658,12 @@ window.MB = window.MB || {};
     panel.innerHTML = '';
     $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
+    if (!f && MB.data.picked) { // a data feature picked on the map (datalayers.js)
+      $('#propsSub').textContent = 'data feature';
+      panel.innerHTML = MB.data.picked.html;
+      $('[data-act="close-data"]', panel).addEventListener('click', () => MB.data.pick(null));
+      return;
+    }
     if (!f) {
       panel.innerHTML = `<div class="panel-head"><h3>New shapes</h3><span class="badge" title="Select an object to edit its own style">defaults</span></div>
         <label class="check" title="Each new line, shape, marker and measurement takes the next color of the palette; pick a color below to use that one instead"><input type="checkbox" id="setAutoColor"${MB.state.autoColor !== false ? ' checked' : ''}> A different color for each new object</label>`;
@@ -1251,6 +1264,7 @@ window.MB = window.MB || {};
         if (MB.measure.active && MB.measure.pts.length) { MB.measure.cancel(); return; }
         if (MB.tools.current !== 'select') { MB.tools.set('select'); return; }
         if (MB.selected || (MB.multi && MB.multi.size)) { MB.deselect(); return; }
+        if (MB.data.picked) { MB.data.pick(null); return; }
         MB.search.clearMarker();
         return;
       }
@@ -1265,7 +1279,7 @@ window.MB = window.MB || {};
       if (e.key === 'Enter' && MB.measure.active) { MB.measure.finish(); return; }
       if (e.key === '/') { e.preventDefault(); $('#searchInput').focus(); $('#searchInput').select(); return; }
       if (e.key.toLowerCase() === 'f') { e.preventDefault(); MB.presenter.enter(); return; }
-      const map = { v: 'select', g: 'move', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', d: 'measure-distance', a: 'measure-area' };
+      const map = { v: 'select', g: 'move', k: 'scale', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', d: 'measure-distance', a: 'measure-area' };
       const tool = map[e.key.toLowerCase()];
       if (tool) { e.preventDefault(); MB.tools.set(tool); }
     });
@@ -1291,7 +1305,9 @@ window.MB = window.MB || {};
 
     MB.on('layers', () => { MB.ui.renderLayers(); if (MB.selected) MB.ui.renderProps(); });
     MB.on('features', () => MB.ui.renderLayers());
+    MB.on('datapick', picked => { MB.ui.renderProps(); if (picked) MB.ui.showTab('props'); });
     MB.on('selection', l => {
+      if (l && MB.data.picked) MB.data.picked = null; // an object of one's own replaces a data feature in Properties
       // Picked on the map (not in the layer list): show its properties and its row, opening its layer if collapsed.
       const reveal = !quietSelect && !!(l || (MB.multi && MB.multi.size > 1));
       if (reveal && l && l.mb) MB.ui.collapsed.delete(l.mb.layerId);

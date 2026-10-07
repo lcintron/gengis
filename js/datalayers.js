@@ -328,6 +328,7 @@ window.MB = window.MB || {};
 
     disable(id) {
       const ds = this.sets[id];
+      if (ds && this.picked && this.picked.ds === ds) this.pick(null);
       if (!ds || !ds.enabled) return;
       ds.enabled = false;
       if (ds.group) { MB.map.removeLayer(ds.group); ds.group.clearLayers(); }
@@ -1239,7 +1240,7 @@ window.MB = window.MB || {};
       d.addEventListener('mouseenter', () => highlight(h));
       d.addEventListener('mouseleave', () => { if (pinned) highlight(pinned); else clearHighlight(); });
       d.addEventListener('toggle', () => {
-        if (d.open) { pinned = h; highlight(h); return; }
+        if (d.open) { pinned = h; highlight(h); if (!h.own) MB.data.pick(h); return; }
         if (pinned !== h) return;
         const still = Array.from(root.querySelectorAll('details.mb-ident[open]')).pop(); // fall back to another entry that is still expanded
         pinned = still ? hits[+still.dataset.i] : null;
@@ -1254,8 +1255,82 @@ window.MB = window.MB || {};
       }).catch(err => { const el = root.querySelector(`[data-extra="${i}"]`); if (el) { el.textContent = 'Frequencies unavailable: ' + err.message; if (popup.isOpen()) popup.update(); } });
     });
     if (pinned) highlight(pinned);
+    // Properties shows the expanded entry, or the top-most data feature (not over a selected object of one's own)
+    const shown = pinned && !pinned.own ? pinned : hits.find(h => !h.own);
+    if (shown && !own.length) MB.data.pick(shown);
     return true;
   };
+
+  /* ---------- a data feature in Properties ----------
+   * The feature expanded in the identify popup is described in the Layers tab's Properties: where it comes from,
+   * its geometry and measurements, and all its attributes. */
+
+  MB.data.picked = null;
+  MB.data.pick = function (h) {
+    const was = this.picked;
+    if (!h && !was) return;
+    if (h && MB.selected) MB.deselect(); // Properties shows one thing: the data feature now
+    this.picked = h ? { ds: h.ds, layer: h.layer, layers: h.layers || [h.layer], props: h.props, html: describe(h) } : null;
+    MB.emit('datapick', this.picked);
+  };
+
+  const PUBLISHERS = { faa: 'FAA UAS Data Delivery System (UDDS)', esri: 'Esri Living Atlas of the World' };
+  // Fields that are the service's bookkeeping, not data: object ids, global ids, and the service's own shape
+  // measurements (in Web Mercator units, not true ones).
+  const BOOKKEEPING = /^(OBJECTID|FID|GLOBAL_?ID|Shape__|Shape_(Area|Length|Leng)$|SHAPE_(AREA|LEN))/i;
+
+  function describe(h) {
+    const ds = h.ds, def = ds.def, p = h.props || {};
+    const row = (k, v, title) => v == null || v === '' ? '' : `<tr${title ? ` title="${esc(title)}"` : ''}><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`;
+    const date = v => v && v !== 'offline' ? new Date(v).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+    let label = '';
+    try { label = def.label ? String(def.label(p)) : firstText(p); } catch (e) { /* ignore */ }
+
+    // the source
+    const publisher = def.custom ? 'Custom ArcGIS layer' : PUBLISHERS[def.source || (def.group === 'Boundaries' ? 'esri' : '')] || '';
+    const service = (ds.meta && ds.meta.serviceName) || ((def.url || '').match(/services\/([^/]+)\/(?:Feature|Map)Server/) || [])[1] || '';
+    let host = '';
+    try { host = def.custom ? new URL(def.url).hostname : ''; } catch (e) { /* ignore */ }
+    const src = [row('Dataset', def.name), row('Publisher', publisher), row('Host', host), row('Service', service.replace(/_/g, ' ')),
+      row('Category', def.group), row('Source updated', date(ds.meta && ds.meta.lastEdit)), row('Last checked', date(ds.meta && ds.meta.checkedAt)),
+      row('Coordinates', 'WGS 84 (EPSG:4326)')].join('');
+
+    // the geometry: what is loaded now (generalized when zoomed out)
+    const geo = (h.layer.feature && h.layer.feature.geometry) || {};
+    const kinds = { Polygon: 'Polygon', MultiPolygon: 'Multipart polygon', LineString: 'Line', MultiLineString: 'Multipart line', Point: 'Point', MultiPoint: 'Multipoint' };
+    const parts = /^Multi/.test(geo.type) ? (geo.coordinates || []).length : 1;
+    let vertices = 0;
+    const count = c => { if (typeof c[0] === 'number') vertices++; else c.forEach(count); };
+    try { count(geo.coordinates || []); } catch (e) { /* ignore */ }
+    let measures = '', where = '';
+    try {
+      const l = h.layer;
+      if (l instanceof L.Polygon) {
+        const ll = l.getLatLngs(), outer = ll.map(x => MB.isLatLng(x[0]) ? x : x[0]); // each part's outer ring
+        measures = row('Area', MB.formatArea(MB.polygonArea(ll))) + row('Perimeter', MB.formatDistance(MB.pathLength(MB.isLatLng(ll[0]) ? ll : outer, true)));
+      } else if (l instanceof L.Polyline) measures = row('Length', MB.formatDistance(MB.pathLength(l.getLatLngs())));
+      if (l.getBounds) {
+        const b = l.getBounds(), c = b.getCenter();
+        where = row('Center', MB.formatLatLng(c)) +
+          row('Extent', `N ${b.getNorth().toFixed(4)}, S ${b.getSouth().toFixed(4)}, E ${b.getEast().toFixed(4)}, W ${b.getWest().toFixed(4)}`, 'Bounding box, degrees') +
+          row('Size', `${MB.formatDistance(L.latLng(c.lat, b.getWest()).distanceTo(L.latLng(c.lat, b.getEast())))} × ${MB.formatDistance(L.latLng(b.getSouth(), c.lng).distanceTo(L.latLng(b.getNorth(), c.lng)))}`, 'Bounding box, east-west × north-south');
+      } else if (l.getLatLng) where = row('Position', MB.formatLatLng(l.getLatLng()));
+    } catch (e) { /* ignore */ }
+    const level = MB.data.levelFor(def, MB.map.getZoom());
+    const generalized = level && level.offset > 0;
+    const geom = row('Geometry', kinds[geo.type] || geo.type) + (parts > 1 ? row('Parts', parts) : '') + row('Vertices', vertices ? vertices.toLocaleString() : '') + measures + where;
+
+    // the attributes: the dataset's chosen fields first, then the rest, then what is worked out from them
+    const keys = (def.fields || []).filter(k => k in p).concat(Object.keys(p).filter(k => !(def.fields || []).includes(k))).filter(k => !BOOKKEEPING.test(k));
+    let attrs = keys.map(k => row(k, fmtVal(k, p[k]))).join('');
+    if (def.rows) { try { attrs += def.rows(p).map(([k, v]) => row(k, v)).join(''); } catch (e) { /* ignore */ } }
+
+    return `<div class="panel-head"><h3>${esc(def.name)}</h3><span class="badge">data</span><button type="button" class="icon-btn mini" data-act="close-data" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
+      ${label ? `<div class="data-pick-label">${esc(label)}</div>` : ''}
+      <div class="section"><h3>Source</h3><table class="mb-datatable">${src}</table>${def.url ? `<div class="btn-row"><a class="btn small" href="${esc(def.url)}" target="_blank" rel="noopener" title="The service's description, fields and extent">Service page</a></div>` : ''}</div>
+      <div class="section"><h3>Geometry</h3><table class="mb-datatable">${geom}</table>${generalized ? '<p class="note">Measured on the outline loaded at this zoom, simplified for display: zoom in for full detail.</p>' : ''}</div>
+      <div class="section"><h3>Attributes</h3>${attrs ? `<table class="mb-datatable">${attrs}</table>` : '<p class="note">No attributes.</p>'}</div>`;
+  }
 
   /* ---------- panel ---------- */
   MB.data.ui = { q: '', filter: 'all', closed: new Set() };

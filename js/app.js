@@ -50,6 +50,7 @@
 
     MB.measure.init();
     MB.tools.init();
+    MB.scaler.init();
     MB.geometry.init();
 
     // restore previous session or start fresh

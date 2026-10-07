@@ -124,6 +124,10 @@ window.MB = window.MB || {};
           MB.tools.set(MB.tools.current === 'move' ? 'select' : 'move');
           MB.selectFeature(layer);
         } },
+        ...(MB.canScale(layer) && MB.tools.current !== 'scale' ? [{ label: 'Resize (Scale tool)', hint: 'K', disabled: locked, action: () => {
+          MB.tools.set('scale');
+          MB.selectFeature(layer);
+        } }] : []),
         { sep: true }
       );
       if (m.type !== 'svg') {
