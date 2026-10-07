@@ -12,9 +12,14 @@ window.MB = window.MB || {};
   // Markers are pins of a fixed size: nothing to scale.
   MB.canScale = layer => !!layer && !!layer.mb && layer.mb.type !== 'marker';
 
-  const cp = ll => MB.map.latLngToContainerPoint(ll);
+  // Screen pixels, unrounded (Leaflet's latLngToContainerPoint rounds to whole pixels: every scaling would move the
+  // vertices onto the pixel grid, by up to half a pixel's worth of ground when zoomed out).
+  const cp = ll => MB.map.project(ll).subtract(MB.map.getPixelOrigin()).subtract(MB.map.containerPointToLayerPoint([0, 0]));
   const ll = p => MB.map.containerPointToLatLng(p);
   const mapNested = (a, fn) => Array.isArray(a) ? a.map(x => mapNested(x, fn)) : fn(a);
+  // The map's own pointer and keyboard handlers, off while a handle is dragged (a drag works in screen pixels at the
+  // zoom it started at).
+  const HANDLERS = ['dragging', 'scrollWheelZoom', 'doubleClickZoom', 'touchZoom', 'boxZoom', 'keyboard'];
 
   MB.scaler = {
     layer: null, box: null, drag: null,
@@ -28,7 +33,7 @@ window.MB = window.MB || {};
       L.DomEvent.disableScrollPropagation(box);
       box.querySelectorAll('.mb-scale-h').forEach(h => h.addEventListener('pointerdown', e => this.start(e, h.dataset.h)));
       MB.map.on('move zoomend viewreset resize', () => this.place());
-      MB.map.on('zoomstart', () => { if (this.layer) box.style.display = 'none'; });
+      MB.map.on('zoomstart', () => { if (this.drag) this.cancel(); if (this.layer) box.style.display = 'none'; }); // e.g. a zoom button
       MB.on('featurechange', l => { if (l === this.layer && !this.drag) this.place(); });
       MB.on('history', () => { if (this.layer && MB.featureLayers[this.layer.mb.id] !== this.layer) this.detach(); else this.place(); });
     },
@@ -38,7 +43,6 @@ window.MB = window.MB || {};
       this.detach();
       if (!MB.canScale(layer)) { MB.toast('Markers have a fixed size: pick a line, shape, text or image to scale'); return; }
       this.layer = layer;
-      this.box.classList.toggle('uniform', uniform(layer));
       this.place();
     },
 
@@ -50,6 +54,10 @@ window.MB = window.MB || {};
 
     // The object's box on screen (container pixels): its geometry's bounds, or what a point object shows.
     rect(layer) {
+      if (layer instanceof L.Circle && layer._radius != null) {
+        const c = cp(layer.getLatLng()), rx = layer._radius, ry = layer._radiusY || rx;
+        return { x0: c.x - rx, y0: c.y - ry, x1: c.x + rx, y1: c.y + ry };
+      }
       if (layer.getBounds && !(layer instanceof L.Marker)) {
         const b = layer.getBounds();
         if (!b.isValid()) return null;
@@ -84,12 +92,18 @@ window.MB = window.MB || {};
       else if (t === 'text') { snap.pos = cp(layer.getLatLng()); snap.size = MB.textShownSize(layer.mb.style); }
       else if (t === 'svg') { snap.pos = cp(MB.svgCenter(layer)); snap.width = +layer.mb.svg.width; }
       else snap.pts = mapNested(layer.getLatLngs(), cp);
+      // and as it is on the map, for Esc to put back exactly
+      snap.orig = { lls: layer.getLatLngs && !(layer instanceof L.Circle) ? mapNested(layer.getLatLngs(), p => L.latLng(p.lat, p.lng)) : null,
+        ll: layer.getLatLng ? L.latLng(layer.getLatLng()) : null, radius: layer.getRadius ? layer.getRadius() : null,
+        bounds: t === 'svg' && layer.setBounds ? L.latLngBounds(layer.getBounds().getSouthWest(), layer.getBounds().getNorthEast()) : null,
+        style: MB.deepClone(layer.mb.style), svgWidth: t === 'svg' ? layer.mb.svg.width : null };
       // where on the handle it was grabbed, from the box's side or corner it moves: a grab is not yet a resize
       const m = MB.map.getContainer().getBoundingClientRect(), [dx, dy] = HANDLES[h];
       snap.grab = { x: dx ? e.clientX - m.left - (dx > 0 ? r.x1 : r.x0) : 0, y: dy ? e.clientY - m.top - (dy > 0 ? r.y1 : r.y0) : 0 };
       this.drag = { h, snap, pointer: e.pointerId, last: e };
       try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* the pointer is gone already: the window listeners still follow it */ }
-      MB.map.dragging.disable();
+      this.handlersOff = HANDLERS.filter(k => MB.map[k] && MB.map[k].enabled());
+      this.handlersOff.forEach(k => MB.map[k].disable());
       this.box.classList.add('dragging');
       this._move = ev => { if (ev.pointerId === this.drag.pointer) { this.drag.last = ev; this.apply(ev); } };
       this._up = ev => { if (ev.pointerId === this.drag.pointer) this.end(); };
@@ -165,9 +179,18 @@ window.MB = window.MB || {};
     // Esc while dragging: the object as it was.
     cancel() {
       if (!this.drag) return;
-      if (this.layer && this.drag.moved) this.scale(1, 1, 0, 0);
+      if (this.layer && this.drag.moved) this.restore(this.layer, this.drag.snap.orig);
       this.stopDrag();
       this.place();
+    },
+
+    restore(layer, o) {
+      const t = layer.mb.type;
+      if (t === 'circle') { layer.setLatLng(o.ll); layer.setRadius(o.radius); }
+      else if (t === 'text') { Object.assign(layer.mb.style, o.style); MB.applyTextStyle(layer); layer.setLatLng(o.ll); }
+      else if (t === 'svg') { layer.mb.svg.width = o.svgWidth; if (o.bounds) layer.setBounds(o.bounds); else layer.setLatLng(o.ll); MB.refreshSvg(layer); }
+      else layer.setLatLngs(o.lls);
+      MB.updateTooltip(layer);
     },
 
     stopDrag() {
@@ -177,7 +200,8 @@ window.MB = window.MB || {};
       window.removeEventListener('pointercancel', this._up);
       window.removeEventListener('keydown', this._key, true);
       window.removeEventListener('keyup', this._key, true);
-      MB.map.dragging.enable();
+      (this.handlersOff || []).forEach(k => MB.map[k].enable());
+      this.handlersOff = null;
       this.box.classList.remove('dragging');
       this.drag = null;
     }

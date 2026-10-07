@@ -1327,7 +1327,7 @@ window.MB = window.MB || {};
 
     return `<div class="panel-head"><h3>${esc(def.name)}</h3><span class="badge">data</span><button type="button" class="icon-btn mini" data-act="close-data" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
       ${label ? `<div class="data-pick-label">${esc(label)}</div>` : ''}
-      <div class="section"><h3>Source</h3><table class="mb-datatable">${src}</table>${def.url ? `<div class="btn-row"><a class="btn small" href="${esc(def.url)}" target="_blank" rel="noopener" title="The service's description, fields and extent">Service page</a></div>` : ''}</div>
+      <div class="section"><h3>Source</h3><table class="mb-datatable">${src}</table>${/^https?:\/\//i.test(def.url || '') ? `<div class="btn-row"><a class="btn small" href="${esc(def.url)}" target="_blank" rel="noopener" title="The service's description, fields and extent">Service page</a></div>` : ''}</div>
       <div class="section"><h3>Geometry</h3><table class="mb-datatable">${geom}</table>${generalized ? '<p class="note">Measured on the outline loaded at this zoom, simplified for display: zoom in for full detail.</p>' : ''}</div>
       <div class="section"><h3>Attributes</h3>${attrs ? `<table class="mb-datatable">${attrs}</table>` : '<p class="note">No attributes.</p>'}</div>`;
   }
@@ -1469,7 +1469,7 @@ window.MB = window.MB || {};
       e.preventDefault();
       const f = e.target.elements;
       const url = f.url.value.trim();
-      if (!/FeatureServer\/\d+/i.test(url)) { MB.toast('URL must end with /FeatureServer/<layer id>'); return; }
+      if (!/^https?:\/\//i.test(url) || !/FeatureServer\/\d+/i.test(url)) { MB.toast('URL must be a web address (https://…) ending with /FeatureServer/<layer id>'); return; }
       MB.settings.dataServices = MB.settings.dataServices || [];
       const entry = { id: MB.uid(), name: f.name.value.trim(), url, color: f.color.value, minZoom: +f.minZoom.value || 8, point: f.point.checked };
       MB.settings.dataServices.push(entry);
