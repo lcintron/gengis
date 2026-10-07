@@ -282,12 +282,14 @@ window.MB = window.MB || {};
       if (row) row.scrollIntoView({ block: 'nearest' });
     }, 0);
   }
-  // Something the user just added: if its layer is hidden, say so (it vanished as it was made) and point at the layer.
-  MB.noteAdded = function (f) {
+  // Something the user just added (count: how many, for several at once): if its layer is hidden, say so (it
+  // vanished as it was made) and point at the layer. Whether it did.
+  MB.noteAdded = function (f, count) {
     const layer = f && f.mb && MB.getLayer(f.mb.layerId);
-    if (!layer || layer.visible) return;
-    MB.toast(`Added to layer “${layer.name}”, which is hidden. Show the layer to see it.`, 4500);
+    if (!layer || layer.visible) return false;
+    MB.toast(`Added ${count > 1 ? count + ' objects ' : ''}to layer “${layer.name}”, which is hidden. Show the layer to see ${count > 1 ? 'them' : 'it'}.`, 4500);
     flashHidden(layer);
+    return true;
   };
   // A click to place text while the active layer is hidden: nothing is made (it could not be typed in).
   MB.noteHiddenText = function () {
@@ -969,7 +971,11 @@ window.MB = window.MB || {};
       const all = document.createElement('div');
       all.className = 'btn-row';
       all.innerHTML = `<button class="btn small">Add all ${pois.length} as markers to "${esc(MB.activeLayer().name)}"</button>`;
-      all.querySelector('button').addEventListener('click', () => { pois.forEach(p => addPoi(p, true)); MB.commit('add pois'); MB.ui.clearPoiResults(); MB.toast(pois.length + ' markers added'); });
+      all.querySelector('button').addEventListener('click', () => {
+        const added = pois.map(p => addPoi(p, true)).filter(Boolean);
+        MB.commit('add pois'); MB.ui.clearPoiResults();
+        if (!MB.noteAdded(added[0], added.length)) MB.toast(added.length + ' markers added');
+      });
       out.appendChild(all);
       out.appendChild(list);
       if (g.getBounds().isValid() && !MB.map.getBounds().contains(g.getBounds())) MB.map.fitBounds(g.getBounds().pad(0.1));
@@ -977,7 +983,8 @@ window.MB = window.MB || {};
     function addPoi(p, silent) {
       const f = MB.restoreFeature({ type: 'marker', latlng: [p.latlng.lat, p.latlng.lng], name: p.name, style: MB.newShapeStyle(true) });
       if (f) bindNameTip(f);
-      if (!silent) { MB.commit('add poi'); MB.toast('Added "' + p.name + '"'); MB.noteAdded(f); }
+      if (!silent) { MB.commit('add poi'); if (!MB.noteAdded(f)) MB.toast('Added "' + p.name + '"'); }
+      return f;
     }
   };
 
