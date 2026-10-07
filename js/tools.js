@@ -126,6 +126,34 @@ window.MB = window.MB || {};
         TextDraw.enable = function (...a) { if (MB.tools.textWaits) return; return enable.apply(this, a); };
         TextDraw._createMarker = function (e) { if (MB.tools.textWaits) return; return create.call(this, e); };
       }
+      this.initCircleTip();
+    },
+
+    // The radius of a circle being drawn, beside the pointer (like the measuring tool's readout). Geoman's cursor
+    // marker follows the pointer (snapped); once the center is placed, the radius is the distance between the two.
+    initCircleTip() {
+      const tip = document.createElement('div');
+      tip.className = 'mb-measure-tip';
+      MB.map.getContainer().appendChild(tip);
+      const hide = () => { tip.style.display = 'none'; };
+      MB.map.on('pm:drawstart', e => {
+        hide();
+        const draw = MB.map.pm.Draw.Circle, hint = draw && draw._hintMarker;
+        if (e.shape !== 'Circle' || !hint) return;
+        hint.on('move', () => {
+          const center = draw._centerMarker;
+          if (!center || !draw._layerGroup || !draw._layerGroup.hasLayer(center)) return; // the center is not placed yet
+          if (hint.isTooltipOpen()) hint.closeTooltip(); // this readout says how to finish instead of Geoman's hint
+          const r = center.getLatLng().distanceTo(hint.getLatLng()), p = MB.map.latLngToContainerPoint(hint.getLatLng());
+          tip.innerHTML = `<b>Radius ${MB.formatDistance(r)}</b><br><span class="dim">${MB.formatDistanceAlt(r)}<br>click to finish</span>`;
+          tip.style.display = 'block';
+          // beside the pointer, on the side where it fits
+          const size = MB.map.getSize(), w = tip.offsetWidth, h = tip.offsetHeight;
+          tip.style.left = (p.x + 16 + w > size.x ? p.x - 16 - w : p.x + 16) + 'px';
+          tip.style.top = (p.y + 16 + h > size.y ? p.y - 16 - h : p.y + 16) + 'px';
+        });
+      });
+      MB.map.on('pm:drawend', hide);
     }
   };
 

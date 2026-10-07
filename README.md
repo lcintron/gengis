@@ -21,7 +21,7 @@ A free map builder that runs in the browser (installable, works offline) or as a
 ## Features
 
 - **Draw and edit** markers, text, lines, polygons, rectangles, circles and SVG images, with snapping, multi-select, joining lines into shapes, name labels and full styling. By default, each new object gets its own color.
-- **Measure** distances and areas in metric, imperial or nautical units, with a scale bar.
+- **Measure** distances and areas in metric, imperial or nautical units, with a scale bar. A circle shows its radius while you draw it, and lines, shapes, markers and SVG images can show their length, perimeter, area, radius or position on the map (ticked in Properties).
 - **Layers** with show/hide, lock and draw order; undo/redo; right-click menus; presenter mode.
 - **Projects** save automatically on the device as you work, with recent projects and earlier copies to restore (Project → Recent projects); save/open as `.gengis.json`; GeoJSON import/export.
 - **Project files in the desktop app**: each named project is also kept as a file, `Documents\GenGIS\<name>.gengis.json` by default (Settings → Project to pick another folder), saved a moment after every change and when the window closes; Save as… and recent files under Project → Recent projects.

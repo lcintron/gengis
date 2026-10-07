@@ -783,8 +783,8 @@ window.MB = window.MB || {};
 
   function bindNameTip(f) {
     MB.updateLabel(f);
-    if (f instanceof L.Path && MB.state.showMeasurements) return;
     if (f.mb.type === 'text' || MB.isMeasureType(f.mb.type)) return;
+    if (MB.measureLabelText(f)) { MB.updateTooltip(f); return; } // its tooltip is its measurement label (placed by the name label)
     if (f.getTooltip()) f.unbindTooltip();
     const labelShown = MB.labelTypes.includes(f.mb.type) && MB.getLabel(f).show;
     if (f.mb.name && !labelShown) f.bindTooltip(f.mb.name, { direction: 'top', className: 'mb-name-tip', offset: f.mb.type === 'marker' ? [0, -30] : [0, 0] });
@@ -798,14 +798,23 @@ window.MB = window.MB || {};
     const mm = MB.featureMeasure(f);
     const rows = [];
     const dist = v => MB.formatDistance(v) + ` <span class="alt">${MB.formatDistanceAlt(v)}</span>`;
-    if (mm.length != null) rows.push(['Length', dist(mm.length)]);
-    if (mm.perimeter != null) rows.push(['Perimeter', dist(mm.perimeter)]);
-    if (mm.area != null) rows.push(['Area', MB.formatArea(mm.area) + ` <span class="alt">${MB.formatAreaAlt(mm.area)}</span>`]);
-    if (mm.radius != null) rows.push(['Radius', dist(mm.radius)]);
+    if (mm.length != null) rows.push(['length', dist(mm.length)]);
+    if (mm.perimeter != null) rows.push(['perimeter', dist(mm.perimeter)]);
+    if (mm.area != null) rows.push(['area', MB.formatArea(mm.area) + ` <span class="alt">${MB.formatAreaAlt(mm.area)}</span>`]);
+    if (mm.radius != null) rows.push(['radius', dist(mm.radius)]);
     if (mm.width != null) rows.push(['Size', MB.formatDistance(mm.width) + ' × ' + MB.formatDistance(mm.height)]);
-    const c = MB.svgCenter(f);
-    rows.push(['Position', MB.formatLatLng(f.getLatLng ? f.getLatLng() : (f.getBounds ? f.getBounds().getCenter() : c))]);
-    box.innerHTML = rows.map(r => `<div><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+    rows.push(['position', MB.formatLatLng(MB.featureCenter(f))]);
+    // A box before each row the object can show on the map (ticked: shown in its measurement label).
+    const can = MB.measureKeys(f.mb.type), shown = MB.shownMeasures(f);
+    box.classList.toggle('with-show', can.length > 0);
+    box.innerHTML = rows.map(([k, v]) => {
+      const name = MB.measureNames[k] || k;
+      const head = can.includes(k)
+        ? `<label class="mm-show" title="Show on map"><input type="checkbox" data-show="${k}" aria-label="Show ${name.toLowerCase()} on the map"${shown.includes(k) ? ' checked' : ''}>${name}</label>`
+        : `<span class="mm-name">${name}</span>`;
+      return `<div>${head}<span>${v}</span></div>`;
+    }).join('');
+    box.onchange = e => { const k = e.target.dataset.show; if (k) MB.setShowMeasure(f, k, e.target.checked); };
   };
 
   // Zoom display: show the object only when the map zoom is greater or less than a level (features.js).
