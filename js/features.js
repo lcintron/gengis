@@ -140,10 +140,10 @@ window.MB = window.MB || {};
     }
   };
   const ruled = () => Object.keys(MB.featureLayers).map(id => MB.featureLayers[id]).filter(l => l.mb.zoom && l.mb.zoom.on);
-  let zoomHooked = false;
+  let zoomRuleHooked = false;
   function hookZoom() {
-    if (zoomHooked || !MB.map) return;
-    zoomHooked = true;
+    if (zoomRuleHooked || !MB.map) return;
+    zoomRuleHooked = true;
     MB.map.on('zoomend', () => {
       const list = ruled();
       list.forEach(MB.applyZoomDisplay);
