@@ -27,8 +27,8 @@ window.MB = window.MB || {};
     },
 
     // The presenter's controls: exit and full screen, as map buttons at the top of the map's top right corner (css
-    // shows them only while presenting), the app's logo above them, and, in the desktop app, a strip at the top to
-    // move the window by (its title bar is hidden while presenting).
+    // shows them only while presenting), the app's logo in the top left corner, and, in the desktop app, a strip at
+    // the top to move the window by (its title bar is hidden while presenting).
     build() {
       const self = this;
       const Ctl = L.Control.extend({
