@@ -125,6 +125,7 @@ window.MB = window.MB || {};
     MB.applyStyle(layer, {}, { noCommit: true });
     bindFeatureEvents(layer);
     MB.updateTooltip(layer);
+    if (layer.mb.name && MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(layer); // its name on hover (opened, imported, undone)
     if (!shownNow(layer)) { removeSegLabels(layer); g.removeLayer(layer); MB.updateLabel(layer); }
     hookZoom();
     MB.applyZOrderSoon();

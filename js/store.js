@@ -305,7 +305,7 @@ window.MB = window.MB || {};
     history.redo.push(history.undo.pop());
     const snap = history.undo[history.undo.length - 1];
     MB.loadProject(JSON.parse(snap.json), { keepView: true, keepHistory: true });
-    MB.emit('history', { restored: true });
+    MB.emit('history');
     MB.autosave();
   };
 
@@ -314,7 +314,7 @@ window.MB = window.MB || {};
     const snap = history.redo.pop();
     history.undo.push(snap);
     MB.loadProject(JSON.parse(snap.json), { keepView: true, keepHistory: true });
-    MB.emit('history', { restored: true });
+    MB.emit('history');
     MB.autosave();
   };
 })(window.MB);

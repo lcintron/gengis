@@ -1385,10 +1385,6 @@ window.MB = window.MB || {};
     MB.on('feature-contextmenu', info => MB.menus.feature(info));
     MB.map.on('contextmenu', e => { if (MB.presenter.active) return; MB.menus.map(e); });
     $('#presentBtn').addEventListener('click', () => MB.presenter.enter());
-    MB.on('history', h => {
-      // after an undo or redo (every object rebuilt) the name tips; after any change the layer list (color swatches, labels)
-      if (h && h.restored) Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; if (f.mb.name && !f.getTooltip()) bindNameTip(f); });
-      MB.ui.renderLayersSoon();
-    });
+    MB.on('history', () => MB.ui.renderLayersSoon()); // the layer list after any change (color swatches, labels)
   };
 })(window.MB);
