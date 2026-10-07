@@ -4,7 +4,7 @@
 
 **[Open GenGIS → g2.luiscintron.com](https://g2.luiscintron.com)** · [Desktop installers](https://github.com/lcintron/gengis/releases/latest)
 
-Version 0.6.0
+Version 0.7.0
 
 A free map builder that runs in the browser (installable, works offline) or as a desktop app. Draw and measure on the map, organize your work in layers, and overlay live FAA airspace, LAANC ceilings and air traffic. No account or API key needed.
 
