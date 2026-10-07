@@ -111,6 +111,15 @@ window.MB = window.MB || {};
   // Before another project replaces the open one: its file gets the last changes first.
   F.writePending = () => (timer ? writeNow(false) : writing); // a timer still to fire, or a write under way
 
+  // Does the file hold the open project as it is now (whatever its formatting and save time)?
+  async function holdsCurrent(handle) {
+    try {
+      const p = JSON.parse(await (await handle.getFile()).text());
+      delete p.savedAt;
+      return JSON.stringify(p) === current().text;
+    } catch (e) { return false; }
+  }
+
   // Link the open project to a file handle (after Save as or Open).
   async function adopt(handle) {
     gen++;
@@ -159,7 +168,7 @@ window.MB = window.MB || {};
       if (!(await P().confirmReplace('Open the file'))) return;
       // the open project's own file, without its latest changes (writing them failed or is paused): opening it would
       // go back to what the file holds
-      if (entry && (await entry.handle.isSameEntry(handle).catch(() => false)) && !current().unchanged &&
+      if (entry && (await entry.handle.isSameEntry(handle).catch(() => false)) && !(await holdsCurrent(handle)) &&
           !(await MB.ask('The latest changes to "' + entry.name + '" are not in the file yet, so opening it shows the file without them. Open it anyway?', 'Open the file', 'Cancel'))) return;
       // read it again: replacing the open project first saved it, maybe to this very file
       file = await handle.getFile();
@@ -168,7 +177,7 @@ window.MB = window.MB || {};
       file = await handle.getFile();
       entry.lastWritten = file.lastModified; // what it holds now is what was opened
       await putEntry(entry);
-      lastId = MB.state.projectId; lastText = null;
+      lastId = MB.state.projectId; lastText = current().text; // the file holds what was just opened
       show(canWrite ? 'saving' : 'paused');
       if (canWrite) MB.toast('Changes are saved to "' + handle.name + '" automatically.', 3500);
     } catch (e) { MB.toast('Could not open the file: ' + (e.message || e), 5000); }
