@@ -61,7 +61,7 @@ kbd { background: var(--bg-3); border: 1px solid var(--border); border-bottom-wi
    end (Windows, Linux: where env(titlebar-area-*) ends; about 138 px if the browser does not say) or, on macOS, its
    left end. */
 html[data-titlebar] #topbar { -webkit-app-region: drag; user-select: none; }
-html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown) { -webkit-app-region: no-drag; }
+html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown, .save-status) { -webkit-app-region: no-drag; } /* the save dot: its words on hover */
 html[data-titlebar="overlay"] #topbar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="mac"] #topbar { padding-left: 84px; }
 /* presenting (the top bar hidden): the map's corner controls below the window buttons (the logo clear of macOS's),
@@ -183,6 +183,10 @@ body.presenting .mb-scale-box { display: none !important; }
   touch-action: pan-y; scrollbar-width: none; }
 #toolbar.docked::-webkit-scrollbar { display: none; }
 #toolbar.docked button, #toolbar.docked .sep { flex: 0 0 auto; }
+/* more tools past an end of the strip: that end fades out */
+#toolbar.docked.more-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent); }
+#toolbar.docked.more-above { -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 32px), transparent); }
+#toolbar.docked.more-above.more-below { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
 #mapwrap.tb-docked .leaflet-bottom.leaflet-left { left: var(--tb-w, 52px); } /* the coordinates and attribution beside the strip */
 
 /* the tool's instructions: centered at the top of the map (nothing follows the pointer) */
