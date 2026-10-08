@@ -24,6 +24,7 @@
     const sw = navigator.serviceWorker;
     const hadController = !!sw.controller; // the very first install also takes control: that is not an update
     sw.addEventListener('controllerchange', () => {
+      if (hadController) MB.swUpdated = true; // a newer version took over (About → Check for updates reads it)
       if (!hadController || document.getElementById('mb-update')) return;
       const el = document.createElement('div');
       el.id = 'mb-update';
