@@ -124,7 +124,8 @@ window.MB = window.MB || {};
       id: opts.id || MB.uid(),
       name: name || ('Layer ' + (MB.state.layers.length + 1)),
       visible: opts.visible !== false,
-      locked: !!opts.locked
+      locked: !!opts.locked,
+      grouped: !!opts.grouped // its objects selected, moved, resized and deleted together (geometry.js)
     };
     MB.state.layers.push(layer);
     const g = L.featureGroup();
@@ -166,7 +167,7 @@ window.MB = window.MB || {};
     layer.visible = !!visible;
     if (visible) { g.addTo(MB.map); MB.applyZOrder(); }
     else {
-      if (MB.selected && MB.selected.mb.layerId === id) MB.deselect();
+      MB.dropFromSelection(f => f.mb.layerId === id); // nothing hidden stays selected (Delete would remove it)
       MB.map.removeLayer(g);
     }
     MB.emit('layers');
@@ -176,7 +177,19 @@ window.MB = window.MB || {};
     const layer = MB.getLayer(id);
     if (!layer) return;
     layer.locked = !!locked;
-    if (locked && MB.selected && MB.selected.mb.layerId === id) MB.deselect();
+    // a selected object of the layer stays selected: editable or read only now
+    const sel = MB.selected;
+    if (sel && sel.mb.layerId === id) { MB.deselect(); MB.selectFeature(sel); }
+    MB.emit('layers');
+  };
+
+  // Group a layer's objects (or not): a selection of one of them becomes the group's, or back to that object.
+  MB.setLayerGrouped = function (id, grouped) {
+    const layer = MB.getLayer(id);
+    if (!layer) return;
+    layer.grouped = !!grouped;
+    const sel = MB.selected || Array.from(MB.multi || []).find(f => f.mb.layerId === id);
+    if (sel && sel.mb.layerId === id) { MB.deselect(); MB.selectFeature(sel); }
     MB.emit('layers');
   };
 

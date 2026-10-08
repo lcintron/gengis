@@ -46,16 +46,45 @@ window.MB = window.MB || {};
     if (!silent) MB.emit('selection', MB.selected);
   };
 
+  /* ---------- groups ----------
+   * A grouped layer's objects are selected as one (MB.multi holds them all): moved together with the Move tool,
+   * resized as one with the Scale tool, deleted and duplicated together (the layer), never edited one by one. */
+  MB.groupOf = f => { const l = f && f.mb && MB.getLayer(f.mb.layerId); return l && l.grouped ? l : null; };
+  // The grouped layer whose objects are exactly the selection, or null.
+  MB.selectedGroup = function () {
+    if (!MB.multi || MB.multi.size < 2) return null;
+    const first = MB.multi.values().next().value, layer = MB.groupOf(first);
+    if (!layer) return null;
+    const members = MB.layerFeatures(layer.id);
+    return members.length === MB.multi.size && members.every(f => MB.multi.has(f)) ? layer.id : null;
+  };
+  MB.selectGroup = function (layerId) {
+    const members = MB.layerFeatures(layerId);
+    MB.deselect();
+    members.forEach(f => { MB.multi.add(f); mark(f, true); });
+    MB.emit('selection', null); // (members their zoom rule hides are shown while selected: features.js)
+    const locked = members.some(l => MB.isFeatureLocked(l));
+    if (MB.tools.current === 'scale') {
+      if (locked) MB.toast('The layer is locked: unlock it to resize');
+      else MB.scaler.attach(members);
+    } else if (MB.tools.current === 'move' && !locked) MB.scaler.attach(members, { frame: true }); // what is being moved
+  };
+
   MB.toggleMulti = function (layer) {
-    if (!layer || MB.isFeatureLocked(layer)) return;
+    if (!layer) return; // locked objects too: what changes objects skips or refuses them
+    const grp = MB.groupOf(layer), set = grp ? MB.layerFeatures(grp.id) : [layer]; // a group's objects come and go together
     if (MB.selected && !MB.multi.size) {
       const s = MB.selected;
       MB.deselect();
       if (s === layer) return; // shift-clicking the only selected object just deselects it
       MB.multi.add(s); mark(s, true);
     }
-    if (MB.multi.has(layer)) { MB.multi.delete(layer); mark(layer, false); }
-    else { MB.multi.add(layer); mark(layer, true); }
+    MB.scaler.detach(); // a group's box: not around a mixed selection
+    const all = set.every(f => MB.multi.has(f));
+    set.forEach(f => { if (all) { MB.multi.delete(f); mark(f, false); } else { MB.multi.add(f); mark(f, true); } });
+    if (!MB.multi.size) { MB.emit('selection', null); return; }
+    const gid = MB.selectedGroup();
+    if (gid) { MB.selectGroup(gid); return; } // exactly a group again
     if (MB.multi.size === 1) { // back to a normal single selection
       const only = Array.from(MB.multi)[0];
       MB.multi.clear(); mark(only, false);
@@ -65,20 +94,31 @@ window.MB = window.MB || {};
     MB.emit('selection', null);
   };
 
+  // Objects that can no longer be acted on (their layer hidden, or themselves): out of the selection, single or
+  // multiple; the rest of a multiple selection stays selected.
+  MB.dropFromSelection = function (test) {
+    if (MB.selected && test(MB.selected)) { MB.deselect(); return; }
+    if (!MB.multi || !Array.from(MB.multi).some(test)) return;
+    const keep = Array.from(MB.multi).filter(f => !test(f));
+    MB.deselect();
+    keep.forEach(f => { if (!MB.multi.has(f) && MB.selected !== f) MB.toggleMulti(f); }); // a group comes back whole
+  };
+
   MB.deleteMulti = function () {
-    const list = Array.from(MB.multi).filter(l => !MB.isFeatureLocked(l));
-    if (!list.length) return;
+    const all = Array.from(MB.multi), list = all.filter(l => !MB.isFeatureLocked(l)), kept = all.length - list.length;
+    if (!list.length) { MB.toast(kept > 1 ? 'These objects are locked' : 'Object is locked'); return; }
     MB.deselect();
     list.forEach(l => MB.removeFeature(l.mb.id, { silent: true }));
     MB.emit('features');
     MB.commit('delete objects');
-    MB.toast(list.length + ' objects deleted');
+    MB.toast(list.length + ' objects deleted' + (kept ? ` (${kept} locked kept)` : ''));
   };
 
   MB.moveMultiToLayer = function (layerId) {
-    const list = Array.from(MB.multi);
+    const all = Array.from(MB.multi), list = all.filter(l => !MB.isFeatureLocked(l));
     MB.deselect();
     list.forEach(l => MB.moveFeatureToLayer(l.mb.id, layerId));
+    if (list.length < all.length) MB.toast(`${all.length - list.length} locked object${all.length - list.length > 1 ? 's' : ''} left where ${all.length - list.length > 1 ? 'they were' : 'it was'}`);
   };
 
   /* ================= line <-> polygon conversion ================= */
@@ -141,6 +181,7 @@ window.MB = window.MB || {};
     opts = opts || {};
     const lines = Array.from(layers).filter(l => l.mb.type === 'line' || l.mb.type === 'measure-line');
     if (!lines.length) { MB.toast('Select the lines to join (shift-click to select several)'); return null; }
+    if (!opts.keepLines && lines.some(l => MB.isFeatureLocked(l))) { MB.toast('A selected line is locked: unlock it to join'); return null; }
     const tol = MB.SNAP_PX;
     const parts = lines.map(l => ({ layer: l, pts: firstPart(l.getLatLngs()).slice() })).filter(p => p.pts.length >= 2);
     let chain = parts[0].pts.slice();

@@ -85,7 +85,7 @@ window.MB = window.MB || {};
       const center = MB.featureCenter(layer);
       const isPoint = m.type === 'marker' || m.type === 'text' || m.type === 'svg' || m.type === 'circle';
       const items = [
-        { label: 'Properties…', disabled: locked, action: () => { MB.selectFeature(layer); MB.ui.showTab('props'); } },
+        { label: 'Properties…', action: () => { MB.selectFeature(layer); MB.ui.showTab('props'); } }, // read only when locked
         { label: 'Center map here', action: () => MB.map.panTo(center) },
         { label: 'Zoom to fit', action: () => MB.zoomToFeature(layer) },
         { sep: true },
@@ -116,7 +116,7 @@ window.MB = window.MB || {};
           MB.emit('selection', MB.selected);
         } }] : []),
         ...(MB.canConvert(layer) ? [{ label: MB.convertLabel(layer), disabled: locked, action: () => MB.convertFeature(layer) }] : []),
-        { label: 'Duplicate', hint: 'Ctrl+D', disabled: locked, action: () => { const n = MB.duplicateFeature(m.id); if (n) MB.selectFeature(n); } },
+        { label: 'Duplicate', hint: 'Ctrl+D', action: () => { const n = MB.duplicateFeature(m.id); if (n) MB.selectFeature(n); } }, // a copy of a locked object is not locked
         { label: 'Move to layer', disabled: locked, children: MB.state.layers.slice().reverse().map(l => ({
           label: l.name, disabled: l.id === m.layerId, action: () => MB.moveFeatureToLayer(m.id, l.id)
         })) },
@@ -130,10 +130,10 @@ window.MB = window.MB || {};
         } }] : []),
         { sep: true }
       );
-      if (m.type !== 'svg') {
+      if (MB.styleKind(m.type)) {
         items.push(
           { label: 'Copy style', action: () => MB.copyStyle(layer) },
-          { label: 'Paste style', disabled: !MB.styleClipboard || locked, action: () => MB.pasteStyle(layer) }
+          { label: 'Paste style', disabled: !MB.canPasteStyle(layer), action: () => { MB.pasteStyle(layer); if (MB.selected === layer) MB.ui.renderProps(); } }
         );
       }
       if (layer.bringToFront) {
@@ -156,13 +156,20 @@ window.MB = window.MB || {};
     multi(info) {
       const list = Array.from(MB.multi);
       const lines = list.filter(l => l.mb.type === 'line' || l.mb.type === 'measure-line');
+      const gid = MB.selectedGroup(), grp = gid && MB.getLayer(gid);
       MB.contextMenu.show(info.x, info.y, [
-        { label: list.length + ' objects selected', disabled: true },
+        { label: grp ? `Group “${grp.name}” · ${list.length} objects` : list.length + ' objects selected', disabled: true },
         { sep: true },
+        ...(grp ? [
+          { label: 'Ungroup', action: () => { MB.setLayerGrouped(gid, false); MB.commit('ungroup'); } },
+          { label: 'Duplicate layer', hint: 'Ctrl+D', action: () => { const c = MB.duplicateLayer(gid); if (c) MB.selectGroup(c.id); } },
+          { sep: true }
+        ] : []),
         { label: 'Join lines', disabled: lines.length < 1, hint: lines.length + ' line' + (lines.length === 1 ? '' : 's'), action: () => MB.joinLines(MB.multi) },
         { label: 'Create polygon from lines (keep lines)', disabled: lines.length < 1, action: () => MB.joinLines(MB.multi, { keepLines: true }) },
         ...(list.filter(MB.isJoinableShape).length >= 2 ? [{ label: 'Join shapes', disabled: !MB.shapeUnion(list).polygon, action: () => MB.joinShapes(MB.multi) }] : []),
         { sep: true },
+        ...(MB.styleClipboard ? [{ label: 'Paste style', hint: list.filter(MB.canPasteStyle).length + ' of ' + list.length, disabled: !list.some(MB.canPasteStyle), action: () => MB.pasteStyle(MB.multi) }] : []),
         { label: 'Move to layer', children: MB.state.layers.slice().reverse().map(l => ({ label: l.name, action: () => MB.moveMultiToLayer(l.id) })) },
         { label: 'Copy coordinates', hint: MB.formatLatLng(info.latlng, 5), action: () => MB.copyText(MB.formatLatLng(info.latlng, 6)) },
         { sep: true },

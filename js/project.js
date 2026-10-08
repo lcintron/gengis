@@ -230,7 +230,7 @@ window.MB = window.MB || {};
       const d = e && datasetByUrl(e.uri, e.custom);
       if (d) MB.state.dataLayers[d.id] = { on: !!e.enabled, off: Array.isArray(e.hidden) ? e.hidden.slice() : [] };
     });
-    (p.layers || []).forEach(l => MB.createLayer(l.name, { id: l.id, visible: l.visible, locked: l.locked, activate: false }));
+    (p.layers || []).forEach(l => MB.createLayer(l.name, { id: l.id, visible: l.visible, locked: l.locked, grouped: l.grouped, activate: false }));
     if (!MB.state.layers.length) MB.createLayer('Layer 1');
     MB.state.activeLayerId = MB.getLayer(p.activeLayer) ? p.activeLayer : MB.state.layers[MB.state.layers.length - 1].id;
     (p.features || []).forEach(f => { try { MB.restoreFeature(f); } catch (e) { console.warn('Could not restore feature', f, e); } });

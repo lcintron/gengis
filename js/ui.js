@@ -9,7 +9,7 @@ window.MB = window.MB || {};
 
   const toolHints = {
     select: '',
-    move: 'Click an object, then drag it to move it. Use Select to edit vertices.',
+    move: 'Click an object (or a grouped layer) and drag it to move it; its box shows what moves. Use Select to edit vertices.',
     scale: 'Click an object, then drag a handle to resize it. Shift keeps its proportions, Alt resizes from its center, Esc puts it back.',
     marker: 'Click the map to place a marker.',
     text: 'Click the map to place a text label, type your text, then click elsewhere.',
@@ -23,6 +23,75 @@ window.MB = window.MB || {};
   };
 
   MB.ui = {};
+
+  /* ---------- sliders: a number box with - and + beside each ----------
+   * Every slider (input[type=range]) in the page gets one, as it appears (an observer on the page). The box shows the
+   * value as its readout did (a 0-1 slider in %, others with their unit) and sets the slider like a drag would
+   * (its input and change events): the code behind each slider is unchanged. Its old readout is hidden. */
+  function stepper(range) {
+    if (range.dataset.stepper) return;
+    range.dataset.stepper = '1';
+    const readout = range.nextElementSibling && range.nextElementSibling.classList.contains('val') ? range.nextElementSibling : null;
+    const min = +range.min || 0, max = range.max === '' ? 100 : +range.max;
+    const pct = max <= 1 && (!readout || /%\s*$/.test(readout.textContent));
+    const unit = pct ? '%' : readout ? (readout.textContent.match(/[^\d.\s-]+\s*$/) || [''])[0].trim() : '';
+    if (pct && (+range.step || 1) > 0.01) range.step = '0.01'; // a typed percent is kept as typed
+    const scale = pct ? 100 : 1, step = pct ? 1 : (+range.step || 1);
+    const decimals = (String(step).split('.')[1] || '').length;
+    const box = document.createElement('span');
+    box.className = 'stepper';
+    const label = (range.closest('.row') && range.closest('.row').querySelector('label')) || null;
+    const name = esc((label ? label.textContent.trim() : range.title || 'Value') + (unit ? ' (' + unit + ')' : ''));
+    // up over down, left of the value: compact, so the slider keeps the row
+    const chev = d => `<svg viewBox="0 0 10 6" width="9" height="5" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    box.innerHTML = `<span class="stepper-arrows"><button type="button" tabindex="-1" data-d="1" aria-label="Increase ${name}">${chev('M1 5l4-4 4 4')}</button><button type="button" tabindex="-1" data-d="-1" aria-label="Decrease ${name}">${chev('M1 1l4 4 4-4')}</button></span><input type="number" inputmode="decimal" aria-label="${name}">${unit ? `<span class="stepper-unit">${esc(unit)}</span>` : ''}`;
+    range.after(box);
+    if (readout) readout.hidden = true;
+    const num = box.querySelector('input');
+    num.min = +(min * scale).toFixed(4); num.max = +((+range.dataset.softMax || max) * scale).toFixed(4); num.step = 'any';
+    const show = () => { num.value = +(+range.value * scale).toFixed(decimals); };
+    const soft = +range.dataset.softMax || 0; // a slider whose end is only where dragging stops (a text's size): typed values go past it
+    const set = v => {
+      if (!isFinite(v)) { show(); return; }
+      v = Math.min((soft || +range.max) * scale, Math.max(min * scale, v));
+      if (v / scale > +range.max) range.max = String(v / scale);
+      range.value = String(v / scale);
+      show();
+      range.dispatchEvent(new Event('input', { bubbles: true }));
+      range.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    range.addEventListener('input', show);
+    num.addEventListener('change', () => set(parseFloat(num.value)));
+    num.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); set(parseFloat(num.value)); num.select(); }
+      else if (e.key === 'Escape') { e.preventDefault(); show(); num.blur(); } // back as it was, out of the box
+      e.stopPropagation(); // the app's single-key shortcuts stay out of a typed value
+    });
+    num.addEventListener('focus', () => num.select());
+    // a button steps once; held down, it repeats
+    let timer = null;
+    const stop = () => { clearTimeout(timer); clearInterval(timer); timer = null; };
+    box.querySelectorAll('button').forEach(b => {
+      const nudge = () => set(+(+range.value * scale + (+b.dataset.d) * step).toFixed(Math.max(decimals, 2)));
+      b.addEventListener('pointerdown', e => {
+        if (e.button !== 0 || range.disabled) return;
+        e.preventDefault(); nudge();
+        timer = setTimeout(() => { timer = setInterval(nudge, 70); }, 400);
+      });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, stop));
+      b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nudge(); } });
+    });
+    // disabled with its slider (a locked object's properties)
+    const sync = () => { const off = range.disabled; num.disabled = off; box.querySelectorAll('button').forEach(b => { b.disabled = off; }); box.classList.toggle('disabled', off); };
+    new MutationObserver(sync).observe(range, { attributes: true, attributeFilter: ['disabled'] });
+    sync(); show();
+  }
+  MB.ui.stepper = stepper;
+  function enhanceSliders(root) { (root.matches && root.matches('input[type="range"]') ? [root] : root.querySelectorAll ? root.querySelectorAll('input[type="range"]') : []).forEach(stepper); }
+  new MutationObserver(list => list.forEach(r => r.addedNodes.forEach(n => {
+    if (n.nodeType === 1 && !(n.closest && n.closest('.leaflet-pane'))) enhanceSliders(n);
+  }))).observe(document.body, { childList: true, subtree: true });
+  enhanceSliders(document.body);
 
   /* ================= top bar ================= */
 
@@ -420,7 +489,9 @@ window.MB = window.MB || {};
     up: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 14l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     down: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 10l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     trash: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
-    edit: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>'
+    edit: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    more: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="5" cy="12" r="1.9" fill="currentColor"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/><circle cx="19" cy="12" r="1.9" fill="currentColor"/></svg>',
+    group: '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="3.5" y="3.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="9.5" y="9.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>'
   };
 
   // The list's icons are css masks (one rule each, made here from the drawings above), not inline drawings: hundreds of
@@ -496,7 +567,8 @@ window.MB = window.MB || {};
           <button class="chev${collapsed ? ' closed' : ''}" data-act="toggle" title="${collapsed ? 'Expand' : 'Collapse'}">&#9662;</button>
           <span class="active-dot"></span>
           <span class="layer-name" data-act="rename">${esc(l.name)}</span>
-          <button class="icon-btn mini" data-act="rename-btn" title="Rename layer">${icons.edit}</button>
+          ${l.grouped ? `<button class="icon-btn mini on" data-act="ungroup" title="Grouped: its objects are selected, moved and resized together. Click to ungroup">${icons.group}</button>` : ''}
+          <button class="icon-btn mini" data-act="layer-menu" title="Layer options: rename, duplicate, group…" aria-haspopup="menu">${icons.more}</button>
           <span class="count">${feats.length}</span>
           <button class="icon-btn mini${l.visible ? ' on' : ''}" data-act="vis" title="${l.visible ? 'Hide' : 'Show'} layer (all objects)">${l.visible ? icons.eye : icons.eyeOff}</button>
           <button class="icon-btn mini${l.locked ? ' on' : ''}" data-act="lock" title="${l.locked ? 'Unlock' : 'Lock'} layer (all objects)">${l.locked ? icons.lock : icons.unlock}</button>
@@ -512,9 +584,32 @@ window.MB = window.MB || {};
     panel.scrollTop = scrollTop;
   };
 
+  // A layer's options.
+  function layerMenu(id, x, y) {
+    const l = MB.getLayer(id);
+    if (!l) return;
+    const n = MB.layerFeatureCount(id), g = MB.groups[id];
+    MB.contextMenu.show(x, y, [
+      { label: 'Rename', action: () => startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`), id) },
+      { label: 'Duplicate layer', hint: n + ' object' + (n === 1 ? '' : 's'), action: () => MB.duplicateLayer(id) },
+      { label: l.grouped ? 'Ungroup objects' : 'Group objects', disabled: !l.grouped && n < 2,
+        action: () => { const on = !l.grouped; MB.setLayerGrouped(id, on); MB.commit(on ? 'group' : 'ungroup'); } },
+      { label: 'Zoom to layer', disabled: !n || !g || !g.getBounds().isValid(), action: () => MB.map.fitBounds(g.getBounds().pad(0.15), { maxZoom: 18 }) },
+      { sep: true },
+      { label: l.locked ? 'Unlock layer' : 'Lock layer', action: () => { MB.setLayerLocked(id, !l.locked); MB.commit('layer lock'); } },
+      { label: 'Delete layer', danger: true, action: () => { if (!n || confirm(`Delete layer "${l.name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); } } }
+    ]);
+  }
+
   // The list's clicks: one listener for all its rows, set up once.
   function initLayerList() {
     const panel = $('#layerScroll');
+    panel.addEventListener('contextmenu', e => {
+      const item = e.target.closest('.layer-item');
+      if (!item || e.target.closest('input')) return;
+      e.preventDefault();
+      layerMenu(item.closest('.layer-node').dataset.id, e.clientX, e.clientY);
+    });
     panel.addEventListener('click', e => {
       const obj = e.target.closest('.obj-item');
       if (obj) { objectClick(e, obj); return; }
@@ -534,9 +629,8 @@ window.MB = window.MB || {};
     const actEl = e.target.closest('[data-act]');
     const act = actEl && actEl.dataset.act;
     if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
-    if (act === 'rename-btn') { // the row as it is now: saving another name being edited may have redrawn the list
-      startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`) || item, id); return;
-    }
+    if (act === 'layer-menu') { const r = actEl.getBoundingClientRect(); layerMenu(id, r.left, r.bottom + 2); return; }
+    if (act === 'ungroup') { MB.setLayerGrouped(id, false); MB.commit('ungroup'); return; }
     if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
     else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
     else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
@@ -545,7 +639,11 @@ window.MB = window.MB || {};
       const n = MB.layerFeatureCount(id);
       if (!n || confirm(`Delete layer "${MB.getLayer(id).name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); }
     }
-    else { MB.setActiveLayer(id); MB.tools.refreshDraw(); }
+    else {
+      MB.setActiveLayer(id); MB.tools.refreshDraw();
+      const l = MB.getLayer(id);
+      if (l && l.grouped && (MB.tools.current === 'move' || MB.tools.current === 'scale') && MB.layerFeatureCount(id) > 1) MB.selectGroup(id); // the group to move or resize
+    }
   }
 
   function objectClick(e, item) {
@@ -570,6 +668,7 @@ window.MB = window.MB || {};
   function startObjectRename(item, fid) {
     const f = MB.featureLayers[fid];
     if (!f) return;
+    if (MB.isFeatureLocked(f)) { MB.toast('Object is locked: unlock it to rename'); return; }
     MB.ui.flushLayers(); // a redraw still to come would take the field away: the row as drawn now
     item = $(`#layerScroll .obj-item[data-fid="${CSS.escape(fid)}"]`) || item;
     const span = $('.fname', item);
@@ -605,6 +704,36 @@ window.MB = window.MB || {};
     inp.addEventListener('dblclick', e => e.stopPropagation()); // selecting a word in it must not start the rename over
   }
 
+
+  // Alignment and object action icons (inline: a few per panel).
+  const svgIcon = d => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const ALIGN = {
+    left: svgIcon('M4 6h16M4 10h10M4 14h16M4 18h10'),
+    center: svgIcon('M4 6h16M7 10h10M4 14h16M7 18h10'),
+    right: svgIcon('M4 6h16M10 10h10M4 14h16M10 18h10'),
+    top: svgIcon('M5 4h14M12 20V8M8 12l4-4 4 4'),
+    middle: svgIcon('M5 12h14M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3'),
+    bottom: svgIcon('M5 20h14M12 4v12M8 12l4 4 4-4')
+  };
+  const ACT = {
+    zoom: svgIcon('M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5M12 11v2M11 12h2'),
+    dup: svgIcon('M8 8h11v11H8zM5 16V5h11'),
+    convert: svgIcon('M4 8h14l-3-3M20 16H6l3 3'),
+    front: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3" y="9" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="3" width="12" height="12" rx="1.5" fill="currentColor" stroke="currentColor" stroke-width="2"/></svg>`,
+    back: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="9" y="3" width="12" height="12" rx="1.5" fill="currentColor" stroke="currentColor" stroke-width="2" opacity=".45"/><rect x="3" y="9" width="12" height="12" rx="1.5" fill="var(--bg-2)" stroke="currentColor" stroke-width="2"/></svg>`,
+    del: svgIcon('M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13'),
+    copyStyle: svgIcon('M15 4.5l4.5 4.5M13.5 6l4.5 4.5M17 2.5a2.1 2.1 0 0 1 3 3L17.5 8 16 6.5zM12.5 7.5l-8 8V20h4.5l8-8'), // an eyedropper
+    pasteStyle: svgIcon('M5 4h11v4H5zM16 6h3v5h-8v3M10 14h2v7h-2z') // a paint roller
+  };
+
+  // The Paste style button's tip: what is on the clipboard, and whether it fits this object.
+  function pasteTip(f) {
+    const cb = MB.styleClipboard;
+    if (!cb) return 'Paste style (copy a style first)';
+    if (MB.styleKind(f.mb.type) !== cb.kind) return cb.kind === 'text' ? 'Paste style: the copied text style goes on texts' : 'Paste style: the copied style goes on shapes, lines and markers';
+    return 'Paste style';
+  }
+
   /* ================= style form ================= */
 
   const PX_KEYS = ['weight', 'textSize', 'textShadowBlur', 'textShadowOffset']; // slider readouts in px (the rest: %)
@@ -625,24 +754,27 @@ window.MB = window.MB || {};
     if (sections.includes('fill')) {
       html += `<div class="section"><h3>Fill</h3>
         <label class="check"><input type="checkbox" data-k="fill"${st.fill ? ' checked' : ''}> Fill shape</label>
-        <div class="row"><label>Color</label><input type="color" data-k="fillColor" value="${st.fillColor}"><input type="range" data-k="fillOpacity" min="0" max="1" step="0.05" value="${st.fillOpacity}"><span class="val" data-val="fillOpacity">${Math.round(st.fillOpacity * 100)}%</span></div>
+        <div class="row"><label>Color</label><input type="color" data-k="fillColor" value="${st.fillColor}"><span class="grow"></span></div>
+        <div class="row"><label>Opacity</label><input type="range" data-k="fillOpacity" min="0" max="1" step="0.05" value="${st.fillOpacity}"><span class="val" data-val="fillOpacity">${Math.round(st.fillOpacity * 100)}%</span></div>
       </div>`;
     }
     if (sections.includes('text')) {
       const tog = (k, label, title) => `<button type="button" class="tog${st[k] ? ' on' : ''}" data-toggle="${k}" title="${title}">${label}</button>`;
       const seg = (k, opts) => `<div class="seg small" data-set="${k}">${opts.map(o => `<button type="button" data-v="${o[0]}"${(st[k] || '') === o[0] ? ' class="active"' : ''} title="${o[2] || o[1]}">${o[1]}</button>`).join('')}</div>`;
       html += `<div class="section"><h3>Text</h3>
-        <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><input type="range" data-k="textSize" min="${Math.max(1, Math.min(8, MB.textShownSize(st)))}" max="${Math.max(64, MB.textShownSize(st))}" step="1" value="${MB.textShownSize(st)}" title="The size it shows at now (a text that scales with the map can be any size)"><span class="val" data-val="textSize">${MB.textShownSize(st)}px</span></div>
+        <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><span class="grow"></span></div>
+        <div class="row" title="The size it shows at now (a text that scales with the map can be any size)"><label>Size</label><input type="range" data-k="textSize" data-soft-max="400" min="${Math.max(1, Math.min(8, MB.textShownSize(st)))}" max="${Math.max(64, MB.textShownSize(st))}" step="1" value="${MB.textShownSize(st)}"><span class="val" data-val="textSize">${MB.textShownSize(st)}px</span></div>
         <div class="row" title="Fixed pixels: the same size at every zoom. Scale with map: grows and shrinks with the map, like a label printed on it"><label>Sizing</label>${seg('textScale', [['screen', 'Fixed pixels'], ['map', 'Scale with map']])}</div>
         <div class="row"><label>Font</label><select data-k="textFont">${Object.keys(MB.textFonts).map(k => `<option value="${k}" style="font-family:${esc(MB.textFonts[k][1])}"${st.textFont === k ? ' selected' : ''}>${MB.textFonts[k][0]}</option>`).join('')}</select></div>
         <div class="row"><label>Format</label><div class="tog-group">${tog('textBold', '<b>B</b>', 'Bold')}${tog('textItalic', '<i>I</i>', 'Italic')}${tog('textUnderline', '<u>U</u>', 'Underline')}${tog('textStrike', '<s>S</s>', 'Strikethrough')}</div></div>
-        <div class="row"><label>Align</label>${seg('textAlign', [['left', '&#8676;', 'Left'], ['center', '&#8801;', 'Center'], ['right', '&#8677;', 'Right']])}</div>
-        <div class="row" title="Which side of the text sits on its map point"><label>Anchor H</label>${seg('textHAnchor', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
-        <div class="row" title="Which side of the text sits on its map point"><label>Anchor V</label>${seg('textVAnchor', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
-        <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}" title="Background color"><input type="range" data-k="textBgOpacity" min="0" max="1" step="0.05" value="${st.textBgOpacity}" title="Background opacity"><span class="val" data-val="textBgOpacity">${Math.round(st.textBgOpacity * 100)}%</span></div>
-        <div class="row"><label>Shadow</label><input type="checkbox" data-k="textShadowOn"${st.textShadowOn ? ' checked' : ''} title="Show shadow"><input type="color" data-k="textShadowColor" value="${st.textShadowColor}" title="Shadow color"><input type="range" data-k="textShadowOpacity" min="0" max="1" step="0.05" value="${st.textShadowOpacity}" title="Shadow opacity"><span class="val" data-val="textShadowOpacity">${Math.round(st.textShadowOpacity * 100)}%</span></div>
-        <div class="row" title="How soft the shadow is"><label>Shadow blur</label><input type="range" data-k="textShadowBlur" min="0" max="16" step="1" value="${st.textShadowBlur}"><span class="val" data-val="textShadowBlur">${st.textShadowBlur}px</span></div>
-        <div class="row" title="How far the shadow falls below and right of the text"><label>Shadow offset</label><input type="range" data-k="textShadowOffset" min="0" max="10" step="1" value="${st.textShadowOffset}"><span class="val" data-val="textShadowOffset">${st.textShadowOffset}px</span></div>
+        <div class="row"><label>Align</label>${seg('textAlign', [['left', ALIGN.left, 'Align left'], ['center', ALIGN.center, 'Center'], ['right', ALIGN.right, 'Align right']])}</div>
+        <div class="row align-row"><label title="Which side of the text sits on its map point">Anchor</label>${seg('textHAnchor', [['left', ALIGN.left, 'Anchor left: the text starts at its point'], ['center', ALIGN.center, 'Anchor center'], ['right', ALIGN.right, 'Anchor right: the text ends at its point']])}${seg('textVAnchor', [['top', ALIGN.top, 'Anchor top: the text hangs below its point'], ['middle', ALIGN.middle, 'Anchor middle'], ['bottom', ALIGN.bottom, 'Anchor bottom: the text sits above its point']])}</div>
+        <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}" title="Background color"><span class="grow"></span></div>
+        <div class="row sub" title="Background opacity"><label>Opacity</label><input type="range" data-k="textBgOpacity" min="0" max="1" step="0.05" value="${st.textBgOpacity}"><span class="val" data-val="textBgOpacity">${Math.round(st.textBgOpacity * 100)}%</span></div>
+        <div class="row"><label>Shadow</label><input type="checkbox" data-k="textShadowOn"${st.textShadowOn ? ' checked' : ''} title="Show shadow"><input type="color" data-k="textShadowColor" value="${st.textShadowColor}" title="Shadow color"><span class="grow"></span></div>
+        <div class="row sub" title="Shadow opacity"><label>Opacity</label><input type="range" data-k="textShadowOpacity" min="0" max="1" step="0.05" value="${st.textShadowOpacity}"><span class="val" data-val="textShadowOpacity">${Math.round(st.textShadowOpacity * 100)}%</span></div>
+        <div class="row sub" title="How soft the shadow is"><label>Blur</label><input type="range" data-k="textShadowBlur" min="0" max="16" step="1" value="${st.textShadowBlur}"><span class="val" data-val="textShadowBlur">${st.textShadowBlur}px</span></div>
+        <div class="row sub" title="How far the shadow falls below and right of the text"><label>Offset</label><input type="range" data-k="textShadowOffset" min="0" max="10" step="1" value="${st.textShadowOffset}"><span class="val" data-val="textShadowOffset">${st.textShadowOffset}px</span></div>
       </div>`;
     }
     const wrap = document.createElement('div');
@@ -682,7 +814,10 @@ window.MB = window.MB || {};
     const list = Array.from(MB.multi);
     const lines = list.filter(l => l.mb.type === 'line' || l.mb.type === 'measure-line');
     const union = MB.shapeUnion(list); // shown when two or more shapes are selected: joinable when they overlap
-    panel.innerHTML = `<div class="panel-head"><h3>${list.length} objects selected</h3><button class="btn small ghost" data-act="clear">Clear</button></div>
+    const gid = MB.selectedGroup(), grp = gid && MB.getLayer(gid);
+    panel.innerHTML = `<div class="panel-head"><h3>${grp ? `Group · ${list.length} objects` : `${list.length} objects selected`}</h3><button class="btn small ghost" data-act="clear">Clear</button></div>
+      ${grp ? `<div class="group-note"><span>${icons.group}</span><span class="grow">Layer “${esc(grp.name)}” is grouped: Move drags it, Scale resizes it, as one.</span></div>
+      <div class="btn-row"><button class="btn small" data-act="ungroup">Ungroup</button><button class="btn small" data-act="dup-layer">Duplicate layer</button></div>` : ''}
       <div class="feature-list" style="max-height:180px">${list.map(l => `<div class="feature-item"><span class="swatch" style="background:${l.mb.type === 'svg' ? 'transparent' : l.mb.style.color}"></span><span class="fname">${esc(l.mb.name || MB.typeLabels[l.mb.type])}</span><span class="ftype">${MB.typeLabels[l.mb.type]}</span></div>`).join('')}</div>
       <div class="section" style="margin-top:12px"><h3>Lines (${lines.length})</h3>
         <div class="btn-row"><button class="btn small primary" data-act="join"${lines.length < 1 ? ' disabled' : ''}>Join lines</button><button class="btn small" data-act="poly"${lines.length < 1 ? ' disabled' : ''}>Polygon from lines (keep lines)</button></div>
@@ -694,7 +829,7 @@ window.MB = window.MB || {};
       </div>` : ''}
       <div class="section"><h3>All selected</h3>
         <div class="row"><label>Move to layer</label><select id="multiLayer"><option value="">— choose —</option>${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div>
-        <div class="btn-row"><button class="btn small danger" data-act="delete">Delete ${list.length} objects</button></div>
+        <div class="btn-row">${MB.styleClipboard ? `<button class="btn small" data-act="paste-style"${list.some(MB.canPasteStyle) ? '' : ' disabled'} title="The copied style on the selected objects it fits">Paste style (${list.filter(MB.canPasteStyle).length})</button>` : ''}<button class="btn small danger" data-act="delete">Delete ${list.length} objects</button></div>
       </div>`;
     $$('[data-act]', panel).forEach(btn => btn.addEventListener('click', () => {
       const act = btn.dataset.act;
@@ -702,6 +837,9 @@ window.MB = window.MB || {};
       else if (act === 'join') MB.joinLines(MB.multi);
       else if (act === 'poly') MB.joinLines(MB.multi, { keepLines: true });
       else if (act === 'join-shapes') MB.joinShapes(MB.multi);
+      else if (act === 'ungroup') { MB.setLayerGrouped(gid, false); MB.commit('ungroup'); }
+      else if (act === 'paste-style') MB.pasteStyle(MB.multi);
+      else if (act === 'dup-layer') { const c = MB.duplicateLayer(gid); if (c) MB.selectGroup(c.id); }
       else if (act === 'delete') MB.deleteMulti();
     }));
     $('#multiLayer', panel).addEventListener('change', e => { if (e.target.value) MB.moveMultiToLayer(e.target.value); });
@@ -711,6 +849,7 @@ window.MB = window.MB || {};
     const panel = $('#propsBody');
     const f = MB.selected;
     panel.innerHTML = '';
+    panel.classList.remove('props-locked');
     $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
     if (!f && MB.data.picked) { // a data feature picked on the map (datalayers.js)
@@ -757,7 +896,9 @@ window.MB = window.MB || {};
 
     const m = f.mb;
     const head = document.createElement('div');
+    const tool = (act, icon, tip, cls) => `<button type="button" class="icon-btn${cls ? ' ' + cls : ''}" data-act="${act}" title="${esc(tip)}" aria-label="${esc(tip)}">${icon}</button>`;
     head.innerHTML = `<div class="panel-head"><h3>${MB.typeLabels[m.type]}</h3><span class="badge">${esc((MB.getLayer(m.layerId) || {}).name || '')}</span></div>
+      <div class="obj-tools" role="toolbar" aria-label="Object actions">${tool('zoom', ACT.zoom, 'Zoom to')}${tool('dup', ACT.dup, 'Duplicate (Ctrl+D)')}${MB.canConvert(f) ? tool('convert', ACT.convert, MB.convertLabel(f)) : ''}${tool('front', ACT.front, 'Bring to front')}${tool('back', ACT.back, 'Send to back')}${MB.styleKind(m.type) ? `<span class="tool-sep"></span>${tool('copy-style', ACT.copyStyle, 'Copy style')}${tool('paste-style', ACT.pasteStyle, pasteTip(f))}` : ''}<span class="grow"></span>${tool('del', ACT.del, 'Delete (Del)', 'danger')}</div>
       <div class="row"><label>Name</label><input type="text" id="propName" value="${esc(m.name)}" placeholder="Optional name"></div>
       <div class="row"><label>Layer</label><select id="propLayer">${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}"${l.id === m.layerId ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>
       <div class="measure-box" id="propMeasure"></div>`;
@@ -798,32 +939,49 @@ window.MB = window.MB || {};
       $('#propRadius', panel).addEventListener('change', e => { const v = iu.toMeters(+e.target.value); if (v > 0) { f.setRadius(v); MB.updateTooltip(f); MB.ui.renderMeasureBox(); MB.commit('radius'); } });
     }
 
-    const actions = document.createElement('div');
-    actions.className = 'btn-row';
-    actions.innerHTML = `<button class="btn small" data-act="zoom">Zoom to</button><button class="btn small" data-act="dup">Duplicate</button>${MB.canConvert(f) ? `<button class="btn small" data-act="convert">${esc(MB.convertLabel(f))}</button>` : ''}
-      <button class="btn small" data-act="front">Bring to front</button><button class="btn small" data-act="back">Send to back</button>
-      <button class="btn small danger" data-act="del">Delete</button>`;
-    actions.addEventListener('click', e => {
-      const act = e.target.dataset.act;
+    $('.obj-tools', head).addEventListener('click', e => {
+      const btn = e.target.closest('button[data-act]');
+      const act = btn && !btn.disabled && btn.dataset.act;
       if (act === 'zoom') MB.zoomToFeature(f);
       else if (act === 'dup') { const n = MB.duplicateFeature(m.id); if (n) MB.selectFeature(n); }
       else if (act === 'convert') MB.convertFeature(f);
       else if (act === 'front') MB.featureToEdge(m.id, true);
       else if (act === 'back') MB.featureToEdge(m.id, false);
       else if (act === 'del') MB.removeFeature(m.id);
+      else if (act === 'copy-style') MB.copyStyle(f);
+      else if (act === 'paste-style') { if (MB.pasteStyle(f)) MB.ui.renderProps(); } // its fields show the pasted values
     });
-    panel.appendChild(actions);
+    const paste = $('[data-act="paste-style"]', head);
+    if (paste) paste.disabled = !MB.canPasteStyle(f);
+    if (MB.isFeatureLocked(f)) lockProps(panel, f);
   };
+
+  // A locked object's properties: shown, every field and change disabled (looking, zooming to it and duplicating it
+  // stay), and a note with what unlocks it.
+  function lockProps(panel, f) {
+    const byLayer = !f.mb.locked, lay = MB.getLayer(f.mb.layerId);
+    panel.classList.add('props-locked');
+    panel.querySelectorAll('input, select, textarea, button').forEach(el => {
+      if (!el.matches('[data-act="zoom"], [data-act="dup"], [data-act="copy-style"]')) el.disabled = true; // looking, copying
+    });
+    const note = document.createElement('div');
+    note.className = 'lock-note';
+    note.innerHTML = `<span>${icons.lock}</span><span class="grow">${byLayer ? `Layer “${esc(lay ? lay.name : '')}” is locked` : 'This object is locked'}: its properties can't be changed.</span><button type="button" class="btn small">Unlock${byLayer ? ' layer' : ''}</button>`;
+    note.querySelector('button').addEventListener('click', () => {
+      if (byLayer) { MB.setLayerLocked(f.mb.layerId, false); MB.commit('layer lock'); } else MB.setFeatureLocked(f.mb.id, false);
+    });
+    panel.insertBefore(note, panel.firstChild);
+  }
 
   function labelForm(f) {
     const lb = MB.getLabel(f);
-    const seg = (k, opts) => `<div class="seg small" data-ls="${k}">${opts.map(o => `<button type="button" data-v="${o[0]}"${lb[k] === o[0] ? ' class="active"' : ''}>${o[1]}</button>`).join('')}</div>`;
+    const seg = (k, opts) => `<div class="seg small icons" data-ls="${k}">${opts.map(o => `<button type="button" data-v="${o[0]}" title="${o[2]}" aria-label="${o[2]}"${lb[k] === o[0] ? ' class="active"' : ''}>${o[1]}</button>`).join('')}</div>`;
     const wrap = document.createElement('div');
     wrap.innerHTML = `<div class="section"><h3>Name label</h3>
       <label class="check"><input type="checkbox" data-lk="show"${lb.show ? ' checked' : ''}> Show name on the map</label>
-      <div class="row"><label>Vertical</label>${seg('v', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
-      <div class="row"><label>Horizontal</label>${seg('h', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
-      <div class="row"><label>Text</label><input type="color" data-lk="color" value="${lb.color}"><input type="range" data-lk="size" min="9" max="36" step="1" value="${lb.size}"><span class="val" data-lv="size">${lb.size}px</span></div>
+      <div class="row align-row"><label>Alignment</label>${seg('h', [['left', ALIGN.left, 'Left of the object'], ['center', ALIGN.center, 'Centered on the object'], ['right', ALIGN.right, 'Right of the object']])}${seg('v', [['top', ALIGN.top, 'Above the object'], ['middle', ALIGN.middle, 'On the object'], ['bottom', ALIGN.bottom, 'Below the object']])}</div>
+      <div class="row"><label>Text color</label><input type="color" data-lk="color" value="${lb.color}"><span class="grow"></span></div>
+      <div class="row"><label>Text size</label><input type="range" data-lk="size" min="9" max="36" step="1" value="${lb.size}"><span class="val" data-lv="size">${lb.size}px</span></div>
       <label class="check"><input type="checkbox" data-lk="bg"${lb.bg ? ' checked' : ''}> Label background</label>
       ${f.mb.name ? '' : '<p class="note" data-note>Enter a name above to show a label.</p>'}
     </div>`;
@@ -890,11 +1048,11 @@ window.MB = window.MB || {};
     const m = f.mb, z = m.zoom || {};
     const wrap = document.createElement('div');
     wrap.className = 'section zoom-display';
-    const zoomNow = () => Math.round(MB.map.getZoom() * 2) / 2; // the map zooms in half steps
+    const zoomNow = () => MB.snapZoom(MB.map.getZoom()); // the map settles on quarter levels
     const level = z.level != null ? z.level : zoomNow();
     wrap.innerHTML = `<label class="check" title="Show this object only above or below a zoom level"><input type="checkbox" id="propZoomOn"${z.on ? ' checked' : ''}> <b>Zoom display</b></label>
       <div class="row"><label>Show when zoom is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
-      <div class="row"><label>Zoom level</label><input type="number" id="propZoomLevel" min="0" max="22" step="0.5" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
+      <div class="row"><label>Zoom level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
       <p class="note" id="propZoomNote"></p>`;
     const on = $('#propZoomOn', wrap), op = $('#propZoomOp', wrap), lv = $('#propZoomLevel', wrap);
     const apply = e => {
@@ -919,7 +1077,7 @@ window.MB = window.MB || {};
   MB.ui.renderZoomNote = function () {
     const note = $('#propZoomNote'), f = MB.selected;
     if (!note || !f) return;
-    const z = f.mb.zoom, now = +MB.map.getZoom().toFixed(1);
+    const z = f.mb.zoom, now = MB.formatZoom(MB.map.getZoom());
     if (!z || !z.on) { note.textContent = `Always shown (the zoom is now ${now}).`; return; }
     note.textContent = MB.zoomAllows(f)
       ? `Shown at the zoom now (${now}).`
@@ -1291,7 +1449,7 @@ window.MB = window.MB || {};
     ctl._div.innerHTML = '<div class="coords"></div>';
     const upd = ll => {
       const z = MB.map.getZoom();
-      ctl._div.querySelector('.coords').textContent = (ll ? MB.formatLatLng(ll) : MB.formatLatLng(MB.map.getCenter())) + '  ·  zoom ' + z.toFixed(1).replace(/\.0$/, '');
+      ctl._div.querySelector('.coords').textContent = (ll ? MB.formatLatLng(ll) : MB.formatLatLng(MB.map.getCenter())) + '  ·  zoom ' + MB.formatZoom(z);
     };
     MB.map.on('mousemove', e => upd(e.latlng));
     MB.map.on('moveend zoomend', () => upd());
@@ -1328,6 +1486,7 @@ window.MB = window.MB || {};
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) MB.redo(); else MB.undo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); MB.redo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); MB.saveToFile(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && MB.selectedGroup()) { e.preventDefault(); const c = MB.duplicateLayer(MB.selectedGroup()); if (c) MB.selectGroup(c.id); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && MB.selected) { e.preventDefault(); const n = MB.duplicateFeature(MB.selected.mb.id); if (n) MB.selectFeature(n); return; }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { if (MB.multi && MB.multi.size > 1) { e.preventDefault(); MB.deleteMulti(); return; } if (MB.selected) { e.preventDefault(); if (MB.isFeatureLocked(MB.selected)) MB.toast('Object is locked'); else MB.removeFeature(MB.selected.mb.id); } return; }
@@ -1360,6 +1519,11 @@ window.MB = window.MB || {};
 
     MB.on('layers', () => { MB.ui.renderLayersSoon(); if (MB.selected) MB.ui.renderProps(); });
     MB.on('features', () => MB.ui.renderLayersSoon());
+    MB.on('styleclipboard', () => {
+      const p = $('#propsBody [data-act="paste-style"]');
+      if (MB.selected && p) { p.disabled = !MB.canPasteStyle(MB.selected); p.title = pasteTip(MB.selected); p.setAttribute('aria-label', p.title); }
+      else if (MB.multi && MB.multi.size > 1) MB.ui.renderProps(); // the multi panel's Paste style button
+    });
     MB.on('datapick', picked => {
       MB.ui.renderProps();
       if (picked && !$('#sidebar').classList.contains('collapsed')) MB.ui.showTab('props'); // a closed panel (the phone's sheet) stays closed

@@ -35,11 +35,58 @@
     });
   }
 
+  // Every wheel notch zooms a quarter level, in or out, whatever the browser and the system report for it (Leaflet
+  // maps the scroll distance through a curve, and the distance differs between them). A mouse notch is about 100 px
+  // of scroll (3 lines, the usual setting) and counts whole; a trackpad's small steps add up to a notch first (a
+  // pause drops a part-notch). Notches that arrive while a zoom is still animating follow it, none is lost.
+  function wheelQuarters(map) {
+    const h = map.scrollWheelZoom, NOTCH = 100;
+    let acc = 0, forget = null, waiting = false;
+    const px = e => (e.deltaMode === 1 ? e.deltaY * NOTCH / 3 : e.deltaMode === 2 ? e.deltaY * 8 * NOTCH : e.deltaY);
+    h._performZoom = function () {
+      this._delta = 0; this._startTime = null;
+      if (map._animatingZoom) { // after this zoom: from where it lands
+        if (!waiting) { waiting = true; map.once('zoomend', () => { waiting = false; this._performZoom(); }); }
+        return;
+      }
+      const steps = Math.trunc(acc + Math.sign(acc) * 1e-6); // whole notches (ten tenths are one); a part-notch waits for more
+      acc -= steps;
+      if (!steps) return;
+      map._stop();
+      const zoom = map.getZoom(), target = map._limitZoom(MB.snapZoom(zoom) - steps * MB.ZOOM_STEP); // scrolling down zooms out
+      if (target !== zoom) map.setZoomAround(this._lastMousePos, target);
+    };
+    const enabled = h.enabled();
+    if (enabled) h.disable(); // its listener was added with the original handler: re-added with this one
+    const onWheel = h._onWheelScroll;
+    h._onWheelScroll = function (e) {
+      const d = px(e);
+      acc += Math.abs(d) >= NOTCH / 2 ? Math.sign(d) * Math.max(1, Math.round(Math.abs(d) / NOTCH)) : d / NOTCH;
+      clearTimeout(forget); forget = setTimeout(() => { if (!waiting) acc = 0; }, 400);
+      return onWheel.call(this, e);
+    };
+    if (enabled) h.enable();
+  }
+
+  // The + and - buttons step to the next whole level (the wheel may have left the map between two): whole levels
+  // show their own tiles, unscaled.
+  function wholeLevelButtons(map) {
+    const at = () => (map._animatingZoom ? map._animateToZoom : map.getZoom());
+    map.zoomIn = function (delta, options) { return this.setZoom(Math.floor(at() + 1e-6) + (delta || this.options.zoomDelta), options); };
+    map.zoomOut = function (delta, options) { return this.setZoom(Math.ceil(at() - 1e-6) - (delta || this.options.zoomDelta), options); };
+  }
+
   function start() {
     MB.map = L.map('map', {
       center: [40.7128, -74.006], zoom: 13, zoomControl: false, attributionControl: false,
-      worldCopyJump: true, zoomSnap: 0.5, doubleClickZoom: true
+      worldCopyJump: true, doubleClickZoom: true,
+      // The wheel and pinch settle on quarter levels (tiles exist at whole levels only: a quarter level shows the
+      // nearest whole one scaled, nothing more to load); a wheel notch is a quarter level (wheelQuarters). The
+      // buttons, the keyboard and a double-click still step a whole level (zoomDelta).
+      zoomSnap: MB.ZOOM_STEP, zoomDelta: 1
     });
+    wheelQuarters(MB.map);
+    wholeLevelButtons(MB.map);
     L.control.zoom({ position: 'topright' }).addTo(MB.map);
     L.control.attribution({ position: 'bottomleft', prefix: '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>' }).addTo(MB.map);
 

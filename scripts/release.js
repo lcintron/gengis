@@ -8,7 +8,8 @@
  *     only chore/docs/ci/style/refactor/test/build commits -> no release (exit 0, released=false)
  * - --ci: non-interactive mode for GitHub Actions; writes released/tag/version to $GITHUB_OUTPUT
  * - Writes the new version everywhere it is displayed: package.json, js/util.js (MB.APP.version, shown in
- *   the About dialog), sw.js (cache name), index.html (splash) and README.md
+ *   the About dialog), sw.js (cache name) and index.html (splash); the README shows the latest release
+ *   with a badge
  * - Commits "chore(release): vX.Y.Z", tags vX.Y.Z and pushes. The GitHub "Release" workflow, which runs this
  *   script when started by hand, then builds the Windows, macOS and Linux installers, publishes the GitHub
  *   Release and deploys GitHub Pages from that tag.
@@ -108,8 +109,7 @@ const edits = [
   ['package.json', s => s.replace(/"version":\s*"[^"]+"/, `"version": "${next}"`)],
   ['js/util.js', s => s.replace(/(MB\.APP\s*=\s*\{[^}]*version:\s*')[^']*(')/, `$1${next}$2`)],
   ['sw.js', s => s.replace(/const VERSION = '[^']*';[^\n]*/, `const VERSION = 'gengis-${next}'; // app version; bump via scripts/release.js`)],
-  ['index.html', s => s.replace(/(<div class="ver">Version )[^<]*(<\/div>)/, `$1${next}$2`)],
-  ['README.md', s => s.replace(/^Version .*$/m, `Version ${next}`)]
+  ['index.html', s => s.replace(/(<div class="ver">Version )[^<]*(<\/div>)/, `$1${next}$2`)]
 ];
 for (const [file, fn] of edits) {
   const before = read(file), after = fn(before);
@@ -119,7 +119,7 @@ for (const [file, fn] of edits) {
 
 if (flag('dry')) { console.log('Dry run: nothing written, committed or tagged.'); output({ released: 'false', tag, version: next }); process.exit(0); }
 
-sh('git add package.json js/util.js sw.js index.html README.md');
+sh('git add package.json js/util.js sw.js index.html');
 sh(`git commit -q -m "chore(release): ${tag}"`);
 sh(`git tag -a ${tag} -m "GenGIS ${tag}"`);
 console.log('Committed and tagged ' + tag);

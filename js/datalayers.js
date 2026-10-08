@@ -1203,8 +1203,7 @@ window.MB = window.MB || {};
       let measure = '';
       try { measure = MB.measureText(h.layer); } catch (e) { /* ignore */ }
       const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('');
-      const locked = MB.isFeatureLocked(h.layer);
-      const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}"${locked ? ' disabled title="Locked"' : ''}>Select</button></div>`;
+      const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`;
       return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
     const sections = hits.map((h, i) => {
@@ -1222,7 +1221,7 @@ window.MB = window.MB || {};
     // Hand Leaflet a DOM node, not the HTML string: popup.update() (called when frequencies arrive) re-renders
     // string content from scratch, which would wipe the loaded frequencies, the listeners and the expanded state.
     const content = document.createElement('div'); content.innerHTML = html;
-    const popup = identifyPopup = L.popup({ maxWidth: 400, maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
+    const popup = identifyPopup = L.popup({ maxWidth: Math.max(200, Math.min(400, MB.map.getSize().x - 72)), maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [12, 12] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
     let pinned = hits.length === 1 ? hits[0] : null; // the expanded entry stays highlighted when the pointer leaves the list
     popup.on('remove', () => { pinned = null; clearHighlight(); });
     const root = popup.getElement();
@@ -1369,7 +1368,7 @@ window.MB = window.MB || {};
     const anyOn = this.catalog().some(ds => ds.enabled);
     const s = this.settings;
     const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0);
-    let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${zoom.toFixed(0)}</span></div>
+    let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
       <div class="row ds-tools"><input type="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" autocomplete="off"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
       <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px"></div>`;

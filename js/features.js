@@ -134,14 +134,16 @@ window.MB = window.MB || {};
   };
 
   /* ---------- zoom display ---------- */
-  // A zoom rule as stored, whatever a project file held: on, '>' or '<', and a level 0-22 in half steps (or none).
+  // A zoom rule as stored, whatever a project file held: on, '>' or '<', and a level 0-22 in quarter steps (or none).
+  MB.ZOOM_STEP = 0.25; // the map's zoomSnap: the levels it settles on, and that a rule can name
+  MB.snapZoom = z => Math.round(z / MB.ZOOM_STEP) * MB.ZOOM_STEP;
   MB.normZoomRule = function (z) {
     if (!z || typeof z !== 'object') return undefined;
-    const v = parseFloat(z.level), level = isFinite(v) ? Math.max(0, Math.min(22, Math.round(v * 2) / 2)) : null;
+    const v = parseFloat(z.level), level = isFinite(v) ? Math.max(0, Math.min(22, MB.snapZoom(v))) : null;
     return { on: !!z.on && level != null, op: z.op === '<' ? '<' : '>', level }; // no level: no rule
   };
   // An object can be shown only above or below a zoom level: mb.zoom = { on, op: '>' | '<', level }. The comparison
-  // is strict ('>' 12: from 12.5 on, the map zooms in half steps).
+  // is strict ('>' 12: from 12.25 on, the map zooms in quarter steps).
   MB.zoomAllows = function (layer, zoom) {
     const z = layer.mb && layer.mb.zoom;
     if (!z || !z.on || z.level == null || !isFinite(+z.level) || !MB.map) return true;
@@ -150,7 +152,7 @@ window.MB = window.MB || {};
   };
   // On the map: its own eye on and the zoom allowing it (the layer's eye is its group's business). The selected
   // object stays shown, so the rule being edited does not take it away.
-  function shownNow(l) { return l.mb.visible !== false && (MB.zoomAllows(l) || MB.selected === l); }
+  function shownNow(l) { return l.mb.visible !== false && (MB.zoomAllows(l) || MB.selected === l || !!(MB.multi && MB.multi.has(l))); }
   MB.shownNow = shownNow;
   // Put an object on or off its layer for its zoom rule (after a zoom, a selection change or an edit of the rule).
   MB.applyZoomDisplay = function (l) {
@@ -198,7 +200,7 @@ window.MB = window.MB || {};
       MB.updateLabel(l);
       MB.applyFeatureOrder(l.mb.layerId);
     } else {
-      if (MB.selected === l) MB.deselect();
+      if (!MB.groupOf(l)) MB.dropFromSelection(f => f === l); // a group's object stays in its group
       removeSegLabels(l);
       g.removeLayer(l);
       if (MB.map.hasLayer(l)) MB.map.removeLayer(l);
@@ -211,7 +213,7 @@ window.MB = window.MB || {};
     const l = MB.featureLayers[id];
     if (!l) return;
     l.mb.locked = !!locked;
-    if (MB.selected === l) { MB.deselect(); MB.selectFeature(l); }
+    if (MB.selected === l) { MB.deselect(); MB.selectFeature(l); } // still selected: editable or read only now
     MB.emit('features');
     MB.commit('object lock');
   };
@@ -284,12 +286,38 @@ window.MB = window.MB || {};
     MB.commit('move to layer');
   };
 
+  // A copy of a layer and all its objects, right above it (made active). Its objects are copies as Duplicate makes
+  // them (not locked); the layer is shown, hidden and grouped as the original, and never locked.
+  MB.duplicateLayer = function (id) {
+    const src = MB.getLayer(id);
+    if (!src) return null;
+    const copy = MB.batch(() => {
+      const c = MB.createLayer(src.name + ' copy', { visible: src.visible, grouped: src.grouped });
+      const arr = MB.state.layers;
+      arr.splice(arr.indexOf(c), 1);
+      arr.splice(arr.indexOf(src) + 1, 0, c);
+      MB.layerFeatures(id).forEach(f => {
+        const d = MB.serializeFeature(f);
+        d.id = MB.uid(); d.layerId = c.id;
+        delete d.locked;
+        MB.restoreFeature(d);
+      });
+      MB.applyZOrder();
+      MB.emit('layers'); MB.emit('features');
+      return c;
+    });
+    MB.commit('duplicate layer');
+    MB.toast(`Duplicated layer “${src.name}” (${MB.layerFeatures(copy.id).length} objects)`);
+    return copy;
+  };
+
   MB.duplicateFeature = function (id) {
     const l = MB.featureLayers[id];
     if (!l) return null;
     const d = MB.serializeFeature(l);
     d.id = MB.uid();
     d.name = d.name ? d.name + ' copy' : '';
+    delete d.locked; // a copy is made to be changed (on a locked layer it stays read only)
     const n = MB.restoreFeature(d);
     MB.commit('duplicate');
     return n;
@@ -302,7 +330,7 @@ window.MB = window.MB || {};
       const t = MB.tools.current;
       if (!MB.tools.picks(t) && t !== 'present') return;
       const shift = e.originalEvent && e.originalEvent.shiftKey;
-      if (t !== 'present' && !MB.isFeatureLocked(layer)) {
+      if (t !== 'present') { // locked objects too: selected, but not editable (selectFeature)
         L.DomEvent.stopPropagation(e);
         if (shift) MB.toggleMulti(layer); else MB.selectFeature(layer);
         if (MB.ui && MB.ui.revealFeature) MB.ui.revealFeature(layer);
@@ -330,7 +358,8 @@ window.MB = window.MB || {};
         return;
       }
       MB.selectFeature(layer);
-      MB.emit('feature-contextmenu', { layer, latlng: e.latlng, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+      const info = { layer, latlng: e.latlng, x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+      MB.emit(MB.multi.size > 1 && MB.multi.has(layer) ? 'multi-contextmenu' : 'feature-contextmenu', info); // a group's object: the group's menu
     });
     const changed = label => {
       MB.updateTooltip(layer);
@@ -340,7 +369,7 @@ window.MB = window.MB || {};
     layer.on('pm:edit', () => changed('edit'));
     layer.on('pm:dragend', () => changed('move'));
     layer.on('dragend', () => changed('move'));
-    layer.on('drag pm:drag', () => MB.updateTooltip(layer)); // name and measurement labels follow the drag
+    layer.on('drag pm:drag', () => { MB.updateTooltip(layer); MB.scaler.follow(layer); }); // its labels and box follow the drag
     layer.on('pm:textchange', e => { layer.mb.text = e.text; MB.commitDebounced('text'); });
     layer.on('pm:textblur', () => {
       const txt = layer.pm ? layer.pm.getText() : '';
@@ -526,6 +555,7 @@ window.MB = window.MB || {};
       const svg = layer.mb.svg, lib = MB.state.svgLibrary[svg.svgId];
       layer.setBounds(MB.boundsAround(h.getLatLng(), svg.width, svg.width / (lib.aspect || 1)));
       MB.updateLabel(layer);
+      MB.scaler.follow(layer);
     });
     h.on('dragend', () => { MB.emit('featurechange', layer); MB.commit('move'); });
     layer._mbHandle = h;
@@ -538,13 +568,17 @@ window.MB = window.MB || {};
 
   MB.selectFeature = function (layer) {
     if (!layer || MB.selected === layer) return;
+    // an object of a grouped layer: the whole group is selected (geometry.js), not the object alone
+    if (MB.groupOf(layer) && MB.layerFeatures(layer.mb.layerId).length > 1) { MB.selectGroup(layer.mb.layerId); return; }
     MB.deselect();
     MB.selected = layer;
     MB.applyZoomDisplay(layer); // an object its zoom rule hides is shown while selected (and can be edited)
     const t = layer.mb.type;
     const moveOnly = MB.tools.current === 'move';
     const editable = !MB.isFeatureLocked(layer) && MB.map.hasLayer(layer);
-    if (!editable) { /* locked or hidden: selectable for the Properties panel only */ }
+    if (!editable) { // locked or hidden: selected (its properties shown, read only), never edited, moved or resized
+      if (MB.tools.current === 'scale' && MB.isFeatureLocked(layer)) MB.toast('Object is locked: unlock it to resize');
+    }
     else if (MB.tools.current === 'scale') MB.scaler.attach(layer); // a box with handles, no vertex editing or dragging
     else if (t === 'svg') {
       if (layer.dragging) layer.dragging.enable();
@@ -555,19 +589,20 @@ window.MB = window.MB || {};
         else layer.pm.enable({ allowSelfIntersection: true, draggable: true, snappable: MB.state.snapping, snapDistance: 15 });
       } catch (e) { console.warn(e); }
     }
+    if (editable && moveOnly) MB.scaler.attach(layer, { frame: true }); // what is being moved: its box, as the Scale tool's without handles
     const el = layer.getElement ? layer.getElement() : layer._path;
     if (el) L.DomUtil.addClass(el, 'mb-selected');
     MB.emit('selection', layer);
   };
 
   MB.deselect = function () {
+    MB.scaler.detach();
     const hadMulti = MB.multi && MB.multi.size > 0;
     if (hadMulti) MB.clearMulti(true);
     if (MB.snap) MB.snap.hide();
     const l = MB.selected;
     if (!l) { if (hadMulti) MB.emit('selection', null); return; }
     MB.selected = null;
-    MB.scaler.detach();
     try { if (l.pm && l.pm.enabled && l.pm.enabled()) l.pm.disable(); } catch (e) { /* ignore */ }
     try { if (l.pm && l.pm.layerDragEnabled && l.pm.layerDragEnabled()) l.pm.disableLayerDrag(); } catch (e) { /* ignore */ }
     if (l.mb && l.mb.type === 'svg') {
@@ -588,16 +623,46 @@ window.MB = window.MB || {};
 
   /* ---------- style clipboard ---------- */
 
+  // What a copied style carries to other objects of its kind: shapes, lines and markers share their border and fill,
+  // texts their look (font, size, colors, background, shadow, alignment); the name label's look (not whether it is
+  // shown) goes along between objects that have one. Images have no style to copy.
   MB.styleClipboard = null;
+  const SHAPE_KEYS = ['color', 'weight', 'opacity', 'dash', 'fill', 'fillColor', 'fillOpacity'];
+  const TEXT_KEYS = Object.keys(MB.defaultStyle).filter(k => /^text/.test(k));
+  const LABEL_KEYS = ['color', 'size', 'bg', 'h', 'v'];
+  MB.styleKind = type => (type === 'text' ? 'text' : type === 'svg' ? null : 'shape');
+  const pick = (o, keys) => { const r = {}; keys.forEach(k => { if (o[k] !== undefined) r[k] = MB.deepClone(o[k]); }); return r; };
+
   MB.copyStyle = function (layer) {
-    MB.styleClipboard = MB.deepClone(layer.mb.style);
-    MB.toast('Style copied');
+    const kind = MB.styleKind(layer.mb.type);
+    if (!kind) return;
+    const st = Object.assign({}, MB.defaultStyle, layer.mb.style);
+    const style = pick(st, kind === 'text' ? TEXT_KEYS : SHAPE_KEYS);
+    if (kind === 'text') { style.textSize = MB.textShownSize(st); delete style.textRefZoom; } // the size it shows at now
+    MB.styleClipboard = { kind, style, label: MB.labelTypes.includes(layer.mb.type) ? pick(MB.getLabel(layer), LABEL_KEYS) : null };
+    MB.toast(kind === 'text' ? 'Text style copied' : 'Style copied');
+    MB.emit('styleclipboard');
   };
-  MB.pasteStyle = function (layer) {
-    if (!MB.styleClipboard) return;
-    MB.applyStyle(layer, MB.deepClone(MB.styleClipboard));
-    MB.emit('featurechange', layer);
+  // Whether the copied style can go on this object (its kind, and not locked).
+  MB.canPasteStyle = layer => !!(MB.styleClipboard && layer && layer.mb && MB.styleKind(layer.mb.type) === MB.styleClipboard.kind && !MB.isFeatureLocked(layer));
+  // Paste on one object or several (the ones it fits), as one change.
+  MB.pasteStyle = function (layers) {
+    const cb = MB.styleClipboard;
+    if (!cb) return 0;
+    const list = [].concat(layers instanceof Set ? Array.from(layers) : layers).filter(MB.canPasteStyle);
+    if (!list.length) { MB.toast(cb.kind === 'text' ? 'A text style goes on texts (unlocked)' : 'This style goes on shapes, lines and markers (unlocked)'); return 0; }
+    list.forEach(l => {
+      MB.applyStyle(l, MB.deepClone(cb.style), { noCommit: true });
+      if (cb.label && MB.labelTypes.includes(l.mb.type)) {
+        l.mb.label = Object.assign(MB.getLabel(l), MB.deepClone(cb.label));
+        if (MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(l); else MB.updateLabel(l);
+      }
+      MB.emit('featurechange', l);
+    });
+    MB.emit('features'); // the list's color swatches
     MB.commit('paste style');
+    if (list.length > 1) MB.toast(`Style pasted on ${list.length} objects`);
+    return list.length;
   };
 
   MB.featureCenter = function (layer) {
