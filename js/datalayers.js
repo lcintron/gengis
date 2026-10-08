@@ -1343,6 +1343,31 @@ window.MB = window.MB || {};
     return text ? `<span class="ds-info" tabindex="0" role="img" aria-label="About this source: ${esc(text)}">i</span><span class="ds-tip" role="tooltip">${esc(text)}</span>` : '';
   };
 
+  /* ---------- the panel redrawn in place ----------
+   * The panel as drawn and as it would be drawn now have the same shape when the same elements, with the same ids
+   * and the same datasets and actions behind them, sit in the same places: then only texts, classes and states
+   * differ, and the drawn panel takes them over, its elements (and their listeners) kept. A slider's number box
+   * (ui.js) and what it changes on its slider and readout belong to the drawn panel alone. */
+  const KEY_ATTRS = ['id', 'data-id', 'data-adsb', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'type', 'name'];
+  const kids = (n, drawn) => Array.from(n.childNodes).filter(c => !(drawn && c.nodeType === 1 && c.classList.contains('stepper')));
+  const ownAttrs = el => (el.hasAttribute('data-stepper') ? ['step', 'max', 'data-stepper'] : el.classList.contains('val') ? ['hidden'] : []);
+  const sameKids = (a, b) => { const ka = kids(a, true), kb = kids(b, false); return ka.length === kb.length && ka.every((c, i) => sameShape(c, kb[i])); };
+  function sameShape(a, b) {
+    if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) return false;
+    if (a.nodeType === 1 && KEY_ATTRS.some(k => a.getAttribute(k) !== b.getAttribute(k))) return false;
+    return sameKids(a, b);
+  }
+  const patchKids = (a, b) => { const kb = kids(b, false); kids(a, true).forEach((c, i) => patchNode(c, kb[i])); };
+  function patchNode(a, b) {
+    if (a.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
+    const own = ownAttrs(a);
+    Array.from(b.attributes).forEach(at => { if (!own.includes(at.name) && a.getAttribute(at.name) !== at.value) a.setAttribute(at.name, at.value); });
+    Array.from(a.attributes).forEach(at => { if (!own.includes(at.name) && !b.hasAttribute(at.name)) a.removeAttribute(at.name); });
+    if (a.nodeName === 'INPUT' && (a.type === 'checkbox' || a.type === 'radio')) a.checked = b.hasAttribute('checked'); // the state, not only the attribute
+    else if (a.nodeName === 'OPTION') a.selected = b.hasAttribute('selected');
+    patchKids(a, b);
+  }
+
   MB.data.renderPanel = async function () {
     const panel = document.getElementById('tab-data');
     if (!panel) return;
@@ -1365,13 +1390,12 @@ window.MB = window.MB || {};
       (bySource[src] = bySource[src] || []).push(ds);
     });
     const zoom = MB.map.getZoom();
-    const anyOn = this.catalog().some(ds => ds.enabled);
     const s = this.settings;
     const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0);
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
       <div class="row ds-tools"><input type="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" autocomplete="off"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
       <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
-      <div id="dataCacheStats" class="note" style="margin-bottom:10px"></div>`;
+      <div id="dataCacheStats" class="note" style="margin-bottom:10px">${esc(this._cacheText || ' ')}</div>`; // the last count, until a new one is read (an empty line, or a plain space, would collapse and shift the panel)
     const adsbHtml = MB.adsb ? MB.adsb.panelHtml(q, ui.filter) : ''; // live air traffic: its own block, same search and filter
     html += adsbHtml;
     let shownTotal = 0;
@@ -1429,12 +1453,25 @@ window.MB = window.MB || {};
         <div class="btn-row"><button class="btn small primary" type="submit">Add layer</button></div>
       </form>
     </div>`;
+    // Most redraws only change a status line, a count or a box's state: those are patched in place, so the scroll,
+    // an open dropdown and a hovered row stay as they are. A change of what is listed (a search, a filter, a dataset
+    // added or removed) builds the panel again.
+    if (this._panelHtml === html && panel.firstElementChild) { await this.updateCacheStats(); return; }
+    const next = document.createElement('div');
+    next.innerHTML = html;
+    if (this._panelHtml && panel.firstElementChild && sameKids(panel, next)) { // the panel's content, not the panel itself
+      patchKids(panel, next);
+      this._panelHtml = html;
+      await this.updateCacheStats();
+      return;
+    }
+    this._panelHtml = html;
     panel.innerHTML = html;
 
     const search = panel.querySelector('#dsSearch');
     search.addEventListener('input', () => { ui.q = search.value; clearTimeout(this._searchTimer); this._searchTimer = setTimeout(() => { if (document.activeElement === search) { const pos = search.selectionStart; search.blur(); this.renderPanel().then(() => { const el = document.getElementById('dsSearch'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }); } else this.renderPanel(); }, 350); });
     panel.querySelector('#dsFilter').addEventListener('change', e => { ui.filter = e.target.value; this.renderPanel(); });
-    panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!anyOn) { MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
+    panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!this.catalog().some(ds => ds.enabled)) { /* checked now: the panel may have been patched since it was built */ MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
     panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
     if (MB.adsb) MB.adsb.bindPanel(panel);
     panel.querySelectorAll('details.ds-source[data-src]').forEach(d => d.addEventListener('toggle', () => {
@@ -1476,9 +1513,15 @@ window.MB = window.MB || {};
       this.enable('custom:' + entry.id);
     });
 
+    await this.updateCacheStats();
+  };
+
+  // The cache line under the panel's buttons, read again after each redraw (kept for the next one).
+  MB.data.updateCacheStats = async function () {
     const st = await this.cacheStats();
+    this._cacheText = st.cells ? `Cache: ${st.cells} area${st.cells > 1 ? 's' : ''} stored` + (st.bytes ? ` · ~${(st.bytes / 1048576).toFixed(1)} MB used by this app` : '') : 'Cache: empty';
     const el = document.getElementById('dataCacheStats');
-    if (el) el.textContent = st.cells ? `Cache: ${st.cells} area${st.cells > 1 ? 's' : ''} stored` + (st.bytes ? ` · ~${(st.bytes / 1048576).toFixed(1)} MB used by this app` : '') : 'Cache: empty';
+    if (el && el.textContent !== this._cacheText) el.textContent = this._cacheText;
   };
 
   // "Map overlays" section in the Settings tab: boundary layers.

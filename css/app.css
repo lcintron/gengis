@@ -61,7 +61,7 @@ kbd { background: var(--bg-3); border: 1px solid var(--border); border-bottom-wi
    end (Windows, Linux: where env(titlebar-area-*) ends; about 138 px if the browser does not say) or, on macOS, its
    left end. */
 html[data-titlebar] #topbar { -webkit-app-region: drag; user-select: none; }
-html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown) { -webkit-app-region: no-drag; }
+html[data-titlebar] #topbar :is(input, button, select, a, .seg, .search-wrap, .menu-wrap, .dropdown, .save-status) { -webkit-app-region: no-drag; } /* the save dot: its words on hover */
 html[data-titlebar="overlay"] #topbar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px); }
 html[data-titlebar="mac"] #topbar { padding-left: 84px; }
 /* presenting (the top bar hidden): the map's corner controls below the window buttons (the logo clear of macOS's),
@@ -177,6 +177,17 @@ body.presenting .mb-scale-box { display: none !important; }
 #toolbar button:hover { background: var(--bg-3); color: var(--text); }
 #toolbar button.active { background: var(--accent); color: #06201e; }
 #toolbar .sep { height: 1px; background: var(--border); margin: 3px 4px; }
+/* a short map area (ui.js fitToolbar): shrunk from its top left corner, or snapped to the left edge and scrolled */
+#toolbar { transform-origin: top left; }
+/* docked: square, flush with the map's left edge, a thin scroll bar showing there is more */
+#toolbar.docked { left: 0; top: 0; bottom: 0; border-radius: 0; border-width: 0 1px 0 0; overflow-y: auto; overscroll-behavior: contain;
+  touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+#toolbar.docked::-webkit-scrollbar { width: 6px; }
+#toolbar.docked::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#toolbar.docked::-webkit-scrollbar-track { background: transparent; }
+#toolbar.docked { direction: rtl; } /* its scroll bar on the left, against the screen's edge */
+#toolbar.docked button, #toolbar.docked .sep { flex: 0 0 auto; direction: ltr; }
+#mapwrap.tb-docked .leaflet-bottom.leaflet-left { left: var(--tb-w, 52px); } /* the coordinates and attribution beside the strip */
 
 /* the tool's instructions: centered at the top of the map (nothing follows the pointer) */
 .tool-hint {
@@ -418,12 +429,6 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .brand-name { display: none; } /* the logo says it */
   .topbar-right { order: 2; flex: 0 0 auto; margin-left: 0; gap: 6px; }
   #presentBtn { display: none; } /* in the menu */
-  /* the save status shrinks to a dot (its words stay in the tooltip and for screen readers) */
-  .save-status { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); overflow: hidden; text-indent: 20px; }
-  .save-status[data-state="saved"] { background: var(--accent); }
-  .save-status[data-state="error"] { background: var(--danger); }
-  .save-status[data-state="readonly"] { background: var(--warn); }
-  .save-status[data-state="idle"] { display: none; }
   #main { position: relative; }
   /* side panel becomes a bottom sheet */
   #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: 56%; max-height: 70vh; border-left: 0; border-top: 1px solid var(--border);
@@ -678,10 +683,13 @@ button.link:hover { text-decoration: underline; }
 .about-head p { margin: 0; }
 
 /* ---------- saving: status, recent projects, a map open in another tab ---------- */
-.save-status { font-size: 11px; color: var(--text-dim); white-space: nowrap; flex: 0 0 auto; margin-right: 2px; } /* in .topbar-right, before undo */
-.save-status:empty { display: none; } /* idle: no gap before undo */
-.save-status[data-state="error"] { color: var(--danger); }
-.save-status[data-state="readonly"] { color: var(--warn); }
+/* the save status is a dot in .topbar-right, before undo: its words are in its tooltip and read by screen readers */
+.save-status { flex: 0 0 auto; width: 8px; height: 8px; margin: 0 4px; border-radius: 50%; background: var(--text-dim);
+  overflow: hidden; white-space: nowrap; text-indent: 20px; font-size: 11px; }
+.save-status[data-state="saved"] { background: var(--accent); }
+.save-status[data-state="error"] { background: var(--danger); }
+.save-status[data-state="readonly"] { background: var(--warn); }
+.save-status:empty, .save-status[data-state="idle"] { display: none; } /* idle: no gap before undo */
 .recent-box { max-width: 520px; }
 .recent-box h3 { margin-top: 16px; }
 .recent-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
