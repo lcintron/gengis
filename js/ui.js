@@ -243,13 +243,23 @@ window.MB = window.MB || {};
     for (let i = 0; i < 3; i++) if ((x.n[i] || 0) !== (y.n[i] || 0)) return (x.n[i] || 0) > (y.n[i] || 0);
     return !x.pre && !!y.pre;
   }
+  // The version the site serves now (its js/util.js, past every cache).
+  async function servedVersion() {
+    const res = await fetch('js/util.js?check=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const m = /MB\.APP\s*=\s*\{[^}]*version:\s*'([^']+)'/.exec(await res.text());
+    if (!m) throw new Error('no version found');
+    return m[1];
+  }
   // The web app's new version: its service worker installs it and takes this page over (sw.js: skipWaiting, then
-  // clients.claim, so 'controllerchange'). Resolves 'ready' only once it has, else why not: 'no-worker' (none here:
-  // a reload fetches the new files itself), 'failed' (the download failed), 'not-served' (the site does not serve the
-  // new version yet), 'timeout' (still installing).
-  async function fetchNewVersion() {
+  // clients.claim, so 'controllerchange'). Resolves 'ready' only once it has (without a worker: once the site serves
+  // it), else why not: 'failed' (the download failed), 'not-served' (the site does not serve the new version yet),
+  // 'timeout' (still installing).
+  async function fetchNewVersion(latest) {
     const sw = navigator.serviceWorker, reg = sw && await sw.getRegistration();
-    if (!reg) return 'no-worker';
+    if (!reg) { // no worker: a reload fetches the files the site serves now, the new version only once it is deployed
+      try { return newerVersion(latest, await servedVersion()) ? 'not-served' : 'ready'; } catch (e) { return 'failed'; }
+    }
     const taken = new Promise(done => sw.addEventListener('controllerchange', () => done('ready'), { once: true }));
     try { await reg.update(); } catch (e) { return 'failed'; }
     const next = reg.installing || reg.waiting;
@@ -272,8 +282,8 @@ window.MB = window.MB || {};
         return;
       }
       out.textContent = `Version ${latest} is available. Downloading…`;
-      const got = await fetchNewVersion();
-      if (got === 'ready' || got === 'no-worker') {
+      const got = await fetchNewVersion(latest);
+      if (got === 'ready') {
         out.innerHTML = `Version ${esc(latest)} is ready. <button type="button" class="btn small primary" data-act="reload-update">Reload to update</button>`;
         out.querySelector('[data-act="reload-update"]').addEventListener('click', () => { MB.projects.flush().finally(() => location.reload()); }); // saved first
       } else out.textContent = {
