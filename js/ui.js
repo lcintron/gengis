@@ -24,6 +24,67 @@ window.MB = window.MB || {};
 
   MB.ui = {};
 
+  /* ---------- sliders: a number box with - and + beside each ----------
+   * Every slider (input[type=range]) in the page gets one, as it appears (an observer on the page). The box shows the
+   * value as its readout did (a 0-1 slider in %, others with their unit) and sets the slider like a drag would
+   * (its input and change events): the code behind each slider is unchanged. Its old readout is hidden. */
+  function stepper(range) {
+    if (range.dataset.stepper) return;
+    range.dataset.stepper = '1';
+    const readout = range.nextElementSibling && range.nextElementSibling.classList.contains('val') ? range.nextElementSibling : null;
+    const min = +range.min || 0, max = range.max === '' ? 100 : +range.max;
+    const pct = max <= 1 && (!readout || /%\s*$/.test(readout.textContent));
+    const unit = pct ? '%' : readout ? (readout.textContent.match(/[^\d.\s-]+\s*$/) || [''])[0].trim() : '';
+    if (pct && (+range.step || 1) > 0.01) range.step = '0.01'; // a typed percent is kept as typed
+    const scale = pct ? 100 : 1, step = pct ? 1 : (+range.step || 1);
+    const decimals = (String(step).split('.')[1] || '').length;
+    const box = document.createElement('span');
+    box.className = 'stepper';
+    const label = (range.closest('.row') && range.closest('.row').querySelector('label')) || null;
+    const name = esc((label ? label.textContent.trim() : range.title || 'Value') + (unit ? ' (' + unit + ')' : ''));
+    box.innerHTML = `<button type="button" tabindex="-1" data-d="-1" aria-label="Decrease ${name}">−</button><input type="number" inputmode="decimal" aria-label="${name}"><button type="button" tabindex="-1" data-d="1" aria-label="Increase ${name}">+</button>${unit ? `<span class="stepper-unit">${esc(unit)}</span>` : ''}`;
+    range.after(box);
+    if (readout) readout.hidden = true;
+    const num = box.querySelector('input');
+    num.min = +(min * scale).toFixed(4); num.max = +(max * scale).toFixed(4); num.step = 'any';
+    const show = () => { num.value = +(+range.value * scale).toFixed(decimals); };
+    const set = v => {
+      if (!isFinite(v)) { show(); return; }
+      v = Math.min(max * scale, Math.max(min * scale, v));
+      range.value = String(v / scale);
+      show();
+      range.dispatchEvent(new Event('input', { bubbles: true }));
+      range.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    range.addEventListener('input', show);
+    num.addEventListener('change', () => set(parseFloat(num.value)));
+    num.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); set(parseFloat(num.value)); num.select(); } e.stopPropagation(); });
+    num.addEventListener('focus', () => num.select());
+    // a button steps once; held down, it repeats
+    let timer = null;
+    const stop = () => { clearTimeout(timer); clearInterval(timer); timer = null; };
+    box.querySelectorAll('button').forEach(b => {
+      const nudge = () => set(+(+range.value * scale + (+b.dataset.d) * step).toFixed(Math.max(decimals, 2)));
+      b.addEventListener('pointerdown', e => {
+        if (e.button !== 0 || range.disabled) return;
+        e.preventDefault(); nudge();
+        timer = setTimeout(() => { timer = setInterval(nudge, 70); }, 400);
+      });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, stop));
+      b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nudge(); } });
+    });
+    // disabled with its slider (a locked object's properties)
+    const sync = () => { const off = range.disabled; num.disabled = off; box.querySelectorAll('button').forEach(b => { b.disabled = off; }); box.classList.toggle('disabled', off); };
+    new MutationObserver(sync).observe(range, { attributes: true, attributeFilter: ['disabled'] });
+    sync(); show();
+  }
+  MB.ui.stepper = stepper;
+  function enhanceSliders(root) { (root.matches && root.matches('input[type="range"]') ? [root] : root.querySelectorAll ? root.querySelectorAll('input[type="range"]') : []).forEach(stepper); }
+  new MutationObserver(list => list.forEach(r => r.addedNodes.forEach(n => {
+    if (n.nodeType === 1 && !(n.closest && n.closest('.leaflet-pane'))) enhanceSliders(n);
+  }))).observe(document.body, { childList: true, subtree: true });
+  enhanceSliders(document.body);
+
   /* ================= top bar ================= */
 
   // In the desktop app the top bar is also the window's title bar (css: html[data-titlebar]).
@@ -635,6 +696,26 @@ window.MB = window.MB || {};
     inp.addEventListener('dblclick', e => e.stopPropagation()); // selecting a word in it must not start the rename over
   }
 
+
+  // Alignment and object action icons (inline: a few per panel).
+  const svgIcon = d => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const ALIGN = {
+    left: svgIcon('M4 6h16M4 10h10M4 14h16M4 18h10'),
+    center: svgIcon('M4 6h16M7 10h10M4 14h16M7 18h10'),
+    right: svgIcon('M4 6h16M10 10h10M4 14h16M10 18h10'),
+    top: svgIcon('M5 4h14M12 20V8M8 12l4-4 4 4'),
+    middle: svgIcon('M5 12h14M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3'),
+    bottom: svgIcon('M5 20h14M12 4v12M8 12l4 4 4-4')
+  };
+  const ACT = {
+    zoom: svgIcon('M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5M12 11v2M11 12h2'),
+    dup: svgIcon('M8 8h11v11H8zM5 16V5h11'),
+    convert: svgIcon('M4 8h14l-3-3M20 16H6l3 3'),
+    front: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3" y="9" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="3" width="12" height="12" rx="1.5" fill="currentColor" stroke="currentColor" stroke-width="2"/></svg>`,
+    back: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="9" y="3" width="12" height="12" rx="1.5" fill="currentColor" stroke="currentColor" stroke-width="2" opacity=".45"/><rect x="3" y="9" width="12" height="12" rx="1.5" fill="var(--bg-2)" stroke="currentColor" stroke-width="2"/></svg>`,
+    del: svgIcon('M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13')
+  };
+
   /* ================= style form ================= */
 
   const PX_KEYS = ['weight', 'textSize', 'textShadowBlur', 'textShadowOffset']; // slider readouts in px (the rest: %)
@@ -666,9 +747,8 @@ window.MB = window.MB || {};
         <div class="row" title="Fixed pixels: the same size at every zoom. Scale with map: grows and shrinks with the map, like a label printed on it"><label>Sizing</label>${seg('textScale', [['screen', 'Fixed pixels'], ['map', 'Scale with map']])}</div>
         <div class="row"><label>Font</label><select data-k="textFont">${Object.keys(MB.textFonts).map(k => `<option value="${k}" style="font-family:${esc(MB.textFonts[k][1])}"${st.textFont === k ? ' selected' : ''}>${MB.textFonts[k][0]}</option>`).join('')}</select></div>
         <div class="row"><label>Format</label><div class="tog-group">${tog('textBold', '<b>B</b>', 'Bold')}${tog('textItalic', '<i>I</i>', 'Italic')}${tog('textUnderline', '<u>U</u>', 'Underline')}${tog('textStrike', '<s>S</s>', 'Strikethrough')}</div></div>
-        <div class="row"><label>Align</label>${seg('textAlign', [['left', '&#8676;', 'Left'], ['center', '&#8801;', 'Center'], ['right', '&#8677;', 'Right']])}</div>
-        <div class="row" title="Which side of the text sits on its map point"><label>Anchor H</label>${seg('textHAnchor', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
-        <div class="row" title="Which side of the text sits on its map point"><label>Anchor V</label>${seg('textVAnchor', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
+        <div class="row"><label>Align</label>${seg('textAlign', [['left', ALIGN.left, 'Align left'], ['center', ALIGN.center, 'Center'], ['right', ALIGN.right, 'Align right']])}</div>
+        <div class="row align-row"><label title="Which side of the text sits on its map point">Anchor</label>${seg('textHAnchor', [['left', ALIGN.left, 'Anchor left: the text starts at its point'], ['center', ALIGN.center, 'Anchor center'], ['right', ALIGN.right, 'Anchor right: the text ends at its point']])}${seg('textVAnchor', [['top', ALIGN.top, 'Anchor top: the text hangs below its point'], ['middle', ALIGN.middle, 'Anchor middle'], ['bottom', ALIGN.bottom, 'Anchor bottom: the text sits above its point']])}</div>
         <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}" title="Background color"><input type="range" data-k="textBgOpacity" min="0" max="1" step="0.05" value="${st.textBgOpacity}" title="Background opacity"><span class="val" data-val="textBgOpacity">${Math.round(st.textBgOpacity * 100)}%</span></div>
         <div class="row"><label>Shadow</label><input type="checkbox" data-k="textShadowOn"${st.textShadowOn ? ' checked' : ''} title="Show shadow"><input type="color" data-k="textShadowColor" value="${st.textShadowColor}" title="Shadow color"><input type="range" data-k="textShadowOpacity" min="0" max="1" step="0.05" value="${st.textShadowOpacity}" title="Shadow opacity"><span class="val" data-val="textShadowOpacity">${Math.round(st.textShadowOpacity * 100)}%</span></div>
         <div class="row" title="How soft the shadow is"><label>Shadow blur</label><input type="range" data-k="textShadowBlur" min="0" max="16" step="1" value="${st.textShadowBlur}"><span class="val" data-val="textShadowBlur">${st.textShadowBlur}px</span></div>
@@ -793,7 +873,9 @@ window.MB = window.MB || {};
 
     const m = f.mb;
     const head = document.createElement('div');
+    const tool = (act, icon, tip, cls) => `<button type="button" class="icon-btn${cls ? ' ' + cls : ''}" data-act="${act}" title="${esc(tip)}" aria-label="${esc(tip)}">${icon}</button>`;
     head.innerHTML = `<div class="panel-head"><h3>${MB.typeLabels[m.type]}</h3><span class="badge">${esc((MB.getLayer(m.layerId) || {}).name || '')}</span></div>
+      <div class="obj-tools" role="toolbar" aria-label="Object actions">${tool('zoom', ACT.zoom, 'Zoom to')}${tool('dup', ACT.dup, 'Duplicate (Ctrl+D)')}${MB.canConvert(f) ? tool('convert', ACT.convert, MB.convertLabel(f)) : ''}${tool('front', ACT.front, 'Bring to front')}${tool('back', ACT.back, 'Send to back')}<span class="grow"></span>${tool('del', ACT.del, 'Delete (Del)', 'danger')}</div>
       <div class="row"><label>Name</label><input type="text" id="propName" value="${esc(m.name)}" placeholder="Optional name"></div>
       <div class="row"><label>Layer</label><select id="propLayer">${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}"${l.id === m.layerId ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>
       <div class="measure-box" id="propMeasure"></div>`;
@@ -834,13 +916,9 @@ window.MB = window.MB || {};
       $('#propRadius', panel).addEventListener('change', e => { const v = iu.toMeters(+e.target.value); if (v > 0) { f.setRadius(v); MB.updateTooltip(f); MB.ui.renderMeasureBox(); MB.commit('radius'); } });
     }
 
-    const actions = document.createElement('div');
-    actions.className = 'btn-row';
-    actions.innerHTML = `<button class="btn small" data-act="zoom">Zoom to</button><button class="btn small" data-act="dup">Duplicate</button>${MB.canConvert(f) ? `<button class="btn small" data-act="convert">${esc(MB.convertLabel(f))}</button>` : ''}
-      <button class="btn small" data-act="front">Bring to front</button><button class="btn small" data-act="back">Send to back</button>
-      <button class="btn small danger" data-act="del">Delete</button>`;
-    actions.addEventListener('click', e => {
-      const act = e.target.dataset.act;
+    $('.obj-tools', head).addEventListener('click', e => {
+      const btn = e.target.closest('button[data-act]');
+      const act = btn && !btn.disabled && btn.dataset.act;
       if (act === 'zoom') MB.zoomToFeature(f);
       else if (act === 'dup') { const n = MB.duplicateFeature(m.id); if (n) MB.selectFeature(n); }
       else if (act === 'convert') MB.convertFeature(f);
@@ -848,7 +926,6 @@ window.MB = window.MB || {};
       else if (act === 'back') MB.featureToEdge(m.id, false);
       else if (act === 'del') MB.removeFeature(m.id);
     });
-    panel.appendChild(actions);
     if (MB.isFeatureLocked(f)) lockProps(panel, f);
   };
 
@@ -871,12 +948,11 @@ window.MB = window.MB || {};
 
   function labelForm(f) {
     const lb = MB.getLabel(f);
-    const seg = (k, opts) => `<div class="seg small" data-ls="${k}">${opts.map(o => `<button type="button" data-v="${o[0]}"${lb[k] === o[0] ? ' class="active"' : ''}>${o[1]}</button>`).join('')}</div>`;
+    const seg = (k, opts) => `<div class="seg small icons" data-ls="${k}">${opts.map(o => `<button type="button" data-v="${o[0]}" title="${o[2]}" aria-label="${o[2]}"${lb[k] === o[0] ? ' class="active"' : ''}>${o[1]}</button>`).join('')}</div>`;
     const wrap = document.createElement('div');
     wrap.innerHTML = `<div class="section"><h3>Name label</h3>
       <label class="check"><input type="checkbox" data-lk="show"${lb.show ? ' checked' : ''}> Show name on the map</label>
-      <div class="row"><label>Vertical</label>${seg('v', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
-      <div class="row"><label>Horizontal</label>${seg('h', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']])}</div>
+      <div class="row align-row"><label>Alignment</label>${seg('h', [['left', ALIGN.left, 'Left of the object'], ['center', ALIGN.center, 'Centered on the object'], ['right', ALIGN.right, 'Right of the object']])}${seg('v', [['top', ALIGN.top, 'Above the object'], ['middle', ALIGN.middle, 'On the object'], ['bottom', ALIGN.bottom, 'Below the object']])}</div>
       <div class="row"><label>Text</label><input type="color" data-lk="color" value="${lb.color}"><input type="range" data-lk="size" min="9" max="36" step="1" value="${lb.size}"><span class="val" data-lv="size">${lb.size}px</span></div>
       <label class="check"><input type="checkbox" data-lk="bg"${lb.bg ? ' checked' : ''}> Label background</label>
       ${f.mb.name ? '' : '<p class="note" data-note>Enter a name above to show a label.</p>'}
