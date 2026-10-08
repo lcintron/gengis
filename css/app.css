@@ -179,14 +179,13 @@ body.presenting .mb-scale-box { display: none !important; }
 #toolbar .sep { height: 1px; background: var(--border); margin: 3px 4px; }
 /* a short map area (ui.js fitToolbar): shrunk from its top left corner, or snapped to the left edge and scrolled */
 #toolbar { transform-origin: top left; }
-#toolbar.docked { left: 0; top: 0; bottom: 0; border-radius: 0 10px 10px 0; border-left: 0; overflow-y: auto; overscroll-behavior: contain;
-  touch-action: pan-y; scrollbar-width: none; }
-#toolbar.docked::-webkit-scrollbar { display: none; }
+/* docked: square, flush with the map's left edge, a thin scroll bar showing there is more */
+#toolbar.docked { left: 0; top: 0; bottom: 0; border-radius: 0; border-width: 0 1px 0 0; overflow-y: auto; overscroll-behavior: contain;
+  touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+#toolbar.docked::-webkit-scrollbar { width: 6px; }
+#toolbar.docked::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#toolbar.docked::-webkit-scrollbar-track { background: transparent; }
 #toolbar.docked button, #toolbar.docked .sep { flex: 0 0 auto; }
-/* more tools past an end of the strip: that end fades out */
-#toolbar.docked.more-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent); }
-#toolbar.docked.more-above { -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 32px), transparent); }
-#toolbar.docked.more-above.more-below { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
 #mapwrap.tb-docked .leaflet-bottom.leaflet-left { left: var(--tb-w, 52px); } /* the coordinates and attribution beside the strip */
 
 /* the tool's instructions: centered at the top of the map (nothing follows the pointer) */

@@ -315,27 +315,19 @@ window.MB = window.MB || {};
     const tb = $('#toolbar'), wrap = $('#mapwrap');
     if (!tb || !wrap || !wrap.clientHeight) return;
     const scrolled = tb.scrollTop; // a docked strip keeps its place through a re-fit
-    tb.classList.remove('docked', 'more-above', 'more-below'); wrap.classList.remove('tb-docked'); tb.style.transform = '';
+    tb.classList.remove('docked'); wrap.classList.remove('tb-docked'); tb.style.transform = '';
     const room = wrap.clientHeight - tb.offsetTop - CORNER_ROOM, need = tb.offsetHeight;
     if (need <= room) return;
     const s = room / need;
     if (s >= TOOLBAR_MIN_SCALE) { tb.style.transform = `scale(${s.toFixed(3)})`; return; }
     tb.classList.add('docked'); wrap.classList.add('tb-docked');
-    wrap.style.setProperty('--tb-w', tb.offsetWidth + 'px');
+    wrap.style.setProperty('--tb-w', tb.offsetWidth + 'px'); // its scroll bar included
     tb.scrollTop = scrolled;
-    toolbarEnds();
   }
   MB.ui.fitToolbar = fitToolbar;
-  // The docked strip's ends fade where more tools are past them (the strip's scroll bar is hidden).
-  function toolbarEnds() {
-    const tb = $('#toolbar'), docked = tb.classList.contains('docked');
-    tb.classList.toggle('more-above', docked && tb.scrollTop > 2);
-    tb.classList.toggle('more-below', docked && tb.scrollTop + tb.clientHeight < tb.scrollHeight - 2);
-  }
 
   function initToolbar() {
     if (window.ResizeObserver) new ResizeObserver(() => fitToolbar()).observe($('#mapwrap'));
-    $('#toolbar').addEventListener('scroll', toolbarEnds, { passive: true });
     fitToolbar();
     $$('#toolbar button[data-tool]').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool)));
     MB.on('tool', name => {
