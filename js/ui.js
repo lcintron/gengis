@@ -307,7 +307,26 @@ window.MB = window.MB || {};
 
   /* ================= toolbar ================= */
 
+  // A short map area (a tablet held sideways, a small window): the toolbar shrinks to fit above the coordinates in
+  // the bottom corner; shorter still, it snaps to the map's left edge as a full-height strip that scrolls (the bottom
+  // corner's readouts move beside it), its buttons kept big enough to tap.
+  const TOOLBAR_MIN_SCALE = 0.75, CORNER_ROOM = 64; // px under the toolbar: the coordinates and attribution
+  function fitToolbar() {
+    const tb = $('#toolbar'), wrap = $('#mapwrap');
+    if (!tb || !wrap || !wrap.clientHeight) return;
+    tb.classList.remove('docked'); wrap.classList.remove('tb-docked'); tb.style.transform = '';
+    const room = wrap.clientHeight - tb.offsetTop - CORNER_ROOM, need = tb.offsetHeight;
+    if (need <= room) return;
+    const s = room / need;
+    if (s >= TOOLBAR_MIN_SCALE) { tb.style.transform = `scale(${s.toFixed(3)})`; return; }
+    tb.classList.add('docked'); wrap.classList.add('tb-docked');
+    wrap.style.setProperty('--tb-w', tb.offsetWidth + 'px');
+  }
+  MB.ui.fitToolbar = fitToolbar;
+
   function initToolbar() {
+    if (window.ResizeObserver) new ResizeObserver(() => fitToolbar()).observe($('#mapwrap'));
+    fitToolbar();
     $$('#toolbar button[data-tool]').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool)));
     MB.on('tool', name => {
       $$('#toolbar button[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
