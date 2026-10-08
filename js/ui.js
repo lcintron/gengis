@@ -314,6 +314,7 @@ window.MB = window.MB || {};
   function fitToolbar() {
     const tb = $('#toolbar'), wrap = $('#mapwrap');
     if (!tb || !wrap || !wrap.clientHeight) return;
+    const scrolled = tb.scrollTop; // a docked strip keeps its place through a re-fit
     tb.classList.remove('docked', 'more-above', 'more-below'); wrap.classList.remove('tb-docked'); tb.style.transform = '';
     const room = wrap.clientHeight - tb.offsetTop - CORNER_ROOM, need = tb.offsetHeight;
     if (need <= room) return;
@@ -321,6 +322,7 @@ window.MB = window.MB || {};
     if (s >= TOOLBAR_MIN_SCALE) { tb.style.transform = `scale(${s.toFixed(3)})`; return; }
     tb.classList.add('docked'); wrap.classList.add('tb-docked');
     wrap.style.setProperty('--tb-w', tb.offsetWidth + 'px');
+    tb.scrollTop = scrolled;
     toolbarEnds();
   }
   MB.ui.fitToolbar = fitToolbar;
