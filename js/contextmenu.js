@@ -116,7 +116,7 @@ window.MB = window.MB || {};
           MB.emit('selection', MB.selected);
         } }] : []),
         ...(MB.canConvert(layer) ? [{ label: MB.convertLabel(layer), disabled: locked, action: () => MB.convertFeature(layer) }] : []),
-        { label: 'Duplicate', hint: 'Ctrl+D', disabled: locked, action: () => { const n = MB.duplicateFeature(m.id); if (n) MB.selectFeature(n); } },
+        { label: 'Duplicate', hint: 'Ctrl+D', action: () => { const n = MB.duplicateFeature(m.id); if (n) MB.selectFeature(n); } }, // a copy of a locked object is not locked
         { label: 'Move to layer', disabled: locked, children: MB.state.layers.slice().reverse().map(l => ({
           label: l.name, disabled: l.id === m.layerId, action: () => MB.moveFeatureToLayer(m.id, l.id)
         })) },
