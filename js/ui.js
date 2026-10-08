@@ -201,6 +201,7 @@ window.MB = window.MB || {};
 
     // About and Data sources dialogs: closed by their ✕, Esc or a click on the backdrop; Tab stays inside them
     const av = $('#aboutVersion'); if (av) av.textContent = MB.APP.version;
+    const cu = $('#checkUpdate'); if (cu) cu.addEventListener('click', () => checkForUpdate(cu, $('#updateResult')));
     const sv = $('#splash .ver'); if (sv) sv.textContent = 'Version ' + MB.APP.version;
     ['#aboutDialog', '#sourcesDialog'].forEach(sel => {
       const dlg = $(sel);
@@ -229,6 +230,54 @@ window.MB = window.MB || {};
     const back = dlg._back && dlg._back.isConnected && dlg._back.getClientRects().length ? dlg._back : $('#moreBtn');
     dlg._back = null;
     if (back && back.focus) back.focus();
+  }
+
+  // About → Check for updates: the latest release on GitHub against this version. The desktop app links to its
+  // installers; on the web the service worker fetches the new version, then a reload runs it.
+  const RELEASES_API = 'https://api.github.com/repos/lcintron/gengis/releases/latest';
+  const RELEASES_PAGE = 'https://github.com/lcintron/gengis/releases/latest';
+  // Is version a newer than b? ("0.8.10" > "0.8.9"; a release is newer than its own pre-release, "0.9.0" > "0.9.0-Beta")
+  function newerVersion(a, b) {
+    const split = v => { const [main, pre] = String(v).replace(/^v/i, '').split('-'); return { n: main.split('.').map(x => +x || 0), pre: pre || '' }; };
+    const x = split(a), y = split(b);
+    for (let i = 0; i < 3; i++) if ((x.n[i] || 0) !== (y.n[i] || 0)) return (x.n[i] || 0) > (y.n[i] || 0);
+    return !x.pre && !!y.pre;
+  }
+  // The web app's new version installed by its service worker (a few seconds at most).
+  async function fetchNewVersion() {
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (!reg) return;
+    await reg.update().catch(() => {});
+    const sw = reg.installing || reg.waiting;
+    if (!sw || sw.state === 'activated') return;
+    await new Promise(done => {
+      const t = setTimeout(done, 15000);
+      sw.addEventListener('statechange', () => { if (sw.state === 'activated' || sw.state === 'redundant') { clearTimeout(t); done(); } });
+    });
+  }
+  async function checkForUpdate(btn, out) {
+    btn.disabled = true;
+    out.textContent = 'Checking…';
+    try {
+      const res = await fetch(RELEASES_API, { cache: 'no-store', headers: { Accept: 'application/vnd.github+json' } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const rel = await res.json(), latest = String(rel.tag_name || '').replace(/^v/i, '');
+      if (!latest) throw new Error('no release found');
+      if (!newerVersion(latest, MB.APP.version)) { out.textContent = `You have the latest version (${MB.APP.version}).`; return; }
+      if (window.gengisDesktop) {
+        const url = /^https:\/\/github\.com\//.test(rel.html_url || '') ? rel.html_url : RELEASES_PAGE;
+        out.innerHTML = `Version ${esc(latest)} is available. <a href="${esc(url)}" target="_blank" rel="noopener">Download it</a>`;
+        return;
+      }
+      out.textContent = `Version ${latest} is available. Downloading…`;
+      await fetchNewVersion();
+      out.innerHTML = `Version ${esc(latest)} is ready. <button type="button" class="btn small primary" data-act="reload-update">Reload to update</button>`;
+      out.querySelector('[data-act="reload-update"]').addEventListener('click', () => { MB.projects.flush().finally(() => location.reload()); }); // saved first
+    } catch (e) {
+      out.textContent = navigator.onLine === false ? "You're offline: updates can't be checked." : `Couldn't check for updates (${e.message}).`;
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   MB.ui.menuAction = function (act) {

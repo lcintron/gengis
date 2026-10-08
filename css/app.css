@@ -681,6 +681,9 @@ button.link:hover { text-decoration: underline; }
 .about-head .about-logo { width: 72px; height: auto; display: block; margin: 4px auto 10px; }
 .about-head h2 { margin: 0 0 2px; }
 .about-head p { margin: 0; }
+.about-update { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 10px; }
+.about-update .note:empty { display: none; }
+.about-update .note .btn { margin-left: 6px; }
 
 /* ---------- saving: status, recent projects, a map open in another tab ---------- */
 /* the save status is a dot in .topbar-right, before undo: its words are in its tooltip and read by screen readers */
