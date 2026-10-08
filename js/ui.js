@@ -42,15 +42,19 @@ window.MB = window.MB || {};
     box.className = 'stepper';
     const label = (range.closest('.row') && range.closest('.row').querySelector('label')) || null;
     const name = esc((label ? label.textContent.trim() : range.title || 'Value') + (unit ? ' (' + unit + ')' : ''));
-    box.innerHTML = `<button type="button" tabindex="-1" data-d="-1" aria-label="Decrease ${name}">−</button><input type="number" inputmode="decimal" aria-label="${name}"><button type="button" tabindex="-1" data-d="1" aria-label="Increase ${name}">+</button>${unit ? `<span class="stepper-unit">${esc(unit)}</span>` : ''}`;
+    // up over down, left of the value: compact, so the slider keeps the row
+    const chev = d => `<svg viewBox="0 0 10 6" width="9" height="5" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    box.innerHTML = `<span class="stepper-arrows"><button type="button" tabindex="-1" data-d="1" aria-label="Increase ${name}">${chev('M1 5l4-4 4 4')}</button><button type="button" tabindex="-1" data-d="-1" aria-label="Decrease ${name}">${chev('M1 1l4 4 4-4')}</button></span><input type="number" inputmode="decimal" aria-label="${name}">${unit ? `<span class="stepper-unit">${esc(unit)}</span>` : ''}`;
     range.after(box);
     if (readout) readout.hidden = true;
     const num = box.querySelector('input');
-    num.min = +(min * scale).toFixed(4); num.max = +(max * scale).toFixed(4); num.step = 'any';
+    num.min = +(min * scale).toFixed(4); num.max = +((+range.dataset.softMax || max) * scale).toFixed(4); num.step = 'any';
     const show = () => { num.value = +(+range.value * scale).toFixed(decimals); };
+    const soft = +range.dataset.softMax || 0; // a slider whose end is only where dragging stops (a text's size): typed values go past it
     const set = v => {
       if (!isFinite(v)) { show(); return; }
-      v = Math.min(max * scale, Math.max(min * scale, v));
+      v = Math.min((soft || +range.max) * scale, Math.max(min * scale, v));
+      if (v / scale > +range.max) range.max = String(v / scale);
       range.value = String(v / scale);
       show();
       range.dispatchEvent(new Event('input', { bubbles: true }));
@@ -58,7 +62,11 @@ window.MB = window.MB || {};
     };
     range.addEventListener('input', show);
     num.addEventListener('change', () => set(parseFloat(num.value)));
-    num.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); set(parseFloat(num.value)); num.select(); } e.stopPropagation(); });
+    num.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); set(parseFloat(num.value)); num.select(); }
+      else if (e.key === 'Escape') { e.preventDefault(); show(); num.blur(); } // back as it was, out of the box
+      e.stopPropagation(); // the app's single-key shortcuts stay out of a typed value
+    });
     num.addEventListener('focus', () => num.select());
     // a button steps once; held down, it repeats
     let timer = null;
@@ -736,23 +744,27 @@ window.MB = window.MB || {};
     if (sections.includes('fill')) {
       html += `<div class="section"><h3>Fill</h3>
         <label class="check"><input type="checkbox" data-k="fill"${st.fill ? ' checked' : ''}> Fill shape</label>
-        <div class="row"><label>Color</label><input type="color" data-k="fillColor" value="${st.fillColor}"><input type="range" data-k="fillOpacity" min="0" max="1" step="0.05" value="${st.fillOpacity}"><span class="val" data-val="fillOpacity">${Math.round(st.fillOpacity * 100)}%</span></div>
+        <div class="row"><label>Color</label><input type="color" data-k="fillColor" value="${st.fillColor}"><span class="grow"></span></div>
+        <div class="row"><label>Opacity</label><input type="range" data-k="fillOpacity" min="0" max="1" step="0.05" value="${st.fillOpacity}"><span class="val" data-val="fillOpacity">${Math.round(st.fillOpacity * 100)}%</span></div>
       </div>`;
     }
     if (sections.includes('text')) {
       const tog = (k, label, title) => `<button type="button" class="tog${st[k] ? ' on' : ''}" data-toggle="${k}" title="${title}">${label}</button>`;
       const seg = (k, opts) => `<div class="seg small" data-set="${k}">${opts.map(o => `<button type="button" data-v="${o[0]}"${(st[k] || '') === o[0] ? ' class="active"' : ''} title="${o[2] || o[1]}">${o[1]}</button>`).join('')}</div>`;
       html += `<div class="section"><h3>Text</h3>
-        <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><input type="range" data-k="textSize" min="${Math.max(1, Math.min(8, MB.textShownSize(st)))}" max="${Math.max(64, MB.textShownSize(st))}" step="1" value="${MB.textShownSize(st)}" title="The size it shows at now (a text that scales with the map can be any size)"><span class="val" data-val="textSize">${MB.textShownSize(st)}px</span></div>
+        <div class="row"><label>Color</label><input type="color" data-k="textColor" value="${st.textColor}"><span class="grow"></span></div>
+        <div class="row" title="The size it shows at now (a text that scales with the map can be any size)"><label>Size</label><input type="range" data-k="textSize" data-soft-max="400" min="${Math.max(1, Math.min(8, MB.textShownSize(st)))}" max="${Math.max(64, MB.textShownSize(st))}" step="1" value="${MB.textShownSize(st)}"><span class="val" data-val="textSize">${MB.textShownSize(st)}px</span></div>
         <div class="row" title="Fixed pixels: the same size at every zoom. Scale with map: grows and shrinks with the map, like a label printed on it"><label>Sizing</label>${seg('textScale', [['screen', 'Fixed pixels'], ['map', 'Scale with map']])}</div>
         <div class="row"><label>Font</label><select data-k="textFont">${Object.keys(MB.textFonts).map(k => `<option value="${k}" style="font-family:${esc(MB.textFonts[k][1])}"${st.textFont === k ? ' selected' : ''}>${MB.textFonts[k][0]}</option>`).join('')}</select></div>
         <div class="row"><label>Format</label><div class="tog-group">${tog('textBold', '<b>B</b>', 'Bold')}${tog('textItalic', '<i>I</i>', 'Italic')}${tog('textUnderline', '<u>U</u>', 'Underline')}${tog('textStrike', '<s>S</s>', 'Strikethrough')}</div></div>
         <div class="row"><label>Align</label>${seg('textAlign', [['left', ALIGN.left, 'Align left'], ['center', ALIGN.center, 'Center'], ['right', ALIGN.right, 'Align right']])}</div>
         <div class="row align-row"><label title="Which side of the text sits on its map point">Anchor</label>${seg('textHAnchor', [['left', ALIGN.left, 'Anchor left: the text starts at its point'], ['center', ALIGN.center, 'Anchor center'], ['right', ALIGN.right, 'Anchor right: the text ends at its point']])}${seg('textVAnchor', [['top', ALIGN.top, 'Anchor top: the text hangs below its point'], ['middle', ALIGN.middle, 'Anchor middle'], ['bottom', ALIGN.bottom, 'Anchor bottom: the text sits above its point']])}</div>
-        <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}" title="Background color"><input type="range" data-k="textBgOpacity" min="0" max="1" step="0.05" value="${st.textBgOpacity}" title="Background opacity"><span class="val" data-val="textBgOpacity">${Math.round(st.textBgOpacity * 100)}%</span></div>
-        <div class="row"><label>Shadow</label><input type="checkbox" data-k="textShadowOn"${st.textShadowOn ? ' checked' : ''} title="Show shadow"><input type="color" data-k="textShadowColor" value="${st.textShadowColor}" title="Shadow color"><input type="range" data-k="textShadowOpacity" min="0" max="1" step="0.05" value="${st.textShadowOpacity}" title="Shadow opacity"><span class="val" data-val="textShadowOpacity">${Math.round(st.textShadowOpacity * 100)}%</span></div>
-        <div class="row" title="How soft the shadow is"><label>Shadow blur</label><input type="range" data-k="textShadowBlur" min="0" max="16" step="1" value="${st.textShadowBlur}"><span class="val" data-val="textShadowBlur">${st.textShadowBlur}px</span></div>
-        <div class="row" title="How far the shadow falls below and right of the text"><label>Shadow offset</label><input type="range" data-k="textShadowOffset" min="0" max="10" step="1" value="${st.textShadowOffset}"><span class="val" data-val="textShadowOffset">${st.textShadowOffset}px</span></div>
+        <div class="row"><label>Background</label><input type="checkbox" data-k="textBgOn"${st.textBgOn ? ' checked' : ''} title="Show background"><input type="color" data-k="textBg" value="${st.textBg}" title="Background color"><span class="grow"></span></div>
+        <div class="row sub" title="Background opacity"><label>Opacity</label><input type="range" data-k="textBgOpacity" min="0" max="1" step="0.05" value="${st.textBgOpacity}"><span class="val" data-val="textBgOpacity">${Math.round(st.textBgOpacity * 100)}%</span></div>
+        <div class="row"><label>Shadow</label><input type="checkbox" data-k="textShadowOn"${st.textShadowOn ? ' checked' : ''} title="Show shadow"><input type="color" data-k="textShadowColor" value="${st.textShadowColor}" title="Shadow color"><span class="grow"></span></div>
+        <div class="row sub" title="Shadow opacity"><label>Opacity</label><input type="range" data-k="textShadowOpacity" min="0" max="1" step="0.05" value="${st.textShadowOpacity}"><span class="val" data-val="textShadowOpacity">${Math.round(st.textShadowOpacity * 100)}%</span></div>
+        <div class="row sub" title="How soft the shadow is"><label>Blur</label><input type="range" data-k="textShadowBlur" min="0" max="16" step="1" value="${st.textShadowBlur}"><span class="val" data-val="textShadowBlur">${st.textShadowBlur}px</span></div>
+        <div class="row sub" title="How far the shadow falls below and right of the text"><label>Offset</label><input type="range" data-k="textShadowOffset" min="0" max="10" step="1" value="${st.textShadowOffset}"><span class="val" data-val="textShadowOffset">${st.textShadowOffset}px</span></div>
       </div>`;
     }
     const wrap = document.createElement('div');
@@ -953,7 +965,8 @@ window.MB = window.MB || {};
     wrap.innerHTML = `<div class="section"><h3>Name label</h3>
       <label class="check"><input type="checkbox" data-lk="show"${lb.show ? ' checked' : ''}> Show name on the map</label>
       <div class="row align-row"><label>Alignment</label>${seg('h', [['left', ALIGN.left, 'Left of the object'], ['center', ALIGN.center, 'Centered on the object'], ['right', ALIGN.right, 'Right of the object']])}${seg('v', [['top', ALIGN.top, 'Above the object'], ['middle', ALIGN.middle, 'On the object'], ['bottom', ALIGN.bottom, 'Below the object']])}</div>
-      <div class="row"><label>Text</label><input type="color" data-lk="color" value="${lb.color}"><input type="range" data-lk="size" min="9" max="36" step="1" value="${lb.size}"><span class="val" data-lv="size">${lb.size}px</span></div>
+      <div class="row"><label>Text color</label><input type="color" data-lk="color" value="${lb.color}"><span class="grow"></span></div>
+      <div class="row"><label>Text size</label><input type="range" data-lk="size" min="9" max="36" step="1" value="${lb.size}"><span class="val" data-lv="size">${lb.size}px</span></div>
       <label class="check"><input type="checkbox" data-lk="bg"${lb.bg ? ' checked' : ''}> Label background</label>
       ${f.mb.name ? '' : '<p class="note" data-note>Enter a name above to show a label.</p>'}
     </div>`;

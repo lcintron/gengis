@@ -44,6 +44,7 @@ window.MB = window.MB || {};
         hintlineStyle: { color: st.color, weight: 1.5, dashArray: '5,5' },
         markerStyle: { icon: MB.pinIcon(st.color) },
         textOptions: { focusAfterCreate: true, removeIfEmpty: true },
+        tooltips: false, // no "Click to place…" under the pointer: the tool's hint above the map says it
         cursorMarker: true,
         finishOn: 'dblclick'
       };
@@ -150,9 +151,8 @@ window.MB = window.MB || {};
         hint.on('move', () => {
           const center = draw._centerMarker;
           if (!center || !draw._layerGroup || !draw._layerGroup.hasLayer(center)) return; // the center is not placed yet
-          if (hint.isTooltipOpen()) hint.closeTooltip(); // this readout says how to finish instead of Geoman's hint
           const r = center.getLatLng().distanceTo(hint.getLatLng()), p = MB.map.latLngToContainerPoint(hint.getLatLng());
-          tip.innerHTML = `<b>Radius ${MB.formatDistance(r)}</b><br><span class="dim">${MB.formatDistanceAlt(r)}<br>click to finish</span>`;
+          tip.innerHTML = `<b>Radius ${MB.formatDistance(r)}</b><br><span class="dim">${MB.formatDistanceAlt(r)}</span>`; // the measure only (how to finish: the hint)
           tip.style.display = 'block';
           // beside the pointer, on the side where it fits
           const size = MB.map.getSize(), w = tip.offsetWidth, h = tip.offsetHeight;
@@ -186,8 +186,7 @@ window.MB = window.MB || {};
       MB.map.on('mousemove', this._move, this);
       MB.map.on('dblclick', this._dbl, this);
       this._buildTemp();
-      this._setTip('Click to start measuring ' + (mode === 'area' ? 'an area' : 'a distance'));
-      this.tip.style.display = 'block';
+      this._setTip(''); // nothing measured yet: no readout (the hint says how to start)
     },
 
     stop() {
@@ -205,7 +204,7 @@ window.MB = window.MB || {};
       this.pts = [];
       this._clearTemp();
       this._buildTemp();
-      this._setTip('Cancelled. Click to start again');
+      this._setTip('');
     },
 
     _tempStyle() {
@@ -248,16 +247,17 @@ window.MB = window.MB || {};
         this.tempPoly.setLatLngs(pts);
         const area = MB.polygonArea(pts), per = MB.pathLength(pts, true);
         const seg = this.pts[this.pts.length - 1].distanceTo(cursor);
-        this._setTip(`<b>${MB.formatArea(area)}</b><br>perimeter ${MB.formatDistance(per)}<br><span class="dim">segment ${MB.formatDistance(seg)} · double-click or Enter to finish</span>`);
+        this._setTip(`<b>${MB.formatArea(area)}</b><br>perimeter ${MB.formatDistance(per)}<br><span class="dim">segment ${MB.formatDistance(seg)}</span>`);
       } else {
         this.tempLine.setLatLngs(pts);
         const total = MB.pathLength(pts);
         const seg = this.pts[this.pts.length - 1].distanceTo(cursor);
-        this._setTip(`<b>${MB.formatDistance(total)}</b><br><span class="dim">segment ${MB.formatDistance(seg)} · double-click or Enter to finish</span>`);
+        this._setTip(`<b>${MB.formatDistance(total)}</b><br><span class="dim">segment ${MB.formatDistance(seg)}</span>`);
       }
     },
 
-    _setTip(html) { this.tip.innerHTML = html; },
+    // The readout beside the pointer: measurements only (shown while there are some)
+    _setTip(html) { this.tip.innerHTML = html; this.tip.style.display = html ? 'block' : 'none'; },
 
     finish() {
       if (!this.active) return;
@@ -277,7 +277,7 @@ window.MB = window.MB || {};
       this.pts = [];
       this._clearTemp();
       this._buildTemp();
-      this._setTip('Saved to layer "' + MB.activeLayer().name + '". Click to start another measurement');
+      this._setTip('');
       if (!MB.state.continueDrawing && f) { MB.tools.set('select'); MB.selectFeature(f); }
     }
   };

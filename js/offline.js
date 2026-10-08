@@ -207,7 +207,7 @@ window.MB = window.MB || {};
       const $ = s => el.querySelector(s);
       const update = () => {
         let zMin = +$('#oaMin').value, zMax = +$('#oaMax').value;
-        if (zMin > zMax) { zMax = zMin; $('#oaMax').value = zMax; }
+        if (zMin > zMax) { zMax = zMin; $('#oaMax').value = zMax; $('#oaMax').dispatchEvent(new Event('input')); } // its number box follows (update runs once more, unclamped)
         $('#oaMinVal').textContent = zMin; $('#oaMaxVal').textContent = zMax;
         const tiles = this.countTiles(bounds, zMin, zMax);
         const over = tiles > cap;

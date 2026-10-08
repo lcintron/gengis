@@ -1221,7 +1221,7 @@ window.MB = window.MB || {};
     // Hand Leaflet a DOM node, not the HTML string: popup.update() (called when frequencies arrive) re-renders
     // string content from scratch, which would wipe the loaded frequencies, the listeners and the expanded state.
     const content = document.createElement('div'); content.innerHTML = html;
-    const popup = identifyPopup = L.popup({ maxWidth: 400, maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
+    const popup = identifyPopup = L.popup({ maxWidth: Math.max(200, Math.min(400, MB.map.getSize().x - 72)), maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [12, 12] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
     let pinned = hits.length === 1 ? hits[0] : null; // the expanded entry stays highlighted when the pointer leaves the list
     popup.on('remove', () => { pinned = null; clearHighlight(); });
     const root = popup.getElement();

@@ -178,10 +178,12 @@ body.presenting .mb-scale-box { display: none !important; }
 #toolbar button.active { background: var(--accent); color: #06201e; }
 #toolbar .sep { height: 1px; background: var(--border); margin: 3px 4px; }
 
+/* the tool's instructions: centered at the top of the map (nothing follows the pointer) */
 .tool-hint {
-  position: absolute; left: 64px; top: 16px; z-index: 1000; background: rgba(27,31,39,.92); border: 1px solid var(--border);
-  padding: 6px 10px; border-radius: 8px; font-size: 12px; color: var(--text); pointer-events: none; max-width: 420px;
+  position: absolute; left: 50%; transform: translateX(-50%); top: 12px; z-index: 1000; background: rgba(27,31,39,.92); border: 1px solid var(--border);
+  padding: 6px 12px; border-radius: 8px; font-size: 12px; color: var(--text); pointer-events: none; width: max-content; max-width: min(460px, calc(100% - 140px)); text-align: center;
 }
+.tool-hint .hint-warn { text-align: left; }
 /* the active layer is hidden: what the tool adds will not show */
 .tool-hint .hint-warn { display: flex; align-items: center; gap: 6px; color: var(--warn); pointer-events: auto; }
 .tool-hint div + .hint-warn { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
@@ -296,14 +298,22 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .row input[type="number"].narrow { flex: 0 0 64px; }
 .row .val { flex: 0 0 44px; text-align: right; color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 12px; }
 .row .unit { color: var(--text-dim); font-size: 12px; }
+.row.sub label { padding-left: 12px; } /* a setting of the row above (a background's or shadow's opacity, blur…) */
+/* phones: a popup no wider than the screen (data at a point, airspace…), its text wrapping */
+@media (max-width: 640px) {
+  .leaflet-popup-content { max-width: calc(100vw - 72px); }
+  .leaflet-popup-content-wrapper { max-width: calc(100vw - 24px); }
+}
+.leaflet-popup-content .mb-datatable td { overflow-wrap: anywhere; }
 /* a slider's number box with - and + (ui.js) */
-.stepper { flex: 0 0 auto; display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); height: 28px; }
-.stepper button { width: 20px; height: 100%; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; touch-action: manipulation; }
+.stepper { flex: 0 0 auto; display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); height: 26px; overflow: hidden; }
+.stepper-arrows { display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+.stepper button { flex: 1 1 0; width: 14px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; touch-action: manipulation; }
 .stepper button:hover:not(:disabled) { color: var(--text); background: var(--bg-3); }
 .stepper button:disabled { cursor: not-allowed; }
-.row .stepper input[type="number"] { flex: 0 0 auto; width: 38px; height: 26px; padding: 0 2px; border: 0; border-radius: 0; background: transparent; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield; }
+.row .stepper input[type="number"] { flex: 0 0 auto; width: 30px; height: 100%; padding: 0 1px 0 3px; border: 0; border-radius: 0; background: transparent; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield; }
 .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.stepper-unit { color: var(--text-dim); font-size: 11px; padding-right: 6px; }
+.stepper-unit { align-self: center; color: var(--text-dim); font-size: 11px; padding: 0 4px 0 1px; }
 .stepper.disabled { opacity: .55; }
 /* alignment: a horizontal and a vertical group of icons on one row */
 .seg.icons button, .align-row .seg button { display: inline-flex; align-items: center; justify-content: center; padding: 4px 5px; }
@@ -425,7 +435,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   #toolbar { left: 8px; top: 8px; padding: 4px; gap: 2px; }
   #toolbar button { width: 36px; height: 36px; }
   #toolbar button svg { width: 20px; height: 20px; }
-  .tool-hint { left: 54px; top: 10px; max-width: calc(100vw - 70px); font-size: 11px; }
+  .tool-hint { top: 10px; max-width: calc(100% - 116px); font-size: 11px; } /* between the toolbar and the location button */
   .leaflet-control-zoom { display: none; }
   .leaflet-touch .mb-locate a, .mb-locate a, .leaflet-touch .mb-present-ctl a, .mb-present-ctl a { width: 40px; height: 40px; line-height: 40px; } /* a finger-sized target: the zoom buttons are hidden here */
   .mb-locate a svg, .mb-present-ctl a svg { width: 22px; height: 22px; }
