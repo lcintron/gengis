@@ -4,7 +4,7 @@ window.MB = window.MB || {};
   'use strict';
 
   // App identity. Bump `version` here for each release (also in package.json and the service worker cache name).
-  MB.APP = { name: 'GenGIS', aka: 'G²', version: '0.8.2' };
+  MB.APP = { name: 'GenGIS', aka: 'G²', version: '0.8.3' };
 
   const EARTH_R = 6378137;
   const D2R = Math.PI / 180;
