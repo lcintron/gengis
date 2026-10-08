@@ -292,6 +292,7 @@ window.MB = window.MB || {};
     const d = MB.serializeFeature(l);
     d.id = MB.uid();
     d.name = d.name ? d.name + ' copy' : '';
+    delete d.locked; // a copy is made to be changed (on a locked layer it stays read only)
     const n = MB.restoreFeature(d);
     MB.commit('duplicate');
     return n;

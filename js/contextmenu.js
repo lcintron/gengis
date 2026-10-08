@@ -85,7 +85,7 @@ window.MB = window.MB || {};
       const center = MB.featureCenter(layer);
       const isPoint = m.type === 'marker' || m.type === 'text' || m.type === 'svg' || m.type === 'circle';
       const items = [
-        { label: 'Properties…', disabled: locked, action: () => { MB.selectFeature(layer); MB.ui.showTab('props'); } },
+        { label: 'Properties…', action: () => { MB.selectFeature(layer); MB.ui.showTab('props'); } }, // read only when locked
         { label: 'Center map here', action: () => MB.map.panTo(center) },
         { label: 'Zoom to fit', action: () => MB.zoomToFeature(layer) },
         { sep: true },
