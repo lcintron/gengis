@@ -213,7 +213,7 @@ window.MB = window.MB || {};
     const l = MB.featureLayers[id];
     if (!l) return;
     l.mb.locked = !!locked;
-    if (MB.selected === l) { MB.deselect(); MB.selectFeature(l); }
+    if (MB.selected === l) { MB.deselect(); MB.selectFeature(l); } // still selected: editable or read only now
     MB.emit('features');
     MB.commit('object lock');
   };
@@ -304,7 +304,7 @@ window.MB = window.MB || {};
       const t = MB.tools.current;
       if (!MB.tools.picks(t) && t !== 'present') return;
       const shift = e.originalEvent && e.originalEvent.shiftKey;
-      if (t !== 'present' && !MB.isFeatureLocked(layer)) {
+      if (t !== 'present') { // locked objects too: selected, but not editable (selectFeature)
         L.DomEvent.stopPropagation(e);
         if (shift) MB.toggleMulti(layer); else MB.selectFeature(layer);
         if (MB.ui && MB.ui.revealFeature) MB.ui.revealFeature(layer);
@@ -546,7 +546,9 @@ window.MB = window.MB || {};
     const t = layer.mb.type;
     const moveOnly = MB.tools.current === 'move';
     const editable = !MB.isFeatureLocked(layer) && MB.map.hasLayer(layer);
-    if (!editable) { /* locked or hidden: selectable for the Properties panel only */ }
+    if (!editable) { // locked or hidden: selected (its properties shown, read only), never edited, moved or resized
+      if (MB.tools.current === 'scale' && MB.isFeatureLocked(layer)) MB.toast('Object is locked: unlock it to resize');
+    }
     else if (MB.tools.current === 'scale') MB.scaler.attach(layer); // a box with handles, no vertex editing or dragging
     else if (t === 'svg') {
       if (layer.dragging) layer.dragging.enable();

@@ -47,7 +47,7 @@ window.MB = window.MB || {};
   };
 
   MB.toggleMulti = function (layer) {
-    if (!layer || MB.isFeatureLocked(layer)) return;
+    if (!layer) return; // locked objects too: what changes objects skips or refuses them
     if (MB.selected && !MB.multi.size) {
       const s = MB.selected;
       MB.deselect();
@@ -66,19 +66,20 @@ window.MB = window.MB || {};
   };
 
   MB.deleteMulti = function () {
-    const list = Array.from(MB.multi).filter(l => !MB.isFeatureLocked(l));
-    if (!list.length) return;
+    const all = Array.from(MB.multi), list = all.filter(l => !MB.isFeatureLocked(l)), kept = all.length - list.length;
+    if (!list.length) { MB.toast(kept > 1 ? 'These objects are locked' : 'Object is locked'); return; }
     MB.deselect();
     list.forEach(l => MB.removeFeature(l.mb.id, { silent: true }));
     MB.emit('features');
     MB.commit('delete objects');
-    MB.toast(list.length + ' objects deleted');
+    MB.toast(list.length + ' objects deleted' + (kept ? ` (${kept} locked kept)` : ''));
   };
 
   MB.moveMultiToLayer = function (layerId) {
-    const list = Array.from(MB.multi);
+    const all = Array.from(MB.multi), list = all.filter(l => !MB.isFeatureLocked(l));
     MB.deselect();
     list.forEach(l => MB.moveFeatureToLayer(l.mb.id, layerId));
+    if (list.length < all.length) MB.toast(`${all.length - list.length} locked object${all.length - list.length > 1 ? 's' : ''} left where ${all.length - list.length > 1 ? 'they were' : 'it was'}`);
   };
 
   /* ================= line <-> polygon conversion ================= */
@@ -141,6 +142,7 @@ window.MB = window.MB || {};
     opts = opts || {};
     const lines = Array.from(layers).filter(l => l.mb.type === 'line' || l.mb.type === 'measure-line');
     if (!lines.length) { MB.toast('Select the lines to join (shift-click to select several)'); return null; }
+    if (!opts.keepLines && lines.some(l => MB.isFeatureLocked(l))) { MB.toast('A selected line is locked: unlock it to join'); return null; }
     const tol = MB.SNAP_PX;
     const parts = lines.map(l => ({ layer: l, pts: firstPart(l.getLatLngs()).slice() })).filter(p => p.pts.length >= 2);
     let chain = parts[0].pts.slice();

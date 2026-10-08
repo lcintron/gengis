@@ -575,6 +575,11 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 /* a data feature in Properties (datalayers.js) */
 #propsBody .panel-head .badge + .icon-btn { margin-left: auto; }
 #propsBody .panel-head h3 + .badge { margin-left: 8px; }
+/* a locked object's properties: read only, and what unlocks it */
+.lock-note { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px;
+  background: rgba(255,209,102,.1); border: 1px solid rgba(255,209,102,.35); color: var(--text); }
+.lock-note .mbi { width: 14px; height: 14px; color: var(--warn); }
+#propsBody.props-locked :is(input, select, textarea):disabled { opacity: .55; cursor: not-allowed; }
 .data-pick-label { font-weight: 600; margin: -2px 0 10px; overflow-wrap: anywhere; }
 #propsBody .mb-datatable { width: 100%; table-layout: fixed; }
 #propsBody .mb-datatable td:first-child { width: 38%; overflow: hidden; text-overflow: ellipsis; }

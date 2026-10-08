@@ -1203,8 +1203,7 @@ window.MB = window.MB || {};
       let measure = '';
       try { measure = MB.measureText(h.layer); } catch (e) { /* ignore */ }
       const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('');
-      const locked = MB.isFeatureLocked(h.layer);
-      const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}"${locked ? ' disabled title="Locked"' : ''}>Select</button></div>`;
+      const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`;
       return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
     const sections = hits.map((h, i) => {

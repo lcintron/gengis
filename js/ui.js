@@ -570,6 +570,7 @@ window.MB = window.MB || {};
   function startObjectRename(item, fid) {
     const f = MB.featureLayers[fid];
     if (!f) return;
+    if (MB.isFeatureLocked(f)) { MB.toast('Object is locked: unlock it to rename'); return; }
     MB.ui.flushLayers(); // a redraw still to come would take the field away: the row as drawn now
     item = $(`#layerScroll .obj-item[data-fid="${CSS.escape(fid)}"]`) || item;
     const span = $('.fname', item);
@@ -711,6 +712,7 @@ window.MB = window.MB || {};
     const panel = $('#propsBody');
     const f = MB.selected;
     panel.innerHTML = '';
+    panel.classList.remove('props-locked');
     $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
     if (!f && MB.data.picked) { // a data feature picked on the map (datalayers.js)
@@ -813,7 +815,25 @@ window.MB = window.MB || {};
       else if (act === 'del') MB.removeFeature(m.id);
     });
     panel.appendChild(actions);
+    if (MB.isFeatureLocked(f)) lockProps(panel, f);
   };
+
+  // A locked object's properties: shown, every field and change disabled (looking, zooming to it and duplicating it
+  // stay), and a note with what unlocks it.
+  function lockProps(panel, f) {
+    const byLayer = !f.mb.locked, lay = MB.getLayer(f.mb.layerId);
+    panel.classList.add('props-locked');
+    panel.querySelectorAll('input, select, textarea, button').forEach(el => {
+      if (!el.matches('[data-act="zoom"], [data-act="dup"]')) el.disabled = true;
+    });
+    const note = document.createElement('div');
+    note.className = 'lock-note';
+    note.innerHTML = `<span>${icons.lock}</span><span class="grow">${byLayer ? `Layer “${esc(lay ? lay.name : '')}” is locked` : 'This object is locked'}: its properties can't be changed.</span><button type="button" class="btn small">Unlock${byLayer ? ' layer' : ''}</button>`;
+    note.querySelector('button').addEventListener('click', () => {
+      if (byLayer) { MB.setLayerLocked(f.mb.layerId, false); MB.commit('layer lock'); } else MB.setFeatureLocked(f.mb.id, false);
+    });
+    panel.insertBefore(note, panel.firstChild);
+  }
 
   function labelForm(f) {
     const lb = MB.getLabel(f);

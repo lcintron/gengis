@@ -176,7 +176,9 @@ window.MB = window.MB || {};
     const layer = MB.getLayer(id);
     if (!layer) return;
     layer.locked = !!locked;
-    if (locked && MB.selected && MB.selected.mb.layerId === id) MB.deselect();
+    // a selected object of the layer stays selected: editable or read only now
+    const sel = MB.selected;
+    if (sel && sel.mb.layerId === id) { MB.deselect(); MB.selectFeature(sel); }
     MB.emit('layers');
   };
 
