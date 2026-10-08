@@ -92,12 +92,12 @@ window.MB = window.MB || {};
         }
       }
     } else if (t === 'svg') {
-      layer.mb.svg.width = Math.max(layer.setBounds ? 0.1 : 4, +(sn.width * s).toFixed(2)); // meters on the ground, or pixels
+      if (s !== 1) layer.mb.svg.width = Math.max(layer.setBounds ? 0.1 : 4, +(sn.width * s).toFixed(2)); // meters on the ground, or pixels
       if (layer.setBounds) {
         const lib = MB.state.svgLibrary[layer.mb.svg.svgId] || { aspect: 1 };
         layer.setBounds(MB.boundsAround(ll(to(sn.pos)), layer.mb.svg.width, layer.mb.svg.width / (lib.aspect || 1)));
       } else layer.setLatLng(ll(to(sn.pos)));
-      MB.refreshSvg(layer);
+      if (s !== 1) MB.refreshSvg(layer); // resized: its icon redrawn (a move only moves it)
     } else layer.setLatLngs(mapNested(sn.pts, p => ll(to(p))));
     MB.updateTooltip(layer);
   }
@@ -255,6 +255,8 @@ window.MB = window.MB || {};
     init() {
       // capture: before Leaflet starts panning the map from the same press
       MB.map.getContainer().addEventListener('pointerdown', e => this.down(e), true);
+      // an undo or redo during the drag rebuilt its objects: the drag ends there (nothing to put back or save)
+      MB.on('history', () => { if (this.drag && this.drag.snaps.some(sn => MB.featureLayers[sn.layer.mb.id] !== sn.layer)) this.done('drop'); });
     },
     down(e) {
       if (e.button !== 0 || MB.tools.current !== 'move' || this.drag) return;
@@ -275,21 +277,22 @@ window.MB = window.MB || {};
         this.drag.snaps.forEach(sn => transform(sn, pt => pt.add(d), 1));
         MB.scaler.place();
       };
-      const done = cancel => {
+      // how = 'cancel' (Esc: put back), 'drop' (the objects were rebuilt: leave them), or nothing (save the move)
+      const done = this.done = how => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
         window.removeEventListener('pointercancel', up);
         window.removeEventListener('keydown', key, true);
         handlersOn(this.off);
         const dr = this.drag;
-        this.drag = null;
-        if (!dr.moved) return;
-        if (cancel) { dr.snaps.forEach(restore); return; }
+        this.drag = null; this.done = null;
+        if (!dr.moved || how === 'drop') return;
+        if (how === 'cancel') { dr.snaps.forEach(restore); return; }
         dr.snaps.forEach(sn => MB.emit('featurechange', sn.layer));
         MB.commit('move group');
       };
-      const up = ev => { if (ev.pointerId === this.drag.pointer) done(false); };
-      const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); done(true); } };
+      const up = ev => { if (ev.pointerId === this.drag.pointer) done(); };
+      const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); done('cancel'); } };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
       window.addEventListener('pointercancel', up);

@@ -524,7 +524,7 @@ window.MB = window.MB || {};
       { label: 'Rename', action: () => startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`), id) },
       { label: 'Duplicate layer', hint: n + ' object' + (n === 1 ? '' : 's'), action: () => MB.duplicateLayer(id) },
       { label: l.grouped ? 'Ungroup objects' : 'Group objects', disabled: !l.grouped && n < 2,
-        action: () => { MB.setLayerGrouped(id, !l.grouped); MB.commit(l.grouped ? 'group' : 'ungroup'); } },
+        action: () => { const on = !l.grouped; MB.setLayerGrouped(id, on); MB.commit(on ? 'group' : 'ungroup'); } },
       { label: 'Zoom to layer', disabled: !n || !g || !g.getBounds().isValid(), action: () => MB.map.fitBounds(g.getBounds().pad(0.15), { maxZoom: 18 }) },
       { sep: true },
       { label: l.locked ? 'Unlock layer' : 'Lock layer', action: () => { MB.setLayerLocked(id, !l.locked); MB.commit('layer lock'); } },

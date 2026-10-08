@@ -62,12 +62,12 @@ window.MB = window.MB || {};
     const members = MB.layerFeatures(layerId);
     MB.deselect();
     members.forEach(f => { MB.multi.add(f); mark(f, true); });
+    MB.emit('selection', null); // (members their zoom rule hides are shown while selected: features.js)
     const locked = members.some(l => MB.isFeatureLocked(l));
     if (MB.tools.current === 'scale') {
       if (locked) MB.toast('The layer is locked: unlock it to resize');
       else MB.scaler.attach(members);
     } else if (MB.tools.current === 'move' && !locked) MB.scaler.attach(members, { frame: true }); // what is being moved
-    MB.emit('selection', null);
   };
 
   MB.toggleMulti = function (layer) {

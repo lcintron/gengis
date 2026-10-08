@@ -152,7 +152,7 @@ window.MB = window.MB || {};
   };
   // On the map: its own eye on and the zoom allowing it (the layer's eye is its group's business). The selected
   // object stays shown, so the rule being edited does not take it away.
-  function shownNow(l) { return l.mb.visible !== false && (MB.zoomAllows(l) || MB.selected === l); }
+  function shownNow(l) { return l.mb.visible !== false && (MB.zoomAllows(l) || MB.selected === l || !!(MB.multi && MB.multi.has(l))); }
   MB.shownNow = shownNow;
   // Put an object on or off its layer for its zoom rule (after a zoom, a selection change or an edit of the rule).
   MB.applyZoomDisplay = function (l) {
