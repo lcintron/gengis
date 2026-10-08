@@ -167,7 +167,7 @@ window.MB = window.MB || {};
     layer.visible = !!visible;
     if (visible) { g.addTo(MB.map); MB.applyZOrder(); }
     else {
-      if (MB.selected && MB.selected.mb.layerId === id) MB.deselect();
+      MB.dropFromSelection(f => f.mb.layerId === id); // nothing hidden stays selected (Delete would remove it)
       MB.map.removeLayer(g);
     }
     MB.emit('layers');

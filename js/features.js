@@ -200,7 +200,7 @@ window.MB = window.MB || {};
       MB.updateLabel(l);
       MB.applyFeatureOrder(l.mb.layerId);
     } else {
-      if (MB.selected === l) MB.deselect();
+      if (!MB.groupOf(l)) MB.dropFromSelection(f => f === l); // a group's object stays in its group
       removeSegLabels(l);
       g.removeLayer(l);
       if (MB.map.hasLayer(l)) MB.map.removeLayer(l);

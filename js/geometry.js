@@ -94,6 +94,16 @@ window.MB = window.MB || {};
     MB.emit('selection', null);
   };
 
+  // Objects that can no longer be acted on (their layer hidden, or themselves): out of the selection, single or
+  // multiple; the rest of a multiple selection stays selected.
+  MB.dropFromSelection = function (test) {
+    if (MB.selected && test(MB.selected)) { MB.deselect(); return; }
+    if (!MB.multi || !Array.from(MB.multi).some(test)) return;
+    const keep = Array.from(MB.multi).filter(f => !test(f));
+    MB.deselect();
+    keep.forEach(f => { if (!MB.multi.has(f) && MB.selected !== f) MB.toggleMulti(f); }); // a group comes back whole
+  };
+
   MB.deleteMulti = function () {
     const all = Array.from(MB.multi), list = all.filter(l => !MB.isFeatureLocked(l)), kept = all.length - list.length;
     if (!list.length) { MB.toast(kept > 1 ? 'These objects are locked' : 'Object is locked'); return; }
