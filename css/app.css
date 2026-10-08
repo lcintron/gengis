@@ -185,7 +185,8 @@ body.presenting .mb-scale-box { display: none !important; }
 #toolbar.docked::-webkit-scrollbar { width: 6px; }
 #toolbar.docked::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 #toolbar.docked::-webkit-scrollbar-track { background: transparent; }
-#toolbar.docked button, #toolbar.docked .sep { flex: 0 0 auto; }
+#toolbar.docked { direction: rtl; } /* its scroll bar on the left, against the screen's edge */
+#toolbar.docked button, #toolbar.docked .sep { flex: 0 0 auto; direction: ltr; }
 #mapwrap.tb-docked .leaflet-bottom.leaflet-left { left: var(--tb-w, 52px); } /* the coordinates and attribution beside the strip */
 
 /* the tool's instructions: centered at the top of the map (nothing follows the pointer) */
