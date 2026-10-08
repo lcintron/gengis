@@ -1390,7 +1390,6 @@ window.MB = window.MB || {};
       (bySource[src] = bySource[src] || []).push(ds);
     });
     const zoom = MB.map.getZoom();
-    const anyOn = this.catalog().some(ds => ds.enabled);
     const s = this.settings;
     const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0);
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
@@ -1472,7 +1471,7 @@ window.MB = window.MB || {};
     const search = panel.querySelector('#dsSearch');
     search.addEventListener('input', () => { ui.q = search.value; clearTimeout(this._searchTimer); this._searchTimer = setTimeout(() => { if (document.activeElement === search) { const pos = search.selectionStart; search.blur(); this.renderPanel().then(() => { const el = document.getElementById('dsSearch'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }); } else this.renderPanel(); }, 350); });
     panel.querySelector('#dsFilter').addEventListener('change', e => { ui.filter = e.target.value; this.renderPanel(); });
-    panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!anyOn) { MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
+    panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!this.catalog().some(ds => ds.enabled)) { /* checked now: the panel may have been patched since it was built */ MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
     panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
     if (MB.adsb) MB.adsb.bindPanel(panel);
     panel.querySelectorAll('details.ds-source[data-src]').forEach(d => d.addEventListener('toggle', () => {
