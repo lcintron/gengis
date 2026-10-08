@@ -160,6 +160,7 @@ select:focus { outline: none; border-color: var(--accent); }
 .mb-scale-h[data-h="sw"] { left: -3px; top: calc(100% + 3px); cursor: nesw-resize; }
 .mb-scale-h[data-h="w"] { left: -3px; top: 50%; cursor: ew-resize; }
 .mb-scale-box.dragging .mb-scale-h { opacity: .6; }
+.mb-scale-box.frame .mb-scale-h { display: none; } /* the Move tool: the box only */
 #map.mb-scale-tool .leaflet-interactive, #map.mb-scale-tool .mb-svg-pin, #map.mb-scale-tool .pm-text-marker { cursor: pointer !important; }
 body.presenting .mb-scale-box { display: none !important; }
 @media (pointer: coarse) { .mb-scale-h { width: 18px; height: 18px; margin: -9px 0 0 -9px; } }
@@ -576,6 +577,8 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 #propsBody .panel-head .badge + .icon-btn { margin-left: auto; }
 #propsBody .panel-head h3 + .badge { margin-left: 8px; }
 /* a locked object's properties: read only, and what unlocks it */
+.group-note { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 12px; color: var(--text-dim); }
+.group-note .mbi { color: var(--accent); }
 .lock-note { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px;
   background: rgba(255,209,102,.1); border: 1px solid rgba(255,209,102,.35); color: var(--text); }
 .lock-note .mbi { width: 14px; height: 14px; color: var(--warn); }

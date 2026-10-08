@@ -9,7 +9,7 @@ window.MB = window.MB || {};
 
   const toolHints = {
     select: '',
-    move: 'Click an object, then drag it to move it. Use Select to edit vertices.',
+    move: 'Click an object (or a grouped layer) and drag it to move it; its box shows what moves. Use Select to edit vertices.',
     scale: 'Click an object, then drag a handle to resize it. Shift keeps its proportions, Alt resizes from its center, Esc puts it back.',
     marker: 'Click the map to place a marker.',
     text: 'Click the map to place a text label, type your text, then click elsewhere.',
@@ -420,7 +420,9 @@ window.MB = window.MB || {};
     up: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 14l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     down: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 10l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     trash: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
-    edit: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>'
+    edit: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    more: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="5" cy="12" r="1.9" fill="currentColor"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/><circle cx="19" cy="12" r="1.9" fill="currentColor"/></svg>',
+    group: '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="3.5" y="3.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="9.5" y="9.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>'
   };
 
   // The list's icons are css masks (one rule each, made here from the drawings above), not inline drawings: hundreds of
@@ -496,7 +498,8 @@ window.MB = window.MB || {};
           <button class="chev${collapsed ? ' closed' : ''}" data-act="toggle" title="${collapsed ? 'Expand' : 'Collapse'}">&#9662;</button>
           <span class="active-dot"></span>
           <span class="layer-name" data-act="rename">${esc(l.name)}</span>
-          <button class="icon-btn mini" data-act="rename-btn" title="Rename layer">${icons.edit}</button>
+          ${l.grouped ? `<button class="icon-btn mini on" data-act="ungroup" title="Grouped: its objects are selected, moved and resized together. Click to ungroup">${icons.group}</button>` : ''}
+          <button class="icon-btn mini" data-act="layer-menu" title="Layer options: rename, duplicate, group…" aria-haspopup="menu">${icons.more}</button>
           <span class="count">${feats.length}</span>
           <button class="icon-btn mini${l.visible ? ' on' : ''}" data-act="vis" title="${l.visible ? 'Hide' : 'Show'} layer (all objects)">${l.visible ? icons.eye : icons.eyeOff}</button>
           <button class="icon-btn mini${l.locked ? ' on' : ''}" data-act="lock" title="${l.locked ? 'Unlock' : 'Lock'} layer (all objects)">${l.locked ? icons.lock : icons.unlock}</button>
@@ -512,9 +515,32 @@ window.MB = window.MB || {};
     panel.scrollTop = scrollTop;
   };
 
+  // A layer's options.
+  function layerMenu(id, x, y) {
+    const l = MB.getLayer(id);
+    if (!l) return;
+    const n = MB.layerFeatureCount(id), g = MB.groups[id];
+    MB.contextMenu.show(x, y, [
+      { label: 'Rename', action: () => startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`), id) },
+      { label: 'Duplicate layer', hint: n + ' object' + (n === 1 ? '' : 's'), action: () => MB.duplicateLayer(id) },
+      { label: l.grouped ? 'Ungroup objects' : 'Group objects', disabled: !l.grouped && n < 2,
+        action: () => { MB.setLayerGrouped(id, !l.grouped); MB.commit(l.grouped ? 'group' : 'ungroup'); } },
+      { label: 'Zoom to layer', disabled: !n || !g || !g.getBounds().isValid(), action: () => MB.map.fitBounds(g.getBounds().pad(0.15), { maxZoom: 18 }) },
+      { sep: true },
+      { label: l.locked ? 'Unlock layer' : 'Lock layer', action: () => { MB.setLayerLocked(id, !l.locked); MB.commit('layer lock'); } },
+      { label: 'Delete layer', danger: true, action: () => { if (!n || confirm(`Delete layer "${l.name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); } } }
+    ]);
+  }
+
   // The list's clicks: one listener for all its rows, set up once.
   function initLayerList() {
     const panel = $('#layerScroll');
+    panel.addEventListener('contextmenu', e => {
+      const item = e.target.closest('.layer-item');
+      if (!item || e.target.closest('input')) return;
+      e.preventDefault();
+      layerMenu(item.closest('.layer-node').dataset.id, e.clientX, e.clientY);
+    });
     panel.addEventListener('click', e => {
       const obj = e.target.closest('.obj-item');
       if (obj) { objectClick(e, obj); return; }
@@ -534,9 +560,8 @@ window.MB = window.MB || {};
     const actEl = e.target.closest('[data-act]');
     const act = actEl && actEl.dataset.act;
     if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
-    if (act === 'rename-btn') { // the row as it is now: saving another name being edited may have redrawn the list
-      startRename($(`#layerScroll .layer-node[data-id="${CSS.escape(id)}"] .layer-item`) || item, id); return;
-    }
+    if (act === 'layer-menu') { const r = actEl.getBoundingClientRect(); layerMenu(id, r.left, r.bottom + 2); return; }
+    if (act === 'ungroup') { MB.setLayerGrouped(id, false); MB.commit('ungroup'); return; }
     if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
     else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
     else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
@@ -545,7 +570,11 @@ window.MB = window.MB || {};
       const n = MB.layerFeatureCount(id);
       if (!n || confirm(`Delete layer "${MB.getLayer(id).name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); }
     }
-    else { MB.setActiveLayer(id); MB.tools.refreshDraw(); }
+    else {
+      MB.setActiveLayer(id); MB.tools.refreshDraw();
+      const l = MB.getLayer(id);
+      if (l && l.grouped && (MB.tools.current === 'move' || MB.tools.current === 'scale') && MB.layerFeatureCount(id) > 1) MB.selectGroup(id); // the group to move or resize
+    }
   }
 
   function objectClick(e, item) {
@@ -683,7 +712,10 @@ window.MB = window.MB || {};
     const list = Array.from(MB.multi);
     const lines = list.filter(l => l.mb.type === 'line' || l.mb.type === 'measure-line');
     const union = MB.shapeUnion(list); // shown when two or more shapes are selected: joinable when they overlap
-    panel.innerHTML = `<div class="panel-head"><h3>${list.length} objects selected</h3><button class="btn small ghost" data-act="clear">Clear</button></div>
+    const gid = MB.selectedGroup(), grp = gid && MB.getLayer(gid);
+    panel.innerHTML = `<div class="panel-head"><h3>${grp ? `Group · ${list.length} objects` : `${list.length} objects selected`}</h3><button class="btn small ghost" data-act="clear">Clear</button></div>
+      ${grp ? `<div class="group-note"><span>${icons.group}</span><span class="grow">Layer “${esc(grp.name)}” is grouped: Move drags it, Scale resizes it, as one.</span></div>
+      <div class="btn-row"><button class="btn small" data-act="ungroup">Ungroup</button><button class="btn small" data-act="dup-layer">Duplicate layer</button></div>` : ''}
       <div class="feature-list" style="max-height:180px">${list.map(l => `<div class="feature-item"><span class="swatch" style="background:${l.mb.type === 'svg' ? 'transparent' : l.mb.style.color}"></span><span class="fname">${esc(l.mb.name || MB.typeLabels[l.mb.type])}</span><span class="ftype">${MB.typeLabels[l.mb.type]}</span></div>`).join('')}</div>
       <div class="section" style="margin-top:12px"><h3>Lines (${lines.length})</h3>
         <div class="btn-row"><button class="btn small primary" data-act="join"${lines.length < 1 ? ' disabled' : ''}>Join lines</button><button class="btn small" data-act="poly"${lines.length < 1 ? ' disabled' : ''}>Polygon from lines (keep lines)</button></div>
@@ -703,6 +735,8 @@ window.MB = window.MB || {};
       else if (act === 'join') MB.joinLines(MB.multi);
       else if (act === 'poly') MB.joinLines(MB.multi, { keepLines: true });
       else if (act === 'join-shapes') MB.joinShapes(MB.multi);
+      else if (act === 'ungroup') { MB.setLayerGrouped(gid, false); MB.commit('ungroup'); }
+      else if (act === 'dup-layer') { const c = MB.duplicateLayer(gid); if (c) MB.selectGroup(c.id); }
       else if (act === 'delete') MB.deleteMulti();
     }));
     $('#multiLayer', panel).addEventListener('change', e => { if (e.target.value) MB.moveMultiToLayer(e.target.value); });
@@ -1348,6 +1382,7 @@ window.MB = window.MB || {};
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) MB.redo(); else MB.undo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); MB.redo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); MB.saveToFile(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && MB.selectedGroup()) { e.preventDefault(); const c = MB.duplicateLayer(MB.selectedGroup()); if (c) MB.selectGroup(c.id); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && MB.selected) { e.preventDefault(); const n = MB.duplicateFeature(MB.selected.mb.id); if (n) MB.selectFeature(n); return; }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { if (MB.multi && MB.multi.size > 1) { e.preventDefault(); MB.deleteMulti(); return; } if (MB.selected) { e.preventDefault(); if (MB.isFeatureLocked(MB.selected)) MB.toast('Object is locked'); else MB.removeFeature(MB.selected.mb.id); } return; }

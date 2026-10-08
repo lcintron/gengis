@@ -46,16 +46,45 @@ window.MB = window.MB || {};
     if (!silent) MB.emit('selection', MB.selected);
   };
 
+  /* ---------- groups ----------
+   * A grouped layer's objects are selected as one (MB.multi holds them all): moved together with the Move tool,
+   * resized as one with the Scale tool, deleted and duplicated together (the layer), never edited one by one. */
+  MB.groupOf = f => { const l = f && f.mb && MB.getLayer(f.mb.layerId); return l && l.grouped ? l : null; };
+  // The grouped layer whose objects are exactly the selection, or null.
+  MB.selectedGroup = function () {
+    if (!MB.multi || MB.multi.size < 2) return null;
+    const first = MB.multi.values().next().value, layer = MB.groupOf(first);
+    if (!layer) return null;
+    const members = MB.layerFeatures(layer.id);
+    return members.length === MB.multi.size && members.every(f => MB.multi.has(f)) ? layer.id : null;
+  };
+  MB.selectGroup = function (layerId) {
+    const members = MB.layerFeatures(layerId);
+    MB.deselect();
+    members.forEach(f => { MB.multi.add(f); mark(f, true); });
+    const locked = members.some(l => MB.isFeatureLocked(l));
+    if (MB.tools.current === 'scale') {
+      if (locked) MB.toast('The layer is locked: unlock it to resize');
+      else MB.scaler.attach(members);
+    } else if (MB.tools.current === 'move' && !locked) MB.scaler.attach(members, { frame: true }); // what is being moved
+    MB.emit('selection', null);
+  };
+
   MB.toggleMulti = function (layer) {
     if (!layer) return; // locked objects too: what changes objects skips or refuses them
+    const grp = MB.groupOf(layer), set = grp ? MB.layerFeatures(grp.id) : [layer]; // a group's objects come and go together
     if (MB.selected && !MB.multi.size) {
       const s = MB.selected;
       MB.deselect();
       if (s === layer) return; // shift-clicking the only selected object just deselects it
       MB.multi.add(s); mark(s, true);
     }
-    if (MB.multi.has(layer)) { MB.multi.delete(layer); mark(layer, false); }
-    else { MB.multi.add(layer); mark(layer, true); }
+    MB.scaler.detach(); // a group's box: not around a mixed selection
+    const all = set.every(f => MB.multi.has(f));
+    set.forEach(f => { if (all) { MB.multi.delete(f); mark(f, false); } else { MB.multi.add(f); mark(f, true); } });
+    if (!MB.multi.size) { MB.emit('selection', null); return; }
+    const gid = MB.selectedGroup();
+    if (gid) { MB.selectGroup(gid); return; } // exactly a group again
     if (MB.multi.size === 1) { // back to a normal single selection
       const only = Array.from(MB.multi)[0];
       MB.multi.clear(); mark(only, false);

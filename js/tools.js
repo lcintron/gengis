@@ -18,12 +18,14 @@ window.MB = window.MB || {};
       MB.measure.stop();
       MB.svgPlace.stop();
       const keep = MB.tools.picks(name) ? MB.selected : null;
+      const keepGroup = MB.tools.picks(name) && MB.selectedGroup ? MB.selectedGroup() : null;
       if (keep) MB.deselect();
       this.current = name;
       MB.map.getContainer().classList.toggle('mb-crosshair', !MB.tools.picks(name));
       MB.map.getContainer().classList.toggle('mb-move', name === 'move');
       MB.map.getContainer().classList.toggle('mb-scale-tool', name === 'scale');
       if (keep) MB.selectFeature(keep); // re-select so edit vs. drag-only mode matches the tool
+      if (keepGroup) MB.selectGroup(keepGroup); // and a group's box under the Scale tool
       if (this.shapes[name]) { MB.deselect(); this.startDraw(name); }
       else if (name === 'measure-distance') { MB.deselect(); MB.measure.start('distance'); }
       else if (name === 'measure-area') { MB.deselect(); MB.measure.start('area'); }

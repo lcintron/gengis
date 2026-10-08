@@ -156,9 +156,15 @@ window.MB = window.MB || {};
     multi(info) {
       const list = Array.from(MB.multi);
       const lines = list.filter(l => l.mb.type === 'line' || l.mb.type === 'measure-line');
+      const gid = MB.selectedGroup(), grp = gid && MB.getLayer(gid);
       MB.contextMenu.show(info.x, info.y, [
-        { label: list.length + ' objects selected', disabled: true },
+        { label: grp ? `Group “${grp.name}” · ${list.length} objects` : list.length + ' objects selected', disabled: true },
         { sep: true },
+        ...(grp ? [
+          { label: 'Ungroup', action: () => { MB.setLayerGrouped(gid, false); MB.commit('ungroup'); } },
+          { label: 'Duplicate layer', hint: 'Ctrl+D', action: () => { const c = MB.duplicateLayer(gid); if (c) MB.selectGroup(c.id); } },
+          { sep: true }
+        ] : []),
         { label: 'Join lines', disabled: lines.length < 1, hint: lines.length + ' line' + (lines.length === 1 ? '' : 's'), action: () => MB.joinLines(MB.multi) },
         { label: 'Create polygon from lines (keep lines)', disabled: lines.length < 1, action: () => MB.joinLines(MB.multi, { keepLines: true }) },
         ...(list.filter(MB.isJoinableShape).length >= 2 ? [{ label: 'Join shapes', disabled: !MB.shapeUnion(list).polygon, action: () => MB.joinShapes(MB.multi) }] : []),

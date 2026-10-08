@@ -286,6 +286,31 @@ window.MB = window.MB || {};
     MB.commit('move to layer');
   };
 
+  // A copy of a layer and all its objects, right above it (made active). Its objects are copies as Duplicate makes
+  // them (not locked); the layer is shown, hidden and grouped as the original, and never locked.
+  MB.duplicateLayer = function (id) {
+    const src = MB.getLayer(id);
+    if (!src) return null;
+    const copy = MB.batch(() => {
+      const c = MB.createLayer(src.name + ' copy', { visible: src.visible, grouped: src.grouped });
+      const arr = MB.state.layers;
+      arr.splice(arr.indexOf(c), 1);
+      arr.splice(arr.indexOf(src) + 1, 0, c);
+      MB.layerFeatures(id).forEach(f => {
+        const d = MB.serializeFeature(f);
+        d.id = MB.uid(); d.layerId = c.id;
+        delete d.locked;
+        MB.restoreFeature(d);
+      });
+      MB.applyZOrder();
+      MB.emit('layers'); MB.emit('features');
+      return c;
+    });
+    MB.commit('duplicate layer');
+    MB.toast(`Duplicated layer “${src.name}” (${MB.layerFeatures(copy.id).length} objects)`);
+    return copy;
+  };
+
   MB.duplicateFeature = function (id) {
     const l = MB.featureLayers[id];
     if (!l) return null;
@@ -333,7 +358,8 @@ window.MB = window.MB || {};
         return;
       }
       MB.selectFeature(layer);
-      MB.emit('feature-contextmenu', { layer, latlng: e.latlng, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+      const info = { layer, latlng: e.latlng, x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+      MB.emit(MB.multi.size > 1 && MB.multi.has(layer) ? 'multi-contextmenu' : 'feature-contextmenu', info); // a group's object: the group's menu
     });
     const changed = label => {
       MB.updateTooltip(layer);
@@ -343,7 +369,7 @@ window.MB = window.MB || {};
     layer.on('pm:edit', () => changed('edit'));
     layer.on('pm:dragend', () => changed('move'));
     layer.on('dragend', () => changed('move'));
-    layer.on('drag pm:drag', () => MB.updateTooltip(layer)); // name and measurement labels follow the drag
+    layer.on('drag pm:drag', () => { MB.updateTooltip(layer); MB.scaler.follow(layer); }); // its labels and box follow the drag
     layer.on('pm:textchange', e => { layer.mb.text = e.text; MB.commitDebounced('text'); });
     layer.on('pm:textblur', () => {
       const txt = layer.pm ? layer.pm.getText() : '';
@@ -529,6 +555,7 @@ window.MB = window.MB || {};
       const svg = layer.mb.svg, lib = MB.state.svgLibrary[svg.svgId];
       layer.setBounds(MB.boundsAround(h.getLatLng(), svg.width, svg.width / (lib.aspect || 1)));
       MB.updateLabel(layer);
+      MB.scaler.follow(layer);
     });
     h.on('dragend', () => { MB.emit('featurechange', layer); MB.commit('move'); });
     layer._mbHandle = h;
@@ -541,6 +568,8 @@ window.MB = window.MB || {};
 
   MB.selectFeature = function (layer) {
     if (!layer || MB.selected === layer) return;
+    // an object of a grouped layer: the whole group is selected (geometry.js), not the object alone
+    if (MB.groupOf(layer) && MB.layerFeatures(layer.mb.layerId).length > 1) { MB.selectGroup(layer.mb.layerId); return; }
     MB.deselect();
     MB.selected = layer;
     MB.applyZoomDisplay(layer); // an object its zoom rule hides is shown while selected (and can be edited)
@@ -560,19 +589,20 @@ window.MB = window.MB || {};
         else layer.pm.enable({ allowSelfIntersection: true, draggable: true, snappable: MB.state.snapping, snapDistance: 15 });
       } catch (e) { console.warn(e); }
     }
+    if (editable && moveOnly) MB.scaler.attach(layer, { frame: true }); // what is being moved: its box, as the Scale tool's without handles
     const el = layer.getElement ? layer.getElement() : layer._path;
     if (el) L.DomUtil.addClass(el, 'mb-selected');
     MB.emit('selection', layer);
   };
 
   MB.deselect = function () {
+    MB.scaler.detach();
     const hadMulti = MB.multi && MB.multi.size > 0;
     if (hadMulti) MB.clearMulti(true);
     if (MB.snap) MB.snap.hide();
     const l = MB.selected;
     if (!l) { if (hadMulti) MB.emit('selection', null); return; }
     MB.selected = null;
-    MB.scaler.detach();
     try { if (l.pm && l.pm.enabled && l.pm.enabled()) l.pm.disable(); } catch (e) { /* ignore */ }
     try { if (l.pm && l.pm.layerDragEnabled && l.pm.layerDragEnabled()) l.pm.disableLayerDrag(); } catch (e) { /* ignore */ }
     if (l.mb && l.mb.type === 'svg') {
