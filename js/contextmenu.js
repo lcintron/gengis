@@ -130,10 +130,10 @@ window.MB = window.MB || {};
         } }] : []),
         { sep: true }
       );
-      if (m.type !== 'svg') {
+      if (MB.styleKind(m.type)) {
         items.push(
           { label: 'Copy style', action: () => MB.copyStyle(layer) },
-          { label: 'Paste style', disabled: !MB.styleClipboard || locked, action: () => MB.pasteStyle(layer) }
+          { label: 'Paste style', disabled: !MB.canPasteStyle(layer), action: () => { MB.pasteStyle(layer); if (MB.selected === layer) MB.ui.renderProps(); } }
         );
       }
       if (layer.bringToFront) {
@@ -169,6 +169,7 @@ window.MB = window.MB || {};
         { label: 'Create polygon from lines (keep lines)', disabled: lines.length < 1, action: () => MB.joinLines(MB.multi, { keepLines: true }) },
         ...(list.filter(MB.isJoinableShape).length >= 2 ? [{ label: 'Join shapes', disabled: !MB.shapeUnion(list).polygon, action: () => MB.joinShapes(MB.multi) }] : []),
         { sep: true },
+        ...(MB.styleClipboard ? [{ label: 'Paste style', hint: list.filter(MB.canPasteStyle).length + ' of ' + list.length, disabled: !list.some(MB.canPasteStyle), action: () => MB.pasteStyle(MB.multi) }] : []),
         { label: 'Move to layer', children: MB.state.layers.slice().reverse().map(l => ({ label: l.name, action: () => MB.moveMultiToLayer(l.id) })) },
         { label: 'Copy coordinates', hint: MB.formatLatLng(info.latlng, 5), action: () => MB.copyText(MB.formatLatLng(info.latlng, 6)) },
         { sep: true },

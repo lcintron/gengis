@@ -721,8 +721,18 @@ window.MB = window.MB || {};
     convert: svgIcon('M4 8h14l-3-3M20 16H6l3 3'),
     front: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3" y="9" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="3" width="12" height="12" rx="1.5" fill="currentColor" stroke="currentColor" stroke-width="2"/></svg>`,
     back: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="9" y="3" width="12" height="12" rx="1.5" fill="currentColor" stroke="currentColor" stroke-width="2" opacity=".45"/><rect x="3" y="9" width="12" height="12" rx="1.5" fill="var(--bg-2)" stroke="currentColor" stroke-width="2"/></svg>`,
-    del: svgIcon('M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13')
+    del: svgIcon('M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13'),
+    copyStyle: svgIcon('M15 4.5l4.5 4.5M13.5 6l4.5 4.5M17 2.5a2.1 2.1 0 0 1 3 3L17.5 8 16 6.5zM12.5 7.5l-8 8V20h4.5l8-8'), // an eyedropper
+    pasteStyle: svgIcon('M5 4h11v4H5zM16 6h3v5h-8v3M10 14h2v7h-2z') // a paint roller
   };
+
+  // The Paste style button's tip: what is on the clipboard, and whether it fits this object.
+  function pasteTip(f) {
+    const cb = MB.styleClipboard;
+    if (!cb) return 'Paste style (copy a style first)';
+    if (MB.styleKind(f.mb.type) !== cb.kind) return cb.kind === 'text' ? 'Paste style: the copied text style goes on texts' : 'Paste style: the copied style goes on shapes, lines and markers';
+    return 'Paste style';
+  }
 
   /* ================= style form ================= */
 
@@ -819,7 +829,7 @@ window.MB = window.MB || {};
       </div>` : ''}
       <div class="section"><h3>All selected</h3>
         <div class="row"><label>Move to layer</label><select id="multiLayer"><option value="">— choose —</option>${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div>
-        <div class="btn-row"><button class="btn small danger" data-act="delete">Delete ${list.length} objects</button></div>
+        <div class="btn-row">${MB.styleClipboard ? `<button class="btn small" data-act="paste-style"${list.some(MB.canPasteStyle) ? '' : ' disabled'} title="The copied style on the selected objects it fits">Paste style (${list.filter(MB.canPasteStyle).length})</button>` : ''}<button class="btn small danger" data-act="delete">Delete ${list.length} objects</button></div>
       </div>`;
     $$('[data-act]', panel).forEach(btn => btn.addEventListener('click', () => {
       const act = btn.dataset.act;
@@ -828,6 +838,7 @@ window.MB = window.MB || {};
       else if (act === 'poly') MB.joinLines(MB.multi, { keepLines: true });
       else if (act === 'join-shapes') MB.joinShapes(MB.multi);
       else if (act === 'ungroup') { MB.setLayerGrouped(gid, false); MB.commit('ungroup'); }
+      else if (act === 'paste-style') MB.pasteStyle(MB.multi);
       else if (act === 'dup-layer') { const c = MB.duplicateLayer(gid); if (c) MB.selectGroup(c.id); }
       else if (act === 'delete') MB.deleteMulti();
     }));
@@ -887,7 +898,7 @@ window.MB = window.MB || {};
     const head = document.createElement('div');
     const tool = (act, icon, tip, cls) => `<button type="button" class="icon-btn${cls ? ' ' + cls : ''}" data-act="${act}" title="${esc(tip)}" aria-label="${esc(tip)}">${icon}</button>`;
     head.innerHTML = `<div class="panel-head"><h3>${MB.typeLabels[m.type]}</h3><span class="badge">${esc((MB.getLayer(m.layerId) || {}).name || '')}</span></div>
-      <div class="obj-tools" role="toolbar" aria-label="Object actions">${tool('zoom', ACT.zoom, 'Zoom to')}${tool('dup', ACT.dup, 'Duplicate (Ctrl+D)')}${MB.canConvert(f) ? tool('convert', ACT.convert, MB.convertLabel(f)) : ''}${tool('front', ACT.front, 'Bring to front')}${tool('back', ACT.back, 'Send to back')}<span class="grow"></span>${tool('del', ACT.del, 'Delete (Del)', 'danger')}</div>
+      <div class="obj-tools" role="toolbar" aria-label="Object actions">${tool('zoom', ACT.zoom, 'Zoom to')}${tool('dup', ACT.dup, 'Duplicate (Ctrl+D)')}${MB.canConvert(f) ? tool('convert', ACT.convert, MB.convertLabel(f)) : ''}${tool('front', ACT.front, 'Bring to front')}${tool('back', ACT.back, 'Send to back')}${MB.styleKind(m.type) ? `<span class="tool-sep"></span>${tool('copy-style', ACT.copyStyle, 'Copy style')}${tool('paste-style', ACT.pasteStyle, pasteTip(f))}` : ''}<span class="grow"></span>${tool('del', ACT.del, 'Delete (Del)', 'danger')}</div>
       <div class="row"><label>Name</label><input type="text" id="propName" value="${esc(m.name)}" placeholder="Optional name"></div>
       <div class="row"><label>Layer</label><select id="propLayer">${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}"${l.id === m.layerId ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>
       <div class="measure-box" id="propMeasure"></div>`;
@@ -937,7 +948,11 @@ window.MB = window.MB || {};
       else if (act === 'front') MB.featureToEdge(m.id, true);
       else if (act === 'back') MB.featureToEdge(m.id, false);
       else if (act === 'del') MB.removeFeature(m.id);
+      else if (act === 'copy-style') MB.copyStyle(f);
+      else if (act === 'paste-style') { if (MB.pasteStyle(f)) MB.ui.renderProps(); } // its fields show the pasted values
     });
+    const paste = $('[data-act="paste-style"]', head);
+    if (paste) paste.disabled = !MB.canPasteStyle(f);
     if (MB.isFeatureLocked(f)) lockProps(panel, f);
   };
 
@@ -947,7 +962,7 @@ window.MB = window.MB || {};
     const byLayer = !f.mb.locked, lay = MB.getLayer(f.mb.layerId);
     panel.classList.add('props-locked');
     panel.querySelectorAll('input, select, textarea, button').forEach(el => {
-      if (!el.matches('[data-act="zoom"], [data-act="dup"]')) el.disabled = true;
+      if (!el.matches('[data-act="zoom"], [data-act="dup"], [data-act="copy-style"]')) el.disabled = true; // looking, copying
     });
     const note = document.createElement('div');
     note.className = 'lock-note';
@@ -1504,6 +1519,11 @@ window.MB = window.MB || {};
 
     MB.on('layers', () => { MB.ui.renderLayersSoon(); if (MB.selected) MB.ui.renderProps(); });
     MB.on('features', () => MB.ui.renderLayersSoon());
+    MB.on('styleclipboard', () => {
+      const p = $('#propsBody [data-act="paste-style"]');
+      if (MB.selected && p) { p.disabled = !MB.canPasteStyle(MB.selected); p.title = pasteTip(MB.selected); p.setAttribute('aria-label', p.title); }
+      else if (MB.multi && MB.multi.size > 1) MB.ui.renderProps(); // the multi panel's Paste style button
+    });
     MB.on('datapick', picked => {
       MB.ui.renderProps();
       if (picked && !$('#sidebar').classList.contains('collapsed')) MB.ui.showTab('props'); // a closed panel (the phone's sheet) stays closed

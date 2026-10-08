@@ -319,10 +319,12 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .seg.icons button, .align-row .seg button { display: inline-flex; align-items: center; justify-content: center; padding: 4px 5px; }
 .align-row .seg { flex: 0 0 auto; }
 /* an object's actions: icons at the top of its properties */
-.obj-tools { display: flex; align-items: center; gap: 2px; margin: -2px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.obj-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: -2px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .obj-tools .icon-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; }
 .obj-tools .icon-btn.danger:hover:not(:disabled) { color: var(--danger, #eb5757); }
 .obj-tools .grow { flex: 1 1 auto; }
+.obj-tools .tool-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+.obj-tools .icon-btn:disabled { opacity: .35; }
 .check { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer; }
 .check input { accent-color: var(--accent); width: 15px; height: 15px; }
 .note { color: var(--text-dim); font-size: 12px; line-height: 1.4; }

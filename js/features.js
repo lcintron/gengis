@@ -623,16 +623,46 @@ window.MB = window.MB || {};
 
   /* ---------- style clipboard ---------- */
 
+  // What a copied style carries to other objects of its kind: shapes, lines and markers share their border and fill,
+  // texts their look (font, size, colors, background, shadow, alignment); the name label's look (not whether it is
+  // shown) goes along between objects that have one. Images have no style to copy.
   MB.styleClipboard = null;
+  const SHAPE_KEYS = ['color', 'weight', 'opacity', 'dash', 'fill', 'fillColor', 'fillOpacity'];
+  const TEXT_KEYS = Object.keys(MB.defaultStyle).filter(k => /^text/.test(k));
+  const LABEL_KEYS = ['color', 'size', 'bg', 'h', 'v'];
+  MB.styleKind = type => (type === 'text' ? 'text' : type === 'svg' ? null : 'shape');
+  const pick = (o, keys) => { const r = {}; keys.forEach(k => { if (o[k] !== undefined) r[k] = MB.deepClone(o[k]); }); return r; };
+
   MB.copyStyle = function (layer) {
-    MB.styleClipboard = MB.deepClone(layer.mb.style);
-    MB.toast('Style copied');
+    const kind = MB.styleKind(layer.mb.type);
+    if (!kind) return;
+    const st = Object.assign({}, MB.defaultStyle, layer.mb.style);
+    const style = pick(st, kind === 'text' ? TEXT_KEYS : SHAPE_KEYS);
+    if (kind === 'text') { style.textSize = MB.textShownSize(st); delete style.textRefZoom; } // the size it shows at now
+    MB.styleClipboard = { kind, style, label: MB.labelTypes.includes(layer.mb.type) ? pick(MB.getLabel(layer), LABEL_KEYS) : null };
+    MB.toast(kind === 'text' ? 'Text style copied' : 'Style copied');
+    MB.emit('styleclipboard');
   };
-  MB.pasteStyle = function (layer) {
-    if (!MB.styleClipboard) return;
-    MB.applyStyle(layer, MB.deepClone(MB.styleClipboard));
-    MB.emit('featurechange', layer);
+  // Whether the copied style can go on this object (its kind, and not locked).
+  MB.canPasteStyle = layer => !!(MB.styleClipboard && layer && layer.mb && MB.styleKind(layer.mb.type) === MB.styleClipboard.kind && !MB.isFeatureLocked(layer));
+  // Paste on one object or several (the ones it fits), as one change.
+  MB.pasteStyle = function (layers) {
+    const cb = MB.styleClipboard;
+    if (!cb) return 0;
+    const list = [].concat(layers instanceof Set ? Array.from(layers) : layers).filter(MB.canPasteStyle);
+    if (!list.length) { MB.toast(cb.kind === 'text' ? 'A text style goes on texts (unlocked)' : 'This style goes on shapes, lines and markers (unlocked)'); return 0; }
+    list.forEach(l => {
+      MB.applyStyle(l, MB.deepClone(cb.style), { noCommit: true });
+      if (cb.label && MB.labelTypes.includes(l.mb.type)) {
+        l.mb.label = Object.assign(MB.getLabel(l), MB.deepClone(cb.label));
+        if (MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(l); else MB.updateLabel(l);
+      }
+      MB.emit('featurechange', l);
+    });
+    MB.emit('features'); // the list's color swatches
     MB.commit('paste style');
+    if (list.length > 1) MB.toast(`Style pasted on ${list.length} objects`);
+    return list.length;
   };
 
   MB.featureCenter = function (layer) {
