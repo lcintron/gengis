@@ -890,11 +890,11 @@ window.MB = window.MB || {};
     const m = f.mb, z = m.zoom || {};
     const wrap = document.createElement('div');
     wrap.className = 'section zoom-display';
-    const zoomNow = () => Math.round(MB.map.getZoom() * 2) / 2; // the map zooms in half steps
+    const zoomNow = () => MB.snapZoom(MB.map.getZoom()); // the map settles on quarter levels
     const level = z.level != null ? z.level : zoomNow();
     wrap.innerHTML = `<label class="check" title="Show this object only above or below a zoom level"><input type="checkbox" id="propZoomOn"${z.on ? ' checked' : ''}> <b>Zoom display</b></label>
       <div class="row"><label>Show when zoom is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
-      <div class="row"><label>Zoom level</label><input type="number" id="propZoomLevel" min="0" max="22" step="0.5" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
+      <div class="row"><label>Zoom level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
       <p class="note" id="propZoomNote"></p>`;
     const on = $('#propZoomOn', wrap), op = $('#propZoomOp', wrap), lv = $('#propZoomLevel', wrap);
     const apply = e => {
@@ -919,7 +919,7 @@ window.MB = window.MB || {};
   MB.ui.renderZoomNote = function () {
     const note = $('#propZoomNote'), f = MB.selected;
     if (!note || !f) return;
-    const z = f.mb.zoom, now = +MB.map.getZoom().toFixed(1);
+    const z = f.mb.zoom, now = MB.formatZoom(MB.map.getZoom());
     if (!z || !z.on) { note.textContent = `Always shown (the zoom is now ${now}).`; return; }
     note.textContent = MB.zoomAllows(f)
       ? `Shown at the zoom now (${now}).`
@@ -1291,7 +1291,7 @@ window.MB = window.MB || {};
     ctl._div.innerHTML = '<div class="coords"></div>';
     const upd = ll => {
       const z = MB.map.getZoom();
-      ctl._div.querySelector('.coords').textContent = (ll ? MB.formatLatLng(ll) : MB.formatLatLng(MB.map.getCenter())) + '  ·  zoom ' + z.toFixed(1).replace(/\.0$/, '');
+      ctl._div.querySelector('.coords').textContent = (ll ? MB.formatLatLng(ll) : MB.formatLatLng(MB.map.getCenter())) + '  ·  zoom ' + MB.formatZoom(z);
     };
     MB.map.on('mousemove', e => upd(e.latlng));
     MB.map.on('moveend zoomend', () => upd());

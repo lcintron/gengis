@@ -164,6 +164,9 @@ window.MB = window.MB || {};
     return halfMeters >= 1000 ? { perMeter: 0.001, unit: 'km' } : { perMeter: 1, unit: 'm' };
   };
 
+  // A zoom level as shown: 6, 6.25, 6.5 (two decimals at most, no trailing zeros).
+  MB.formatZoom = z => String(+(+z).toFixed(2));
+
   MB.formatLatLng = function (ll, digits) {
     digits = digits == null ? 5 : digits;
     return ll.lat.toFixed(digits) + ', ' + ll.lng.toFixed(digits);

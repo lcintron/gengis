@@ -38,7 +38,11 @@
   function start() {
     MB.map = L.map('map', {
       center: [40.7128, -74.006], zoom: 13, zoomControl: false, attributionControl: false,
-      worldCopyJump: true, zoomSnap: 0.5, doubleClickZoom: true
+      worldCopyJump: true, doubleClickZoom: true,
+      // The wheel and pinch settle on quarter levels (tiles exist at whole levels only: a quarter level shows the
+      // nearest whole one scaled, nothing more to load); a wheel notch is about half a level. The buttons, the
+      // keyboard and a double-click still step a whole level (zoomDelta).
+      zoomSnap: MB.ZOOM_STEP, zoomDelta: 1, wheelPxPerZoomLevel: 100
     });
     L.control.zoom({ position: 'topright' }).addTo(MB.map);
     L.control.attribution({ position: 'bottomleft', prefix: '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>' }).addTo(MB.map);

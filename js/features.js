@@ -134,14 +134,16 @@ window.MB = window.MB || {};
   };
 
   /* ---------- zoom display ---------- */
-  // A zoom rule as stored, whatever a project file held: on, '>' or '<', and a level 0-22 in half steps (or none).
+  // A zoom rule as stored, whatever a project file held: on, '>' or '<', and a level 0-22 in quarter steps (or none).
+  MB.ZOOM_STEP = 0.25; // the map's zoomSnap: the levels it settles on, and that a rule can name
+  MB.snapZoom = z => Math.round(z / MB.ZOOM_STEP) * MB.ZOOM_STEP;
   MB.normZoomRule = function (z) {
     if (!z || typeof z !== 'object') return undefined;
-    const v = parseFloat(z.level), level = isFinite(v) ? Math.max(0, Math.min(22, Math.round(v * 2) / 2)) : null;
+    const v = parseFloat(z.level), level = isFinite(v) ? Math.max(0, Math.min(22, MB.snapZoom(v))) : null;
     return { on: !!z.on && level != null, op: z.op === '<' ? '<' : '>', level }; // no level: no rule
   };
   // An object can be shown only above or below a zoom level: mb.zoom = { on, op: '>' | '<', level }. The comparison
-  // is strict ('>' 12: from 12.5 on, the map zooms in half steps).
+  // is strict ('>' 12: from 12.25 on, the map zooms in quarter steps).
   MB.zoomAllows = function (layer, zoom) {
     const z = layer.mb && layer.mb.zoom;
     if (!z || !z.on || z.level == null || !isFinite(+z.level) || !MB.map) return true;
