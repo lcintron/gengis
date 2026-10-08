@@ -455,6 +455,8 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .svg-card .del { display: block; }
   .layer-item, .obj-item { padding-top: 6px; padding-bottom: 6px; }
   #layerScroll .obj-item { contain-intrinsic-size: auto 40px; } /* a row's size until drawn: taller here */
+  .stepper { height: 38px; } /* finger-sized arrows */
+  .stepper button { width: 24px; }
   .mb-ctx li { padding: 10px 12px; }
 }
 
