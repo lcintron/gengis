@@ -1395,7 +1395,7 @@ window.MB = window.MB || {};
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
       <div class="row ds-tools"><input type="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" autocomplete="off"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
       <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
-      <div id="dataCacheStats" class="note" style="margin-bottom:10px">${esc(this._cacheText || ' ')}</div>`; // the last count, until a new one is read (an empty line would collapse and shift the panel)
+      <div id="dataCacheStats" class="note" style="margin-bottom:10px">${esc(this._cacheText || ' ')}</div>`; // the last count, until a new one is read (an empty line, or a plain space, would collapse and shift the panel)
     const adsbHtml = MB.adsb ? MB.adsb.panelHtml(q, ui.filter) : ''; // live air traffic: its own block, same search and filter
     html += adsbHtml;
     let shownTotal = 0;
