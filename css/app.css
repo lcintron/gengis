@@ -299,7 +299,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .row.right { justify-content: flex-end; }
 .row label { flex: 0 0 92px; color: var(--text-dim); font-size: 12px; }
 .row .grow { flex: 1 1 auto; min-width: 0; }
-.row input[type="text"], .row input[type="number"], .row select, .row textarea {
+.row input[type="text"], .row input[type="password"], .row input[type="number"], .row select, .row textarea {
   flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px;
 }
 .row textarea { height: auto; min-height: 56px; resize: vertical; }
@@ -845,3 +845,38 @@ body.presenting .mb-ident-own .btn-row { display: none; }
 .mb-ac-look { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
 .mb-ac-look:empty { display: none; }
 .mb-ac-links { margin-top: 6px; font-size: 11px; }
+
+/* ---------- live vessel traffic (AIS) ---------- */
+.mb-vs { background: transparent; border: 0; }
+.mb-vs-rot { width: 100%; height: 100%; }
+.mb-vs-rot svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.mb-vs-rot svg path, .ais-types svg path { fill: currentColor; stroke: #0b1118; stroke-width: 1.6; stroke-linejoin: round; paint-order: stroke; }
+.mb-vs.stale { opacity: .45; }
+.mb-vs.sel .mb-vs-rot { filter: drop-shadow(0 0 3px #ffd166) drop-shadow(0 0 2px #ffd166); }
+.mb-vs-label {
+  display: none; position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 3px; white-space: nowrap; pointer-events: none;
+  font-size: 10.5px; font-weight: 600; line-height: 1; color: #fff; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 2px #000;
+}
+.leaflet-mb-ais-pane.labels .mb-vs-label, .mb-vs.sel .mb-vs-label { display: block; }
+.ais-types svg { width: 14px; height: 14px; overflow: visible; }
+.mb-vs-info .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; border: 1px solid rgba(255,255,255,.3); }
+.mb-vs-links { margin-top: 6px; font-size: 11px; }
+.mb-vs-links:empty { display: none; }
+
+/* ---------- place names (Settings → Map overlays) ---------- */
+.mb-place { background: transparent; border: 0; width: 0 !important; height: 0 !important; pointer-events: none; }
+.mb-place span {
+  position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); white-space: nowrap; line-height: 1;
+  font-family: system-ui, sans-serif; color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.9), 0 0 4px rgba(0,0,0,.7), 0 1px 2px #000;
+}
+.mb-place-ocean span { font: italic 500 14px system-ui, sans-serif; letter-spacing: 2.2px; color: #bfe1ff; }
+.mb-place-sea span { font: italic 500 12px system-ui, sans-serif; letter-spacing: .8px; color: #bfe1ff; }
+.mb-place-bay span { font: italic 500 11px system-ui, sans-serif; letter-spacing: .3px; color: #bfe1ff; }
+.mb-place-country span { font: 700 12.5px system-ui, sans-serif; letter-spacing: .6px; color: #fff4d6; }
+.mb-place-capital span, .mb-place-city span { transform: translate(6px, -50%); }
+.mb-place-capital span { font: 700 12px system-ui, sans-serif; }
+.mb-place-city span { font: 600 11.5px system-ui, sans-serif; }
+.mb-place-capital::before, .mb-place-city::before {
+  content: ''; position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px rgba(0,0,0,.75);
+}
+.mb-place-capital::before { left: -3.5px; top: -3.5px; width: 7px; height: 7px; background: #ffd166; }

@@ -30,6 +30,8 @@ A free map builder that runs in the browser (installable, works offline) or as a
 - **Search** addresses, places and coordinates; find points of interest; center on **your location**.
 - **FAA data**, live for the area in view: Class B–E airspace with floors and ceilings, special use airspace, LAANC ceilings, security flight restrictions, TFRs, airports (with radio frequencies) and more. Click anywhere to see everything under that point; the feature's source, geometry and attributes show in Properties. Country and state borders at every zoom. Any public ArcGIS layer can be added.
 - **Live air traffic (ADS-B)** from your own dump1090 receiver or the adsb.fi and adsb.lol networks, with type icons colored by altitude and aircraft look-up.
+- **Live vessel traffic (AIS)** from your own AIS-catcher receiver or the aisstream.io network, colored by ship type, with vessel details.
+- **Place names**: countries, major cities, and oceans and seas, each toggled in Settings next to the borders.
 - **Base maps**: Esri World Imagery (default), OpenStreetMap, OpenTopoMap, CyclOSM, CARTO, plus your own XYZ/WMS or keyed providers. Zoom in quarter steps.
 - **Offline**: download map tiles and data for an area ahead of time.
 
@@ -44,7 +46,7 @@ npm install && npm start  # desktop app (Electron)
 
 Any static web server works for the web app. Open it with a location: `?q=Eiffel+Tower`, `?lat=48.858&lon=2.294&zoom=16` or `?poi=cafe`.
 
-### Live air traffic: where it works
+### Live air and vessel traffic: where it works
 
 Browsers only read another server's data when it allows them to (CORS), and block plain-HTTP requests from an HTTPS page. The desktop app has neither limit.
 
@@ -53,6 +55,8 @@ Browsers only read another server's data when it allows them to (CORS), and bloc
 | dump1090 that sends CORS headers (dump1090-fa, tar1090) | yes | yes | only on `localhost` or over HTTPS |
 | dump1090 without CORS headers | yes | no | no |
 | adsb.fi, adsb.lol | yes | no | no |
+| AIS-catcher (web viewer on, `-N 8100`) | yes | yes | only on `localhost` or over HTTPS |
+| aisstream.io (free API key) | yes | no | no |
 
 ## Releasing
 
@@ -72,7 +76,7 @@ Releases run in CI on demand: **Actions → Release → Run workflow** on `main`
 
 ## Data sources and fair use
 
-Map tiles, [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) search and the [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) are free public services with their own usage policies; attribution is shown on the map. FAA data comes from the [FAA UAS Data Delivery System](https://udds-faa.opendata.arcgis.com/) and borders from the [Esri Living Atlas](https://livingatlas.arcgis.com/). Air traffic from [adsb.fi](https://github.com/adsbfi/opendata) is for personal, non-commercial use and [adsb.lol](https://adsb.lol) is ODbL; the app polls no faster than each allows. For heavy use, point the app at your own servers (Project → Map & search APIs).
+Map tiles, [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) search and the [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) are free public services with their own usage policies; attribution is shown on the map. FAA data comes from the [FAA UAS Data Delivery System](https://udds-faa.opendata.arcgis.com/), borders from the [Esri Living Atlas](https://livingatlas.arcgis.com/), and place names from [Natural Earth](https://www.naturalearthdata.com/) (public domain; rebuilt with `node scripts/build-places.js`). Air traffic from [adsb.fi](https://github.com/adsbfi/opendata) is for personal, non-commercial use and [adsb.lol](https://adsb.lol) is ODbL; the app polls no faster than each allows. Vessel traffic from [aisstream.io](https://aisstream.io) needs your own free key, kept on your device only. For heavy use, point the app at your own servers (Project → Map & search APIs).
 
 ## License
 

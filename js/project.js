@@ -143,6 +143,8 @@ window.MB = window.MB || {};
       p.customDataSources = (MB.settings.dataServices || []).filter(c => s.dataLayers && s.dataLayers['custom:' + c.id]).map(exportable);
       p.dataOpacity = MB.data ? MB.data.settings.opacity : 1;
       p.liveTraffic = trafficRef();
+      p.vesselTraffic = vesselRef();
+      p.placeLabels = Object.assign({}, s.placeLabels);
       // the defaults for new objects: the color-variation toggle and the styles (a pinned color included)
       p.autoColor = s.autoColor !== false;
       p.defaults = { shape: clone(MB.currentStyle), measure: clone(MB.measureStyle) };
@@ -201,6 +203,48 @@ window.MB = window.MB || {};
     MB.adsb.applyConf();
   }
 
+  // Live vessel traffic (AIS): which sources are on, and the display options. The aisstream.io key stays on the device.
+  function vesselRef() {
+    if (!MB.ais) return undefined;
+    const cf = MB.ais.conf();
+    return {
+      sources: MB.ais.sources.map(s => {
+        const c = MB.ais.srcConf(s.id);
+        return s.kind === 'receiver' ? { kind: 'receiver', uri: sanitizeUrl(c.url || ''), enabled: !!c.on, refreshSeconds: c.interval }
+          : { uri: s.site, enabled: !!c.on };
+      }),
+      hiddenTypes: cf.off.slice(), labels: !!cf.labels, stationary: !!cf.stationary
+    };
+  }
+
+  function applyVessels(t) {
+    if (!MB.ais || !t || typeof t !== 'object') return;
+    const cf = MB.ais.conf();
+    const rx = MB.ais.sources.find(s => s.kind === 'receiver');
+    const mine = rx && cf.sources[rx.id] && cf.sources[rx.id].url; // a receiver address set on this device stays
+    (t.sources || []).forEach(src => {
+      if (!src) return;
+      const def = src.kind === 'receiver' ? rx : MB.ais.sources.find(s => s.site && sameUrl(s.site, src.uri));
+      if (!def) return;
+      const c = MB.ais.srcConf(def.id);
+      c.on = !!src.enabled;
+      if (def.intervals && def.intervals.includes(+src.refreshSeconds)) c.interval = +src.refreshSeconds;
+      if (def.kind === 'receiver' && !mine && src.uri) c.url = String(src.uri);
+    });
+    if (Array.isArray(t.hiddenTypes)) cf.off = t.hiddenTypes.filter(k => MB.ais.types[k]);
+    if (typeof t.labels === 'boolean') cf.labels = t.labels;
+    if (typeof t.stationary === 'boolean') cf.stationary = t.stationary;
+    MB.saveSettings();
+    MB.ais.applyConf();
+  }
+
+  function placeLabels(v, keep) {
+    const def = { countries: true, cities: true, marine: true };
+    if (!v || typeof v !== 'object') return keep && MB.state.placeLabels ? MB.state.placeLabels : def;
+    Object.keys(def).forEach(k => { if (typeof v[k] === 'boolean') def[k] = v[k]; });
+    return def;
+  }
+
   // Every object of the project rebuilt: one redraw of the layers and objects at the end (MB.batch).
   MB.loadProject = (p, opts) => MB.batch(() => loadProject(p, opts));
   function loadProject(p, opts) {
@@ -219,7 +263,9 @@ window.MB = window.MB || {};
       snapping: ed.snapping !== false,
       autoColor: p.autoColor === undefined ? (opts.keepHistory ? MB.state.autoColor : true) : p.autoColor !== false, // undo leaves the preference alone
       svgLibrary: p.svgLibrary || {},
-      dataLayers: {}
+      dataLayers: {},
+      // place names: on unless the project turned them off; undo snapshots carry none and leave them alone
+      placeLabels: placeLabels(p.placeLabels, opts.keepHistory)
     });
     if (p.defaults && typeof p.defaults === 'object') {
       if (p.defaults.shape && typeof p.defaults.shape === 'object') MB.currentStyle = Object.assign(clone(MB.defaultStyle), p.defaults.shape);
@@ -246,6 +292,7 @@ window.MB = window.MB || {};
       MB.data.applyOpacity();
     }
     if (p.liveTraffic) applyTraffic(p.liveTraffic);
+    if (p.vesselTraffic) applyVessels(p.vesselTraffic);
     if (!opts.keepView && p.view && MB.map) MB.map.setView([p.view.lat, p.view.lng], p.view.zoom);
     MB.emit('units', MB.state.units);
     MB.emit('layers');

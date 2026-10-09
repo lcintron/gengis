@@ -1348,7 +1348,7 @@ window.MB = window.MB || {};
    * and the same datasets and actions behind them, sit in the same places: then only texts, classes and states
    * differ, and the drawn panel takes them over, its elements (and their listeners) kept. A slider's number box
    * (ui.js) and what it changes on its slider and readout belong to the drawn panel alone. */
-  const KEY_ATTRS = ['id', 'data-id', 'data-adsb', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'type', 'name'];
+  const KEY_ATTRS = ['id', 'data-id', 'data-adsb', 'data-ais', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'data-ais-type', 'type', 'name'];
   const kids = (n, drawn) => Array.from(n.childNodes).filter(c => !(drawn && c.nodeType === 1 && c.classList.contains('stepper')));
   const ownAttrs = el => (el.hasAttribute('data-stepper') ? ['step', 'max', 'data-stepper'] : el.classList.contains('val') ? ['hidden'] : []);
   const sameKids = (a, b) => { const ka = kids(a, true), kb = kids(b, false); return ka.length === kb.length && ka.every((c, i) => sameShape(c, kb[i])); };
@@ -1391,13 +1391,15 @@ window.MB = window.MB || {};
     });
     const zoom = MB.map.getZoom();
     const s = this.settings;
-    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0);
+    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0);
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
       <div class="row ds-tools"><input type="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" autocomplete="off"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
       <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px">${esc(this._cacheText || ' ')}</div>`; // the last count, until a new one is read (an empty line, or a plain space, would collapse and shift the panel)
     const adsbHtml = MB.adsb ? MB.adsb.panelHtml(q, ui.filter) : ''; // live air traffic: its own block, same search and filter
     html += adsbHtml;
+    const aisHtml = MB.ais ? MB.ais.panelHtml(q, ui.filter) : ''; // live vessel traffic, the same way
+    html += aisHtml;
     let shownTotal = 0;
     Object.keys(bySource).forEach(srcKey => {
       const src = MB.dataSources[srcKey] || { name: srcKey, url: '', note: '' };
@@ -1438,7 +1440,7 @@ window.MB = window.MB || {};
     });
       html += '</details>';
     });
-    if (!shownTotal && !adsbHtml) html += '<p class="note">No datasets match.</p>';
+    if (!shownTotal && !adsbHtml && !aisHtml) html += '<p class="note">No datasets match.</p>';
     html += `<div class="section"><h3>Options</h3>
       <div class="row"><label>Data opacity</label><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div>
       <div class="row" title="How often each service's last-edit stamp is compared; changed datasets are re-downloaded"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
@@ -1474,6 +1476,7 @@ window.MB = window.MB || {};
     panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!this.catalog().some(ds => ds.enabled)) { /* checked now: the panel may have been patched since it was built */ MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
     panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
     if (MB.adsb) MB.adsb.bindPanel(panel);
+    if (MB.ais) MB.ais.bindPanel(panel);
     panel.querySelectorAll('details.ds-source[data-src]').forEach(d => d.addEventListener('toggle', () => {
       if (ui.q.trim()) return; // opened by a search, not by the user
       if (d.open) ui.closed.delete(d.dataset.src); else ui.closed.add(d.dataset.src);
@@ -1524,7 +1527,7 @@ window.MB = window.MB || {};
     if (el && el.textContent !== this._cacheText) el.textContent = this._cacheText;
   };
 
-  // "Map overlays" section in the Settings tab: boundary layers.
+  // "Map overlays" section in the Settings tab: boundary layers and place names.
   MB.data.renderOverlays = function () {
     const box = document.getElementById('overlaySection');
     if (!box) return;
@@ -1539,8 +1542,9 @@ window.MB = window.MB || {};
       }
       return `<div class="overlay-item"><label class="check" style="margin:0"><input type="checkbox" data-id="${d.id}"${ds.enabled ? ' checked' : ''}> <span>${esc(d.name)}</span></label>
         <div class="note" style="margin-left:23px">${esc(d.desc || '')}${status ? ' <span class="dim">· ' + esc(status) + '</span>' : ''}</div></div>`;
-    }).join('');
+    }).join('') + (MB.places ? MB.places.overlayHtml() : '');
     box.querySelectorAll('input[data-id]').forEach(cb => cb.addEventListener('change', () => this.toggle(cb.dataset.id)));
+    if (MB.places) MB.places.bindOverlays(box);
   };
   MB.data.renderOverlaysSoon = MB.debounce(() => MB.data.renderOverlays(), 250);
 

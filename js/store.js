@@ -13,6 +13,7 @@ window.MB = window.MB || {};
     continueDrawing: true,
     snapping: true,
     autoColor: true,        // each new object gets its own color from the palette
+    placeLabels: { countries: true, cities: true, marine: true }, // place names drawn on the map (js/places.js)
     layers: [],           // [{id, name, visible, locked}] bottom -> top
     activeLayerId: null,
     svgLibrary: {}        // id -> {id, name, dataUrl, aspect}
