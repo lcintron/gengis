@@ -323,6 +323,19 @@ window.MB = window.MB || {};
     return n;
   };
 
+  // Where the pointer was, for an object's event: a marker's, text's or SVG's event carries its anchor. A position
+  // outside the map (a keyboard activation reports 0, 0 or none) falls back to the event's own point.
+  function pointerAt(e) {
+    const oe = e.originalEvent;
+    if (oe && oe.clientX != null) {
+      const r = MB.map.getContainer().getBoundingClientRect();
+      if (oe.clientX >= r.left && oe.clientX <= r.right && oe.clientY >= r.top && oe.clientY <= r.bottom) {
+        return { latlng: MB.map.mouseEventToLatLng(oe), cp: MB.map.mouseEventToContainerPoint(oe) };
+      }
+    }
+    return { latlng: e.latlng, cp: e.containerPoint || MB.map.latLngToContainerPoint(e.latlng) };
+  }
+
   function bindFeatureEvents(layer) {
     if (layer._mbBound) return;
     layer._mbBound = true;
@@ -340,9 +353,7 @@ window.MB = window.MB || {};
       // a click on the data, with the objects at this point listed first. Nothing opens where there is no data, nor
       // with the Move tool (a click there ends a drag).
       if (shift || t === 'move' || t === 'scale' || !MB.data || !MB.data.identify) return;
-      // where the pointer was: a marker's event carries its anchor (a keyboard activation has no pointer)
-      const oe = e.originalEvent, pointer = oe && oe.clientX != null && (oe.clientX || oe.clientY);
-      const latlng = pointer ? MB.map.mouseEventToLatLng(oe) : e.latlng, cp = pointer ? MB.map.mouseEventToContainerPoint(oe) : e.containerPoint;
+      const oe = e.originalEvent, { latlng, cp } = pointerAt(e);
       MB.data.identify(latlng, cp, null, { own: MB.data.objectsAt(latlng, cp) });
       if (oe) oe._mbIdentified = true; // presenting, the click goes on to the map: its popup is already open
     });
@@ -354,8 +365,7 @@ window.MB = window.MB || {};
       const tgt = e.originalEvent && e.originalEvent.target;
       if (tgt && tgt.tagName === 'TEXTAREA' && !tgt.readOnly && document.activeElement === tgt) return; // native menu while typing
       L.DomEvent.stop(e);
-      // where the pointer was, not a marker's anchor (as for a click): the menu's coordinates and Other info use it
-      const oe = e.originalEvent, latlng = oe && oe.clientX != null && (oe.clientX || oe.clientY) ? MB.map.mouseEventToLatLng(oe) : e.latlng;
+      const oe = e.originalEvent, { latlng } = pointerAt(e); // the menu's coordinates and Other info: the pointer's place
       if (MB.multi.size > 1 && MB.multi.has(layer)) {
         MB.emit('multi-contextmenu', { layer, latlng, x: oe.clientX, y: oe.clientY });
         return;
