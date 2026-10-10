@@ -220,7 +220,8 @@ window.MB = window.MB || {};
       if (!this.on) return '';
       const year = modelYear(), lat = Math.max(-90, Math.min(90, latlng.lat)), lon = latlng.lng;
       const f = field(lat, lon, 0, year), dec = f.dec;
-      const rate = field(lat, lon, 0, year + 0.5).dec - field(lat, lon, 0, year - 0.5).dec; // per year
+      // per year: the shortest way round (near a pole the declination can cross ±180° within the year)
+      const rate = ((field(lat, lon, 0, year + 0.5).dec - field(lat, lon, 0, year - 0.5).dec) % 360 + 540) % 360 - 180;
       const date = new Date().toISOString().slice(0, 10), stale = decimalYear(new Date()) > VALID_TO;
       const rows = [
         ['Declination', `<b>${fmt(dec, 2)}</b> <span class="dim">(${signed(dec, 2)})</span>`],

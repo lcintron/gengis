@@ -127,7 +127,8 @@ window.MB = window.MB || {};
         // With magnetic declination on, a click anywhere tells the declination there (and any data at the point):
         // after a moment, so the two clicks of a double-click zoom open nothing.
         clearTimeout(this._pointTimer);
-        if ((this.current === 'select' || this.current === 'present') && MB.declination && MB.declination.on) {
+        const handled = e.originalEvent && e.originalEvent._mbIdentified; // an object's click opened the popup (presenting)
+        if (!handled && (this.current === 'select' || this.current === 'present') && MB.declination && MB.declination.on) {
           this._pointTimer = setTimeout(() => MB.data.identify(e.latlng, e.containerPoint, null), 280);
         }
       });

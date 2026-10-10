@@ -344,6 +344,7 @@ window.MB = window.MB || {};
       const oe = e.originalEvent, pointer = oe && oe.clientX != null && (oe.clientX || oe.clientY);
       const latlng = pointer ? MB.map.mouseEventToLatLng(oe) : e.latlng, cp = pointer ? MB.map.mouseEventToContainerPoint(oe) : e.containerPoint;
       MB.data.identify(latlng, cp, null, { own: MB.data.objectsAt(latlng, cp) });
+      if (oe) oe._mbIdentified = true; // presenting, the click goes on to the map: its popup is already open
     });
     layer.on('pm:snap', ev => MB.snap.show(ev));
     layer.on('pm:unsnap pm:markerdragend pm:dragend', () => MB.snap.hide());
