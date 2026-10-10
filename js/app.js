@@ -55,7 +55,9 @@
       if (!steps) return;
       map._stop();
       const zoom = map.getZoom(), target = map._limitZoom(MB.snapZoom(zoom) - steps * MB.ZOOM_STEP); // scrolling down zooms out
-      if (target !== zoom) map.setZoomAround(this._lastMousePos, target);
+      if (target === zoom) return;
+      if (map.options.scrollWheelZoom === 'center') map.setZoom(target); // kept on a point (my location)
+      else map.setZoomAround(this._lastMousePos, target);
     };
     const enabled = h.enabled();
     if (enabled) h.disable(); // its listener was added with the original handler: re-added with this one
@@ -112,7 +114,9 @@
     MB.ui.init();
     MB.projects.start(); // the saved copy in the database, if newer; saving starts once it has settled
     MB.data.init();
+    MB.places.init();
     MB.adsb.init();
+    MB.ais.init();
     MB.locate.init();
     MB.offline.init();
     MB.busy.init();

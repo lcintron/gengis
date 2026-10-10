@@ -17,7 +17,7 @@
   "build": {
     "appId": "local.gengis",
     "productName": "GenGIS",
-    "files": ["index.html", "sw.js", "manifest.webmanifest", "css/**", "js/**", "vendor/**", "icons/**", "branding/splash/**", "electron/**"],
+    "files": ["index.html", "sw.js", "manifest.webmanifest", "css/**", "js/**", "vendor/**", "data/**", "icons/**", "branding/splash/**", "electron/**"],
     "directories": { "output": "dist" },
     "artifactName": "GenGIS-${version}-${os}-${arch}.${ext}",
     "icon": "icons/icon-512.png",

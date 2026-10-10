@@ -166,10 +166,31 @@ window.MB = window.MB || {};
     // never scrolls (and, in the desktop app, room to grab the window). Esc or a click elsewhere closes it.
     const more = $('#moreMenu'), moreBtn = $('#moreBtn');
     const closeMore = () => { more.classList.add('hidden'); moreBtn.setAttribute('aria-expanded', 'false'); };
-    window.addEventListener('keydown', e => { if (e.key === 'Escape' && !more.classList.contains('hidden')) { e.stopPropagation(); closeMore(); } }, true);
+    window.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || more.classList.contains('hidden')) return;
+      e.stopPropagation();
+      if (e.target === $('#searchInput')) { $('#searchResults').classList.add('hidden'); e.target.blur(); } // the search, in the panel
+      closeMore();
+    }, true);
     MB.on('presenter', closeMore); // the bar it hangs from is hidden
-    const placeMore = () => { more.style.top = $('#topbar').getBoundingClientRect().bottom + 'px'; }; // under the bar (two rows on phones)
+    const placeMore = () => { more.style.top = $('#topbar').getBoundingClientRect().bottom + 'px'; }; // under the bar
     window.addEventListener('resize', () => { if (!more.classList.contains('hidden')) placeMore(); });
+    MB.ui.closeMore = closeMore;
+    // Below 800 px wide the bar has no room for the search: it moves to the top of the panel (its listeners go with it).
+    const search = $('.search-wrap'), searchSlot = $('[data-slot="search"]', more), narrow = matchMedia('(max-width: 799.98px)');
+    const placeSearch = () => {
+      if (narrow.matches) { if (search.parentNode !== searchSlot) searchSlot.appendChild(search); }
+      else if (search.parentNode !== $('#topbar')) $('#topbar').insertBefore(search, $('.topbar-right'));
+      more.classList.toggle('with-search', narrow.matches);
+    };
+    narrow.addEventListener('change', placeSearch);
+    window.addEventListener('resize', placeSearch); // also where a width change sends no media-query event
+    placeSearch();
+    // "/" and Ctrl+F: the search, with the panel opened first when it holds it
+    MB.ui.focusSearch = () => {
+      if (more.contains(search) && more.classList.contains('hidden')) moreBtn.click();
+      $('#searchInput').focus(); $('#searchInput').select();
+    };
     moreBtn.addEventListener('click', e => {
       e.stopPropagation();
       if (!more.classList.contains('hidden')) { closeMore(); return; }
@@ -342,6 +363,7 @@ window.MB = window.MB || {};
     }
     function choose(r) {
       results.classList.add('hidden');
+      if (results.closest('#moreMenu') && MB.ui.closeMore) MB.ui.closeMore(); // the map is what to look at now
       MB.search.goTo(r);
     }
     async function run() {
@@ -1555,7 +1577,7 @@ window.MB = window.MB || {};
       if (document.documentElement.dataset.titlebar && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         const covered = (MB.presenter && MB.presenter.active) || $$('.modal').some(m => m.getClientRects().length);
-        if (!covered) { $('#searchInput').focus(); $('#searchInput').select(); }
+        if (!covered) MB.ui.focusSearch();
         return;
       }
       if (e.key === 'Escape') {
@@ -1579,7 +1601,7 @@ window.MB = window.MB || {};
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { if (MB.multi && MB.multi.size > 1) { e.preventDefault(); MB.deleteMulti(); return; } if (MB.selected) { e.preventDefault(); if (MB.isFeatureLocked(MB.selected)) MB.toast('Object is locked'); else MB.removeFeature(MB.selected.mb.id); } return; }
       if (e.key === 'Enter' && MB.measure.active) { MB.measure.finish(); return; }
-      if (e.key === '/') { e.preventDefault(); $('#searchInput').focus(); $('#searchInput').select(); return; }
+      if (e.key === '/') { e.preventDefault(); MB.ui.focusSearch(); return; }
       if (e.key.toLowerCase() === 'f') { e.preventDefault(); MB.presenter.enter(); return; }
       const map = { v: 'select', g: 'move', k: 'scale', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', d: 'measure-distance', a: 'measure-area' };
       const tool = map[e.key.toLowerCase()];

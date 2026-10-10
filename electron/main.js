@@ -60,24 +60,35 @@ function createWindow() {
   win.webContents.on('will-redirect', stayHome);
 }
 
+// Windows can report the window as covered (the page then counts as hidden, and live traffic pauses) while it is in
+// view; the page is told it is hidden only when the window is minimized.
+const offFeatures = app.commandLine.getSwitchValue('disable-features'); // one list: added to, not replaced
+app.commandLine.appendSwitch('disable-features', (offFeatures ? offFeatures + ',' : '') + 'CalculateNativeWinOcclusion');
+
 app.whenReady().then(() => {
   files.register(); // project files on disk: electron/files.js
   ipcMain.on('app:leave-fullscreen', e => {
     const win = files.trusted(e) && BrowserWindow.fromWebContents(e.sender);
     if (win) win.setFullScreen(false);
   });
-  // Nominatim and Overpass ask clients to identify themselves.
+  // One listener per session (a second call replaces the first):
+  // - Nominatim and Overpass ask clients to identify themselves.
+  // - aisstream.io refuses connections from web pages, which it tells by the Origin header a page sends. The
+  //   desktop app connects as an application does: without it, on that stream only.
   session.defaultSession.webRequest.onBeforeSendHeaders(
-    { urls: ['https://nominatim.openstreetmap.org/*', 'https://overpass-api.de/*'] },
+    { urls: ['https://nominatim.openstreetmap.org/*', 'https://overpass-api.de/*', 'wss://stream.aisstream.io/*'] },
     (details, callback) => {
-      details.requestHeaders['User-Agent'] = 'GenGIS/0.0.1-Beta (Electron; standalone map editor)';
-      callback({ requestHeaders: details.requestHeaders });
+      const headers = details.requestHeaders;
+      if (/^wss:\/\/stream\.aisstream\.io\//.test(details.url)) Object.keys(headers).forEach(h => { if (h.toLowerCase() === 'origin') delete headers[h]; });
+      else headers['User-Agent'] = 'GenGIS/0.0.1-Beta (Electron; standalone map editor)';
+      callback({ requestHeaders: headers });
     }
   );
-  // Live air traffic: the open ADS-B networks, and receivers set up without it, send no CORS header, and the
-  // page needs one to read their JSON. Add it to those responses only (aircraft.json feeds and the two APIs).
+  // Live air and vessel traffic: the open ADS-B networks, and receivers set up without it, send no CORS header, and
+  // the page needs one to read their JSON. Add it to those responses only (aircraft.json and ships.json feeds and
+  // the two ADS-B APIs).
   session.defaultSession.webRequest.onHeadersReceived(
-    { urls: ['https://api.adsb.lol/*', 'https://opendata.adsb.fi/*', '*://*/*aircraft.json*'] },
+    { urls: ['https://api.adsb.lol/*', 'https://opendata.adsb.fi/*', '*://*/*aircraft.json*', '*://*/*ships.json*'] },
     (details, callback) => {
       const headers = details.responseHeaders || {};
       if (!Object.keys(headers).some(h => h.toLowerCase() === 'access-control-allow-origin')) headers['Access-Control-Allow-Origin'] = ['*'];
