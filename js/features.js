@@ -354,12 +354,14 @@ window.MB = window.MB || {};
       const tgt = e.originalEvent && e.originalEvent.target;
       if (tgt && tgt.tagName === 'TEXTAREA' && !tgt.readOnly && document.activeElement === tgt) return; // native menu while typing
       L.DomEvent.stop(e);
+      // where the pointer was, not a marker's anchor (as for a click): the menu's coordinates and Other info use it
+      const oe = e.originalEvent, latlng = oe && oe.clientX != null && (oe.clientX || oe.clientY) ? MB.map.mouseEventToLatLng(oe) : e.latlng;
       if (MB.multi.size > 1 && MB.multi.has(layer)) {
-        MB.emit('multi-contextmenu', { layer, latlng: e.latlng, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+        MB.emit('multi-contextmenu', { layer, latlng, x: oe.clientX, y: oe.clientY });
         return;
       }
       MB.selectFeature(layer);
-      const info = { layer, latlng: e.latlng, x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+      const info = { layer, latlng, x: oe.clientX, y: oe.clientY };
       MB.emit(MB.multi.size > 1 && MB.multi.has(layer) ? 'multi-contextmenu' : 'feature-contextmenu', info); // a group's object: the group's menu
     });
     const changed = label => {
