@@ -60,6 +60,11 @@ function createWindow() {
   win.webContents.on('will-redirect', stayHome);
 }
 
+// Windows can report the window as covered (the page then counts as hidden, and live traffic pauses) while it is in
+// view; the page is told it is hidden only when the window is minimized.
+const offFeatures = app.commandLine.getSwitchValue('disable-features'); // one list: added to, not replaced
+app.commandLine.appendSwitch('disable-features', (offFeatures ? offFeatures + ',' : '') + 'CalculateNativeWinOcclusion');
+
 app.whenReady().then(() => {
   files.register(); // project files on disk: electron/files.js
   ipcMain.on('app:leave-fullscreen', e => {

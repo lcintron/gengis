@@ -272,16 +272,14 @@ window.MB = window.MB || {};
         if (this.rt.aisstream.on) this.subscribeSoon();
       });
       MB.on('units', () => this.updatePopup());
-      // hidden, the receiver stops polling and the stream is closed (nothing is drawn, and the stream would pile up)
-      document.addEventListener('visibilitychange', () => SOURCES.forEach(s => {
-        const rt = this.rt[s.id];
-        if (!rt.on) return;
-        if (s.kind === 'receiver') { if (!document.hidden) this.schedule(s, 0); return; }
-        if (document.hidden) { rt.gen++; clearTimeout(rt.timer); clearTimeout(rt.subTimer); if (rt.ws) { try { rt.ws.close(); } catch (e) { /* closing already */ } rt.ws = null; } }
-        else { rt.gen++; rt.fails = 0; this.connect(s); }
-      }));
-      // the stream arrives a message at a time: drawn at most once a second
-      setInterval(() => { if (this.rt.aisstream.dirty && !document.hidden) { this.rt.aisstream.dirty = false; this.countStream(); this.render(); } this.tickStatus(); }, 1000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) SOURCES.forEach(s => { if (this.rt[s.id].on && s.kind === 'receiver') this.schedule(s, 0); }); });
+      // The stream arrives a message at a time: drawn at most once a second. It stays connected while the page is
+      // hidden (a window can be reported hidden while in view); old vessels are still dropped then, only not drawn.
+      setInterval(() => {
+        const rt = this.rt.aisstream;
+        if (rt.dirty) { this.countStream(); if (document.hidden) this.expire(); else { rt.dirty = false; this.render(); } }
+        this.tickStatus();
+      }, 1000);
       SOURCES.forEach(s => { if (this.srcConf(s.id).on) this.enable(s.id, true); });
       this.applyPaneState();
     },
@@ -395,28 +393,26 @@ window.MB = window.MB || {};
     connect(src) {
       const rt = this.rt[src.id], gen = rt.gen;
       let ws;
-      if (document.hidden) return; // connected when the page is shown again
       try { ws = new WebSocket(STREAM_URL); } catch (e) { rt.error = 'Could not connect to aisstream.io'; rt.fails++; this.retry(src, gen, this.backoff(rt)); return; }
       ws.binaryType = 'arraybuffer';
-      rt.ws = ws; rt.sent = ''; rt.sentAt = 0;
+      rt.ws = ws; rt.sent = ''; rt.sentAt = 0; rt.open = false;
       let opened = false, heard = false, refused = '';
       const decoder = new TextDecoder();
-      ws.onopen = () => { if (gen !== rt.gen) { ws.close(); return; } opened = true; this.subscribe(src); };
+      ws.onopen = () => { if (gen !== rt.gen) { ws.close(); return; } opened = rt.open = true; this.subscribe(src); this.tickStatus(); };
       ws.onmessage = ev => {
         if (gen !== rt.gen) return;
         let msg;
         try { msg = JSON.parse(typeof ev.data === 'string' ? ev.data : decoder.decode(ev.data)); } catch (e) { return; }
         if (msg && msg.error) { refused = String(msg.error); return; } // the service says why, then closes
-        const rec = fromStream(msg, rt.store);
-        if (!rec) return;
         if (!heard) { heard = true; rt.fails = 0; }
-        rt.error = null; rt.lastOk = Date.now(); rt.dirty = true;
-        if (rec.hasPos) { rec.src = src.id; this.upsert(src.id, rec); }
+        rt.error = null; rt.lastOk = Date.now(); rt.dirty = true; // the stream is live, whatever this message holds
+        const rec = fromStream(msg, rt.store);
+        if (rec && rec.hasPos) { rec.src = src.id; this.upsert(src.id, rec); }
       };
       ws.onerror = () => {}; // a close follows
       ws.onclose = () => {
         if (gen !== rt.gen) return;
-        rt.ws = null;
+        rt.ws = null; rt.open = false;
         if (!heard) rt.fails++;
         if (refused) rt.error = 'aisstream.io: ' + refused + (/key/i.test(refused) ? '. Check the API key.' : '');
         else if (!navigator.onLine) rt.error = 'Offline';
@@ -482,6 +478,15 @@ window.MB = window.MB || {};
         this.upsert(srcId, rec);
       });
       this.vessels.forEach(e => { if (e.by[srcId] && !seen.has(e.mmsi)) delete e.by[srcId]; });
+    },
+
+    // Vessels not heard from for MAX_AGE removed (render() does the same for what it draws).
+    expire() {
+      const now = Date.now();
+      this.vessels.forEach((e, mmsi) => {
+        Object.keys(e.by).forEach(k => { if ((now - e.by[k].posTime) / 1000 > MAX_AGE) delete e.by[k]; });
+        if (!Object.keys(e.by).length && mmsi !== this.selected) { this.drop(e); this.vessels.delete(mmsi); }
+      });
     },
 
     /* ----- drawing ----- */
@@ -662,12 +667,12 @@ window.MB = window.MB || {};
       const rt = this.rt[id], src = SOURCES.find(s => s.id === id);
       if (!rt.on) return 'Off';
       if (rt.error) return rt.error;
-      if (!rt.lastOk) return 'Connecting…';
+      if (!rt.lastOk) return rt.open ? 'Connected. Waiting for vessel reports in view (moored and anchored vessels report every 3 min).' : 'Connecting…';
       const bits = [`${rt.withPos} vessel${rt.withPos === 1 ? '' : 's'}` + (rt.total > rt.withPos ? ` (${rt.total - rt.withPos} more without a position)` : '')];
       if (src.kind === 'stream') bits.push('live');
       else { const age = Math.round((Date.now() - rt.lastOk) / 1000); bits.push(age <= Math.max(2, this.srcConf(id).interval + 1) ? 'live' : 'data is ' + age + ' s old'); }
       if (this.capped) bits.push(`${MAX_DRAWN.toLocaleString()} drawn; zoom in for the rest`);
-      if (document.hidden) bits.push('paused');
+      if (document.hidden && src.kind === 'receiver') bits.push('paused');
       return bits.join(' · ');
     },
 

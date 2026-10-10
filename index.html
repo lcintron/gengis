@@ -74,8 +74,10 @@
       <button id="sidebarToggle" class="icon-btn" title="Toggle side panel"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
     </div>
 
-    <!-- units, base map and the project menu: a panel that slides in from the left, under the menu button (ui.js) -->
+    <!-- units, base map and the project menu: a panel that slides in from the left, under the menu button (ui.js);
+         below 800 px wide the search moves in at its top -->
     <div id="moreMenu" class="dropdown more-menu hidden" role="menu">
+      <div class="more-label more-search">Search</div><div class="more-slot more-search" data-slot="search"></div>
       <div class="more-label">Units</div><div class="more-slot" data-slot="units">
         <div class="seg" id="unitsSeg" title="Units of measurement">
           <button data-units="metric" class="active" title="m, km · m², km²">Metric</button>

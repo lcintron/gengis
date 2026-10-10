@@ -1,7 +1,7 @@
 /* GenGIS - my location: a map button that centers on the device's position (GPS or the browser's estimate)
  * and keeps a dot with its accuracy circle on the map. The browser (or the desktop app's OS) asks the user for
- * permission the first time. The map follows the position until it is panned by hand; the button then re-centers,
- * and a press while centered turns the location off. The dot and the position are never saved; the map view is, as
+ * permission the first time. While the location is on, the map stays centered on it: a pan by hand springs back,
+ * and the wheel, a pinch or a double-click zoom about the position. A press of the button turns the location off. The dot and the position are never saved; the map view is, as
  * after any pan, so a project saved while centered on the position opens there. */
 (function () {
   const MB = window.MB;
@@ -12,7 +12,8 @@
     watchId: null,   // navigator.geolocation watch while the location is on
     gen: 0,          // which watch is current: callbacks of an earlier one are ignored
     fix: null,       // last position: { latlng, accuracy (m), at }
-    follow: false,   // the map pans with the position until the user moves it
+    follow: false,   // the map is kept on the position (while the location is on)
+    zoomOpts: null,  // the map's own zoom options, put back when the location is turned off
     centered: false, // the next fix centers (and zooms to) the position
     btn: null, bar: null, dot: null, ring: null,
 
@@ -36,21 +37,24 @@
         }
       });
       new Ctl().addTo(MB.map);
-      // A pan by hand ends following: a drag, or the arrow keys on the focused map (the location's own pans are
-      // programmatic and fire neither).
-      const unfollow = () => { if (this.follow) { this.follow = false; this.render(); } };
-      MB.map.on('dragstart', unfollow);
-      L.DomEvent.on(MB.map.getContainer(), 'keydown', e => { if (/^Arrow/.test(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey) unfollow(); });
+      // A pan by hand (a drag, the arrow keys on the focused map, a box zoom) springs back to the position.
+      const recenter = () => { if (this.follow && this.fix) MB.map.panTo(this.fix.latlng, { animate: true }); };
+      MB.map.on('dragend boxzoomend', recenter);
+      L.DomEvent.on(MB.map.getContainer(), 'keyup', e => { if (/^Arrow/.test(e.key) && !e.target.closest('input, textarea, select, [contenteditable]')) recenter(); }); // not the caret in a text label
     },
 
     press() {
       if (this.watchId == null) return this.start();
-      if (!this.fix) return; // still waiting for the first position
-      const off = MB.map.latLngToContainerPoint(this.fix.latlng).distanceTo(MB.map.getSize().divideBy(2));
-      if (this.follow && off < 30) return this.stop(); // already on it: the press turns the location off
-      this.follow = true;
-      MB.map.panTo(this.fix.latlng);
-      this.render();
+      this.stop(); // on (or still finding the position): the press turns it off
+    },
+
+    // Zooming by wheel, pinch or double-click about the map's center (the position) instead of the pointer.
+    zoomAboutCenter(on) {
+      const o = MB.map.options;
+      if (on && !this.zoomOpts) {
+        this.zoomOpts = { scrollWheelZoom: o.scrollWheelZoom, touchZoom: o.touchZoom, doubleClickZoom: o.doubleClickZoom };
+        ['scrollWheelZoom', 'touchZoom', 'doubleClickZoom'].forEach(k => { if (o[k]) o[k] = 'center'; });
+      } else if (!on && this.zoomOpts) { Object.assign(o, this.zoomOpts); this.zoomOpts = null; }
     },
 
     start() {
@@ -58,6 +62,7 @@
       if (window.isSecureContext === false) { MB.toast('Your location is only available on a secure (https) page.', 4500); return; }
       this.follow = true;
       this.centered = false;
+      this.zoomAboutCenter(true);
       const gen = ++this.gen;
       this.watchId = navigator.geolocation.watchPosition(p => { if (gen === this.gen) this.onFix(p); }, e => { if (gen === this.gen) this.onError(e); },
         { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
@@ -70,6 +75,7 @@
       this.gen++; // a callback still on its way from this watch is ignored
       this.fix = null;
       this.follow = false;
+      this.zoomAboutCenter(false);
       if (this.dot) { MB.map.removeLayer(this.dot); this.dot = null; }
       if (this.ring) { MB.map.removeLayer(this.ring); this.ring = null; }
       this.render();
@@ -87,10 +93,9 @@
         this.dot.setLatLng(latlng);
       }
       if (!this.centered) {
-        // first position: center on it, close enough to see the accuracy circle whole (a city block or a town),
-        // unless the map was panned by hand while it was being found
+        // first position: center on it, close enough to see the accuracy circle whole (a city block or a town)
         this.centered = true;
-        if (this.follow) MB.map.setView(latlng, Math.min(17, MB.map.getBoundsZoom(this.ring.getBounds(), false)));
+        MB.map.setView(latlng, Math.min(17, MB.map.getBoundsZoom(this.ring.getBounds(), false)));
         MB.toast('Your location, accurate to about ' + MB.formatDistance(accuracy), 3000);
       } else if (this.follow) MB.map.panTo(latlng, { animate: true });
       this.render();
@@ -114,7 +119,7 @@
       this.bar.classList.toggle('locating', waiting);
       this.bar.classList.toggle('active', on && !!this.fix);
       this.bar.classList.toggle('following', on && !!this.fix && this.follow);
-      const title = !on ? 'Center on my location' : (waiting ? 'Finding your location…' : (this.follow ? 'Following your location: press to turn it off' : 'Center on my location again'));
+      const title = !on ? 'Center on my location' : (waiting ? 'Finding your location… (press to cancel)' : 'Following your location: press to turn it off');
       this.btn.title = title;
       this.btn.setAttribute('aria-label', title);
       this.btn.setAttribute('aria-pressed', on ? 'true' : 'false');

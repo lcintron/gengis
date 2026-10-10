@@ -128,6 +128,14 @@ select:focus { outline: none; border-color: var(--accent); }
 .more-slot select { width: 100%; max-width: none; }
 .more-items button { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 10px; border-radius: 6px; cursor: pointer; color: var(--text); }
 .more-items button:hover, .more-items button:active { background: var(--bg-3); }
+/* the search, in the panel below 800 px wide (ui.js) */
+.more-menu .more-search { display: none; }
+.more-menu.with-search .more-search { display: block; }
+.more-menu .search-wrap { margin: 0; max-width: none; width: 100%; flex-wrap: wrap; }
+.more-menu #searchResults { position: static; flex: 1 1 100%; margin-top: 6px; box-shadow: none; max-height: 50vh; }
+/* the menu button keeps its size, and its place at the bar's edge, at every width */
+#moreBtn { flex: 0 0 auto; width: 34px; height: 34px; min-height: 34px; }
+@media (max-width: 799.98px) { .topbar-right { margin-left: auto; } } /* the search is in the panel: the buttons keep to the right end */
 .dropdown {
   position: absolute; top: calc(100% + 6px); right: 0; background: var(--bg-2); border: 1px solid var(--border);
   border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45); z-index: 100; min-width: 220px; overflow: hidden;
@@ -420,11 +428,9 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 }
 .sheet-close { display: none; }
 @media (max-width: 640px) {
-  :root { --topbar-h: auto; }
-  #topbar { flex-wrap: wrap; height: auto; padding: 6px 8px; gap: 6px; }
+  #topbar { gap: 6px; }
   .brand { gap: 6px; }
   .project-name { flex: 1 1 0; width: 0; min-width: 0; font-size: 13px; padding: 4px 6px; } /* takes what the buttons leave */
-  .search-wrap { order: 3; flex: 1 1 100%; max-width: none; }
   .brand { flex: 1 1 0; min-width: 0; margin-right: 0; }
   .brand-name { display: none; } /* the logo says it */
   .topbar-right { order: 2; flex: 0 0 auto; margin-left: 0; gap: 6px; }
