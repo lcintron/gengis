@@ -124,7 +124,14 @@ window.MB = window.MB || {};
         if (e.originalEvent && e.originalEvent.shiftKey) return; // keep a multi-selection while shift is held
         if (this.current === 'select') { MB.deselect(); MB.data.pick(null); }
         else if (this.current === 'scale') MB.deselect();
+        // With magnetic declination on, a click anywhere tells the declination there (and any data at the point):
+        // after a moment, so the two clicks of a double-click zoom open nothing.
+        clearTimeout(this._pointTimer);
+        if ((this.current === 'select' || this.current === 'present') && MB.declination && MB.declination.on) {
+          this._pointTimer = setTimeout(() => MB.data.identify(e.latlng, e.containerPoint, null), 280);
+        }
       });
+      MB.map.on('dblclick zoomstart popupopen', () => clearTimeout(this._pointTimer)); // also when an object's or a vessel's popup opens first
       MB.on('layers', () => this.refreshDraw()); // the active layer, or whether it is shown, changed
       // Geoman's text tool re-arms itself when a text box loses focus while drawing continues: not while it waits
       // for a hidden layer (and, armed anyway, it makes nothing: its text box would never reach the map)

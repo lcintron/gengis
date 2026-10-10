@@ -145,6 +145,7 @@ window.MB = window.MB || {};
       p.liveTraffic = trafficRef();
       p.vesselTraffic = vesselRef();
       p.placeLabels = Object.assign({}, s.placeLabels);
+      p.magneticDeclination = { enabled: !!(s.declination && s.declination.on) };
       // the defaults for new objects: the color-variation toggle and the styles (a pinned color included)
       p.autoColor = s.autoColor !== false;
       p.defaults = { shape: clone(MB.currentStyle), measure: clone(MB.measureStyle) };
@@ -265,7 +266,10 @@ window.MB = window.MB || {};
       svgLibrary: p.svgLibrary || {},
       dataLayers: {},
       // place names: on unless the project turned them off; undo snapshots carry none and leave them alone
-      placeLabels: placeLabels(p.placeLabels, opts.keepHistory)
+      placeLabels: placeLabels(p.placeLabels, opts.keepHistory),
+      // magnetic declination: as the project left it; undo snapshots carry none and leave it alone
+      declination: p.magneticDeclination && typeof p.magneticDeclination === 'object' ? { on: !!p.magneticDeclination.enabled }
+        : (opts.keepHistory && MB.state.declination ? MB.state.declination : { on: false })
     });
     if (p.defaults && typeof p.defaults === 'object') {
       if (p.defaults.shape && typeof p.defaults.shape === 'object') MB.currentStyle = Object.assign(clone(MB.defaultStyle), p.defaults.shape);

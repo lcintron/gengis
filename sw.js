@@ -11,7 +11,7 @@ const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './css/app.css',
   './js/util.js', './js/tooltipdelay.js', './js/store.js', './js/features.js', './js/tools.js', './js/scaletool.js', './js/geometry.js', './js/search.js', './js/storage.js', './js/projectstore.js', './js/desktopfiles.js', './js/browserfiles.js',
-  './js/scale.js', './js/settings.js', './js/contextmenu.js', './js/presenter.js', './js/datalayers.js', './js/frequencies.js', './js/adsb.js', './js/ais.js', './js/places.js', './js/locate.js', './js/project.js', './js/offline.js', './js/busy.js', './js/tiles.js', './js/ui.js', './js/app.js',
+  './js/scale.js', './js/settings.js', './js/contextmenu.js', './js/presenter.js', './js/datalayers.js', './js/frequencies.js', './js/adsb.js', './js/declination.js', './js/ais.js', './js/places.js', './js/locate.js', './js/project.js', './js/offline.js', './js/busy.js', './js/tiles.js', './js/ui.js', './js/app.js',
   './data/places.js',
   './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css',
   './vendor/leaflet/images/marker-icon.png', './vendor/leaflet/images/marker-icon-2x.png', './vendor/leaflet/images/marker-shadow.png',
