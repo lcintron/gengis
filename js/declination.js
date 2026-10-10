@@ -143,6 +143,12 @@ window.MB = window.MB || {};
       this.renderer = L.canvas({ pane: 'mb-decl', padding: 0.1 });
       this.group = L.layerGroup();
       MB.map.on('moveend', () => { if (this.on) this.render(); this.tickStatus(); });
+      // right-click → Other info: the click popup at a point, with the declination (open) whether or not the source is on;
+      // the objects there listed too, as a click lists them (and a selected one stays selected)
+      MB.otherInfo = latlng => {
+        const cp = MB.map.latLngToContainerPoint(latlng);
+        MB.data.identify(latlng, cp, null, { declination: true, own: MB.data.objectsAt(latlng, cp) });
+      };
       MB.on('project', () => { this.apply(); if (MB.data.renderPanelSoon) MB.data.renderPanelSoon(); }); // its checkbox too
       this.apply();
     },
@@ -217,8 +223,9 @@ window.MB = window.MB || {};
     },
 
     // The declination at a point, for the click popup: a section like a dataset's.
-    identifyHtml(latlng) {
-      if (!this.on) return '';
+    // always: also with the source off (the map's right-click "Other info")
+    identifyHtml(latlng, always) {
+      if (!this.on && !always) return '';
       const year = modelYear(), lat = Math.max(-90, Math.min(90, latlng.lat)), lon = latlng.lng;
       const f = field(lat, lon, 0, year), dec = f.dec;
       // per year: the shortest way round (near a pole the declination can cross ±180° within the year)
@@ -257,7 +264,7 @@ window.MB = window.MB || {};
       if (!this.matches(q, filter)) return '';
       const on = this.on;
       return `<details class="ds-source" id="declSource" data-src="declination"${MB.data.sourceOpen('declination') ? ' open' : ''}><summary class="ds-source-head"><h3>Magnetic declination</h3><span class="badge" id="declCount">${on ? '1/1 on' : '0/1 on'}</span></summary>
-        <p class="note">The World Magnetic Model (WMM2025, NOAA), computed on this device.</p>
+        <p class="note">World Magnetic Model (WMM2025, NOAA)</p>
         <div class="data-item${on ? ' on' : ''}" data-decl="wmm">
           <div class="ds-head"><label class="check"><input type="checkbox" data-act="decl-toggle"${on ? ' checked' : ''}> <span class="dname">Isogonic lines</span></label>${MB.data.infoIcon('Lines of equal magnetic declination, closer together as you zoom in. Click the map for the declination and heading correction at that point.')}</div>
           <div class="legend"><span><i style="background:${EAST}"></i>East</span><span><i style="background:${WEST}"></i>West</span><span><i style="background:${AGONIC}"></i>Zero (agonic)</span></div>

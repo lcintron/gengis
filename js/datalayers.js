@@ -1168,7 +1168,8 @@ window.MB = window.MB || {};
   }
 
   // Everything under a click in one popup. opts.own: the user's objects at the point, listed first (their objects
-  // draw above the data, so a click on one never reaches the data under it). It opens only when there is data at the
+  // draw above the data, so a click on one never reaches the data under it). opts.declination: the magnetic
+  // declination at the point too, whether or not its source is on (right-click → Other info). It opens only when there is data at the
   // point; the return value says whether it did.
   MB.data.identify = function (latlng, containerPoint, clicked, opts) {
     opts = opts || {};
@@ -1178,7 +1179,7 @@ window.MB = window.MB || {};
       const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked));
       if (ds && !ds.def.tiled) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
-    const point = MB.declination ? MB.declination.identifyHtml(latlng) : ''; // facts about the place itself
+    const point = MB.declination ? MB.declination.identifyHtml(latlng, opts.declination) : ''; // facts about the place itself (opts.declination: also with its source off)
     if (!hits.length && !point) return false;
     // Polygons that read the same (a LAANC grid square and its neighbour with the same ceiling, tapped near their
     // shared edge) are one entry; it highlights all of them.
@@ -1217,7 +1218,7 @@ window.MB = window.MB || {};
     // in view at once (an expanded first entry used to push the others below the popup's scroll); the shared
     // name makes them an accordion. Only a truncated list gets a note.
     const more = total > hits.length ? `<div class="mb-ident-more dim">Showing ${hits.length} of ${total}</div>` : '';
-    const html = `<div class="mb-popup mb-identify">${sections}${more}${hits.length ? point : point.replace('<details ', '<details open ')}</div>`;
+    const html = `<div class="mb-popup mb-identify">${sections}${more}${hits.length && !opts.declination ? point : point.replace('<details ', '<details open ')}</div>`;
     if (identifyPopup && identifyPopup.isOpen()) MB.map.closePopup(identifyPopup);
     // Hand Leaflet a DOM node, not the HTML string: popup.update() (called when frequencies arrive) re-renders
     // string content from scratch, which would wipe the loaded frequencies, the listeners and the expanded state.

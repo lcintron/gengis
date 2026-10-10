@@ -91,6 +91,7 @@ window.MB = window.MB || {};
         { sep: true },
         { label: 'Copy coordinates', hint: MB.formatLatLng(latlng, 5), action: () => copyText(MB.formatLatLng(latlng, 6)) },
         { label: isPoint ? 'Copy object position' : 'Copy object center', hint: MB.formatLatLng(center, 5), action: () => copyText(MB.formatLatLng(center, 6)) },
+        ...(MB.otherInfo ? [{ label: 'Other info', hint: 'Declination', action: () => MB.otherInfo(latlng) }] : []),
         { sep: true }
       ];
       if (m.type === 'text') {
@@ -213,7 +214,8 @@ window.MB = window.MB || {};
             const r = await MB.search.reverse(ll);
             MB.search.showMarker(ll, r.display_name || r.name || 'No address found');
           } catch (err) { MB.toast('Lookup failed: ' + err.message); }
-        } }
+        } },
+        ...(MB.otherInfo ? [{ label: 'Other info', hint: 'Declination', action: () => MB.otherInfo(ll) }] : [])
       ];
       if (MB.selected) items.push({ sep: true }, { label: 'Deselect', hint: 'Esc', action: () => MB.deselect() });
       MB.contextMenu.show(x, y, items);
