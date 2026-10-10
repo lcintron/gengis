@@ -171,32 +171,33 @@ window.MB = window.MB || {};
       const cols = Math.ceil((size.x + 2 * padX) / CELL) + 1, rows = Math.ceil((size.y + 2 * padY) / CELL) + 1;
       const px = i => i * CELL - padX, py = j => j * CELL - padY;
       const v = new Float64Array(cols * rows);
-      let lo = Infinity, hi = -Infinity;
       for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
         const ll = map.containerPointToLatLng([px(i), py(j)]);
-        const lat = Math.max(-89.99, Math.min(89.99, ll.lat));
-        const d = v[j * cols + i] = declination(lat, ll.lng, year);
-        if (d < lo) lo = d; if (d > hi) hi = d;
+        v[j * cols + i] = declination(Math.max(-89.99, Math.min(89.99, ll.lat)), ll.lng, year);
       }
-      const lines = new Map(); // level -> [[[x, y], [x, y]], ...] in screen px
+      // Each cell traces only the levels between its own corners: the view's whole range can span nearly 360°
+      // near a magnetic pole, and most of those levels cross no cell.
+      const byStep = new Map(); // level / iv -> [[[x, y], [x, y]], ...] in screen px
       const at = (a, b, va, vb, L) => { const t = (L - va) / (vb - va); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
-      for (let L = Math.ceil(lo / iv) * iv; L <= hi + 1e-9; L += iv) {
-        const level = Math.round(L / iv) * iv, segs = [];
-        for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
-          const v0 = v[j * cols + i], v1 = v[j * cols + i + 1], v2 = v[(j + 1) * cols + i + 1], v3 = v[(j + 1) * cols + i];
-          // near a magnetic pole the declination swings through ±180°: no line across that seam
-          if (Math.max(v0, v1, v2, v3) - Math.min(v0, v1, v2, v3) > 90) continue;
-          const p0 = [px(i), py(j)], p1 = [px(i + 1), py(j)], p2 = [px(i + 1), py(j + 1)], p3 = [px(i), py(j + 1)];
-          const edges = [];
+      for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
+        const v0 = v[j * cols + i], v1 = v[j * cols + i + 1], v2 = v[(j + 1) * cols + i + 1], v3 = v[(j + 1) * cols + i];
+        const cmin = Math.min(v0, v1, v2, v3), cmax = Math.max(v0, v1, v2, v3);
+        if (cmax - cmin > 90) continue; // near a magnetic pole the declination swings through ±180°: no line across that seam
+        const p0 = [px(i), py(j)], p1 = [px(i + 1), py(j)], p2 = [px(i + 1), py(j + 1)], p3 = [px(i), py(j + 1)];
+        for (let s = Math.ceil(cmin / iv); s * iv <= cmax; s++) {
+          const level = s * iv, edges = [];
           if ((v0 < level) !== (v1 < level)) edges.push(at(p0, p1, v0, v1, level));
           if ((v1 < level) !== (v2 < level)) edges.push(at(p1, p2, v1, v2, level));
           if ((v2 < level) !== (v3 < level)) edges.push(at(p2, p3, v2, v3, level));
           if ((v3 < level) !== (v0 < level)) edges.push(at(p3, p0, v3, v0, level));
+          if (edges.length < 2) continue;
+          if (!byStep.has(s)) byStep.set(s, []);
+          const segs = byStep.get(s);
           if (edges.length === 2) segs.push(edges);
-          else if (edges.length === 4) { segs.push([edges[0], edges[1]], [edges[2], edges[3]]); } // a saddle: either pairing reads the same at this size
+          else segs.push([edges[0], edges[1]], [edges[2], edges[3]]); // a saddle: either pairing reads the same at this size
         }
-        if (segs.length) lines.set(level, segs);
       }
+      const lines = new Map(Array.from(byStep.keys()).sort((a, b) => a - b).map(s => [s * iv, byStep.get(s)])); // west to east
       this.group.clearLayers();
       const toLL = pt => map.containerPointToLatLng(pt);
       const placed = [];
