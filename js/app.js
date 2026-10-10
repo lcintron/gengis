@@ -115,6 +115,7 @@
     MB.projects.start(); // the saved copy in the database, if newer; saving starts once it has settled
     MB.data.init();
     MB.places.init();
+    MB.declination.init();
     MB.adsb.init();
     MB.ais.init();
     MB.locate.init();

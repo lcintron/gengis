@@ -797,6 +797,11 @@ details.ds-source > summary .badge { flex: 0 0 auto; white-space: nowrap; }
 .mb-identify details[open] > summary::before { content: '▾'; }
 .mb-identify details:hover > summary { background: rgba(255,209,102,.14); }
 .mb-ident-ds { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+/* magnetic declination: line labels and the click readout */
+.mb-decl-label { background: transparent; border: 0; width: 0 !important; height: 0 !important; pointer-events: none; }
+.mb-decl-label span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font: 700 11px system-ui, sans-serif; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 2px #000; }
+.mb-ident-note { font-size: 11px; margin: 4px 4px 2px; line-height: 1.4; }
+.mb-ident-pt .warn { color: var(--warn); }
 .mb-ident-label { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mb-identify .mb-datatable { margin: 2px 0 4px 18px; }
 .mb-identify .mb-freqs { margin-left: 18px; }

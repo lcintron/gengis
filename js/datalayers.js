@@ -1178,7 +1178,8 @@ window.MB = window.MB || {};
       const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked));
       if (ds && !ds.def.tiled) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
-    if (!hits.length) return false;
+    const point = MB.declination ? MB.declination.identifyHtml(latlng) : ''; // facts about the place itself
+    if (!hits.length && !point) return false;
     // Polygons that read the same (a LAANC grid square and its neighbour with the same ceiling, tapped near their
     // shared edge) are one entry; it highlights all of them.
     const byText = new Map();
@@ -1216,7 +1217,7 @@ window.MB = window.MB || {};
     // in view at once (an expanded first entry used to push the others below the popup's scroll); the shared
     // name makes them an accordion. Only a truncated list gets a note.
     const more = total > hits.length ? `<div class="mb-ident-more dim">Showing ${hits.length} of ${total}</div>` : '';
-    const html = `<div class="mb-popup mb-identify">${sections}${more}</div>`;
+    const html = `<div class="mb-popup mb-identify">${sections}${more}${hits.length ? point : point.replace('<details ', '<details open ')}</div>`;
     if (identifyPopup && identifyPopup.isOpen()) MB.map.closePopup(identifyPopup);
     // Hand Leaflet a DOM node, not the HTML string: popup.update() (called when frequencies arrive) re-renders
     // string content from scratch, which would wipe the loaded frequencies, the listeners and the expanded state.
@@ -1234,14 +1235,14 @@ window.MB = window.MB || {};
       MB.selectFeature(h.layer);
       if (MB.ui && MB.ui.revealFeature) MB.ui.revealFeature(h.layer);
     }));
-    root.querySelectorAll('details.mb-ident').forEach(d => {
+    root.querySelectorAll('details.mb-ident[data-i]').forEach(d => {
       const h = hits[+d.dataset.i];
       d.addEventListener('mouseenter', () => highlight(h));
       d.addEventListener('mouseleave', () => { if (pinned) highlight(pinned); else clearHighlight(); });
       d.addEventListener('toggle', () => {
         if (d.open) { pinned = h; highlight(h); if (!h.own) MB.data.pick(h); return; }
         if (pinned !== h) return;
-        const still = Array.from(root.querySelectorAll('details.mb-ident[open]')).pop(); // fall back to another entry that is still expanded
+        const still = Array.from(root.querySelectorAll('details.mb-ident[data-i][open]')).pop(); // fall back to another entry that is still expanded
         pinned = still ? hits[+still.dataset.i] : null;
         if (d.matches(':hover')) return; // keep the hovered entry lit until the pointer leaves
         if (pinned) highlight(pinned); else clearHighlight();
@@ -1348,7 +1349,7 @@ window.MB = window.MB || {};
    * and the same datasets and actions behind them, sit in the same places: then only texts, classes and states
    * differ, and the drawn panel takes them over, its elements (and their listeners) kept. A slider's number box
    * (ui.js) and what it changes on its slider and readout belong to the drawn panel alone. */
-  const KEY_ATTRS = ['id', 'data-id', 'data-adsb', 'data-ais', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'data-ais-type', 'type', 'name'];
+  const KEY_ATTRS = ['id', 'data-id', 'data-adsb', 'data-ais', 'data-decl', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'data-ais-type', 'type', 'name'];
   const kids = (n, drawn) => Array.from(n.childNodes).filter(c => !(drawn && c.nodeType === 1 && c.classList.contains('stepper')));
   const ownAttrs = el => (el.hasAttribute('data-stepper') ? ['step', 'max', 'data-stepper'] : el.classList.contains('val') ? ['hidden'] : []);
   const sameKids = (a, b) => { const ka = kids(a, true), kb = kids(b, false); return ka.length === kb.length && ka.every((c, i) => sameShape(c, kb[i])); };
@@ -1391,7 +1392,7 @@ window.MB = window.MB || {};
     });
     const zoom = MB.map.getZoom();
     const s = this.settings;
-    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0);
+    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0);
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
       <div class="row ds-tools"><input type="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" autocomplete="off"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
       <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
@@ -1400,6 +1401,8 @@ window.MB = window.MB || {};
     html += adsbHtml;
     const aisHtml = MB.ais ? MB.ais.panelHtml(q, ui.filter) : ''; // live vessel traffic, the same way
     html += aisHtml;
+    const declHtml = MB.declination ? MB.declination.panelHtml(q, ui.filter) : ''; // magnetic declination, computed here
+    html += declHtml;
     let shownTotal = 0;
     Object.keys(bySource).forEach(srcKey => {
       const src = MB.dataSources[srcKey] || { name: srcKey, url: '', note: '' };
@@ -1440,7 +1443,7 @@ window.MB = window.MB || {};
     });
       html += '</details>';
     });
-    if (!shownTotal && !adsbHtml && !aisHtml) html += '<p class="note">No datasets match.</p>';
+    if (!shownTotal && !adsbHtml && !aisHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
     html += `<div class="section"><h3>Options</h3>
       <div class="row"><label>Data opacity</label><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div>
       <div class="row" title="How often each service's last-edit stamp is compared; changed datasets are re-downloaded"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
@@ -1477,6 +1480,7 @@ window.MB = window.MB || {};
     panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
     if (MB.adsb) MB.adsb.bindPanel(panel);
     if (MB.ais) MB.ais.bindPanel(panel);
+    if (MB.declination) MB.declination.bindPanel(panel);
     panel.querySelectorAll('details.ds-source[data-src]').forEach(d => d.addEventListener('toggle', () => {
       if (ui.q.trim()) return; // opened by a search, not by the user
       if (d.open) ui.closed.delete(d.dataset.src); else ui.closed.add(d.dataset.src);
