@@ -1340,6 +1340,11 @@ window.MB = window.MB || {};
   MB.data.saveClosed = function () { try { localStorage.setItem('gengis.dataClosed', JSON.stringify(Array.from(this.ui.closed))); } catch (e) { /* ignore */ } };
   // A source block that collapses; a search keeps every block open so its matches show.
   MB.data.sourceOpen = function (key) { return !!this.ui.q.trim() || !this.ui.closed.has(key); };
+  // A source's website: an external-link icon inside its block (its heading only opens and closes the block).
+  const EXT_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  MB.data.sourceLink = function (src) {
+    return src.url ? `<a class="src-link" href="${esc(src.url)}" target="_blank" rel="noopener" title="Open ${esc(src.name)} (website)" aria-label="Open ${esc(src.name)} website">${EXT_ICON}</a>` : '';
+  };
   // A dataset's details behind an info icon next to its name (hover, or tap on a touch screen).
   MB.data.infoIcon = function (text) {
     return text ? `<span class="ds-info" tabindex="0" role="img" aria-label="About this source: ${esc(text)}">i</span><span class="ds-tip" role="tooltip">${esc(text)}</span>` : '';
@@ -1412,7 +1417,7 @@ window.MB = window.MB || {};
       shownTotal += list.length;
       const groups = {};
       list.forEach(ds => { (groups[ds.def.group] = groups[ds.def.group] || []).push(ds); });
-      html += `<details class="ds-source" data-src="${esc(srcKey)}"${this.sourceOpen(srcKey) ? ' open' : ''}><summary class="ds-source-head"><h3>${src.url ? `<a href="${src.url}" target="_blank" rel="noopener">${esc(src.name)}</a>` : esc(src.name)}</h3><span class="badge">${bySource[srcKey].filter(d => d.enabled).length}/${bySource[srcKey].length} on</span></summary>${src.note ? `<p class="note">${esc(src.note)}</p>` : ''}`;
+      html += `<details class="ds-source" data-src="${esc(srcKey)}"${this.sourceOpen(srcKey) ? ' open' : ''}><summary class="ds-source-head"><h3>${esc(src.name)}</h3><span class="badge">${bySource[srcKey].filter(d => d.enabled).length}/${bySource[srcKey].length} on</span></summary>${src.note || src.url ? `<p class="note ds-note">${src.note ? esc(src.note) : ''}${this.sourceLink(src)}</p>` : ''}`;
     Object.keys(groups).forEach(g => {
       html += `<div class="section"><h3>${esc(g)}</h3>`;
       groups[g].forEach(ds => {
@@ -1532,7 +1537,7 @@ window.MB = window.MB || {};
     if (el && el.textContent !== this._cacheText) el.textContent = this._cacheText;
   };
 
-  // "Map overlays" section in the Settings tab: boundary layers and place names.
+  // "Map overlays" section in the Settings tab: boundary layers, place names and the MGRS grid.
   MB.data.renderOverlays = function () {
     const box = document.getElementById('overlaySection');
     if (!box) return;
@@ -1547,9 +1552,10 @@ window.MB = window.MB || {};
       }
       return `<div class="overlay-item"><label class="check" style="margin:0"><input type="checkbox" data-id="${d.id}"${ds.enabled ? ' checked' : ''}> <span>${esc(d.name)}</span></label>
         <div class="note" style="margin-left:23px">${esc(d.desc || '')}${status ? ' <span class="dim">· ' + esc(status) + '</span>' : ''}</div></div>`;
-    }).join('') + (MB.places ? MB.places.overlayHtml() : '');
+    }).join('') + (MB.places ? MB.places.overlayHtml() : '') + (MB.mgrs ? MB.mgrs.overlayHtml() : '');
     box.querySelectorAll('input[data-id]').forEach(cb => cb.addEventListener('change', () => this.toggle(cb.dataset.id)));
     if (MB.places) MB.places.bindOverlays(box);
+    if (MB.mgrs) MB.mgrs.bindOverlays(box);
   };
   MB.data.renderOverlaysSoon = MB.debounce(() => MB.data.renderOverlays(), 250);
 

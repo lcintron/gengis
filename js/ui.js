@@ -1559,10 +1559,13 @@ window.MB = window.MB || {};
     ctl._div.innerHTML = '<div class="coords"></div>';
     const upd = ll => {
       const z = MB.map.getZoom();
-      ctl._div.querySelector('.coords').textContent = (ll ? MB.formatLatLng(ll) : MB.formatLatLng(MB.map.getCenter())) + '  ·  zoom ' + MB.formatZoom(z);
+      const p = ll || MB.map.getCenter(), g = MB.mgrs && MB.mgrs.on ? MB.mgrs.forward(p.lat, p.lng, 5) : null; // with the MGRS grid shown
+      ctl._div.querySelector('.coords').textContent = MB.formatLatLng(p) + (g ? '  ·  ' + g.text : '') + '  ·  zoom ' + MB.formatZoom(z);
     };
     MB.map.on('mousemove', e => upd(e.latlng));
     MB.map.on('moveend zoomend', () => upd());
+    MB.on('project', () => upd());
+    MB.on('mgrs', () => upd());
     upd();
   }
 

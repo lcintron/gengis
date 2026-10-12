@@ -784,7 +784,16 @@ details.ds-source > summary .badge { flex: 0 0 auto; white-space: nowrap; }
   border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--text); box-shadow: 0 8px 20px rgba(0,0,0,.45); }
 .ds-info:hover + .ds-tip, .ds-info:focus + .ds-tip { display: block; } /* hover, or a tap (focus) on touch screens */
 .ds-source-head h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text); }
-.ds-source-head h3 a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--text-dim); }
+/* MGRS grid labels (js/mgrs.js) */
+.mb-mgrs-label { background: transparent; border: 0; width: 0 !important; height: 0 !important; pointer-events: none; }
+.mb-mgrs-label span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font: 700 11px system-ui, sans-serif; color: #fff;
+  text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 2px #000; }
+.mb-mgrs-gzd span { font-size: 13px; color: #ffb000; }
+.mb-mgrs-sq span { font-size: 12px; color: #ffd166; letter-spacing: .04em; }
+.mb-mgrs-e span { transform: translate(-50%, -100%); }
+.mb-mgrs-n span { transform: translate(2px, -100%); }
+.ds-note .src-link { display: inline-flex; vertical-align: -2px; margin-left: 6px; padding: 2px; border-radius: 4px; color: var(--text-dim); }
+.ds-note .src-link:hover, .ds-note .src-link:focus-visible { color: var(--accent); background: var(--bg-3); }
 .ds-source .section { margin-bottom: 10px; }
 .ds-source .section h3 { font-size: 11px; }
 /* chart-style data icons */

@@ -146,6 +146,7 @@ window.MB = window.MB || {};
       p.vesselTraffic = vesselRef();
       p.placeLabels = Object.assign({}, s.placeLabels);
       p.magneticDeclination = { enabled: !!(s.declination && s.declination.on) };
+      p.mgrsGrid = { enabled: !!(s.mgrsGrid && s.mgrsGrid.on) };
       // the defaults for new objects: the color-variation toggle and the styles (a pinned color included)
       p.autoColor = s.autoColor !== false;
       p.defaults = { shape: clone(MB.currentStyle), measure: clone(MB.measureStyle) };
@@ -269,7 +270,10 @@ window.MB = window.MB || {};
       placeLabels: placeLabels(p.placeLabels, opts.keepHistory),
       // magnetic declination: as the project left it; undo snapshots carry none and leave it alone
       declination: p.magneticDeclination && typeof p.magneticDeclination === 'object' ? { on: !!p.magneticDeclination.enabled }
-        : (opts.keepHistory && MB.state.declination ? MB.state.declination : { on: false })
+        : (opts.keepHistory && MB.state.declination ? MB.state.declination : { on: false }),
+      // the MGRS grid overlay, the same way
+      mgrsGrid: p.mgrsGrid && typeof p.mgrsGrid === 'object' ? { on: !!p.mgrsGrid.enabled }
+        : (opts.keepHistory && MB.state.mgrsGrid ? MB.state.mgrsGrid : { on: false })
     });
     if (p.defaults && typeof p.defaults === 'object') {
       if (p.defaults.shape && typeof p.defaults.shape === 'object') MB.currentStyle = Object.assign(clone(MB.defaultStyle), p.defaults.shape);
