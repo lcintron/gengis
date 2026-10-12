@@ -15,6 +15,7 @@ window.MB = window.MB || {};
     autoColor: true,        // each new object gets its own color from the palette
     placeLabels: { countries: true, cities: true, marine: true }, // place names drawn on the map (js/places.js)
     declination: { on: false }, // magnetic declination lines and the click readout (js/declination.js)
+    mgrsGrid: { on: false },    // the MGRS grid overlay (js/mgrs.js)
     layers: [],           // [{id, name, visible, locked}] bottom -> top
     activeLayerId: null,
     svgLibrary: {}        // id -> {id, name, dataUrl, aspect}

@@ -55,8 +55,10 @@ window.MB = window.MB || {};
       return r.json();
     },
 
-    // Resolve free text: coordinates first, then the geocoder. Returns [{label, latlng, bounds?}]
+    // Resolve free text: an MGRS reference, coordinates, then the geocoder. Returns [{label, latlng, bounds?}]
     async resolve(q) {
+      const g = MB.mgrs && MB.mgrs.parse(q);
+      if (g) return [{ label: 'MGRS ' + g.text, latlng: g.center, bounds: L.latLngBounds(g.corners), outline: g.corners, type: 'MGRS' }];
       const ll = MB.parseCoords(q);
       if (ll) return [{ label: 'Coordinates ' + MB.formatLatLng(ll), latlng: ll, type: 'coordinates' }];
       const res = await this.geocode(q, { viewbox: MB.map.getBounds(), bounded: false });
@@ -76,6 +78,9 @@ window.MB = window.MB || {};
         MB.map.setView(res.latlng, opts.zoom || Math.max(MB.map.getZoom(), 16));
       }
       this.showMarker(res.latlng, res.label);
+      if (res.outline) { // an MGRS square: its edges, until the result is dismissed
+        this.outline = L.polygon(res.outline, { color: '#ffd166', weight: 2, dashArray: '6,4', fill: true, fillOpacity: 0.06, interactive: false, pmIgnore: true }).addTo(MB.map);
+      }
     },
 
     showMarker(latlng, label) {
@@ -106,6 +111,7 @@ window.MB = window.MB || {};
 
     clearMarker() {
       if (this.marker) { MB.map.removeLayer(this.marker); this.marker = null; }
+      if (this.outline) { MB.map.removeLayer(this.outline); this.outline = null; }
     },
 
     /* ----- Overpass points of interest ----- */

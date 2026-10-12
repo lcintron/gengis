@@ -91,6 +91,7 @@ window.MB = window.MB || {};
         { sep: true },
         { label: 'Copy coordinates', hint: MB.formatLatLng(latlng, 5), action: () => copyText(MB.formatLatLng(latlng, 6)) },
         { label: isPoint ? 'Copy object position' : 'Copy object center', hint: MB.formatLatLng(center, 5), action: () => copyText(MB.formatLatLng(center, 6)) },
+        ...((g => g ? [{ label: 'Copy object MGRS', hint: g.text, action: () => copyText(g.text) }] : [])(MB.mgrs && MB.mgrs.forward(center.lat, center.lng, 5))), // the same point as an MGRS reference
         ...(MB.otherInfo ? [{ label: 'Other info', hint: 'Declination', action: () => MB.otherInfo(latlng) }] : []),
         { sep: true }
       ];
@@ -186,6 +187,7 @@ window.MB = window.MB || {};
       const hasSvg = Object.keys(MB.state.svgLibrary).length > 0;
       const items = [
         { label: 'Copy coordinates', hint: MB.formatLatLng(ll, 5), action: () => copyText(MB.formatLatLng(ll, 6)) },
+        ...((g => g ? [{ label: 'Copy MGRS', hint: g.text, action: () => copyText(g.text) }] : [])(MB.mgrs && MB.mgrs.forward(ll.lat, ll.lng, 5))),
         { label: 'Center map here', action: () => MB.map.panTo(ll) },
         { label: 'Zoom in here', action: () => MB.map.setView(ll, Math.min(MB.map.getMaxZoom ? MB.map.getMaxZoom() : 19, MB.map.getZoom() + 2)) },
         { sep: true },
