@@ -1537,7 +1537,7 @@ window.MB = window.MB || {};
     if (el && el.textContent !== this._cacheText) el.textContent = this._cacheText;
   };
 
-  // "Map overlays" section in the Settings tab: boundary layers, place names and the MGRS grid.
+  // "Map overlays" section in the Settings tab: boundary layers and place names.
   MB.data.renderOverlays = function () {
     const box = document.getElementById('overlaySection');
     if (!box) return;
@@ -1552,10 +1552,9 @@ window.MB = window.MB || {};
       }
       return `<div class="overlay-item"><label class="check" style="margin:0"><input type="checkbox" data-id="${d.id}"${ds.enabled ? ' checked' : ''}> <span>${esc(d.name)}</span></label>
         <div class="note" style="margin-left:23px">${esc(d.desc || '')}${status ? ' <span class="dim">· ' + esc(status) + '</span>' : ''}</div></div>`;
-    }).join('') + (MB.places ? MB.places.overlayHtml() : '') + (MB.mgrs ? MB.mgrs.overlayHtml() : '');
+    }).join('') + (MB.places ? MB.places.overlayHtml() : '');
     box.querySelectorAll('input[data-id]').forEach(cb => cb.addEventListener('change', () => this.toggle(cb.dataset.id)));
     if (MB.places) MB.places.bindOverlays(box);
-    if (MB.mgrs) MB.mgrs.bindOverlays(box);
   };
   MB.data.renderOverlaysSoon = MB.debounce(() => MB.data.renderOverlays(), 250);
 

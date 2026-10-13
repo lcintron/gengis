@@ -116,6 +116,7 @@
     MB.data.init();
     MB.places.init();
     MB.declination.init();
+    MB.grids.init();
     MB.mgrs.init();
     MB.adsb.init();
     MB.ais.init();

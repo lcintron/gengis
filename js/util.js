@@ -167,9 +167,25 @@ window.MB = window.MB || {};
   // A zoom level as shown: 6, 6.25, 6.5 (two decimals at most, no trailing zeros).
   MB.formatZoom = z => String(+(+z).toFixed(2));
 
+  // Coordinates in the project's format (Settings → Units → Coordinates): decimal degrees ("32.08000, -81.09000"),
+  // degrees and decimal minutes ("32°04.800′N 81°05.400′W") or degrees, minutes and seconds ("32°04′48.0″N 81°05′24.0″W").
+  // digits: the decimal places of decimal degrees; the other forms keep about the same precision. MB.parseCoords
+  // reads all three back.
   MB.formatLatLng = function (ll, digits) {
     digits = digits == null ? 5 : digits;
-    return ll.lat.toFixed(digits) + ', ' + ll.lng.toFixed(digits);
+    const f = MB.state && MB.state.coordFormat;
+    if (f !== 'dm' && f !== 'dms') return ll.lat.toFixed(digits) + ', ' + ll.lng.toFixed(digits);
+    return MB.formatAngle(ll.lat, 'lat', f, digits) + ' ' + MB.formatAngle(ll.lng, 'lng', f, digits);
+  };
+  MB.formatAngle = function (v, axis, f, digits) {
+    if (axis === 'lng') v = ((v + 180) % 360 + 360) % 360 - 180; // the copy of the world in view
+    const hem = axis === 'lat' ? (v < 0 ? 'S' : 'N') : (v < 0 ? 'W' : 'E'), a = Math.abs(v);
+    if (f === 'dm') {
+      const md = Math.max(0, digits - 2), tm = +(a * 60).toFixed(md), d = Math.floor(tm / 60 + 1e-9), m = tm - d * 60;
+      return `${d}°${m.toFixed(md).padStart(md ? md + 3 : 2, '0')}′${hem}`;
+    }
+    const sd = Math.max(0, digits - 4), ts = +(a * 3600).toFixed(sd), d = Math.floor(ts / 3600 + 1e-9), m = Math.floor((ts - d * 3600) / 60 + 1e-9), s = ts - d * 3600 - m * 60;
+    return `${d}°${String(m).padStart(2, '0')}′${s.toFixed(sd).padStart(sd ? sd + 3 : 2, '0')}″${hem}`;
   };
 
   /* ---------- coordinate parsing ---------- */

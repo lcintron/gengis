@@ -34,7 +34,7 @@
 <div id="splash" aria-hidden="true"><img src="icons/splash-wordmark.png" alt=""><div class="ver">Version 0.11.0</div></div>
 <div id="app">
   <header id="topbar">
-    <button id="moreBtn" class="icon-btn" title="Units, base map and project" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    <button id="moreBtn" class="icon-btn" title="Base map and project" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
     <div class="brand">
       <img class="logo" src="icons/logo-on-dark.svg" alt="GenGIS" title="GenGIS (G²)">
       <span class="brand-name" title="GenGIS (G²)">GenGIS</span>
@@ -74,17 +74,10 @@
       <button id="sidebarToggle" class="icon-btn" title="Toggle side panel"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
     </div>
 
-    <!-- units, base map and the project menu: a panel that slides in from the left, under the menu button (ui.js);
+    <!-- the base map and the project menu: a panel that slides in from the left, under the menu button (ui.js);
          below 800 px wide the search moves in at its top -->
     <div id="moreMenu" class="dropdown more-menu hidden" role="menu">
       <div class="more-label more-search">Search</div><div class="more-slot more-search" data-slot="search"></div>
-      <div class="more-label">Units</div><div class="more-slot" data-slot="units">
-        <div class="seg" id="unitsSeg" title="Units of measurement">
-          <button data-units="metric" class="active" title="m, km · m², km²">Metric</button>
-          <button data-units="imperial" title="ft, mi · ft², mi²">Imperial</button>
-          <button data-units="nautical" title="ft or m, nautical miles · ft², mi²">Nautical</button>
-        </div>
-      </div>
       <div class="more-label">Base map</div><div class="more-slot" data-slot="basemap"><select id="basemapSelect" title="Base map"></select></div>
       <div class="more-label">Project</div><div class="more-items menu"></div>
     </div>
@@ -203,6 +196,7 @@
 <script src="js/frequencies.js"></script>
 <script src="js/adsb.js"></script>
 <script src="js/declination.js"></script>
+<script src="js/grids.js"></script>
 <script src="js/mgrs.js"></script>
 <script src="js/ais.js"></script>
 <script src="js/places.js"></script>

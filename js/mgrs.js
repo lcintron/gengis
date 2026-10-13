@@ -3,7 +3,7 @@
  *   and Svalbard exceptions, 100 km square letters (the AA scheme), 1 to 5 digit precision. Latitudes 80°S to 84°N
  *   (beyond is the polar UPS grid, not handled).
  * - search: a typed reference ("18SUJ2348706483", "18S UJ 234 064", "18SUJ", "18S") centers on its square
- * - an overlay (Settings → Map overlays, off by default): grid zone boundaries, and as the map zooms in the 100 km,
+ * - an overlay (Settings → Grid systems, one grid at a time, off by default): grid zone boundaries, and as the map zooms in the 100 km,
  *   10 km, 1 km and 100 m lines, labelled; saved with the project
  */
 window.MB = window.MB || {};
@@ -135,17 +135,10 @@ window.MB = window.MB || {};
       pane.style.pointerEvents = 'none';
       this.renderer = L.canvas({ pane: 'mb-mgrs', padding: 0.1 });
       this.group = L.layerGroup();
-      MB.map.on('moveend', () => { if (this.on) this.render(); });
-      MB.on('project', () => { this.apply(); if (MB.data && MB.data.renderOverlaysSoon) MB.data.renderOverlaysSoon(); });
+      MB.map.on('moveend resize', () => { if (this.on) this.render(); }); // resize: the side panel or the window (the labels' clear area)
       this.apply();
     },
 
-    set(on) {
-      MB.state.mgrsGrid = { on: !!on };
-      if (MB.autosave) MB.autosave();
-      this.apply();
-      MB.emit('mgrs'); // the coordinates readout adds or drops the reference
-    },
     apply() {
       if (!this.group) return;
       if (this.on) { if (!MB.map.hasLayer(this.group)) this.group.addTo(MB.map); this.render(); }
@@ -162,6 +155,7 @@ window.MB = window.MB || {};
       if (S >= N) return;
       const mpp = 40075016.686 * Math.cos(map.getCenter().lat * DEG) / (256 * 2 ** z);
       const step = STEPS.slice().reverse().find(s => s / mpp >= MIN_PX) || null;
+      this.squarePx = 100000 / mpp; // a 100 km square on screen: labelled when there is room
       const labels = [], lines = { gzd: [], sq: [], fine: [] };
       const W = view.getWest(), E = view.getEast();
       // each copy of the world the view shows: work in -180..180 and draw shifted
@@ -177,7 +171,7 @@ window.MB = window.MB || {};
             if (z0 > w || (z0 === -180 && W - off < -180)) lines.gzd.push([[s, z0 + off], [n, z0 + off]]); // the 180° line too, where the view spans it
             const cell = { zone, bi, s, n, w: Math.max(w, z0), e: Math.min(e, z1), off };
             const px = map.latLngToContainerPoint([b1, z1 + off]).x - map.latLngToContainerPoint([b0, z0 + off]).x;
-            if (!step && px > 28) labels.push({ at: [(Math.max(b0, S) + Math.min(b1, N)) / 2, (cell.w + cell.e) / 2 + off], text: zone + BANDS[bi], cls: 'gzd' });
+            if ((!step || this.squarePx < 90) && px > 28) labels.push({ at: [(Math.max(b0, S) + Math.min(b1, N)) / 2, (cell.w + cell.e) / 2 + off], text: zone + BANDS[bi], cls: 'gzd' });
             if (step) this.cellLines(cell, step, lines, labels);
           }
         }
@@ -187,15 +181,7 @@ window.MB = window.MB || {};
       add(lines.fine, FINE, 1, 0.55);
       add(lines.sq, SQ100, 1.4, 0.9);
       add(lines.gzd, GZD, 2.2, 0.95);
-      const placed = [];
-      labels.forEach(l => {
-        const p = map.latLngToContainerPoint(l.at);
-        if (p.x < 4 || p.y < 4 || p.x > size.x - 4 || p.y > size.y - 4) return;
-        if (placed.some(q => Math.abs(q.x - p.x) < 34 && Math.abs(q.y - p.y) < 16)) return;
-        placed.push(p);
-        L.marker(l.at, { pane: 'mb-mgrs', interactive: false, keyboard: false, pmIgnore: true,
-          icon: L.divIcon({ className: 'mb-mgrs-label mb-mgrs-' + l.cls, iconSize: null, html: `<span>${MB.escapeHtml(l.text)}</span>` }) }).addTo(this.group);
-      });
+      MB.grids.placeLabels(this.group, 'mb-mgrs', labels); // clear of the toolbar, panels and controls
     },
 
     // The UTM lines of one zone-band cell in view: eastings and northings every `step`, cut at the cell's edges.
@@ -225,29 +211,28 @@ window.MB = window.MB || {};
         return runs.filter(r => r.length > 1).map(r => r.map(p => [p.lat, p.lon + off]));
       };
       const digits = v => (step >= 1000 ? pad((v / 1000) % 100, 2) : pad((v / 100) % 1000, 3)); // the figures a map shows by its lines
-      const size = map.getSize();
+      // Each line's figures where it crosses the label line (the clear area's bottom or left edge, or a center line).
+      const spots = MB.grids.spots();
+      const label = (runs, axis, text, kind) => {
+        for (const r of runs) {
+          const p = MB.grids.crossing(r.map(ll => map.latLngToContainerPoint(ll)), axis, axis === 'y' ? spots.y : spots.x);
+          if (p && MB.grids.fits(p, text, kind, spots)) { labels.push({ at: map.containerPointToLatLng(p), text, cls: kind }); return; }
+        }
+      };
       for (let v = Math.ceil(e0 / step) * step; v <= e1; v += step) {
         const runs = trace(v, true, n0, n1);
         if (!runs.length) continue;
         (v % 100000 === 0 ? lines.sq : lines.fine).push(...runs);
-        if (step < 100000) { // labelled along the bottom of the view
-          let best = null;
-          runs.forEach(r => r.forEach(ll => { const p = map.latLngToContainerPoint(ll); if (p.y <= size.y - 14 && p.x > 0 && p.x < size.x && (!best || p.y > best.y)) best = { y: p.y, ll }; }));
-          if (best) labels.push({ at: best.ll, text: digits(v), cls: 'e' });
-        }
+        if (step < 100000) label(runs, 'y', digits(v), 'v');
       }
       for (let v = Math.ceil(n0 / step) * step; v <= n1; v += step) {
         const runs = trace(v, false, e0, e1);
         if (!runs.length) continue;
         (v % 100000 === 0 ? lines.sq : lines.fine).push(...runs);
-        if (step < 100000) { // along the left of the view
-          let best = null;
-          runs.forEach(r => r.forEach(ll => { const p = map.latLngToContainerPoint(ll); if (p.x >= 40 && p.y > 0 && p.y < size.y && (!best || p.x < best.x)) best = { x: p.x, ll }; }));
-          if (best) labels.push({ at: best.ll, text: digits(v + (v < 0 ? 10000000 : 0)), cls: 'n' });
-        }
+        if (step < 100000) label(runs, 'x', digits(v + (v < 0 ? 10000000 : 0)), 'h');
       }
       // the 100 km squares' letters, at their centers
-      if (step >= 10000) {
+      if (step >= 10000 && this.squarePx >= 90) {
         for (let ve = Math.floor(e0 / 100000) * 100000; ve < e1; ve += 100000) {
           for (let vn = Math.floor(n0 / 100000) * 100000; vn < n1; vn += 100000) {
             const c = fromUtm(zone, ve + 50000, vn + 50000);
@@ -256,16 +241,6 @@ window.MB = window.MB || {};
           }
         }
       }
-    },
-
-    /* ----- Settings → Map overlays ----- */
-    overlayHtml() {
-      return `<div class="overlay-item"><label class="check" style="margin:0"><input type="checkbox" data-mgrs-grid${this.on ? ' checked' : ''}> <span>MGRS grid</span></label>
-        <div class="note" style="margin-left:23px">Military Grid Reference System: grid zones, then 100 km, 10 km, 1 km and 100 m squares as you zoom in. MGRS references can be searched with this off too.</div></div>`;
-    },
-    bindOverlays(box) {
-      const cb = box.querySelector('input[data-mgrs-grid]');
-      if (cb) cb.addEventListener('change', () => this.set(cb.checked));
     }
   };
 })(window.MB);
