@@ -118,7 +118,7 @@ window.MB = window.MB || {};
       format: FORMAT, schema: SCHEMA, generator: { name: MB.APP.name, version: MB.APP.version },
       id: s.projectId, // which project this is: its saved copy on a device follows it (optional; older files have none)
       name: s.projectName,
-      units: { system: s.units, shortDistances: s.shortUnit },
+      units: { system: s.units, shortDistances: s.shortUnit, coordinates: s.coordFormat || 'dd' },
       editing: { showMeasurements: !!s.showMeasurements, continueDrawing: s.continueDrawing !== false, snapping: s.snapping !== false },
       layers: clone(s.layers), activeLayer: s.activeLayerId,
       features: Object.keys(MB.featureLayers).map(id => MB.serializeFeature(MB.featureLayers[id])),
@@ -147,6 +147,8 @@ window.MB = window.MB || {};
       p.placeLabels = Object.assign({}, s.placeLabels);
       p.magneticDeclination = { enabled: !!(s.declination && s.declination.on) };
       p.mgrsGrid = { enabled: !!(s.mgrsGrid && s.mgrsGrid.on) };
+      p.latlonGrid = { enabled: !!(s.latlonGrid && s.latlonGrid.on) };
+      p.gridLabels = s.gridLabels === 'center' ? 'center' : 'edges';
       // the defaults for new objects: the color-variation toggle and the styles (a pinned color included)
       p.autoColor = s.autoColor !== false;
       p.defaults = { shape: clone(MB.currentStyle), measure: clone(MB.measureStyle) };
@@ -260,6 +262,7 @@ window.MB = window.MB || {};
       projectName: p.name || 'Untitled map',
       units: MB.unitSystems[units.system] ? units.system : 'metric',
       shortUnit: units.shortDistances === 'm' ? 'm' : 'ft',
+      coordFormat: units.coordinates === 'dm' || units.coordinates === 'dms' ? units.coordinates : 'dd',
       showMeasurements: !!ed.showMeasurements,
       continueDrawing: ed.continueDrawing !== false,
       snapping: ed.snapping !== false,
@@ -273,7 +276,10 @@ window.MB = window.MB || {};
         : (opts.keepHistory && MB.state.declination ? MB.state.declination : { on: false }),
       // the MGRS grid overlay, the same way
       mgrsGrid: p.mgrsGrid && typeof p.mgrsGrid === 'object' ? { on: !!p.mgrsGrid.enabled }
-        : (opts.keepHistory && MB.state.mgrsGrid ? MB.state.mgrsGrid : { on: false })
+        : (opts.keepHistory && MB.state.mgrsGrid ? MB.state.mgrsGrid : { on: false }),
+      latlonGrid: p.latlonGrid && typeof p.latlonGrid === 'object' ? { on: !!p.latlonGrid.enabled }
+        : (opts.keepHistory && MB.state.latlonGrid ? MB.state.latlonGrid : { on: false }),
+      gridLabels: p.gridLabels === 'center' || p.gridLabels === 'edges' ? p.gridLabels : (opts.keepHistory ? MB.state.gridLabels : 'edges')
     });
     if (p.defaults && typeof p.defaults === 'object') {
       if (p.defaults.shape && typeof p.defaults.shape === 'object') MB.currentStyle = Object.assign(clone(MB.defaultStyle), p.defaults.shape);
@@ -310,7 +316,7 @@ window.MB = window.MB || {};
   }
 
   MB.newProject = function () {
-    MB.loadProject({ format: FORMAT, schema: SCHEMA, name: 'Untitled map', units: { system: MB.state.units, shortDistances: MB.state.shortUnit },
+    MB.loadProject({ format: FORMAT, schema: SCHEMA, name: 'Untitled map', units: { system: MB.state.units, shortDistances: MB.state.shortUnit, coordinates: MB.state.coordFormat },
       layers: [{ id: MB.uid(), name: 'Layer 1', visible: true, locked: false }] }, { keepView: true });
   };
 

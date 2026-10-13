@@ -16,6 +16,9 @@ window.MB = window.MB || {};
     placeLabels: { countries: true, cities: true, marine: true }, // place names drawn on the map (js/places.js)
     declination: { on: false }, // magnetic declination lines and the click readout (js/declination.js)
     mgrsGrid: { on: false },    // the MGRS grid overlay (js/mgrs.js)
+    latlonGrid: { on: false },  // the latitude/longitude grid (js/grids.js)
+    gridLabels: 'edges',        // grid labels along the edges, or along the center lines
+    coordFormat: 'dd',          // coordinates shown as dd (decimal degrees), dm or dms
     layers: [],           // [{id, name, visible, locked}] bottom -> top
     activeLayerId: null,
     svgLibrary: {}        // id -> {id, name, dataUrl, aspect}
@@ -281,6 +284,11 @@ window.MB = window.MB || {};
   MB.setUnits = function (units) {
     MB.state.units = MB.unitSystems[units] ? units : 'metric';
     MB.emit('units', MB.state.units);
+    MB.autosave();
+  };
+  MB.setCoordFormat = function (f) {
+    MB.state.coordFormat = f === 'dm' || f === 'dms' ? f : 'dd';
+    MB.emit('units', MB.state.units); // everything that shows coordinates follows
     MB.autosave();
   };
   MB.setShortUnit = function (u) {

@@ -110,7 +110,6 @@ window.MB = window.MB || {};
     MB.on('project', showName);
     showName(); // the autosaved project was loaded before this bar was set up: its 'project' event came too early
 
-    $$('#unitsSeg button').forEach(b => b.addEventListener('click', () => MB.setUnits(b.dataset.units)));
     MB.on('units', u => {
       $$('[data-units]').forEach(b => b.classList.toggle('active', b.dataset.units === u));
       MB.ui.setupScale();
@@ -161,7 +160,7 @@ window.MB = window.MB || {};
       MB.ui.menuAction(act);
     });
 
-    // The units, the base map and the project menu (presenter mode included) are in a panel that slides in from the
+    // The base map and the project menu (presenter mode included) are in a panel that slides in from the
     // left, under the menu button at the bar's left end, so the bar keeps the search and a few buttons: one row that
     // never scrolls (and, in the desktop app, room to grab the window). Esc or a click elsewhere closes it.
     const more = $('#moreMenu'), moreBtn = $('#moreBtn');
@@ -1380,16 +1379,47 @@ window.MB = window.MB || {};
 
   /* ================= settings panel ================= */
 
+  // Segmented controls that are radio groups (role="radiogroup"): one tab stop, the checked option, and the arrow
+  // keys move the choice. A group that had the focus before its panel was redrawn gets it back (by its aria-label).
+  MB.ui.focusedRadioGroup = root => {
+    const g = document.activeElement && document.activeElement.closest('[role="radiogroup"]');
+    return g && root.contains(g) ? g.getAttribute('aria-label') : null;
+  };
+  MB.ui.radios = function (root, refocus) {
+    root.querySelectorAll('[role="radiogroup"]').forEach(g => {
+      const opts = Array.from(g.querySelectorAll('[role="radio"]:not([disabled])'));
+      if (!opts.length) return;
+      const checked = opts.find(b => b.getAttribute('aria-checked') === 'true') || opts[0];
+      g.querySelectorAll('[role="radio"]').forEach(b => { b.tabIndex = b === checked ? 0 : -1; });
+      g.addEventListener('keydown', e => {
+        const i = opts.indexOf(document.activeElement), d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+        if (i < 0 || !d) return;
+        e.preventDefault();
+        const next = opts[(i + d + opts.length) % opts.length];
+        next.focus();
+        next.click();
+      });
+      if (refocus && g.getAttribute('aria-label') === refocus) checked.focus();
+    });
+  };
+
   MB.ui.renderSettings = function () {
     const panel = $('#tab-settings');
     const s = MB.state;
+    const refocus = MB.ui.focusedRadioGroup(panel); // a choice made from the keyboard keeps the focus through the redraw
     panel.innerHTML = `<div class="panel-head"><h3>Settings</h3></div>
-      <div class="section"><h3>Map overlays</h3><div id="overlaySection"></div></div>
-      <div class="section"><h3>Offline areas</h3><div id="offlineSection"></div></div>
       <div class="section"><h3>Units</h3>
-        <div class="seg" id="unitsSeg2"><button data-units="metric"${s.units === 'metric' ? ' class="active"' : ''} title="m, km · m², km²">Metric</button><button data-units="imperial"${s.units === 'imperial' ? ' class="active"' : ''} title="ft, mi · ft², mi²">Imperial</button><button data-units="nautical"${s.units === 'nautical' ? ' class="active"' : ''} title="NM (ft or m below 0.1 NM) · ft², mi²">Nautical</button></div>
-        <div class="row"${s.units === 'nautical' ? '' : ' style="display:none"'}><label>Short distances</label><select id="setShortUnit"><option value="ft"${s.shortUnit !== 'm' ? ' selected' : ''}>feet</option><option value="m"${s.shortUnit === 'm' ? ' selected' : ''}>meters</option></select></div>
+        <div class="field"><span class="field-label">Distance and area</span>
+          <div class="seg" id="unitsSeg2" role="radiogroup" aria-label="Distance and area units">${[['metric', 'Metric', 'm, km · m², km²'], ['imperial', 'Imperial', 'ft, mi · ft², mi²'], ['nautical', 'Nautical', 'NM (ft or m below 0.1 NM) · ft², mi²']].map(([v, t, tip]) => `<button type="button" role="radio" aria-checked="${s.units === v}" data-units="${v}" title="${tip}"${s.units === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div></div>
+        ${s.units === 'nautical' ? `<div class="field"><span class="field-label">Distances under 0.1 NM</span>
+          <div class="seg" role="radiogroup" aria-label="Short distances">${[['ft', 'Feet'], ['m', 'Meters']].map(([v, t]) => `<button type="button" role="radio" aria-checked="${(s.shortUnit === 'm' ? 'm' : 'ft') === v}" data-short="${v}"${(s.shortUnit === 'm' ? 'm' : 'ft') === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div></div>` : ''}
+        <div class="field"><label class="field-label" for="setCoordFormat">Coordinates</label>
+          <select id="setCoordFormat">${[['dd', 'Decimal degrees'], ['dm', 'Degrees and decimal minutes'], ['dms', 'Degrees, minutes, seconds']].map(([v, t]) => `<option value="${v}"${(s.coordFormat || 'dd') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
+          <p class="field-hint">Map center: ${esc(MB.formatLatLng(MB.map.getCenter()))}</p></div>
       </div>
+      <div class="section"><h3>Map overlays</h3><div id="overlaySection"></div></div>
+      <div class="section"><h3>Grid systems</h3><div id="gridSection"></div></div>
+      <div class="section"><h3>Offline areas</h3><div id="offlineSection"></div></div>
       <div class="section"><h3>Interface</h3>
         <div class="row"><label>Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
         <div class="row"><label>Preload tiles</label><select id="setPrefetch">${[['auto', 'Automatic (off on volunteer servers)'], ['on', 'Always'], ['off', 'Never']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
@@ -1409,9 +1439,12 @@ window.MB = window.MB || {};
         <div class="btn-row"><button class="btn small" data-act="apis" title="Tile providers, API keys, geocoder and Overpass endpoints">Map &amp; search APIs…</button><button class="btn small" data-act="present">Presenter mode</button></div>
       </div>`;
     if (MB.data && MB.data.renderOverlays) MB.data.renderOverlays();
+    if (MB.grids) MB.grids.renderSection();
     if (MB.offline && MB.offline.renderSection) MB.offline.renderSection();
     $$('#unitsSeg2 button', panel).forEach(b => b.addEventListener('click', () => MB.setUnits(b.dataset.units)));
-    $('#setShortUnit', panel).addEventListener('change', e => MB.setShortUnit(e.target.value));
+    MB.ui.radios($('.section', panel), refocus); // Units (Grid systems sets up its own)
+    $$('[data-short]', panel).forEach(b => b.addEventListener('click', () => MB.setShortUnit(b.dataset.short)));
+    $('#setCoordFormat', panel).addEventListener('change', e => MB.setCoordFormat(e.target.value));
     $('#setMeasure', panel).addEventListener('change', e => { s.showMeasurements = e.target.checked; MB.refreshAllTooltips(); MB.autosave(); });
     $('#setTipDelay', panel).addEventListener('change', e => { MB.settings.tooltipDelayMs = +e.target.value; MB.saveSettings(); });
     $('#setPrefetch', panel).addEventListener('change', e => { MB.settings.prefetchTiles = e.target.value; MB.saveSettings(); MB.tilePrefetch.lastKey = ''; MB.tilePrefetch.schedule(); });
@@ -1566,6 +1599,7 @@ window.MB = window.MB || {};
     MB.map.on('moveend zoomend', () => upd());
     MB.on('project', () => upd());
     MB.on('mgrs', () => upd());
+    MB.on('units', () => upd()); // the coordinate format
     upd();
   }
 
