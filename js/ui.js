@@ -337,6 +337,7 @@ window.MB = window.MB || {};
       case 'recent': MB.projects.openDialog(); break;
       case 'save': MB.saveToFile(); break;
       case 'geojson': MB.exportGeoJSON(); break;
+      case 'export': MB.exportMap.open(); break;
       case 'install': if (MB.installPrompt) { MB.installPrompt.prompt(); MB.installPrompt = null; $('#installBtn').classList.add('hidden'); } break;
       case 'about': openDialog($('#aboutDialog')); break;
       case 'sources': openDialog($('#sourcesDialog')); break;
@@ -1469,7 +1470,7 @@ window.MB = window.MB || {};
         <label class="check"><input type="checkbox" id="setSnap"${s.snapping ? ' checked' : ''}> Snap to other shapes</label>
       </div>
       <div class="section"><h3>Project</h3>
-        <div class="btn-row"><button class="btn small" data-act="save">Save to file</button><button class="btn small" data-act="open">Open file</button><button class="btn small" data-act="geojson">Export GeoJSON</button></div>
+        <div class="btn-row"><button class="btn small" data-act="save">Save to file</button><button class="btn small" data-act="open">Open file</button><button class="btn small" data-act="geojson">Export GeoJSON</button><button class="btn small" data-act="export">Export image or PDF…</button></div>
         <div class="info-line" id="saveWhere"></div>
         <div id="desktopFilesBox"></div>
         <div class="btn-row"><button class="btn small" id="setPersist" hidden>Keep on this device</button><button class="btn small danger" id="setReset">Reset project</button></div>
