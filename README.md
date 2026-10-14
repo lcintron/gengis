@@ -27,7 +27,7 @@ A free map builder that runs in the browser (installable, works offline) or as a
 - **Combine and reuse**: multi-select, join lines into shapes, join overlapping shapes into one polygon, duplicate, and copy a style to paste on other objects.
 - **Measure** distances and areas in metric, imperial or nautical units, with a scale bar. A circle shows its radius while you draw it, and objects can show their length, perimeter, area, radius or position on the map.
 - **Layers** with show/hide, lock and draw order, duplicate, and **groups**: a grouped layer's objects are selected, moved, resized and deleted together. Locked objects can still be selected and inspected. Undo/redo, right-click menus, presenter mode with full screen.
-- **Projects** save automatically on the device as you work, with recent projects and earlier copies to restore; save/open as `.gengis.json`; GeoJSON import/export. In the desktop app each named project is also kept as a file (`Documents\GenGIS` by default).
+- **Projects** save automatically on the device as you work, with recent projects and earlier copies to restore; save/open as `.gengis.json`; GeoJSON import/export; the map exported as a PNG, JPEG or PDF (up to 4× resolution, paper size and margins). In the desktop app each named project is also kept as a file (`Documents\GenGIS` by default).
 - **Search** addresses, places and coordinates; find points of interest; center on **your location**, with a beam showing which way the device points (compass, or direction of travel).
 - **FAA data**, live for the area in view: Class B–E airspace with floors and ceilings, special use airspace, LAANC ceilings, security flight restrictions, TFRs, airports (with radio frequencies) and more. Click anywhere to see everything under that point; the feature's source, geometry and attributes show in Properties. Country and state borders at every zoom. Any public ArcGIS layer can be added.
 - **Live air traffic (ADS-B)** from your own dump1090 receiver or the adsb.fi and adsb.lol networks, with type icons colored by altitude and aircraft look-up.
@@ -83,4 +83,4 @@ Map tiles, [Nominatim](https://operations.osmfoundation.org/policies/nominatim/)
 
 ## License
 
-[MIT](LICENSE). Bundled Leaflet (BSD 2-Clause), Leaflet-Geoman (MIT), polygon-clipping (MIT) and the Lucide icons (ISC) keep their own licenses.
+[MIT](LICENSE). Bundled Leaflet (BSD 2-Clause), Leaflet-Geoman (MIT), polygon-clipping (MIT), html-to-image (MIT) and the Lucide icons (ISC) keep their own licenses.
