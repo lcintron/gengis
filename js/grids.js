@@ -63,7 +63,7 @@ window.MB = window.MB || {};
       // the map: the grid is laid out again once the panel has settled.
       const relayout = MB.debounce(() => { if (this.latlonOn) this.render(); if (MB.mgrs && MB.mgrs.on) MB.mgrs.render(); }, 250);
       const watch = new MutationObserver(relayout);
-      ['sidebar', 'toolHint'].forEach(id => { const el = document.getElementById(id); if (el) watch.observe(el, { attributes: true, attributeFilter: ['class'] }); });
+      ['sidebar', 'toolHint', 'mapwrap'].forEach(id => { const el = document.getElementById(id); if (el) watch.observe(el, { attributes: true, attributeFilter: ['class'] }); });
       MB.on('project', () => { this.normalize(); this.apply(); if (MB.mgrs) MB.mgrs.apply(); this.renderSection(); });
       this.normalize();
       this.apply();
@@ -108,12 +108,12 @@ window.MB = window.MB || {};
       };
       let l = 0, r = size.x, t = 0, b = size.y;
       const tb = cover(document.getElementById('toolbar'));
-      if (tb) l = Math.max(l, tb.x1);
+      if (tb) { if (tb.x0 > size.x / 2) r = Math.min(r, tb.x0); else l = Math.max(l, tb.x1); } // on the left, or the right
       const sb = document.getElementById('sidebar'), side = sb && !sb.classList.contains('collapsed') ? cover(sb) : null;
       if (side) { if (side.x0 > size.x / 2) r = Math.min(r, side.x0); else b = Math.min(b, side.y0); } // beside the map, or a bottom sheet
       const c = map.getContainer();
-      const tr = cover(c.querySelector('.leaflet-top.leaflet-right'));
-      if (tr && tr.x1 - tr.x0 < size.x / 3) r = Math.min(r, tr.x0);
+      const tr = cover(c.querySelector('.leaflet-top.leaflet-right')); // the map's buttons: right, or left with the toolbar right
+      if (tr && tr.x1 - tr.x0 < size.x / 3) { if (tr.x0 > size.x / 2) r = Math.min(r, tr.x0); else l = Math.max(l, tr.x1); }
       ['.leaflet-bottom.leaflet-left', '.leaflet-bottom.leaflet-right'].forEach(sel => { const k = cover(c.querySelector(sel)); if (k && k.y1 - k.y0 < size.y / 2) b = Math.min(b, k.y0); });
       // things over part of the map only (the tool hint, at the top while a tool is in use): no label on them
       const hint = cover(document.getElementById('toolHint'));

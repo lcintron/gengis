@@ -123,7 +123,7 @@ window.MB = window.MB || {};
     const fillBasemaps = () => {
       bm.innerHTML = '';
       const g1 = document.createElement('optgroup'); g1.label = 'Built-in';
-      Object.keys(MB.basemaps).forEach(k => {
+      Object.keys(MB.basemaps).sort((a, b) => MB.basemaps[a].name.localeCompare(MB.basemaps[b].name)).forEach(k => { // A-Z
         const d = MB.basemaps[k];
         const o = document.createElement('option'); o.value = k;
         o.textContent = d.name + (d.keyGroup && !MB.builtinKey(d.keyGroup) ? ' (needs key)' : '');
@@ -133,7 +133,7 @@ window.MB = window.MB || {};
       const custom = (MB.settings && MB.settings.providers) || [];
       if (custom.length) {
         const g2 = document.createElement('optgroup'); g2.label = 'Configured providers';
-        custom.forEach(p => { const o = document.createElement('option'); o.value = 'custom:' + p.id; o.textContent = p.name + (p.url.includes('{key}') && !p.key ? ' (needs key)' : ''); g2.appendChild(o); });
+        custom.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).forEach(p => { const o = document.createElement('option'); o.value = 'custom:' + p.id; o.textContent = p.name + (p.url.includes('{key}') && !p.key ? ' (needs key)' : ''); g2.appendChild(o); });
         bm.appendChild(g2);
       }
       bm.value = MB.state.basemap;
@@ -408,7 +408,10 @@ window.MB = window.MB || {};
     if (!tb || !wrap || !wrap.clientHeight) return;
     const scrolled = tb.scrollTop; // a docked strip keeps its place through a re-fit
     tb.classList.remove('docked'); wrap.classList.remove('tb-docked'); tb.style.transform = '';
-    const room = wrap.clientHeight - tb.offsetTop - CORNER_ROOM, need = tb.offsetHeight;
+    // on the right, the bottom corner holds the scale bar and any legend: room for whatever is there
+    const corner = wrap.classList.contains('tb-right') ? $('.leaflet-bottom.leaflet-right', wrap) : null;
+    const below = Math.max(CORNER_ROOM, corner ? corner.offsetHeight + 12 : 0);
+    const room = wrap.clientHeight - tb.offsetTop - below, need = tb.offsetHeight;
     if (need <= room) return;
     const s = room / need;
     if (s >= TOOLBAR_MIN_SCALE) { tb.style.transform = `scale(${s.toFixed(3)})`; return; }
@@ -418,9 +421,26 @@ window.MB = window.MB || {};
   }
   MB.ui.fitToolbar = fitToolbar;
 
+  // Settings → Interface → Toolbar: the tools down the map's left edge (the default) or its right one, where the
+  // map's own buttons (zoom, location) then move to the left. A preference of this device.
+  MB.ui.toolbarSide = () => (MB.settings && MB.settings.toolbarSide === 'right' ? 'right' : 'left');
+  MB.ui.applyToolbarSide = function () {
+    const wrap = $('#mapwrap');
+    if (!wrap) return;
+    wrap.classList.toggle('tb-right', MB.ui.toolbarSide() === 'right');
+    document.documentElement.classList.toggle('tb-right', MB.ui.toolbarSide() === 'right'); // for presenter mode's logo (app.css)
+    fitToolbar();
+  };
+  MB.ui.setToolbarSide = function (side) {
+    MB.settings.toolbarSide = side === 'right' ? 'right' : 'left';
+    MB.saveSettings();
+    MB.ui.applyToolbarSide();
+    MB.ui.renderSettings();
+  };
+
   function initToolbar() {
     if (window.ResizeObserver) new ResizeObserver(() => fitToolbar()).observe($('#mapwrap'));
-    fitToolbar();
+    MB.ui.applyToolbarSide(); // fits it too
     $$('#toolbar button[data-tool]').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool)));
     MB.on('tool', name => {
       $$('#toolbar button[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
@@ -1424,9 +1444,11 @@ window.MB = window.MB || {};
       <div class="section"><h3>Map overlays</h3><div id="overlaySection"></div></div>
       <div class="section"><h3>Grid systems</h3><div id="gridSection"></div></div>
       <div class="section"><h3>Offline areas</h3><div id="offlineSection"></div></div>
-      <div class="section"><h3>Interface</h3>
-        <div class="row"><label>Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
-        <div class="row"><label>Preload tiles</label><select id="setPrefetch">${[['auto', 'Automatic (off on volunteer servers)'], ['on', 'Always'], ['off', 'Never']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+      <div class="section" id="interfaceSection"><h3>Interface</h3>
+        <div class="field"><span class="field-label">Toolbar</span>
+          <div class="seg" role="radiogroup" aria-label="Toolbar position">${[['left', 'Left side'], ['right', 'Right side']].map(([v, t]) => `<button type="button" role="radio" aria-checked="${MB.ui.toolbarSide() === v}" data-tb-side="${v}"${MB.ui.toolbarSide() === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div></div>
+        <div class="field"><label class="field-label" for="setTipDelay">Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'Immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
+        <div class="field"><label class="field-label" for="setPrefetch">Preload tiles</label><select id="setPrefetch">${[['auto', 'Automatic (off on volunteer servers)'], ['on', 'Always'], ['off', 'Never']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
       </div>
       <div class="section"><h3>Drawing</h3>
         <label class="check"><input type="checkbox" id="setMeasure"${s.showMeasurements ? ' checked' : ''}> Measurement labels on shapes</label>
@@ -1447,6 +1469,8 @@ window.MB = window.MB || {};
     if (MB.offline && MB.offline.renderSection) MB.offline.renderSection();
     $$('#unitsSeg2 button', panel).forEach(b => b.addEventListener('click', () => MB.setUnits(b.dataset.units)));
     MB.ui.radios($('.section', panel), refocus); // Units (Grid systems sets up its own)
+    MB.ui.radios($('#interfaceSection', panel), refocus);
+    $$('[data-tb-side]', panel).forEach(b => b.addEventListener('click', () => MB.ui.setToolbarSide(b.dataset.tbSide)));
     $$('[data-short]', panel).forEach(b => b.addEventListener('click', () => MB.setShortUnit(b.dataset.short)));
     $('#setCoordFormat', panel).addEventListener('change', e => MB.setCoordFormat(e.target.value));
     $('#setMeasure', panel).addEventListener('change', e => { s.showMeasurements = e.target.checked; MB.refreshAllTooltips(); MB.autosave(); });

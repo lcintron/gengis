@@ -83,6 +83,9 @@ html[data-titlebar="mac"] body.presenting #presentDrag { height: 40px; right: 0;
 html[data-titlebar]:fullscreen body.presenting #presentDrag, html.win-fullscreen body.presenting #presentDrag { display: none; }
 html[data-titlebar]:fullscreen body.presenting .leaflet-top.leaflet-right, html.win-fullscreen body.presenting .leaflet-top.leaflet-right { top: 0; }
 html[data-titlebar]:fullscreen body.presenting .present-logo, html.win-fullscreen body.presenting .present-logo { left: 12px; }
+/* the toolbar on the right puts the map's buttons top left, where the presenter logo is: they start below it, in a
+   browser, a desktop window and full screen alike (the id outranks the title-bar rules above) */
+html.tb-right body.presenting #mapwrap .leaflet-top.leaflet-right { top: max(60px, env(titlebar-area-height, 0px)); }
 
 .btn {
   background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
@@ -221,7 +224,13 @@ body.presenting .mb-scale-box { display: none !important; }
 #toolbar.docked::-webkit-scrollbar-track { background: transparent; }
 #toolbar.docked { direction: rtl; } /* its scroll bar on the left, against the screen's edge */
 #toolbar.docked button, #toolbar.docked .sep { flex: 0 0 auto; direction: ltr; }
-#mapwrap.tb-docked .leaflet-bottom.leaflet-left { left: var(--tb-w, 52px); } /* the coordinates and attribution beside the strip */
+#mapwrap.tb-docked:not(.tb-right) .leaflet-bottom.leaflet-left { left: var(--tb-w, 52px); } /* the coordinates and attribution beside the strip */
+/* the toolbar on the right (Settings → Interface): mirrored, and the map's own buttons move to the top left */
+#mapwrap.tb-right #toolbar { left: auto; right: 12px; transform-origin: top right; }
+#mapwrap.tb-right #toolbar.docked { right: 0; border-width: 0 0 0 1px; direction: ltr; } /* its scroll bar against the screen's edge */
+#mapwrap.tb-right.tb-docked .leaflet-bottom.leaflet-right { right: var(--tb-w, 52px); }
+#mapwrap.tb-right .leaflet-top.leaflet-right { right: auto; left: 0; }
+#mapwrap.tb-right .leaflet-top.leaflet-right .leaflet-control { float: left; clear: both; margin-right: 0; margin-left: 10px; }
 
 /* the tool's instructions: centered at the top of the map (nothing follows the pointer) */
 .tool-hint {
@@ -243,6 +252,13 @@ body.presenting .mb-scale-box { display: none !important; }
 .leaflet-top.leaflet-right { top: 0; }
 .leaflet-bar a { background: var(--bg-2); color: var(--text); border-bottom-color: var(--border); }
 .leaflet-bar a:hover { background: var(--bg-3); }
+/* Leaflet lights a focused button almost white (#f4f4f4): a click left it lit until the focus moved on. Focus keeps
+   the button's own colour; the keyboard's focus gets a ring instead. */
+.leaflet-bar a:focus { background: var(--bg-2); }
+.leaflet-bar a:focus:hover { background: var(--bg-3); }
+.leaflet-bar a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* at the closest or farthest zoom: the button dimmed in the dark theme (Leaflet's own is a light grey block) */
+.leaflet-bar a.leaflet-disabled, .leaflet-bar a.leaflet-disabled:hover, .leaflet-bar a.leaflet-disabled:focus { background: var(--bg-2); color: var(--text-dim); opacity: .55; }
 /* my location */
 .mb-locate a { display: flex; align-items: center; justify-content: center; }
 .mb-locate.locating a svg { animation: mb-pulse 1.1s ease-in-out infinite; }
@@ -476,6 +492,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .tab-panel { padding: 10px; }
   /* toolbar: compact column that fits a phone's height */
   #toolbar { left: 8px; top: 8px; padding: 4px; gap: 2px; }
+  #mapwrap.tb-right #toolbar { left: auto; right: 8px; }
   #toolbar button { width: 36px; height: 36px; }
   #toolbar button svg { width: 20px; height: 20px; }
   .tool-hint { top: 10px; max-width: calc(100% - 116px); font-size: 11px; } /* between the toolbar and the location button */
