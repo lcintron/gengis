@@ -1,5 +1,5 @@
 /* GenGIS - export the map as a picture or a PDF (Project → Export image or PDF…)
- * - what presentation mode shows: the map, its layers and the GenGIS logo, without the map's buttons; the base map's
+ * - the map, its layers and the GenGIS logo, without the map's controls (as presentation mode, less its scale); the base map's
  *   credits are always drawn small in a corner (its providers require them)
  * - PNG, JPEG (a quality) or PDF (a page size, orientation and margins; the map as a JPEG inside)
  * - 1x to 4x the screen's pixels; above 1x the base map is loaded a zoom level or two deeper, at the same scale, so
@@ -89,24 +89,44 @@ window.MB = window.MB || {};
     return parts.map(h => { t.innerHTML = h; return t.textContent.trim(); }).filter(Boolean).join(' · ');
   }
 
+  // The selection as it is, and a function that brings it back (its handles stay out of the picture meanwhile).
+  function keepSelection() {
+    const grp = MB.selectedGroup(), multi = grp ? [] : Array.from(MB.multi), one = MB.selected;
+    MB.deselect();
+    const alive = l => l && l.mb && MB.map.hasLayer(l);
+    return () => {
+      if (grp && MB.getLayer(grp)) MB.selectGroup(grp);
+      else if (multi.length > 1) multi.filter(alive).forEach(l => MB.toggleMulti(l));
+      else if (alive(one)) MB.selectFeature(one);
+    };
+  }
+
+  // The map as a canvas, and whether the sharper base map made it in.
   async function render(c, status) {
     const map = MB.map, el = map.getContainer(), size = map.getSize(), s = c.scale;
     status('Preparing…');
     await loadScript('vendor/html-to-image/html-to-image.js', () => !!window.htmlToImage);
-    MB.deselect();
     map.closePopup();
+    const restore = keepSelection();
+    // The sharper base map loads behind the one on screen (which stays: nothing changes for the eye) and replaces it
+    // in the picture only when all its tiles came (offline, a slow or a shallow server: the map as it is).
     const deeper = deeperBase(s), base = MB.baseLayer;
+    let sharp = false;
     try {
       if (deeper) {
         status('Loading sharper map tiles…');
+        let failed = 0;
+        deeper.on('tileerror', () => failed++); // (Leaflet counts a failed tile as loaded)
         deeper.addTo(map); deeper.bringToBack();
         await whenLoaded(deeper, 20000);
-        Object.values(deeper._tiles).forEach(t => { if (t.loaded) L.DomUtil.setOpacity(t.el, 1); }); // past Leaflet's fade-in
-        map.removeLayer(base);
-        await sleep(60);
+        const tiles = Object.values(deeper._tiles);
+        sharp = !failed && tiles.length > 0 && tiles.every(t => t.loaded);
       }
+      const shown = sharp ? deeper : base; // its loaded tiles past Leaflet's fade-in
+      if (shown && shown._tiles) Object.values(shown._tiles).forEach(t => { if (t.loaded) L.DomUtil.setOpacity(t.el, 1); });
       status('Drawing the map…');
-      const skip = n => n.classList && (n.classList.contains('leaflet-control-container') || n.classList.contains('leaflet-popup-pane') || n.classList.contains('mb-handle'));
+      const left = deeper && (sharp ? base : deeper).getContainer(); // the base map not in the picture
+      const skip = n => n === left || (n.classList && (n.classList.contains('leaflet-control-container') || n.classList.contains('leaflet-popup-pane') || n.classList.contains('mb-handle')));
       const canvas = await timeout(window.htmlToImage.toCanvas(el, {
         pixelRatio: s, width: size.x, height: size.y, skipFonts: true, cacheBust: false,
         backgroundColor: getComputedStyle(el).backgroundColor || '#0b1118',
@@ -124,20 +144,15 @@ window.MB = window.MB || {};
         ctx.fillStyle = 'rgba(11,17,24,.6)'; ctx.fillRect(canvas.width - tw - 2 * pad, canvas.height - th, tw + 2 * pad, th);
         ctx.fillStyle = '#e6ebf2'; ctx.textBaseline = 'middle'; ctx.fillText(text, canvas.width - tw - pad, canvas.height - th / 2, tw);
       }
-      return canvas;
+      return { canvas, blurry: !!deeper && !sharp };
     } finally {
-      if (deeper) { if (!map.hasLayer(base)) base.addTo(map); base.bringToBack(); map.removeLayer(deeper); }
+      if (deeper) map.removeLayer(deeper);
+      restore();
     }
   }
 
   const fileName = ext => ((MB.state.projectName || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map') + '.' + ext;
   const toBlob = (canvas, type, q) => new Promise((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error('The image could not be written'))), type, q));
-  function save(blob, name) {
-    const url = URL.createObjectURL(blob), a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 4000);
-  }
 
   /* ---------- the dialog ---------- */
   MB.exportMap = {
@@ -151,7 +166,7 @@ window.MB = window.MB || {};
       dlg.innerHTML = `<div class="modal-box export-box" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
         <button type="button" class="modal-x" data-act="close" aria-label="Close" title="Close">✕</button>
         <h2 id="exportTitle">Export the map</h2>
-        <p class="note">The map as presentation mode shows it: its layers and the GenGIS logo, without the map's buttons.</p>
+        <p class="note">The map, its layers and the GenGIS logo, without the map's controls.</p>
         <div class="export-fields"></div>
         <div class="export-actions"><span class="export-status" role="status" aria-live="polite"></span><button type="button" class="btn" data-act="close">Cancel</button><button type="button" class="btn primary" data-act="export">Export</button></div>
       </div>`;
@@ -228,7 +243,7 @@ window.MB = window.MB || {};
       this.busy = true;
       this.dlg.querySelectorAll('button, input, select').forEach(x => { x.dataset.wasDisabled = x.disabled ? '1' : ''; x.disabled = true; });
       try {
-        const canvas = await render(c, t => this.status(t));
+        const { canvas, blurry } = await render(c, t => this.status(t));
         this.status(c.format === 'pdf' ? 'Writing the PDF…' : 'Writing the image…');
         let blob;
         if (c.format === 'png') blob = await toBlob(canvas, 'image/png');
@@ -240,15 +255,16 @@ window.MB = window.MB || {};
             blob = buildPdf(new Uint8Array(await jpeg.arrayBuffer()), canvas.width, canvas.height, lay.page, lay.box, MB.state.projectName || 'Map');
           }
         }
-        save(blob, fileName(c.format === 'jpeg' ? 'jpg' : c.format));
-        this.status(`Saved: ${(blob.size / 1048576).toFixed(1)} MB`);
+        MB.download(fileName(c.format === 'jpeg' ? 'jpg' : c.format), blob);
+        this.status(`Saved: ${(blob.size / 1048576).toFixed(1)} MB` + (blurry ? ' · the sharper map tiles did not load: the map is at screen detail' : ''));
         MB.toast('Exported ' + fileName(c.format === 'jpeg' ? 'jpg' : c.format));
       } catch (e) {
         console.error(e);
-        this.status('Export failed: ' + (e && e.message ? e.message : 'unknown error'), true);
+        this.status('Export failed: ' + (e && e.message ? e.message : e instanceof Event ? 'a picture on the map could not be read' : 'unknown error'), true); // (an image's error event)
       } finally {
         this.busy = false;
         this.dlg.querySelectorAll('button, input, select').forEach(x => { x.disabled = x.dataset.wasDisabled === '1'; });
+        if (!this.dlg.classList.contains('hidden')) this.dlg.querySelector('[data-act="export"]').focus(); // the keyboard back where it was
       }
     }
   };
