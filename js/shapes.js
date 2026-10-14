@@ -134,10 +134,14 @@ window.MB = window.MB || {};
 
     /* ----- drawing a preset by dragging a box ----- */
     // A drag draws, so the map does not pan; a double-click is two shapes' clicks, so it does not zoom either.
-    start() { MB.map.dragging.disable(); MB.map.boxZoom.disable(); MB.map.doubleClickZoom.disable(); },
+    start() {
+      MB.map.dragging.disable(); MB.map.boxZoom.disable(); MB.map.doubleClickZoom.disable();
+      MB.map.getContainer().classList.add('mb-shape-draw'); // a finger's drag draws: not a scroll for the browser (app.css)
+    },
     stop() { // on any change of tool (start() follows for this one)
       this.cancel();
       MB.map.dragging.enable(); MB.map.boxZoom.enable(); MB.map.doubleClickZoom.enable();
+      MB.map.getContainer().classList.remove('mb-shape-draw');
     },
     active() { return MB.tools.current === 'shape'; },
 
