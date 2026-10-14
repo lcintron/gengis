@@ -92,7 +92,7 @@ window.MB = window.MB || {};
 
   MB.typeLabels = {
     marker: 'Marker', text: 'Text', line: 'Line', polygon: 'Polygon', rectangle: 'Rectangle',
-    circle: 'Circle', svg: 'SVG image', 'measure-line': 'Distance measurement', 'measure-area': 'Area measurement'
+    circle: 'Circle', svg: 'Image', 'measure-line': 'Distance measurement', 'measure-area': 'Area measurement'
   };
   MB.isMeasureType = t => t === 'measure-line' || t === 'measure-area';
 
@@ -547,13 +547,15 @@ window.MB = window.MB || {};
     const lib = MB.state.svgLibrary[svgId];
     if (!lib) return null;
     const d = MB.svgDefaults;
-    const svg = Object.assign({
-      svgId, mode: d.mode, rotation: d.rotation, opacity: d.opacity,
-      width: d.mode === 'ground' ? d.widthM : d.widthPx
-    }, overrides || {});
+    // a picture scales with the map (its real-world size), placed about a quarter of the view wide
+    const raster = lib.kind === 'raster', ll = L.latLng(latlng);
+    const mpp = 156543.03392 * Math.cos(ll.lat * Math.PI / 180) / Math.pow(2, MB.map.getZoom());
+    const mode = raster ? 'ground' : d.mode;
+    const width = raster ? Math.min(320, MB.map.getSize().x / 4) * mpp : (d.mode === 'ground' ? d.widthM : d.widthPx);
+    const svg = Object.assign({ svgId, mode, rotation: d.rotation, opacity: d.opacity, width }, overrides || {});
     const layer = MB.buildSvgLayer(latlng, svg);
     if (!layer) return null;
-    return MB.addFeature(layer, { type: 'svg', svg, name: lib.name.replace(/\.svg$/i, ''), style: MB.deepClone(MB.currentStyle) });
+    return MB.addFeature(layer, { type: 'svg', svg, name: lib.name.replace(/\.(svg|png|jpe?g|webp|gif)$/i, ''), style: MB.deepClone(MB.currentStyle) });
   };
 
   function addGroundHandle(layer) {

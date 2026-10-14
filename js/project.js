@@ -111,6 +111,27 @@ window.MB = window.MB || {};
 
   /* ---------- writing ---------- */
 
+  // The image library in undo steps: each image's data kept once, for the session, under its id, and left out of the
+  // steps (a picture is hundreds of KB, and every change is a step); the steps hold the rest. A step that is loaded
+  // gets the data back. Files and saves carry the data, as before.
+  const imageData = {};
+  function libraryRefs(lib) {
+    const out = {};
+    Object.keys(lib || {}).forEach(id => {
+      const e = Object.assign({}, lib[id]);
+      if (e.dataUrl) { imageData[id] = e.dataUrl; delete e.dataUrl; e.dataRef = true; }
+      out[id] = e;
+    });
+    return out;
+  }
+  function libraryData(lib) {
+    Object.keys(lib).forEach(id => {
+      const e = lib[id];
+      if (e && e.dataRef) { if (imageData[id]) e.dataUrl = imageData[id]; delete e.dataRef; }
+    });
+    return lib;
+  }
+
   MB.serializeProject = function (opts) {
     opts = opts || {};
     const s = MB.state;
@@ -122,7 +143,7 @@ window.MB = window.MB || {};
       editing: { showMeasurements: !!s.showMeasurements, continueDrawing: s.continueDrawing !== false, snapping: s.snapping !== false },
       layers: clone(s.layers), activeLayer: s.activeLayerId,
       features: Object.keys(MB.featureLayers).map(id => MB.serializeFeature(MB.featureLayers[id])),
-      svgLibrary: clone(s.svgLibrary),
+      svgLibrary: opts.noView ? libraryRefs(s.svgLibrary) : clone(s.svgLibrary), // undo steps: the images by reference
       dataSources: Object.keys(s.dataLayers || {}).map(id => {
         const d = datasetById(id), e = s.dataLayers[id];
         if (!d) return null;
@@ -267,7 +288,7 @@ window.MB = window.MB || {};
       continueDrawing: ed.continueDrawing !== false,
       snapping: ed.snapping !== false,
       autoColor: p.autoColor === undefined ? (opts.keepHistory ? MB.state.autoColor : true) : p.autoColor !== false, // undo leaves the preference alone
-      svgLibrary: p.svgLibrary || {},
+      svgLibrary: libraryData(p.svgLibrary || {}),
       dataLayers: {},
       // place names: on unless the project turned them off; undo snapshots carry none and leave them alone
       placeLabels: placeLabels(p.placeLabels, opts.keepHistory),

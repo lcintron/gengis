@@ -200,7 +200,7 @@ window.MB = window.MB || {};
           MB.commit('add text'); MB.tools.set('select'); MB.noteAdded(f);
           if (f) { MB.selectFeature(f); try { f.pm.focus(); f.pm.textArea.select(); } catch (err) { /* ignore */ } }
         } },
-        { label: 'Place SVG here', disabled: !hasSvg, action: () => {
+        { label: 'Place image here', disabled: !hasSvg, action: () => {
           const id = (MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) ? MB.svgPlace.svgId : Object.keys(MB.state.svgLibrary)[0];
           const f = MB.createSvgFeature(ll, id);
           MB.commit('place svg'); MB.tools.set('select'); if (f) MB.selectFeature(f); MB.noteAdded(f);

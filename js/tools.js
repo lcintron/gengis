@@ -302,7 +302,7 @@ window.MB = window.MB || {};
         this.svgId = Object.keys(MB.state.svgLibrary)[0] || null;
       }
       if (!this.svgId) {
-        MB.toast('Upload an SVG in the SVG panel first');
+        MB.toast('Upload an image in the Images panel first');
         setTimeout(() => MB.tools.set('select'), 0);
         return;
       }
