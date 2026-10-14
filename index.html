@@ -98,7 +98,7 @@
         <button data-tool="text" title="Text label (T)"><svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
         <button data-tool="line" title="Line (L)"><svg viewBox="0 0 24 24"><path d="M5 18L19 6" stroke="currentColor" stroke-width="1.8"/><circle cx="5" cy="18" r="2.2" fill="currentColor"/><circle cx="19" cy="6" r="2.2" fill="currentColor"/></svg></button>
         <button data-tool="polygon" title="Polygon (P)"><svg viewBox="0 0 24 24"><path d="M12 3l8.5 6.2-3.2 10H6.7L3.5 9.2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
-        <button data-tool="rectangle" title="Rectangle (R)"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        <button data-tool="rectangle" id="shapeBtn" class="has-menu" title="Shapes (R)" aria-haspopup="menu" aria-expanded="false" aria-controls="shapePalette"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
         <button data-tool="circle" title="Circle (C)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
         <button data-tool="svg" title="Place SVG image (S)"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16l4-5 3 3.5 2-2.5 3 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/></svg></button>
         <span class="sep"></span>
@@ -199,6 +199,7 @@
 <script src="js/frequencies.js"></script>
 <script src="js/adsb.js"></script>
 <script src="js/declination.js"></script>
+<script src="js/shapes.js"></script>
 <script src="js/grids.js"></script>
 <script src="js/mgrs.js"></script>
 <script src="js/ais.js"></script>
