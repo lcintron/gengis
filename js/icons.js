@@ -54,7 +54,8 @@ window.MB = window.MB || {};
 
     open() {
       MB.ui.openDialog(this.dlg);
-      this.dlg.querySelector('#iconSearch').focus();
+      // the search takes the keyboard, except on a touch screen, where its keyboard would cover half the icons
+      if (!matchMedia('(pointer: coarse)').matches) this.dlg.querySelector('#iconSearch').focus();
       this.renderSwatches();
       const grid = this.dlg.querySelector('#iconGrid');
       if (!MB.iconData) grid.innerHTML = '<p class="note">Loading icons…</p>';
