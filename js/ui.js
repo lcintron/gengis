@@ -1502,7 +1502,6 @@ window.MB = window.MB || {};
     $('#setPrefetch', panel).addEventListener('change', e => { MB.settings.prefetchTiles = e.target.value; MB.saveSettings(); MB.tilePrefetch.lastKey = ''; MB.tilePrefetch.schedule(); });
     $('#setContinue', panel).addEventListener('change', e => { s.continueDrawing = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setSnap', panel).addEventListener('change', e => { s.snapping = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
-    $$('[data-act]', panel).forEach(b => b.addEventListener('click', () => MB.ui.menuAction(b.dataset.act)));
     $('#setReset', panel).addEventListener('click', async () => {
       if (!confirm('Delete this project (its layers, objects and image library) and its saved copies on this device? Other projects stay.')) return;
       await MB.projects.flush();

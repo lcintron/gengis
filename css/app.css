@@ -160,11 +160,12 @@ select:focus { outline: none; border-color: var(--accent); }
 .more-items hr, .dropdown.menu hr { border: 0; border-top: 1px solid var(--border); margin: 6px 4px; }
 /* a menu item's icon (index.html #menu, copied into the panel): quiet beside its words, lit on hover */
 svg.mi { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--text-dim); }
-.more-items button:hover svg.mi, .more-items button:focus-visible svg.mi, .dropdown.menu button:hover svg.mi { color: var(--accent); }
+.more-items button:hover svg.mi, .more-items button:focus-visible svg.mi, .dropdown.menu button:hover svg.mi, .dropdown.menu button:focus-visible svg.mi { color: var(--accent); }
 .more-label { display: flex; align-items: center; gap: 6px; }
 .more-label svg.mi { width: 13px; height: 13px; }
 /* a small button with an icon before its words (Settings → Project) */
 .btn.with-icon { display: inline-flex; align-items: center; gap: 6px; }
+.btn.with-icon[hidden] { display: none; } /* (Keep on this device: only when the browser has not agreed yet) */
 .btn.with-icon svg.mi { width: 14px; height: 14px; color: currentColor; }
 /* the search, in the panel below 800 px wide (ui.js) */
 .more-menu .more-search { display: none; }
