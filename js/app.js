@@ -100,6 +100,7 @@
 
     MB.measure.init();
     MB.tools.init();
+    MB.ink.init();
     MB.scaler.init();
     MB.geometry.init();
 

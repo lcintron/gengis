@@ -262,6 +262,27 @@ body.presenting .mb-scale-box { display: none !important; }
 @keyframes mb-flash-hidden { 0%, 100% { box-shadow: none; } 30%, 70% { box-shadow: 0 0 0 2px var(--warn); } }
 .layer-node.flash-hidden, .tool-hint .hint-warn.flash-hidden { animation: mb-flash-hidden 1.6s ease-in-out 1; }
 .tool-hint .hint-warn.flash-hidden { border-radius: 6px; }
+/* the annotation tool's options (ink.js), where a tool's instructions go: tip, width, color */
+.tool-hint.ink { pointer-events: auto; padding: 6px; max-width: calc(100% - 140px); box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+.ink-bar { display: flex; flex-direction: column; gap: 4px; }
+.ink-row { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; }
+.ink-group { display: flex; align-items: center; gap: 2px; }
+.ink-sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+.ink-bar button, .ink-custom { display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.ink-bar button:focus-visible, .ink-custom:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ink-tip { gap: 6px; height: 32px; padding: 0 10px !important; font-size: 12px; }
+.ink-tip svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.ink-tip.active { background: var(--accent); color: #06201e; font-weight: 600; }
+.ink-tip:not(.active):hover, .ink-size:not(.active):hover, .ink-color:not(.active):hover { background: var(--bg-3); color: var(--text); }
+.ink-size { width: 32px; height: 32px; }
+.ink-size i { display: block; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255,255,255,.3); }
+.ink-size.active, .ink-color.active { background: var(--bg-3); border-color: var(--accent); }
+.ink-color { position: relative; width: 28px; height: 28px; }
+.ink-color i { display: block; width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.35), 0 0 0 1px rgba(0,0,0,.45); }
+.ink-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.ink-note { font-size: 11px; color: var(--text-dim); text-align: center; }
+/* the strokes: their ends and joins as a pen's */
+.leaflet-overlay-pane path.mb-ink { stroke-linecap: round; stroke-linejoin: round; }
 
 .leaflet-container { font-family: var(--font); }
 .leaflet-top.leaflet-right { top: 0; }
@@ -519,6 +540,16 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   #toolbar button { width: 36px; height: 36px; }
   #toolbar button svg { width: 20px; height: 20px; }
   .tool-hint { top: 10px; max-width: calc(100% - 116px); font-size: 11px; } /* between the toolbar and the location button */
+  .tool-hint.ink { max-width: calc(100% - 118px); padding: 4px; } /* a little air on both sides */
+  .ink-row { gap: 2px; flex-wrap: nowrap; } /* tips and widths on one row, colors on the next */
+  .ink-tip span { display: none; } /* the tips by their icons: the row fits beside the toolbar */
+  .ink-tip, .ink-size { width: 32px !important; height: 34px !important; padding: 0 !important; }
+  .ink-sep { margin: 0 3px; }
+  .ink-color { width: 25px !important; height: 30px !important; }
+  .ink-colors { flex-wrap: wrap; justify-content: center; } /* a phone narrower still: a second row */
+  .ink-color i { width: 17px; height: 17px; }
+  .ink-note { font-size: 10px; }
+  .ink-mouse { display: none; } /* one line: a phone has no mouse */
   .leaflet-control-zoom { display: none; }
   .leaflet-touch .mb-locate a, .mb-locate a, .leaflet-touch .mb-present-ctl a, .mb-present-ctl a { width: 40px; height: 40px; line-height: 40px; } /* a finger-sized target: the zoom buttons are hidden here */
   .mb-locate a svg, .mb-present-ctl a svg { width: 22px; height: 22px; }
@@ -548,6 +579,9 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .mb-ctx li { padding: 10px 12px; }
   .search-clear { width: 32px; height: 32px; margin-left: -34px; margin-right: 1px; } /* finger-sized, still inside the box */
   #searchInput { padding-right: 38px; }
+  .ink-tip, .ink-size { height: 36px; } /* finger-sized: the options are tapped, the map drawn on with the pen */
+  .ink-size { width: 34px; }
+  .ink-color { width: 30px; height: 30px; }
 }
 
 /* ---------- two-block scale bar ---------- */
