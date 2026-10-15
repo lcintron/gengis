@@ -243,8 +243,10 @@ window.MB = window.MB || {};
   };
 
   MB.pinIconSvg = function (color) {
-    return '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="38" viewBox="0 0 26 38">' +
-      '<path d="M13 1C6.4 1 1 6.3 1 12.9c0 8.6 10.2 22.2 11.2 23.5a1 1 0 0 0 1.6 0C14.8 35.1 25 21.5 25 12.9 25 6.3 19.6 1 13 1z" fill="' + color + '" stroke="#1c1c1c" stroke-opacity=".55" stroke-width="1.5"/>' +
+    const d = 'M13 1C6.4 1 1 6.3 1 12.9c0 8.6 10.2 22.2 11.2 23.5a1 1 0 0 0 1.6 0C14.8 35.1 25 21.5 25 12.9 25 6.3 19.6 1 13 1z';
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="40" viewBox="0 0 26 40">' +
+      '<path d="' + d + '" transform="translate(0 2.2)" fill="#000" fill-opacity=".35" stroke="#000" stroke-opacity=".35" stroke-width="2"/>' + // the shadow, baked in (no CSS filter)
+      '<path d="' + d + '" fill="' + color + '" stroke="#1c1c1c" stroke-opacity=".55" stroke-width="1.5"/>' +
       '<circle cx="13" cy="13" r="4.5" fill="#fff" fill-opacity=".9"/></svg>';
   };
 
@@ -252,7 +254,7 @@ window.MB = window.MB || {};
     return L.divIcon({
       className: 'mb-pin',
       html: MB.pinIconSvg(color || '#e4572e'),
-      iconSize: [26, 38],
+      iconSize: [26, 40],
       iconAnchor: [13, 37],
       popupAnchor: [0, -32],
       tooltipAnchor: [0, -30]

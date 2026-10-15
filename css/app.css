@@ -359,7 +359,6 @@ body.presenting .mb-scale-box { display: none !important; }
 }
 .mb-measure-tip b { font-size: 14px; }
 
-.mb-pin svg { filter: drop-shadow(0 2px 2px rgba(0,0,0,.45)); }
 .mb-pin.mb-selected svg, .mb-svg-pin.mb-selected img { filter: drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 2px var(--accent)); }
 path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .mb-svg-pin img { display: block; pointer-events: none; transform-origin: center; }
