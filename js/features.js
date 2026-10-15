@@ -5,7 +5,7 @@ window.MB = window.MB || {};
 
   MB.defaultStyle = {
     color: '#e4572e', weight: 3, opacity: 1, dash: 'solid',
-    fill: true, fillColor: '#e4572e', fillOpacity: 0.25,
+    fill: true, fillColor: '#e4572e', fillOpacity: 0.25, fillPattern: 'solid',
     textColor: '#ffffff', textSize: 14, textBg: '#1b1f27', textBgOn: true, textBgOpacity: 1, textFont: 'default',
     textShadowOn: true, textShadowColor: '#000000', textShadowOpacity: 0.6, textShadowBlur: 2, textShadowOffset: 0,
     textBold: false, textItalic: false, textUnderline: false, textStrike: false,
@@ -402,6 +402,7 @@ window.MB = window.MB || {};
       const ls = MB.toLeafletStyle(st);
       if (t === 'line' || t === 'measure-line' || t === 'ink') ls.fill = false; // open lines are never filled
       layer.setStyle(ls);
+      if (MB.fillPattern) MB.fillPattern.apply(layer, ls.fill ? st : null); // a hatch/dot/grid fill over the flat one
       if (MB.isMeasureType(t)) updateSegLabels(layer);
     }
     else if (t === 'marker') layer.setIcon(MB.pinIcon(st.color));
@@ -643,7 +644,7 @@ window.MB = window.MB || {};
   // texts their look (font, size, colors, background, shadow, alignment); the name label's look (not whether it is
   // shown) goes along between objects that have one. Images have no style to copy.
   MB.styleClipboard = null;
-  const SHAPE_KEYS = ['color', 'weight', 'opacity', 'dash', 'fill', 'fillColor', 'fillOpacity'];
+  const SHAPE_KEYS = ['color', 'weight', 'opacity', 'dash', 'fill', 'fillColor', 'fillOpacity', 'fillPattern'];
   const TEXT_KEYS = Object.keys(MB.defaultStyle).filter(k => /^text/.test(k));
   const LABEL_KEYS = ['color', 'size', 'bg', 'h', 'v'];
   MB.styleKind = type => (type === 'text' ? 'text' : type === 'svg' ? null : 'shape');
