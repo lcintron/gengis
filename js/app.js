@@ -112,6 +112,7 @@
     MB.map.on('moveend', () => MB.autosave('view'));
 
     MB.ui.init();
+    MB.shapes.init();
     MB.projects.start(); // the saved copy in the database, if newer; saving starts once it has settled
     MB.data.init();
     MB.places.init();

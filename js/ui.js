@@ -16,6 +16,7 @@ window.MB = window.MB || {};
     line: 'Click to add points. Double-click (or click the last point) to finish. Click the first point to close it into a polygon.',
     polygon: 'Click to add vertices. Click the first vertex or double-click to finish.',
     rectangle: 'Click one corner, then click the opposite corner.',
+    shape: 'Drag a box to draw the shape (Shift keeps its proportions), or click for a default size.',
     circle: 'Click the center, then click to set the radius.',
     svg: 'Click the map to place the SVG. Choose a different SVG in the SVG panel.',
     'measure-distance': 'Click points to measure. Double-click or Enter to finish (saved to the active layer), Esc to cancel.',
@@ -441,7 +442,7 @@ window.MB = window.MB || {};
   function initToolbar() {
     if (window.ResizeObserver) new ResizeObserver(() => fitToolbar()).observe($('#mapwrap'));
     MB.ui.applyToolbarSide(); // fits it too
-    $$('#toolbar button[data-tool]').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool)));
+    $$('#toolbar button[data-tool]:not(#shapeBtn)').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool))); // Shapes opens its palette (shapes.js)
     MB.on('tool', name => {
       $$('#toolbar button[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
       renderToolHint();
@@ -457,7 +458,7 @@ window.MB = window.MB || {};
   }
 
   // The tools that add something to the active layer.
-  const ADDING_TOOLS = ['marker', 'text', 'line', 'polygon', 'rectangle', 'circle', 'svg', 'measure-distance', 'measure-area'];
+  const ADDING_TOOLS = ['marker', 'text', 'line', 'polygon', 'rectangle', 'shape', 'circle', 'svg', 'measure-distance', 'measure-area'];
 
   // The hint under the toolbar: how to use the tool, and a warning when what it adds goes to a hidden layer.
   function renderToolHint() {
@@ -1670,6 +1671,7 @@ window.MB = window.MB || {};
       if (e.key.toLowerCase() === 'f') { e.preventDefault(); MB.presenter.enter(); return; }
       const map = { v: 'select', g: 'move', k: 'scale', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', d: 'measure-distance', a: 'measure-area' };
       const tool = map[e.key.toLowerCase()];
+      if (tool === 'rectangle' && MB.shapes) { e.preventDefault(); MB.shapes.activate(); return; } // R: the Shapes button's shape
       if (tool) { e.preventDefault(); MB.tools.set(tool); }
     });
   }

@@ -214,6 +214,21 @@ body.presenting .mb-scale-box { display: none !important; }
 #toolbar button:hover { background: var(--bg-3); color: var(--text); }
 #toolbar button.active { background: var(--accent); color: #06201e; }
 #toolbar .sep { height: 1px; background: var(--border); margin: 3px 4px; }
+/* a button with a menu of choices (Shapes): a small mark in its corner */
+#toolbar button.has-menu { position: relative; }
+#toolbar button.has-menu::after { content: ''; position: absolute; right: 4px; bottom: 4px; border: 3px solid transparent; border-right-color: currentColor; border-bottom-color: currentColor; opacity: .7; }
+/* drawing a preset shape: with the map's dragging off, Leaflet lets the browser scroll on a one-finger drag
+   (touch-action: pan-x pan-y); the drag is the shape's, so the map takes every touch while the tool is on */
+.leaflet-container.mb-shape-draw { touch-action: none; }
+/* the Shapes palette, beside the toolbar (shapes.js) */
+.shape-palette { position: absolute; z-index: 1100; display: grid; grid-template-columns: repeat(4, 64px); gap: 4px; padding: 6px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+.shape-palette button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px 6px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text-dim); cursor: pointer; font-size: 10.5px; }
+.shape-palette button svg { width: 24px; height: 24px; }
+.shape-palette button:hover { background: var(--bg-3); color: var(--text); }
+.shape-palette button.active { background: var(--accent); color: #06201e; font-weight: 600; }
+.shape-palette button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* a short map area (ui.js fitToolbar): shrunk from its top left corner, or snapped to the left edge and scrolled */
 #toolbar { transform-origin: top left; }
 /* docked: square, flush with the map's left edge, a thin scroll bar showing there is more */

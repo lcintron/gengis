@@ -17,6 +17,7 @@ window.MB = window.MB || {};
       MB.map.pm.disableDraw();
       MB.measure.stop();
       MB.svgPlace.stop();
+      if (MB.shapes) MB.shapes.stop();
       const keep = MB.tools.picks(name) ? MB.selected : null;
       const keepGroup = MB.tools.picks(name) && MB.selectedGroup ? MB.selectedGroup() : null;
       if (keep) MB.deselect();
@@ -30,6 +31,7 @@ window.MB = window.MB || {};
       else if (name === 'measure-distance') { MB.deselect(); MB.measure.start('distance'); }
       else if (name === 'measure-area') { MB.deselect(); MB.measure.start('area'); }
       else if (name === 'svg') { MB.deselect(); MB.svgPlace.start(); }
+      else if (name === 'shape') { MB.deselect(); MB.shapes.start(); } // a preset shape (js/shapes.js)
       MB.emit('tool', name);
     },
 
