@@ -11,14 +11,16 @@ window.MB = window.MB || {};
 
   // Which set of steps to show first. Only a hint from the user agent; the dialog lists the rest too.
   function platform() {
-    const ua = navigator.userAgent || '';
+    const ua = navigator.userAgent || '', app = !!window.gengisDesktop;
     if (/Android/.test(ua)) return 'android';
     if (/iPhone|iPad|iPod|Macintosh/.test(ua) && 'ontouchend' in document) return 'ios'; // iPad reports as Macintosh
     if (/iPhone|iPad|iPod/.test(ua)) return 'ios';
-    if (/Macintosh/.test(ua)) return 'mac';
-    return 'desktop'; // Windows or Linux
+    if (/Macintosh/.test(ua)) return app ? 'macapp' : 'mac';
+    if (app) return 'windowsapp'; // the desktop app on Windows/Linux: no browser to cast a tab
+    return 'desktop'; // Chrome/Edge on Windows or Linux
   }
 
+  const CHROME_CAST = 'the browser menu (<b>⋮</b>) → <b>Cast, save and share</b> → <b>Cast…</b> (in Edge, <b>Settings and more (⋯)</b> → <b>Cast media to device</b>), then pick your TV; under <b>Sources</b> choose <b>Cast tab</b>';
   const STEPS = {
     android: { name: 'Android phone or tablet', items: [
       'Open quick settings (swipe down from the top with two fingers).',
@@ -26,21 +28,27 @@ window.MB = window.MB || {};
       'Pick your TV or Chromecast.'
     ], note: 'If you do not see it, add the Screen cast tile from the quick-settings edit screen.' },
     desktop: { name: 'Chrome or Edge (Windows, Linux)', items: [
-      'Open the browser menu (<b>⋮</b> at the top right).',
-      'Choose <b>Cast…</b> (in Edge, <b>More tools → Cast media to device</b>).',
-      'Pick your TV or Chromecast. Under <b>Sources</b>, choose <b>Cast tab</b> to send this page.'
-    ], note: 'Casting needs Chrome or Edge on the computer and a Chromecast or a cast-ready TV on the same Wi-Fi.' },
-    mac: { name: 'Mac', items: [
-      'For an AirPlay TV or Apple TV: open <b>Control Centre</b> → <b>Screen Mirroring</b>, then pick the screen.',
-      'For a Chromecast: open this page in <b>Chrome</b>, then <b>⋮ → Cast…</b> and choose <b>Cast tab</b>.'
+      'For a Chromecast or cast-ready TV: open ' + CHROME_CAST + '.',
+      'For a Miracast / wireless display: press <b>Win+K</b> (or open quick settings → <b>Cast</b>) and pick the display.'
+    ], note: 'Both need the TV or display on the same Wi-Fi.' },
+    windowsapp: { name: 'This app on Windows', items: [
+      'Press <b>Win+K</b> (or open quick settings → <b>Cast</b>).',
+      'Pick your wireless display or Miracast-ready TV.'
+    ], note: 'To cast to a Chromecast, open GenGIS in Chrome or Edge instead, then use ' + CHROME_CAST + '.' },
+    mac: { name: 'Mac (Chrome or Edge)', items: [
+      'For an AirPlay TV or Apple TV: open <b>Control Center</b> → <b>Screen Mirroring</b>, then pick the screen.',
+      'For a Chromecast: open ' + CHROME_CAST + '.'
     ] },
+    macapp: { name: 'This app on Mac', items: [
+      'Open <b>Control Center</b> → <b>Screen Mirroring</b>, then pick your Apple TV or AirPlay-ready TV.'
+    ], note: 'To cast to a Chromecast, open GenGIS in Chrome or Edge instead, then use ' + CHROME_CAST + '.' },
     ios: { name: 'iPhone or iPad', items: [
-      'Open <b>Control Centre</b> (swipe down from the top-right corner).',
+      'Open <b>Control Center</b> (swipe down from the top-right corner, or up from the bottom on an iPhone with a Home button).',
       'Tap <b>Screen Mirroring</b>.',
       'Pick your Apple TV or an AirPlay-ready TV.'
     ], note: 'A Chromecast needs the Google Home app to mirror the screen on iPhone and iPad.' }
   };
-  const ORDER = ['android', 'desktop', 'mac', 'ios'];
+  const ORDER = ['android', 'desktop', 'windowsapp', 'mac', 'macapp', 'ios'];
 
   MB.cast = {
     dlg: null,
