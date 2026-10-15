@@ -10,7 +10,7 @@ const MAX_TILES = 6000;
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './css/app.css',
-  './js/util.js', './js/tooltipdelay.js', './js/store.js', './js/features.js', './js/tools.js', './js/ink.js', './js/scaletool.js', './js/geometry.js', './js/search.js', './js/storage.js', './js/projectstore.js', './js/desktopfiles.js', './js/browserfiles.js',
+  './js/util.js', './js/tooltipdelay.js', './js/store.js', './js/features.js', './js/fillpatterns.js', './js/tools.js', './js/ink.js', './js/scaletool.js', './js/geometry.js', './js/search.js', './js/storage.js', './js/projectstore.js', './js/desktopfiles.js', './js/browserfiles.js',
   './js/scale.js', './js/settings.js', './js/contextmenu.js', './js/presenter.js', './js/cast.js', './js/datalayers.js', './js/frequencies.js', './js/adsb.js', './js/declination.js', './js/shapes.js', './js/icons.js', './js/grids.js', './js/mgrs.js', './js/ais.js', './js/places.js', './js/locate.js', './js/project.js', './js/offline.js', './js/busy.js', './js/tiles.js', './js/export.js', './js/ui.js', './js/app.js',
   './data/places.js', './data/icons.js',
   './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css',

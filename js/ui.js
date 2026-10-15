@@ -907,6 +907,7 @@ window.MB = window.MB || {};
         <label class="check"><input type="checkbox" data-k="fill"${st.fill ? ' checked' : ''}> Fill shape</label>
         <div class="row"><label>Color</label><input type="color" data-k="fillColor" value="${st.fillColor}"><span class="grow"></span></div>
         <div class="row"><label>Opacity</label><input type="range" data-k="fillOpacity" min="0" max="1" step="0.05" value="${st.fillOpacity}"><span class="val" data-val="fillOpacity">${Math.round(st.fillOpacity * 100)}%</span></div>
+        <div class="row"><label>Pattern</label><select data-k="fillPattern">${Object.keys(MB.fillPatterns).map(k => `<option value="${k}"${(st.fillPattern || 'solid') === k ? ' selected' : ''}>${MB.fillPatterns[k]}</option>`).join('')}</select></div>
       </div>`;
     }
     if (sections.includes('text')) {
