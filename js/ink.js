@@ -73,6 +73,9 @@ window.MB = window.MB || {};
       ['pointerup', 'pointercancel'].forEach(t => wrap.addEventListener(t, e => this.up(e, t === 'pointercancel'), true));
       wrap.addEventListener('click', e => { if (this.swallow && Date.now() < this.swallow && this.onMap(e)) { e.stopPropagation(); e.preventDefault(); } }, true); // the stroke's own click
       MB.map.on('zoomstart', () => this.cancel()); // a pinch while drawing: the stroke would land elsewhere
+      // the eraser's ring: gone once the pen leaves (lifted out of range, or onto the panel), or the page is hidden
+      wrap.addEventListener('pointerleave', e => { if (!this.stroke && e.pointerType === 'pen' && (e.target === wrap || e.target === MB.map.getContainer())) this.hideCursor(); }, true); // (not each tile it crosses)
+      document.addEventListener('visibilitychange', () => { if (document.hidden && !this.stroke) this.hideCursor(); });
     },
 
     start() {
@@ -97,11 +100,12 @@ window.MB = window.MB || {};
       const end = e.button === 5 || (e.buttons & 32); // the stylus turned over: its eraser end
       if (e.button !== 0 && !end) return; // the barrel button (2): nothing
       e.preventDefault(); e.stopPropagation();
-      const target = MB.state.layers.find(isInkLayer);
-      if (target && target.locked) { MB.toast('The Annotations layer is locked: unlock it to annotate'); return; }
+      const target = MB.state.layers.find(isInkLayer), erase = end || conf().tip === 'eraser';
+      if (erase && target && !target.visible) MB.toast('The Annotations layer is hidden: show it to erase its strokes');
+      if (target && target.locked) { MB.toast('The Annotations layer is locked: unlock it to ' + (erase ? 'erase' : 'annotate')); return; }
       this.hold(true);
       try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* gone already */ }
-      if (end || conf().tip === 'eraser') {
+      if (erase) {
         const p = this.point(e);
         this.stroke = { id: e.pointerId, erase: true, r: eraserSize() / 2, last: p, todo: [p], changed: false };
         this.showCursor(p);
@@ -201,14 +205,26 @@ window.MB = window.MB || {};
       });
       if (!hit.length) return;
       s.changed = true;
-      MB.batch(() => hit.forEach(({ f, runs }) => {
-        const d = MB.serializeFeature(f);
-        MB.removeFeature(f.mb.id);
-        runs.forEach(run => { // what is left of it: its own stroke, as it was drawn
-          const left = Object.assign({}, d, { id: undefined, latlngs: L.LineUtil.simplify(run, 0.6).map(q => { const ll = map.containerPointToLatLng(q); return [ll.lat, ll.lng]; }) });
-          MB.restoreFeature(left);
+      const order = Object.keys(MB.featureLayers), pieces = {};
+      MB.batch(() => {
+        hit.forEach(({ f, runs }) => {
+          const d = MB.serializeFeature(f), id = f.mb.id;
+          MB.removeFeature(id, { silent: true }); // (no history step of its own: the wipe is one, at the end)
+          pieces[id] = runs.map(run => { // what is left of it: its own stroke, as it was drawn
+            const left = Object.assign({}, d, { id: undefined, latlngs: L.LineUtil.simplify(run, 0.6).map(q => { const ll = map.containerPointToLatLng(q); return [ll.lat, ll.lng]; }) });
+            const l = MB.restoreFeature(left);
+            return l && l.mb.id;
+          }).filter(Boolean);
         });
-      }));
+        // the pieces where the stroke was in the draw order (added, they would go on top of everything)
+        const fl = MB.featureLayers, all = Object.assign({}, fl), seq = [];
+        order.forEach(id => { if (pieces[id]) seq.push(...pieces[id]); else if (all[id]) seq.push(id); });
+        Object.keys(all).forEach(id => { if (!seq.includes(id)) seq.push(id); });
+        Object.keys(fl).forEach(id => { delete fl[id]; });
+        seq.forEach(id => { fl[id] = all[id]; });
+        MB.applyZOrderSoon();
+        MB.emit('features');
+      });
     },
     endErase(s) {
       if (s.frame) cancelAnimationFrame(s.frame);
@@ -248,7 +264,7 @@ window.MB = window.MB || {};
         <div class="ink-row">
           <div class="ink-group" role="radiogroup" aria-label="Tip">${Object.keys(TIPS).map(k => `<button type="button" role="radio" class="ink-tip${k === c.tip ? ' active' : ''}" aria-checked="${k === c.tip}" data-tip="${k}" title="${TIPS[k].name}">${ICONS[k]}<span>${TIPS[k].name}</span></button>`).join('')}</div>
           <span class="ink-sep" aria-hidden="true"></span>
-          <div class="ink-group" role="radiogroup" aria-label="Stroke width">${tip.sizes.map((w, i) => `<button type="button" role="radio" class="ink-size${i === t.size ? ' active' : ''}" aria-checked="${i === t.size}" data-size="${i}" title="${w} px" aria-label="${names[i]} (${w} px)"><i${eraser ? ' class="ring"' : ''} style="width:${dot(w)}px;height:${dot(w)}px;${eraser ? '' : `background:${esc(t.color)};opacity:${tip.opacity < 1 ? 0.7 : 1}`}"></i></button>`).join('')}</div>
+          <div class="ink-group" role="radiogroup" aria-label="${eraser ? 'Eraser size' : 'Stroke width'}">${tip.sizes.map((w, i) => `<button type="button" role="radio" class="ink-size${i === t.size ? ' active' : ''}" aria-checked="${i === t.size}" data-size="${i}" title="${w} px" aria-label="${names[i]} (${w} px)"><i${eraser ? ' class="ring"' : ''} style="width:${dot(w)}px;height:${dot(w)}px;${eraser ? '' : `background:${esc(t.color)};opacity:${tip.opacity < 1 ? 0.7 : 1}`}"></i></button>`).join('')}</div>
         </div>
         ${eraser ? '' : `<div class="ink-row">
           <div class="ink-group ink-colors" role="radiogroup" aria-label="Color">${colors.map(col => `<button type="button" role="radio" class="ink-color${col === t.color ? ' active' : ''}" aria-checked="${col === t.color}" data-color="${col}" title="${col}" aria-label="Color ${col}"><i style="background:${col}"></i></button>`).join('')}
