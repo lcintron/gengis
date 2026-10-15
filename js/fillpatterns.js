@@ -57,9 +57,16 @@ window.MB = window.MB || {};
       made[id] = true;
       return id;
     },
-    // Apply (or clear) a pattern on a path's fill. Returns true when a pattern was set.
+    // Apply (or clear) a pattern on a path's fill. Returns true when a pattern was set. Leaflet rebuilds the <path>
+    // (and resets its fill to the flat colour) every time the layer is added to the map - on a layer or object being
+    // shown, a zoom rule revealing it, a move to another layer - so the pattern is re-applied on each 'add' too.
     apply(layer, style) {
-      if (!layer || !layer._path) return false;
+      if (!layer) return false;
+      if (!layer._mbPatHook) {
+        layer._mbPatHook = true;
+        layer.on('add', () => { const m = layer.mb; MB.fillPattern.apply(layer, m && m.style && m.style.fill ? m.style : null); });
+      }
+      if (!layer._path) return false;
       const on = style && style.fill && style.fillPattern && style.fillPattern !== 'solid';
       if (on) layer._path.setAttribute('fill', 'url(#' + this.ensure(style.fillPattern, style.fillColor) + ')');
       return !!on;
