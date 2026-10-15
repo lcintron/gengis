@@ -238,7 +238,8 @@ window.MB = window.MB || {};
 
     async run() {
       if (this.busy) return;
-      const c = conf();
+      const c = conf(), z = MB.map.getSize();
+      if (!z.x || !z.y) { this.status('The map is not on screen: nothing to export.', true); return; }
       c.scale = Math.min(c.scale, this.maxScale());
       this.busy = true;
       this.dlg.querySelectorAll('button, input, select').forEach(x => { x.dataset.wasDisabled = x.disabled ? '1' : ''; x.disabled = true; });
