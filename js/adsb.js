@@ -1,5 +1,6 @@
 /* GenGIS - live air traffic (ADS-B)
- * - polls a dump1090-style receiver (dump1090, dump1090-fa / SkyAware, readsb, tar1090: data/aircraft.json) and the
+ * - polls a dump1090-style receiver (dump1090-fa / SkyAware, dump1090-mutability, readsb, tar1090: data/aircraft.json;
+ *   the original dump1090's built-in server: data.json) and the
  *   open community networks that publish the same JSON, about once a second
  * - one marker per aircraft, merged across sources by ICAO address; icon by aircraft type, color by altitude
  * - click an aircraft for live details; "Look up" adds registration, type, owner and route from adsbdb.com / hexdb.io
@@ -16,7 +17,9 @@ window.MB = window.MB || {};
   const MAX_NM = 250;     // largest radius the community networks answer
   const LABEL_ZOOM = 8;   // callsign labels from this zoom
   // Where the various receiver packages publish aircraft.json, relative to the address the user enters.
-  const RECEIVER_PATHS = ['/data/aircraft.json', '/skyaware/data/aircraft.json', '/tar1090/data/aircraft.json', '/dump1090-fa/data/aircraft.json', '/dump1090/data/aircraft.json'];
+  // The last is the original dump1090's built-in web server (antirez / MalcolmRobb builds): it answers every other path
+  // with its map page, so it is tried after the others.
+  const RECEIVER_PATHS = ['/data/aircraft.json', '/skyaware/data/aircraft.json', '/tar1090/data/aircraft.json', '/dump1090-fa/data/aircraft.json', '/dump1090/data/aircraft.json', '/data.json'];
 
   const SOURCES = [
     // `intervals`: refresh rates offered (seconds), first measured against each service; `interval`: the default
@@ -112,6 +115,7 @@ window.MB = window.MB || {};
   function normalize(a, now) {
     if (!a || typeof a.hex !== 'string' || !/^~?[0-9a-f]{6}$/i.test(a.hex)) return null; // the address goes into links
     let lat = num(a.lat), lon = num(a.lon), seenPos = num(a.seen_pos);
+    if (a.validposition === 0 || (lat === 0 && lon === 0)) { lat = null; lon = null; } // the original dump1090: no fix yet
     if (lat == null && a.lastPosition) { lat = num(a.lastPosition.lat); lon = num(a.lastPosition.lon); seenPos = num(a.lastPosition.seen_pos); }
     const altRaw = a.alt_baro != null ? a.alt_baro : (a.altitude != null ? a.altitude : a.alt_geom);
     const ground = altRaw === 'ground' || a.ground === true;
@@ -123,7 +127,7 @@ window.MB = window.MB || {};
       lat, lon, hasPos: lat != null && lon != null,
       alt: ground ? 'ground' : num(altRaw), altGeom: num(a.alt_geom),
       gs: num(a.gs != null ? a.gs : a.speed),
-      track: num(a.track != null ? a.track : (a.true_heading != null ? a.true_heading : a.mag_heading)),
+      track: a.validtrack === 0 ? null : num(a.track != null ? a.track : (a.true_heading != null ? a.true_heading : a.mag_heading)),
       rate: num(a.baro_rate != null ? a.baro_rate : (a.geom_rate != null ? a.geom_rate : a.vert_rate)),
       squawk: str(a.squawk), emergency: (a.emergency && a.emergency !== 'none') ? str(a.emergency) : '',
       via: /mlat/.test(str(a.type)) || (a.mlat && a.mlat.length) ? 'MLAT' : (/tisb/.test(str(a.type)) || (a.tisb && a.tisb.length) ? 'TIS-B' : (/adsr/.test(str(a.type)) ? 'ADS-R' : (/mode_s|other/.test(str(a.type)) ? 'Mode S' : 'ADS-B'))),
@@ -139,7 +143,7 @@ window.MB = window.MB || {};
   // `clock` remembers when each snapshot (the feed's own "now") was first seen, so a feed that keeps serving the
   // same snapshot ages instead of looking live. Local time only: the receiver's clock is never trusted.
   function parseFeed(json, clock) {
-    const list = json && (Array.isArray(json.aircraft) ? json.aircraft : (Array.isArray(json.ac) ? json.ac : null));
+    const list = Array.isArray(json) ? json : json && (Array.isArray(json.aircraft) ? json.aircraft : (Array.isArray(json.ac) ? json.ac : null)); // (a bare list: the original dump1090's data.json)
     if (!list) throw new Error('not an aircraft.json feed');
     let at = Date.now();
     if (clock && typeof json.now === 'number') {
@@ -154,7 +158,9 @@ window.MB = window.MB || {};
     try {
       const res = await fetch(url, { cache: 'no-store', signal: ctl.signal });
       if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
-      return await res.json();
+      const text = await res.text();
+      if (/^\s*</.test(text)) { const e = new Error('web page'); e.html = true; throw e; } // a map page, not data
+      return JSON.parse(text);
     } finally { clearTimeout(timer); }
   }
 
@@ -170,10 +176,14 @@ window.MB = window.MB || {};
     try { path = new URL(u).pathname.replace(/\/+$/, ''); } catch (e) { return []; }
     // An address that already names a sub-folder (".../skyaware") is tried as given before the usual locations.
     const origin = u.slice(0, u.length - path.length);
-    const list = path ? [u + '/data/aircraft.json'] : [];
+    const list = path ? [u + '/data/aircraft.json', u + '/data.json'] : [];
     RECEIVER_PATHS.forEach(p => { const c = origin + p; if (!list.includes(c)) list.push(c); });
     return list;
   }
+
+  // How much a failure says about the receiver: a network/browser block or a real error beats a web page in place of
+  // data, which beats "not found" (most of the paths tried simply do not exist on a given receiver).
+  function rank(e) { return e && e.status === 404 ? 0 : e && e.html ? 1 : 2; }
 
   function isLocalHost(url) {
     try { const h = new URL(url).hostname; return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || /\.localhost$/.test(h); } catch (e) { return false; }
@@ -182,7 +192,10 @@ window.MB = window.MB || {};
   function explain(src, err, url) {
     if (err && err.name === 'AbortError') return 'No answer within ' + TIMEOUT / 1000 + ' s';
     if (err && err.status === 429) return 'Rate limited by ' + src.name + '; slowing down';
+    if (err && err.html) return 'That address answered with a web page, not aircraft data. Enter the address the receiver\'s map opens at, or the full URL of its aircraft.json (or data.json).';
+    if (err && err.status === 404) return 'No aircraft data found at that address. Enter the address the receiver\'s map opens at, or the full URL of its aircraft.json (or data.json).';
     if (err && err.status) return src.name + ' answered ' + err.message;
+    if (err instanceof SyntaxError) return 'That address did not answer with aircraft data.';
     if (err instanceof TypeError) {
       if (!navigator.onLine) return 'Offline';
       if (src.kind === 'area') return src.name + ' does not accept requests from web pages. This source works in the GenGIS desktop app.';
@@ -280,7 +293,7 @@ window.MB = window.MB || {};
       const cf = this.srcConf(id);
       url = String(url || '').trim();
       const changed = cf.url !== url;
-      if (changed) { cf.url = url; this.save(); }
+      if (changed) { cf.url = url; delete cf.found; delete cf.foundFor; this.save(); } // a new address: search its paths again
       if (this.rt[id].on && changed) { this.disable(id); this.enable(id); }
       else if (!this.rt[id].on && connect) this.enable(id);
     },
@@ -308,13 +321,21 @@ window.MB = window.MB || {};
       try {
         let list;
         if (src.kind === 'receiver') {
-          const urls = rt.resolved ? [rt.resolved] : receiverCandidates(cf.url);
-          let lastErr = new Error('No receiver address');
+          let urls = rt.resolved ? [rt.resolved] : receiverCandidates(cf.url);
+          if (!rt.resolved && cf.found && cf.foundFor === cf.url) urls = [cf.found].concat(urls.filter(x => x !== cf.found)); // where it was last time
+          let best = null, bestUrl = '';
           for (const u of urls) {
             failedUrl = u;
-            try { list = parseFeed(await getJson(u), rt.clock); rt.resolved = u; break; } catch (e) { lastErr = e; if (gen !== rt.gen) return; }
+            try {
+              list = parseFeed(await getJson(u), rt.clock); rt.resolved = u;
+              if (cf.found !== u || cf.foundFor !== cf.url) { cf.found = u; cf.foundFor = cf.url; this.save(); } // locked in, across reloads
+              break;
+            } catch (e) {
+              if (gen !== rt.gen) return;
+              if (!best || rank(e) > rank(best)) { best = e; bestUrl = u; }
+            }
           }
-          if (!list) throw lastErr;
+          if (!list) { failedUrl = bestUrl; throw best || new Error('No receiver address'); }
         } else {
           const c = MB.map.getCenter().wrap(), b = MB.map.getBounds();
           const need = Math.ceil(c.distanceTo(b.getNorthEast()) / 1852);
