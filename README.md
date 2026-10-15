@@ -21,12 +21,13 @@ A free map builder that runs in the browser (installable, works offline) or as a
 
 ## Features
 
-- **Draw and edit** markers, text, lines, polygons, rectangles, circles and SVG images, with snapping, name labels and full styling. By default, each new object gets its own color. Texts take a font, a background opacity and an editable shadow.
+- **Draw and edit** markers, text, lines, polygons, circles and preset shapes (rectangle, triangle, pentagon, hexagon, octagon, star, lightning bolt), with snapping, name labels and full styling. By default, each new object gets its own color. Texts take a font, a background opacity and an editable shadow.
 - **Move and resize**: the Move tool drags objects and shows a box around what it moves; the Scale tool resizes from any corner or side (Shift keeps proportions, Alt resizes from the center).
-- **Icons**: pick from 1,600+ open-source [Lucide](https://lucide.dev) icons (search by name or tag, any color, an optional dark outline for imagery) and place them like an SVG.
+- **Images**: place SVGs (scaled with the map or a fixed size on screen) and pictures (PNG, JPEG, WebP, GIF, kept to scale on the ground) from the Images panel.
+- **Icons**: pick from 1,600+ open-source [Lucide](https://lucide.dev) icons (search by name or tag, any color, an optional dark outline for imagery) and place them like any image.
 - **Combine and reuse**: multi-select, join lines into shapes, join overlapping shapes into one polygon, duplicate, and copy a style to paste on other objects.
 - **Measure** distances and areas in metric, imperial or nautical units, with a scale bar. A circle shows its radius while you draw it, and objects can show their length, perimeter, area, radius or position on the map.
-- **Layers** with show/hide, lock and draw order, duplicate, and **groups**: a grouped layer's objects are selected, moved, resized and deleted together. Locked objects can still be selected and inspected. Undo/redo, right-click menus, presenter mode with full screen.
+- **Layers** with show/hide, lock and draw order, duplicate, and **groups**: a grouped layer's objects are selected, moved, resized and deleted together. Locked objects can still be selected and inspected. Undo/redo, right-click menus, presenter mode with full screen. The toolbar sits on the left or the right of the map (Settings → Interface).
 - **Projects** save automatically on the device as you work, with recent projects and earlier copies to restore; save/open as `.gengis.json`; GeoJSON import/export; the map exported as a PNG, JPEG or PDF (up to 4× resolution, paper size and margins). In the desktop app each named project is also kept as a file (`Documents\GenGIS` by default).
 - **Annotations**: draw freehand on the map with a stylus (pen, marker or highlighter; color and width), into an Annotations layer; fingers and the mouse keep moving the map.
 - **Search** addresses, places and coordinates; find points of interest; center on **your location**, with a beam showing which way the device points (compass, or direction of travel).

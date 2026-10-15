@@ -161,7 +161,7 @@
     </div>
     <p>A standalone map building tool. Works offline as an installed Progressive Web App (map tiles you have viewed are cached) or inside Electron.</p>
     <h3>Shortcuts</h3>
-    <p class="kbd-list"><kbd>V</kbd> select · <kbd>G</kbd> move · <kbd>K</kbd> scale (drag a handle: <kbd>Shift</kbd> keeps proportions, <kbd>Alt</kbd> from the center) · <kbd>F</kbd> presenter · <kbd>M</kbd> marker · <kbd>T</kbd> text · <kbd>L</kbd> line · <kbd>P</kbd> polygon · <kbd>R</kbd> rectangle · <kbd>C</kbd> circle · <kbd>S</kbd> image · <kbd>I</kbd> icon · <kbd>N</kbd> annotate · <kbd>D</kbd> distance · <kbd>A</kbd> area · <kbd>Esc</kbd> cancel · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>Ctrl</kbd>+<kbd>S</kbd> save file · <kbd>/</kbd> search</p>
+    <p class="kbd-list"><kbd>V</kbd> select · <kbd>G</kbd> move · <kbd>K</kbd> scale (drag a handle: <kbd>Shift</kbd> keeps proportions, <kbd>Alt</kbd> from the center) · <kbd>F</kbd> presenter · <kbd>M</kbd> marker · <kbd>T</kbd> text · <kbd>L</kbd> line · <kbd>P</kbd> polygon · <kbd>R</kbd> shapes · <kbd>C</kbd> circle · <kbd>S</kbd> image · <kbd>I</kbd> icon · <kbd>N</kbd> annotate · <kbd>D</kbd> distance · <kbd>A</kbd> area · <kbd>Esc</kbd> cancel · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>Ctrl</kbd>+<kbd>S</kbd> save file · <kbd>/</kbd> search</p>
     <p class="dim">Open with URL parameters: <code>?q=Eiffel+Tower</code>, <code>?lat=48.858&amp;lon=2.294&amp;zoom=16</code>, <code>?center=48.858,2.294</code>, <code>?poi=cafe</code>.</p>
   </div>
 </div>
@@ -171,7 +171,7 @@
     <button type="button" class="modal-x" data-act="close" aria-label="Close" title="Close">✕</button>
     <h2 id="iconTitle">Add an icon</h2>
     <div class="icon-tools">
-      <input type="search" id="iconSearch" placeholder="Search icons: plane, tree, warning…" autocomplete="off" spellcheck="false" aria-label="Search icons">
+      <input type="text" inputmode="search" enterkeyhint="search" id="iconSearch" placeholder="Search icons: plane, tree, warning…" spellcheck="false" aria-label="Search icons">
       <div class="icon-swatches" id="iconSwatches" role="group" aria-label="Icon color"></div>
       <label class="icon-custom" title="Another color"><input type="color" id="iconColor" value="#ffffff" aria-label="Another color"></label>
       <label class="check icon-halo"><input type="checkbox" id="iconHalo" checked> Dark outline</label>
