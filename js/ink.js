@@ -42,8 +42,9 @@ window.MB = window.MB || {};
   }
 
   // The layer strokes go to: "Annotations", made (not activated) on the first stroke.
+  const isInkLayer = l => l.name.trim().toLowerCase() === LAYER.toLowerCase();
   function inkLayer() {
-    return MB.state.layers.find(l => l.name.trim().toLowerCase() === LAYER.toLowerCase()) || MB.createLayer(LAYER, { activate: false });
+    return MB.state.layers.find(isInkLayer) || MB.createLayer(LAYER, { activate: false });
   }
 
   MB.ink = {
@@ -75,9 +76,13 @@ window.MB = window.MB || {};
       return t && t.closest && t.closest('.leaflet-container') && !t.closest('.leaflet-control-container, .tool-hint, #toolbar, .mb-scale-box');
     },
     down(e) {
+      if (this.stroke && e.pointerType !== 'pen') { e.preventDefault(); e.stopPropagation(); return; } // a palm on the glass while writing: nothing
       if (!this.active || e.pointerType !== 'pen' || this.stroke || !this.onMap(e)) return;
       if (e.button !== 0) return; // the barrel button (2) or the eraser end (5): not ink
       e.preventDefault(); e.stopPropagation();
+      const target = MB.state.layers.find(isInkLayer);
+      if (target && target.locked) { MB.toast('The Annotations layer is locked: unlock it to annotate'); return; }
+      this.hold(true);
       const style = strokeStyle(), ls = MB.toLeafletStyle(style);
       const p = this.point(e);
       this.stroke = {
@@ -88,6 +93,7 @@ window.MB = window.MB || {};
     },
     move(e) {
       const s = this.stroke;
+      if (s && e.pointerType !== 'pen') { e.stopPropagation(); return; } // the palm again
       if (!s || e.pointerId !== s.id) return;
       e.preventDefault(); e.stopPropagation();
       const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
@@ -99,10 +105,12 @@ window.MB = window.MB || {};
     },
     up(e, cancelled) {
       const s = this.stroke;
+      if (s && e.pointerType !== 'pen') { e.stopPropagation(); return; }
       if (!s || e.pointerId !== s.id) return;
       e.preventDefault(); e.stopPropagation();
       this.swallow = Date.now() + 400;
       this.stroke = null;
+      this.hold(false);
       if (s.frame) cancelAnimationFrame(s.frame);
       MB.map.removeLayer(s.preview);
       if (cancelled) return;
@@ -112,8 +120,16 @@ window.MB = window.MB || {};
       const s = this.stroke;
       if (!s) return;
       this.stroke = null;
+      this.hold(false);
       if (s.frame) cancelAnimationFrame(s.frame);
       MB.map.removeLayer(s.preview);
+    },
+    // While a stroke is drawn the map stays put: its drag and pinch are off (what Leaflet might start from a touch
+    // that got through before the pen), back as they were after.
+    hold(on) {
+      const m = MB.map;
+      if (on) { this.held = ['dragging', 'touchZoom'].filter(h => m[h] && m[h].enabled()); this.held.forEach(h => m[h].disable()); }
+      else if (this.held) { this.held.forEach(h => m[h].enable()); this.held = null; }
     },
     point(e) {
       const r = MB.map.getContainer().getBoundingClientRect();

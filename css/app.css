@@ -281,9 +281,8 @@ body.presenting .mb-scale-box { display: none !important; }
 .ink-color i { display: block; width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.35), 0 0 0 1px rgba(0,0,0,.45); }
 .ink-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
 .ink-note { font-size: 11px; color: var(--text-dim); text-align: center; }
-/* the strokes: their ends and joins as a pen's; a highlighter's a touch brighter where it crosses the map */
+/* the strokes: their ends and joins as a pen's */
 .leaflet-overlay-pane path.mb-ink { stroke-linecap: round; stroke-linejoin: round; }
-.leaflet-overlay-pane path.mb-ink-highlighter { mix-blend-mode: hard-light; }
 
 .leaflet-container { font-family: var(--font); }
 .leaflet-top.leaflet-right { top: 0; }
@@ -546,7 +545,9 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .ink-tip span { display: none; } /* the tips by their icons: the row fits beside the toolbar */
   .ink-tip, .ink-size { width: 32px !important; height: 34px !important; padding: 0 !important; }
   .ink-sep { margin: 0 3px; }
-  .ink-color { width: 28px !important; height: 30px !important; }
+  .ink-color { width: 25px !important; height: 30px !important; }
+  .ink-colors { flex-wrap: wrap; justify-content: center; } /* a phone narrower still: a second row */
+  .ink-color i { width: 17px; height: 17px; }
   .ink-note { font-size: 10px; }
   .ink-mouse { display: none; } /* one line: a phone has no mouse */
   .leaflet-control-zoom { display: none; }
