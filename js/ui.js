@@ -346,6 +346,7 @@ window.MB = window.MB || {};
       case 'about': openDialog($('#aboutDialog')); break;
       case 'sources': openDialog($('#sourcesDialog')); break;
       case 'present': MB.presenter.enter(); break;
+      case 'cast': MB.cast.open(); break;
       case 'apis': MB.settingsDialog.open(); break;
     }
   };
