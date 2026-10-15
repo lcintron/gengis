@@ -171,37 +171,17 @@ window.MB = window.MB || {};
         <div class="export-actions"><span class="export-status" role="status" aria-live="polite"></span><button type="button" class="btn" data-act="close">Cancel</button><button type="button" class="btn primary" data-act="export">Export</button></div>
       </div>`;
       document.body.appendChild(dlg);
-      dlg.addEventListener('click', e => {
-        if (this.busy) return;
-        if (e.target === dlg || e.target.closest('[data-act="close"]')) this.close();
-        else if (e.target.closest('[data-act="export"]')) this.run();
-      });
-      dlg.addEventListener('keydown', e => {
-        e.stopPropagation(); // the app's shortcuts (F, R, Ctrl+Z…) stay off behind the dialog
-        if (e.key === 'Escape') { e.preventDefault(); if (!this.busy) this.close(); return; }
-        if (e.key !== 'Tab') return; // the keyboard stays in the dialog
-        const f = Array.from(dlg.querySelectorAll('button, input, select, [tabindex]:not([tabindex="-1"])')).filter(x => !x.disabled && x.tabIndex >= 0 && x.getClientRects().length); // a choice's other options: arrow keys
-        const i = f.indexOf(document.activeElement);
-        if (!f.length) { e.preventDefault(); return; } // exporting: everything is disabled
-        if (e.shiftKey ? i <= 0 : (i === -1 || i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
-      });
+      MB.ui.wireDialog(dlg, { canClose: () => !this.busy }); // ✕, Cancel, Esc, the backdrop: not while exporting
+      dlg.addEventListener('click', e => { if (!this.busy && e.target.closest('[data-act="export"]')) this.run(); });
     },
 
     open() {
       if (!this.dlg) this.build();
-      this.back = document.activeElement;
       const c = conf();
       if (c.scale > this.maxScale()) c.scale = this.maxScale();
       this.render();
       this.status('');
-      this.dlg.classList.remove('hidden');
-      this.dlg.querySelector('.modal-x').focus();
-    },
-    close() {
-      this.dlg.classList.add('hidden');
-      const shown = el => el && el !== document.body && el.isConnected && el.getClientRects().length;
-      const b = [this.back, document.getElementById('menuBtn'), document.getElementById('moreBtn')].find(shown); // the menu that opened it is gone: its button
-      if (b) b.focus();
+      MB.ui.openDialog(this.dlg);
     },
 
     render() {

@@ -227,14 +227,17 @@ window.MB = window.MB || {};
     ['#aboutDialog', '#sourcesDialog'].forEach(sel => MB.ui.wireDialog($(sel)));
   }
 
-  // A dialog: closed by its ✕, Esc or a click on the backdrop; Tab stays inside it.
-  MB.ui.wireDialog = function (dlg) {
-    dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-act="close"]')) closeDialog(dlg); });
+  // A dialog: closed by its ✕, Esc or a click on the backdrop (unless opts.canClose() says not now); Tab stays inside
+  // it, and no key reaches the app's shortcuts behind it (R, N, F, Ctrl+Z…).
+  MB.ui.wireDialog = function (dlg, opts) {
+    const canClose = (opts && opts.canClose) || (() => true);
+    dlg.addEventListener('click', e => { if ((e.target === dlg || e.target.closest('[data-act="close"]')) && canClose()) closeDialog(dlg); });
     dlg.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeDialog(dlg); return; }
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); if (canClose()) closeDialog(dlg); return; }
       if (e.key !== 'Tab') return;
-      const f = $$('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])', dlg).filter(x => !x.disabled && x.getClientRects().length);
-      if (!f.length) return;
+      const f = $$('button, a[href], input, select, textarea, [tabindex]', dlg).filter(x => !x.disabled && x.tabIndex >= 0 && x.getClientRects().length); // (a radio group's or grid's other options: arrow keys)
+      if (!f.length) { e.preventDefault(); return; } // nothing to reach now (an export running): the keyboard stays
       const i = f.indexOf(document.activeElement);
       if (e.shiftKey ? i <= 0 : (i === -1 || i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
     });
@@ -250,9 +253,10 @@ window.MB = window.MB || {};
   }
   function closeDialog(dlg) {
     dlg.classList.add('hidden');
-    const back = dlg._back && dlg._back.isConnected && dlg._back.getClientRects().length ? dlg._back : $('#moreBtn');
+    const shown = el => el && el !== document.body && el.isConnected && el.getClientRects().length;
+    const back = [dlg._back, $('#menuBtn'), $('#moreBtn')].find(shown);
     dlg._back = null;
-    if (back && back.focus) back.focus();
+    if (back) back.focus();
   }
   MB.ui.openDialog = openDialog;
   MB.ui.closeDialog = closeDialog;

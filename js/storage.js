@@ -170,7 +170,6 @@ window.MB = window.MB || {};
       return ids;
     });
   };
-  MB.addSvgFiles = MB.addImageFiles; // its earlier name
 
   MB.removeSvg = function (id) {
     const used = Object.keys(MB.featureLayers).filter(fid => { const m = MB.featureLayers[fid].mb; return m.type === 'svg' && m.svg.svgId === id; });
