@@ -31,9 +31,9 @@ window.MB = window.MB || {};
       'For a Chromecast or cast-ready TV: open ' + CHROME_CAST + '.',
       'For a Miracast / wireless display: press <b>Win+K</b> (or open quick settings → <b>Cast</b>) and pick the display.'
     ], note: 'Both need the TV or display on the same Wi-Fi.' },
-    windowsapp: { name: 'This app on Windows', items: [
-      'Press <b>Win+K</b> (or open quick settings → <b>Cast</b>).',
-      'Pick your wireless display or Miracast-ready TV.'
+    windowsapp: { name: 'This app (Windows / Linux)', items: [
+      'On <b>Windows</b>: press <b>Win+K</b> (or open quick settings → <b>Cast</b>) and pick your wireless display or Miracast-ready TV.',
+      'On <b>Linux</b>: use the system screen-sharing, or open GenGIS in a browser to cast.'
     ], note: 'To cast to a Chromecast, open GenGIS in Chrome or Edge instead, then use ' + CHROME_CAST + '.' },
     mac: { name: 'Mac (Chrome or Edge)', items: [
       'For an AirPlay TV or Apple TV: open <b>Control Center</b> → <b>Screen Mirroring</b>, then pick the screen.',
