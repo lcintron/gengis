@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <title>GenGIS (G²)</title>
-<meta name="description" content="GenGIS (G²) is a free, offline-capable GIS map builder: draw and style features, organize them in layers, measure in metric, imperial or nautical units, place SVG symbols, and overlay live airspace, boundary and point-of-interest data from open sources.">
+<meta name="description" content="GenGIS (G²) is a free, offline-capable GIS map builder: draw and style features, organize them in layers, measure in metric, imperial or nautical units, place SVG symbols and pictures, and overlay live airspace, boundary and point-of-interest data from open sources.">
 <meta name="theme-color" content="#0b1118">
 <meta name="color-scheme" content="dark">
 <link rel="manifest" href="manifest.webmanifest">
@@ -100,7 +100,7 @@
         <button data-tool="polygon" title="Polygon (P)"><svg viewBox="0 0 24 24"><path d="M12 3l8.5 6.2-3.2 10H6.7L3.5 9.2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
         <button data-tool="rectangle" id="shapeBtn" class="has-menu" title="Shapes (R)" aria-haspopup="menu" aria-expanded="false" aria-controls="shapePalette"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
         <button data-tool="circle" title="Circle (C)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
-        <button data-tool="svg" title="Place SVG image (S)"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16l4-5 3 3.5 2-2.5 3 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/></svg></button>
+        <button data-tool="svg" title="Place image (S)"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16l4-5 3 3.5 2-2.5 3 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/></svg></button>
         <span class="sep"></span>
         <button data-tool="measure-distance" title="Measure distance (D)"><svg viewBox="0 0 24 24"><path d="M3 16.5L16.5 3 21 7.5 7.5 21z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
         <button data-tool="measure-area" title="Measure area (A)"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2"/><path d="M8 16l3-6 3 3 2-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
@@ -112,7 +112,7 @@
       <div class="tabs" role="tablist">
         <button class="sheet-close" id="sheetClose" title="Hide panel" aria-label="Hide panel">✕</button>
         <button data-tab="layers" class="active">Layers</button>
-        <button data-tab="svg">SVG</button>
+        <button data-tab="svg">Images</button>
         <button data-tab="places">Places</button>
         <button data-tab="data">Data</button>
         <button data-tab="settings">Settings</button>
@@ -143,7 +143,7 @@
   </div>
 
   <input type="file" id="fileOpen" accept=".json,.geojson,application/json,application/geo+json" hidden>
-  <input type="file" id="svgUpload" accept=".svg,image/svg+xml" multiple hidden>
+  <input type="file" id="svgUpload" accept=".svg,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif" multiple hidden>
 </div>
 
 <!-- Project menu dialogs (ui.js): each closes with its ✕ (or a click on the backdrop) -->
@@ -158,7 +158,7 @@
     </div>
     <p>A standalone map building tool. Works offline as an installed Progressive Web App (map tiles you have viewed are cached) or inside Electron.</p>
     <h3>Shortcuts</h3>
-    <p class="kbd-list"><kbd>V</kbd> select · <kbd>G</kbd> move · <kbd>K</kbd> scale (drag a handle: <kbd>Shift</kbd> keeps proportions, <kbd>Alt</kbd> from the center) · <kbd>F</kbd> presenter · <kbd>M</kbd> marker · <kbd>T</kbd> text · <kbd>L</kbd> line · <kbd>P</kbd> polygon · <kbd>R</kbd> rectangle · <kbd>C</kbd> circle · <kbd>S</kbd> SVG · <kbd>D</kbd> distance · <kbd>A</kbd> area · <kbd>Esc</kbd> cancel · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>Ctrl</kbd>+<kbd>S</kbd> save file · <kbd>/</kbd> search</p>
+    <p class="kbd-list"><kbd>V</kbd> select · <kbd>G</kbd> move · <kbd>K</kbd> scale (drag a handle: <kbd>Shift</kbd> keeps proportions, <kbd>Alt</kbd> from the center) · <kbd>F</kbd> presenter · <kbd>M</kbd> marker · <kbd>T</kbd> text · <kbd>L</kbd> line · <kbd>P</kbd> polygon · <kbd>R</kbd> rectangle · <kbd>C</kbd> circle · <kbd>S</kbd> image · <kbd>D</kbd> distance · <kbd>A</kbd> area · <kbd>Esc</kbd> cancel · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>Ctrl</kbd>+<kbd>S</kbd> save file · <kbd>/</kbd> search</p>
     <p class="dim">Open with URL parameters: <code>?q=Eiffel+Tower</code>, <code>?lat=48.858&amp;lon=2.294&amp;zoom=16</code>, <code>?center=48.858,2.294</code>, <code>?poi=cafe</code>.</p>
   </div>
 </div>

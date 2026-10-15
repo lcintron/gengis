@@ -18,7 +18,7 @@ window.MB = window.MB || {};
     rectangle: 'Click one corner, then click the opposite corner.',
     shape: 'Drag a box to draw the shape (Shift keeps its proportions), or click for a default size.',
     circle: 'Click the center, then click to set the radius.',
-    svg: 'Click the map to place the SVG. Choose a different SVG in the SVG panel.',
+    svg: 'Click the map to place the image. Choose a different one in the Images panel.',
     'measure-distance': 'Click points to measure. Double-click or Enter to finish (saved to the active layer), Esc to cancel.',
     'measure-area': 'Click at least 3 points. Double-click or Enter to finish (saved to the active layer), Esc to cancel.'
   };
@@ -465,7 +465,7 @@ window.MB = window.MB || {};
     const hint = $('#toolHint'), name = MB.tools.current;
     let text = toolHints[name] || '';
     if (name === 'svg' && MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) {
-      text = 'Click the map to place "' + MB.state.svgLibrary[MB.svgPlace.svgId].name + '". Choose a different SVG in the SVG panel.';
+      text = 'Click the map to place "' + MB.state.svgLibrary[MB.svgPlace.svgId].name + '". Choose a different one in the Images panel.';
     }
     const layer = MB.activeLayer();
     const hidden = ADDING_TOOLS.includes(name) && layer && !layer.visible;
@@ -1221,23 +1221,26 @@ window.MB = window.MB || {};
   function svgProps(f) {
     const svg = f.mb.svg, lib = MB.state.svgLibrary[svg.svgId] || {};
     const wrap = document.createElement('div');
-    const isGround = svg.mode === 'ground';
+    const isGround = svg.mode === 'ground', raster = lib.kind === 'raster';
     const wVal = isGround ? +MB.fromMeters(svg.width).toFixed(2) : svg.width;
     wrap.innerHTML = `<div class="section"><h3>Image</h3>
       <div class="row"><label>File</label><select data-k="svgId">${Object.values(MB.state.svgLibrary).map(l => `<option value="${l.id}"${l.id === svg.svgId ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>
-      <div class="row"><label>Sizing</label><div class="seg small"><button data-mode="pin"${!isGround ? ' class="active"' : ''}>Fixed pixels</button><button data-mode="ground"${isGround ? ' class="active"' : ''}>Scale with map</button></div></div>
+      ${raster ? '<p class="note">A picture scales with the map: its width is on the ground.</p>' : `<div class="row"><label>Sizing</label><div class="seg small"><button data-mode="pin"${!isGround ? ' class="active"' : ''}>Fixed pixels</button><button data-mode="ground"${isGround ? ' class="active"' : ''}>Scale with map</button></div></div>`}
       <div class="row"><label>Width</label><input type="number" data-k="width" min="1" step="any" value="${wVal}"><span class="unit">${isGround ? MB.lengthUnitLabel() : 'px'}</span></div>
       ${isGround ? '' : `<div class="row"><label>Rotation</label><input type="range" data-k="rotation" min="0" max="360" step="1" value="${svg.rotation || 0}"><span class="val" data-val="rotation">${svg.rotation || 0}°</span></div>`}
       <div class="row"><label>Opacity</label><input type="range" data-k="opacity" min="0" max="1" step="0.05" value="${svg.opacity == null ? 1 : svg.opacity}"><span class="val" data-val="opacity">${Math.round((svg.opacity == null ? 1 : svg.opacity) * 100)}%</span></div>
       <p class="note">${esc(lib.name || '')} · ${lib.width ? lib.width + '×' + lib.height : ''}</p></div>`;
-    $$('[data-mode]', wrap).forEach(b => b.addEventListener('click', () => {
-      const mode = b.dataset.mode;
-      if (mode === svg.mode) return;
-      // convert width so the image keeps roughly the same on-screen size
+    // a new sizing, the width converted so the image keeps about its size on screen
+    const toMode = mode => {
       const c = MB.svgCenter(f);
       const mpp = 156543.03392 * Math.cos(c.lat * Math.PI / 180) / Math.pow(2, MB.map.getZoom());
       svg.width = mode === 'ground' ? svg.width * mpp : Math.max(8, Math.round(svg.width / mpp));
       svg.mode = mode;
+    };
+    $$('[data-mode]', wrap).forEach(b => b.addEventListener('click', () => {
+      const mode = b.dataset.mode;
+      if (mode === svg.mode) return;
+      toMode(mode);
       MB.rebuildFeature(f);
       MB.commit('svg mode');
     }));
@@ -1245,7 +1248,11 @@ window.MB = window.MB || {};
       inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', () => {
         const k = inp.dataset.k;
         if (k === 'width') { const v = +inp.value; if (!(v > 0)) return; svg.width = isGround ? MB.toMeters(v) : v; }
-        else if (k === 'svgId') { svg.svgId = inp.value; MB.rebuildFeature(f); MB.commit('svg image'); return; }
+        else if (k === 'svgId') {
+          svg.svgId = inp.value;
+          if ((MB.state.svgLibrary[svg.svgId] || {}).kind === 'raster' && svg.mode !== 'ground') toMode('ground'); // a picture lies on the ground
+          MB.rebuildFeature(f); MB.ui.renderProps(); MB.commit('svg image'); return;
+        }
         else svg[k] = +inp.value;
         const valEl = $(`[data-val="${k}"]`, wrap);
         if (valEl) valEl.textContent = k === 'rotation' ? svg.rotation + '°' : Math.round(svg.opacity * 100) + '%';
@@ -1265,11 +1272,12 @@ window.MB = window.MB || {};
     const lib = Object.values(MB.state.svgLibrary);
     const d = MB.svgDefaults;
     const isGround = d.mode === 'ground';
-    panel.innerHTML = `<div class="panel-head"><h3>SVG library</h3><button class="btn small" data-act="upload">+ Upload SVG</button></div>
-      <div class="drop-zone" id="svgDrop">Drop .svg files here or click to upload</div>
+    panel.innerHTML = `<div class="panel-head"><h3>Image library</h3><button class="btn small" data-act="upload">+ Upload</button></div>
+      <div class="drop-zone" id="svgDrop">Drop SVG, PNG, JPEG, WebP or GIF files here, or click to upload</div>
       ${lib.length ? '<div class="svg-grid">' + lib.map(l => `<div class="svg-card${MB.svgPlace.svgId === l.id && MB.tools.current === 'svg' ? ' active' : ''}" data-id="${l.id}" title="Click to place on the map"><button class="del" title="Remove from library">×</button><img src="${l.dataUrl}" alt=""><div class="name">${esc(l.name)}</div></div>`).join('') + '</div>'
-        : '<p class="note">Upload an SVG, then click it to place it.</p>'}
+        : '<p class="note">Upload an image, then click it to place it.</p>'}
       <div class="section" style="margin-top:16px"><h3>Placement defaults</h3>
+        <p class="note">Pictures (PNG, JPEG, WebP, GIF) always scale with the map; these sizes are for SVGs.</p>
         <div class="row"><label>Sizing</label><div class="seg small"><button data-mode="pin"${!isGround ? ' class="active"' : ''} title="Same size at every zoom (symbols)">Fixed pixels</button><button data-mode="ground"${isGround ? ' class="active"' : ''} title="Real-world size on the ground (site plans)">Scale with map</button></div></div>
         <div class="row"><label>Width</label><input type="number" id="svgDefWidth" min="1" step="any" value="${isGround ? +MB.fromMeters(d.widthM).toFixed(2) : d.widthPx}"><span class="unit">${isGround ? MB.lengthUnitLabel() : 'px'}</span></div>
         <div class="row"><label>Rotation</label><input type="range" id="svgDefRot" min="0" max="360" value="${d.rotation}"><span class="val" id="svgDefRotVal">${d.rotation}°</span></div>
@@ -1281,7 +1289,7 @@ window.MB = window.MB || {};
     drop.addEventListener('click', upload);
     drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); MB.addSvgFiles(e.dataTransfer.files); });
+    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); MB.addImageFiles(e.dataTransfer.files); });
     $$('.svg-card', panel).forEach(card => {
       card.addEventListener('click', e => {
         if (e.target.classList.contains('del')) { MB.removeSvg(card.dataset.id); return; }
@@ -1296,17 +1304,17 @@ window.MB = window.MB || {};
   };
 
   function initSvgUpload() {
-    $('#svgUpload').addEventListener('change', e => { MB.addSvgFiles(e.target.files).then(ids => { if (ids.length) { MB.svgPlace.svgId = ids[0]; } }); e.target.value = ''; });
+    $('#svgUpload').addEventListener('change', e => { MB.addImageFiles(e.target.files).then(ids => { if (ids.length) { MB.svgPlace.svgId = ids[0]; } }); e.target.value = ''; });
     MB.on('svglibrary', () => MB.ui.renderSvgPanel());
-    // allow dropping SVG / project files anywhere on the map
+    // allow dropping images and project files anywhere on the map
     const mapEl = $('#map');
     mapEl.addEventListener('dragover', e => e.preventDefault());
     mapEl.addEventListener('drop', e => {
       e.preventDefault();
       const files = Array.from(e.dataTransfer.files || []);
-      const svgs = files.filter(f => /\.svg$/i.test(f.name));
+      const svgs = files.filter(f => MB.isSvgFile(f) || MB.isRasterFile(f));
       const others = files.filter(f => /\.(geo)?json$/i.test(f.name));
-      if (svgs.length) MB.addSvgFiles(svgs).then(ids => { if (ids.length) { MB.svgPlace.svgId = ids[0]; MB.tools.set('svg'); } });
+      if (svgs.length) MB.addImageFiles(svgs).then(ids => { if (ids.length) { MB.svgPlace.svgId = ids[0]; MB.tools.set('svg'); } });
       if (others.length) MB.openFile(others[0]);
     });
   }
@@ -1481,7 +1489,7 @@ window.MB = window.MB || {};
     $('#setSnap', panel).addEventListener('change', e => { s.snapping = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $$('[data-act]', panel).forEach(b => b.addEventListener('click', () => MB.ui.menuAction(b.dataset.act)));
     $('#setReset', panel).addEventListener('click', async () => {
-      if (!confirm('Delete this project (its layers, objects and SVG library) and its saved copies on this device? Other projects stay.')) return;
+      if (!confirm('Delete this project (its layers, objects and image library) and its saved copies on this device? Other projects stay.')) return;
       await MB.projects.flush();
       await MB.clearAutosave();
       MB.projects.startFresh();
