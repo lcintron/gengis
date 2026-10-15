@@ -18,6 +18,7 @@ window.MB = window.MB || {};
       MB.measure.stop();
       MB.svgPlace.stop();
       if (MB.shapes) MB.shapes.stop();
+      MB.ink.stop();
       const keep = MB.tools.picks(name) ? MB.selected : null;
       const keepGroup = MB.tools.picks(name) && MB.selectedGroup ? MB.selectedGroup() : null;
       if (keep) MB.deselect();
@@ -32,6 +33,7 @@ window.MB = window.MB || {};
       else if (name === 'measure-area') { MB.deselect(); MB.measure.start('area'); }
       else if (name === 'svg') { MB.deselect(); MB.svgPlace.start(); }
       else if (name === 'shape') { MB.deselect(); MB.shapes.start(); } // a preset shape (js/shapes.js)
+      else if (name === 'annotate') { MB.deselect(); MB.ink.start(); }
       MB.emit('tool', name);
     },
 

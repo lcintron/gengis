@@ -92,7 +92,7 @@ window.MB = window.MB || {};
 
   MB.typeLabels = {
     marker: 'Marker', text: 'Text', line: 'Line', polygon: 'Polygon', rectangle: 'Rectangle',
-    circle: 'Circle', svg: 'Image', 'measure-line': 'Distance measurement', 'measure-area': 'Area measurement'
+    circle: 'Circle', svg: 'Image', ink: 'Annotation', 'measure-line': 'Distance measurement', 'measure-area': 'Area measurement'
   };
   MB.isMeasureType = t => t === 'measure-line' || t === 'measure-area';
 
@@ -400,7 +400,7 @@ window.MB = window.MB || {};
     const st = Object.assign(layer.mb.style, patch || {});
     if (layer instanceof L.Path) {
       const ls = MB.toLeafletStyle(st);
-      if (t === 'line' || t === 'measure-line') ls.fill = false; // open lines are never filled
+      if (t === 'line' || t === 'measure-line' || t === 'ink') ls.fill = false; // open lines are never filled
       layer.setStyle(ls);
       if (MB.isMeasureType(t)) updateSegLabels(layer);
     }
@@ -597,6 +597,8 @@ window.MB = window.MB || {};
     else if (t === 'svg') {
       if (layer.dragging) layer.dragging.enable();
       if (layer.setBounds) addGroundHandle(layer);
+    } else if (t === 'ink') {
+      try { if (moveOnly && layer.pm) layer.pm.enableLayerDrag(); } catch (e) { console.warn(e); } // a stroke: moved whole, never edited point by point
     } else if (layer.pm) {
       try {
         if (moveOnly) layer.pm.enableLayerDrag();
@@ -926,7 +928,7 @@ window.MB = window.MB || {};
         d.latlng = toArr(layer.getLatLng());
         d.text = layer.pm && layer.pm.textArea ? layer.pm.getText() : (m.text || '');
         break;
-      case 'line': case 'polygon': case 'rectangle': case 'measure-line': case 'measure-area': d.latlngs = toArr(layer.getLatLngs()); break;
+      case 'line': case 'polygon': case 'rectangle': case 'measure-line': case 'measure-area': case 'ink': d.latlngs = toArr(layer.getLatLngs()); break;
       case 'circle': d.latlng = toArr(layer.getLatLng()); d.radius = layer.getRadius(); break;
       case 'svg': d.svg = MB.deepClone(m.svg); d.latlng = toArr(MB.svgCenter(layer)); break;
     }
@@ -940,6 +942,7 @@ window.MB = window.MB || {};
       case 'marker': layer = L.marker(fromArr(d.latlng), { icon: MB.pinIcon((d.style || {}).color) }); break;
       case 'text': layer = L.marker(fromArr(d.latlng), { textMarker: true, text: d.text || '' }); break;
       case 'line': case 'measure-line': layer = L.polyline(fromArr(d.latlngs), st); break;
+      case 'ink': layer = L.polyline(fromArr(d.latlngs), Object.assign(st, { fill: false, className: 'mb-ink mb-ink-' + ((d.style && d.style.ink) || 'pen') })); break; // (ink.js)
       case 'polygon': case 'measure-area': layer = L.polygon(fromArr(d.latlngs), st); break;
       case 'rectangle': layer = L.rectangle(L.latLngBounds(flattenLatLngs(fromArr(d.latlngs))), st); break;
       case 'circle': layer = L.circle(fromArr(d.latlng), Object.assign({ radius: d.radius }, st)); break;

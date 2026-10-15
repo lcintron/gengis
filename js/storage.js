@@ -96,7 +96,7 @@ window.MB = window.MB || {};
           case 'MultiPoint':
             c.forEach(pt => { MB.restoreFeature(Object.assign({}, base, { type: 'marker', latlng: [pt[1], pt[0]] })); n++; }); break;
           case 'LineString':
-            MB.restoreFeature(Object.assign(base, { type: p.type === 'measure-line' ? 'measure-line' : 'line', latlngs: c.map(pt => [pt[1], pt[0]]) })); n++; break;
+            MB.restoreFeature(Object.assign(base, { type: p.type === 'measure-line' || p.type === 'ink' ? p.type : 'line', latlngs: c.map(pt => [pt[1], pt[0]]) })); n++; break;
           case 'MultiLineString':
             MB.restoreFeature(Object.assign(base, { type: 'line', latlngs: c.map(ls => ls.map(pt => [pt[1], pt[0]])) })); n++; break;
           case 'Polygon':

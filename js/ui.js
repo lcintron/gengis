@@ -468,6 +468,13 @@ window.MB = window.MB || {};
   // The hint under the toolbar: how to use the tool, and a warning when what it adds goes to a hidden layer.
   function renderToolHint() {
     const hint = $('#toolHint'), name = MB.tools.current;
+    hint.classList.toggle('ink', name === 'annotate');
+    if (name === 'annotate') { // the annotation tool: its options where the instructions go (drawn once; ink.js redraws it)
+      if (hint.dataset.mode !== 'ink') { hint.dataset.mode = 'ink'; MB.ink.renderBar(hint); }
+      hint.classList.remove('hidden');
+      return;
+    }
+    delete hint.dataset.mode;
     let text = toolHints[name] || '';
     if (name === 'svg' && MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) {
       text = 'Click the map to place "' + MB.state.svgLibrary[MB.svgPlace.svgId].name + '". Choose a different one in the Images panel.';
@@ -884,7 +891,7 @@ window.MB = window.MB || {};
       html += `<div class="section"><h3>${sections.includes('markerOnly') ? 'Marker' : 'Border / line'}</h3>
         <div class="row"><label>Color</label><input type="color" data-k="color" value="${st.color}"><span class="grow"></span></div>`;
       if (!sections.includes('markerOnly')) {
-        html += `<div class="row"><label>Width</label><input type="range" data-k="weight" min="0.5" max="16" step="0.5" value="${st.weight}"><span class="val" data-val="weight">${st.weight}px</span></div>
+        html += `<div class="row"><label>Width</label><input type="range" data-k="weight" min="0.5" max="${sections.includes('wide') ? 40 : 16}" step="0.5" value="${st.weight}"><span class="val" data-val="weight">${st.weight}px</span></div>
         <div class="row"><label>Opacity</label><input type="range" data-k="opacity" min="0" max="1" step="0.05" value="${st.opacity}"><span class="val" data-val="opacity">${Math.round(st.opacity * 100)}%</span></div>
         <div class="row"><label>Line style</label><select data-k="dash">${Object.keys(MB.dashStyles).map(k => `<option value="${k}"${st.dash === k ? ' selected' : ''}>${MB.dashStyles[k]}</option>`).join('')}</select></div>`;
       }
@@ -1063,6 +1070,8 @@ window.MB = window.MB || {};
       panel.appendChild(svgProps(f));
     } else if (m.type === 'marker') {
       panel.appendChild(styleForm(['stroke', 'markerOnly'], () => m.style, patch => MB.applyStyle(f, patch)));
+    } else if (m.type === 'ink') {
+      panel.appendChild(styleForm(['stroke', 'wide'], () => m.style, patch => MB.applyStyle(f, patch)));
     } else if (m.type === 'line' || m.type === 'measure-line') {
       panel.appendChild(styleForm(['stroke'], () => m.style, patch => MB.applyStyle(f, patch)));
     } else {
@@ -1683,7 +1692,7 @@ window.MB = window.MB || {};
       if (e.key === '/') { e.preventDefault(); MB.ui.focusSearch(); return; }
       if (e.key.toLowerCase() === 'f') { e.preventDefault(); MB.presenter.enter(); return; }
       if (e.key.toLowerCase() === 'i' && MB.icons) { e.preventDefault(); MB.icons.open(); return; } // the icon picker
-      const map = { v: 'select', g: 'move', k: 'scale', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', d: 'measure-distance', a: 'measure-area' };
+      const map = { v: 'select', g: 'move', k: 'scale', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', n: 'annotate', d: 'measure-distance', a: 'measure-area' };
       const tool = map[e.key.toLowerCase()];
       if (tool === 'rectangle' && MB.shapes) { e.preventDefault(); MB.shapes.activate(); return; } // R: the Shapes button's shape
       if (tool) { e.preventDefault(); MB.tools.set(tool); }
