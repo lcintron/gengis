@@ -52,6 +52,13 @@ kbd { background: var(--bg-3); border: 1px solid var(--border); border-bottom-wi
   background: var(--bg); color: var(--text); outline: none; min-width: 120px;
 }
 #searchInput:focus { border-color: var(--accent); }
+#searchInput { padding-right: 34px; } /* room for the clear button */
+/* clear the search (a plain text box has none of its own): over the box's right end, shown once there is text */
+.search-clear { flex: 0 0 auto; z-index: 1; width: 28px; height: 28px; margin: 0 3px 0 -31px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.search-clear[hidden] { display: none; }
+.search-clear:hover { background: var(--bg-3); color: var(--text); }
+.search-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #searchBtn { border-radius: 0 8px 8px 0; height: 34px; border-left: 0; }
 
 .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
@@ -494,6 +501,8 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .stepper { height: 38px; } /* finger-sized arrows */
   .stepper button { width: 24px; }
   .mb-ctx li { padding: 10px 12px; }
+  .search-clear { width: 32px; height: 32px; margin-left: -34px; margin-right: 1px; } /* finger-sized, still inside the box */
+  #searchInput { padding-right: 38px; }
 }
 
 /* ---------- two-block scale bar ---------- */
@@ -782,8 +791,8 @@ button.link:hover { text-decoration: underline; }
 
 /* ---------- data sources panel ---------- */
 .ds-tools { gap: 6px; }
-.ds-tools input[type="search"] { flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px; }
-.ds-tools input[type="search"]:focus { outline: none; border-color: var(--accent); }
+.ds-tools #dsSearch { flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px; }
+.ds-tools #dsSearch:focus { outline: none; border-color: var(--accent); }
 .ds-tools select { flex: 0 0 auto; height: 32px; }
 .ds-source { margin-bottom: 14px; }
 .ds-source-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }

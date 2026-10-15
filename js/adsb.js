@@ -687,7 +687,7 @@ window.MB = window.MB || {};
           const rt = this.rt[s.id], sc = this.srcConf(s.id);
           html += `<div class="data-item${rt.on ? ' on' : ''}" data-adsb="${s.id}">
             <div class="ds-head"><label class="check"><input type="checkbox" data-act="adsb-toggle"${rt.on ? ' checked' : ''}> <span class="dname">${s.site ? `<a href="${s.site}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}</span></label>${MB.data.infoIcon(s.desc)}</div>
-            ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="adsb-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8080" autocomplete="off" spellcheck="false"></div>` : ''}
+            ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="adsb-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8080" inputmode="url" spellcheck="false"></div>` : ''}
             <div class="row adsb-row"><label>Refresh</label><select class="adsb-interval">${s.intervals.map(n => `<option value="${n}"${+sc.interval === n ? ' selected' : ''}>every ${n} s</option>`).join('')}</select></div>
             <div class="dstatus${rt.on && rt.error ? ' err' : ''}" id="adsbStatus-${s.id}">${esc(this.statusText(s.id))}</div>
           </div>`;
@@ -697,7 +697,7 @@ window.MB = window.MB || {};
       html += `<div class="section"><h3>Aircraft shown</h3><div class="data-item adsb-display">
           <div class="subsets adsb-types">${TYPE_KEYS.map(k => `<label class="sub${cf.off.includes(k) ? ' off' : ''}"><input type="checkbox" data-adsb-type="${k}"${cf.off.includes(k) ? '' : ' checked'}><svg viewBox="0 0 32 32" aria-hidden="true">${TYPES[k].svg}</svg>${esc(TYPES[k].name)}</label>`).join('')}</div>
           <div class="subsets"><label class="sub"><input type="checkbox" id="adsbGround"${cf.ground ? ' checked' : ''}>On the ground</label><label class="sub"><input type="checkbox" id="adsbLabels"${cf.labels ? ' checked' : ''}>Callsign labels</label></div>
-          <form class="row adsb-row" id="adsbFind"><input type="text" data-keep-focus value="${esc(this.findState.q)}" placeholder="Find callsign, registration or ICAO address" autocomplete="off" spellcheck="false"><button class="btn small" type="submit">Find</button></form>
+          <form class="row adsb-row" id="adsbFind"><input type="text" data-keep-focus value="${esc(this.findState.q)}" placeholder="Find callsign, registration or ICAO address" enterkeyhint="search" spellcheck="false"><button class="btn small" type="submit">Find</button></form>
           <div id="adsbFindOut">${this.findState.html}</div>
           <div class="note">Icon color shows altitude (legend on the map). Click an aircraft for details.</div>
         </div></div></details>`;

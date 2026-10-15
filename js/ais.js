@@ -717,7 +717,7 @@ window.MB = window.MB || {};
           const rt = this.rt[s.id], sc = this.srcConf(s.id);
           html += `<div class="data-item${rt.on ? ' on' : ''}" data-ais="${s.id}">
             <div class="ds-head"><label class="check"><input type="checkbox" data-act="ais-toggle"${rt.on ? ' checked' : ''}> <span class="dname">${s.site ? `<a href="${s.site}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}</span></label>${MB.data.infoIcon(s.desc)}</div>
-            ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="ais-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8100" autocomplete="off" spellcheck="false"></div>
+            ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="ais-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8100" inputmode="url" spellcheck="false"></div>
             <div class="row adsb-row"><label>Refresh</label><select class="ais-interval">${s.intervals.map(n => `<option value="${n}"${+sc.interval === n ? ' selected' : ''}>every ${n} s</option>`).join('')}</select></div>`
             : `<div class="row adsb-row"><label>API key</label><input type="password" class="ais-key" data-keep-focus value="${esc(sc.key)}" placeholder="Key from aisstream.io" autocomplete="off" spellcheck="false"></div>`}
             <div class="dstatus${rt.on && rt.error ? ' err' : ''}" id="aisStatus-${s.id}">${esc(this.statusText(s.id))}</div>
@@ -728,7 +728,7 @@ window.MB = window.MB || {};
       html += `<div class="section"><h3>Vessels shown</h3><div class="data-item adsb-display">
           <div class="subsets ais-types">${TYPE_KEYS.map(k => `<label class="sub${cf.off.includes(k) ? ' off' : ''}"><input type="checkbox" data-ais-type="${k}"${cf.off.includes(k) ? '' : ' checked'}><svg viewBox="0 0 32 32" aria-hidden="true" style="color:${TYPES[k].color}">${SHAPES[k === 'aton' ? 'aton' : 'moving']}</svg>${esc(TYPES[k].name)}</label>`).join('')}</div>
           <div class="subsets"><label class="sub"><input type="checkbox" id="aisStationary"${cf.stationary ? ' checked' : ''}>Moored and at anchor</label><label class="sub"><input type="checkbox" id="aisLabels"${cf.labels ? ' checked' : ''}>Name labels</label></div>
-          <form class="row adsb-row" id="aisFind"><input type="text" data-keep-focus value="${esc(this.findState.q)}" placeholder="Find vessel name, call sign or MMSI" autocomplete="off" spellcheck="false"><button class="btn small" type="submit">Find</button></form>
+          <form class="row adsb-row" id="aisFind"><input type="text" data-keep-focus value="${esc(this.findState.q)}" placeholder="Find vessel name, call sign or MMSI" enterkeyhint="search" spellcheck="false"><button class="btn small" type="submit">Find</button></form>
           <div id="aisFindOut">${this.findState.html}</div>
           <div class="note">Icon color shows the vessel type; a circle is a vessel under ${MOVING} kn. Click a vessel for details.</div>
         </div></div></details>`;
