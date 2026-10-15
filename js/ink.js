@@ -219,7 +219,8 @@ window.MB = window.MB || {};
         // the pieces where the stroke was in the draw order (added, they would go on top of everything)
         const fl = MB.featureLayers, all = Object.assign({}, fl), seq = [];
         order.forEach(id => { if (pieces[id]) seq.push(...pieces[id]); else if (all[id]) seq.push(id); });
-        Object.keys(all).forEach(id => { if (!seq.includes(id)) seq.push(id); });
+        const placed = new Set(seq);
+        Object.keys(all).forEach(id => { if (!placed.has(id)) seq.push(id); });
         Object.keys(fl).forEach(id => { delete fl[id]; });
         seq.forEach(id => { fl[id] = all[id]; });
         MB.applyZOrderSoon();
