@@ -259,13 +259,14 @@ window.MB = window.MB || {};
     });
   };
 
+  // text, or a Blob as it is (an exported picture)
   MB.download = function (filename, text, mime) {
-    const blob = new Blob([text], { type: mime || 'application/json' });
+    const blob = text instanceof Blob ? text : new Blob([text], { type: mime || 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click();
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 4000); // a phone's save sheet reads it after the click
   };
 
   // A stored item, carrying over what an earlier version saved under its old key.

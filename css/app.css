@@ -480,6 +480,14 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .modal-x:hover { background: #363d4e; color: var(--text); }
 .modal-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .kbd-list { line-height: 2; }
+/* Export image or PDF (export.js): its choices, then Cancel / Export under a rule, the progress beside them */
+.export-box { max-width: 460px; }
+.export-box > .note { margin: 0 0 16px; }
+.export-fields .field:last-child { margin-bottom: 10px; }
+.export-fields .row { margin-bottom: 0; }
+.export-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+.export-status { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--text-dim); }
+.export-status.err { color: var(--danger); }
 
 @media (max-width: 860px) {
   :root { --sidebar-w: 280px; }
@@ -522,6 +530,11 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .form-grid label { margin-top: 6px; }
   .modal-box { padding: 14px; max-height: 92vh; }
   .modal-x { width: 34px; height: 34px; margin: -6px -6px 6px 10px; } /* a finger-sized target */
+  /* the buttons stay at the box's foot while its choices scroll; the progress takes its own line above them */
+  .export-actions { position: sticky; bottom: -14px; margin: 0 -14px -14px; padding: 10px 14px calc(12px + env(safe-area-inset-bottom)); background: var(--bg-2); flex-wrap: wrap; }
+  .export-status { flex-basis: 100%; }
+  .export-status:empty { display: none; }
+  .export-actions .btn { flex: 1 1 0; min-height: 42px; }
   .btn, .icon-btn { min-height: 36px; }
   .layer-node .icon-btn.mini, .obj-item .icon-btn.mini, .info-line .icon-btn.mini { width: 28px; height: 28px; min-height: 28px; }
 }
