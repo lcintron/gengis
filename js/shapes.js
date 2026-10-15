@@ -60,7 +60,7 @@ window.MB = window.MB || {};
       pal.className = 'shape-palette hidden';
       pal.setAttribute('role', 'menu');
       pal.setAttribute('aria-label', 'Shapes');
-      pal.innerHTML = PRESETS.map(p => `<button type="button" role="menuitemradio" data-shape="${p.id}" title="${p.name}">${iconSvg(p)}<span>${p.name}</span></button>`).join('');
+      pal.innerHTML = PRESETS.map(p => `<button type="button" role="menuitemradio" data-shape="${p.id}" title="${p.name}" aria-label="${p.name}">${iconSvg(p)}</button>`).join('');
       document.getElementById('mapwrap').appendChild(pal);
       btn.addEventListener('click', e => {
         e.stopPropagation();

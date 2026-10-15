@@ -155,11 +155,21 @@ select:focus { outline: none; border-color: var(--accent); }
 .more-slot .seg { display: flex; width: 100%; }
 .more-slot .seg button { flex: 1 1 0; padding: 9px 6px; }
 .more-slot select { width: 100%; max-width: none; }
-.more-items button { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 10px; border-radius: 6px; cursor: pointer; color: var(--text); }
+.more-items button { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; border: 0; padding: 10px; border-radius: 8px; cursor: pointer; color: var(--text); font-size: 14px; }
 .more-items button:hover, .more-items button:active { background: var(--bg-3); }
+.more-items hr, .dropdown.menu hr { border: 0; border-top: 1px solid var(--border); margin: 6px 4px; }
+/* a menu item's icon (index.html #menu, copied into the panel): quiet beside its words, lit on hover */
+svg.mi { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--text-dim); }
+.more-items button:hover svg.mi, .more-items button:focus-visible svg.mi, .dropdown.menu button:hover svg.mi { color: var(--accent); }
+.more-label { display: flex; align-items: center; gap: 6px; }
+.more-label svg.mi { width: 13px; height: 13px; }
+/* a small button with an icon before its words (Settings → Project) */
+.btn.with-icon { display: inline-flex; align-items: center; gap: 6px; }
+.btn.with-icon svg.mi { width: 14px; height: 14px; color: currentColor; }
 /* the search, in the panel below 800 px wide (ui.js) */
 .more-menu .more-search { display: none; }
 .more-menu.with-search .more-search { display: block; }
+.more-menu.with-search .more-label.more-search { display: flex; } /* its icon beside it, as the other labels */
 .more-menu .search-wrap { margin: 0; max-width: none; width: 100%; flex-wrap: wrap; }
 .more-menu #searchResults { position: static; flex: 1 1 100%; margin-top: 6px; box-shadow: none; max-height: 50vh; }
 /* the menu button keeps its size, and its place at the bar's edge, at every width */
@@ -170,7 +180,7 @@ select:focus { outline: none; border-color: var(--accent); }
   border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45); z-index: 100; min-width: 220px; overflow: hidden;
 }
 .dropdown.menu { padding: 6px; }
-.dropdown.menu button { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.dropdown.menu button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: transparent; border: 0; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
 .dropdown.menu button:hover { background: var(--bg-3); }
 #searchResults { left: 0; right: 0; max-height: 360px; overflow: auto; }
 .result-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
@@ -221,10 +231,10 @@ body.presenting .mb-scale-box { display: none !important; }
    (touch-action: pan-x pan-y); the drag is the shape's, so the map takes every touch while the tool is on */
 .leaflet-container.mb-shape-draw { touch-action: none; }
 /* the Shapes palette, beside the toolbar (shapes.js) */
-.shape-palette { position: absolute; z-index: 1100; display: grid; grid-template-columns: repeat(4, 64px); gap: 4px; padding: 6px;
+.shape-palette { position: absolute; z-index: 1100; display: grid; grid-template-columns: repeat(4, 44px); gap: 4px; padding: 6px;
   background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
-.shape-palette button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px 6px; border: 0; border-radius: 8px;
-  background: transparent; color: var(--text-dim); cursor: pointer; font-size: 10.5px; }
+.shape-palette button { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text-dim); cursor: pointer; } /* the pictures alone: their names are the tooltips */
 .shape-palette button svg { width: 24px; height: 24px; }
 .shape-palette button:hover { background: var(--bg-3); color: var(--text); }
 .shape-palette button.active { background: var(--accent); color: #06201e; font-weight: 600; }
