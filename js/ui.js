@@ -1483,14 +1483,11 @@ window.MB = window.MB || {};
         <label class="check"><input type="checkbox" id="setSnap"${s.snapping ? ' checked' : ''}> Snap to other shapes</label>
       </div>
       <div class="section"><h3>Project</h3>
-        <div class="btn-row"><button class="btn small" data-act="save">Save to file</button><button class="btn small" data-act="open">Open file</button><button class="btn small" data-act="geojson">Export GeoJSON</button><button class="btn small" data-act="export">Export image or PDF…</button></div>
         <div class="info-line" id="saveWhere"></div>
         <div id="desktopFilesBox"></div>
-        <div class="btn-row"><button class="btn small" id="setPersist" hidden>Keep on this device</button><button class="btn small danger" id="setReset">Reset project</button></div>
+        <div class="btn-row"><button class="btn small with-icon" id="setPersist" hidden><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>Keep on this device</button><button class="btn small danger with-icon" id="setReset"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reset project</button></div>
       </div>
-      <div class="section"><h3>Services</h3>
-        <div class="btn-row"><button class="btn small" data-act="apis" title="Tile providers, API keys, geocoder and Overpass endpoints">Map &amp; search APIs…</button><button class="btn small" data-act="present">Presenter mode</button></div>
-      </div>`;
+`;
     if (MB.data && MB.data.renderOverlays) MB.data.renderOverlays();
     if (MB.grids) MB.grids.renderSection();
     if (MB.offline && MB.offline.renderSection) MB.offline.renderSection();
@@ -1505,7 +1502,6 @@ window.MB = window.MB || {};
     $('#setPrefetch', panel).addEventListener('change', e => { MB.settings.prefetchTiles = e.target.value; MB.saveSettings(); MB.tilePrefetch.lastKey = ''; MB.tilePrefetch.schedule(); });
     $('#setContinue', panel).addEventListener('change', e => { s.continueDrawing = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setSnap', panel).addEventListener('change', e => { s.snapping = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
-    $$('[data-act]', panel).forEach(b => b.addEventListener('click', () => MB.ui.menuAction(b.dataset.act)));
     $('#setReset', panel).addEventListener('click', async () => {
       if (!confirm('Delete this project (its layers, objects and image library) and its saved copies on this device? Other projects stay.')) return;
       await MB.projects.flush();
@@ -1562,7 +1558,7 @@ window.MB = window.MB || {};
     // the desktop app, Chrome and Edge: Save as, and Save project writes the project's file rather than downloading a copy
     if (MB.desktopFiles.available || BF.available) {
       $$('[data-act="saveas"]').forEach(b => b.classList.remove('hidden'));
-      $$('#menu [data-act="save"]').forEach(b => { b.textContent = 'Save project'; });
+      $$('#menu [data-act="save"] span').forEach(s => { s.textContent = 'Save project'; });
     }
   }
 
