@@ -697,7 +697,7 @@ window.MB = window.MB || {};
       html += `<div class="section"><h3>Aircraft shown</h3><div class="data-item adsb-display">
           <div class="subsets adsb-types">${TYPE_KEYS.map(k => `<label class="sub${cf.off.includes(k) ? ' off' : ''}"><input type="checkbox" data-adsb-type="${k}"${cf.off.includes(k) ? '' : ' checked'}><svg viewBox="0 0 32 32" aria-hidden="true">${TYPES[k].svg}</svg>${esc(TYPES[k].name)}</label>`).join('')}</div>
           <div class="subsets"><label class="sub"><input type="checkbox" id="adsbGround"${cf.ground ? ' checked' : ''}>On the ground</label><label class="sub"><input type="checkbox" id="adsbLabels"${cf.labels ? ' checked' : ''}>Callsign labels</label></div>
-          <form class="row adsb-row" id="adsbFind"><input type="text" data-keep-focus value="${esc(this.findState.q)}" placeholder="Find callsign, registration or ICAO address" autocomplete="off" spellcheck="false"><button class="btn small" type="submit">Find</button></form>
+          <form class="row adsb-row" id="adsbFind"><input type="text" data-keep-focus value="${esc(this.findState.q)}" placeholder="Find callsign, registration or ICAO address" enterkeyhint="search" spellcheck="false"><button class="btn small" type="submit">Find</button></form>
           <div id="adsbFindOut">${this.findState.html}</div>
           <div class="note">Icon color shows altitude (legend on the map). Click an aircraft for details.</div>
         </div></div></details>`;

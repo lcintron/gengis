@@ -782,8 +782,8 @@ button.link:hover { text-decoration: underline; }
 
 /* ---------- data sources panel ---------- */
 .ds-tools { gap: 6px; }
-.ds-tools input[type="search"] { flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px; }
-.ds-tools input[type="search"]:focus { outline: none; border-color: var(--accent); }
+.ds-tools #dsSearch { flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px; }
+.ds-tools #dsSearch:focus { outline: none; border-color: var(--accent); }
 .ds-tools select { flex: 0 0 auto; height: 32px; }
 .ds-source { margin-bottom: 14px; }
 .ds-source-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
