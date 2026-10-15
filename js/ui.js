@@ -381,6 +381,10 @@ window.MB = window.MB || {};
       }
     }
     $('#searchBtn').addEventListener('click', run);
+    // the clear button: shown while there is text; it empties the box and its results, and keeps the keyboard there
+    const clear = $('#searchClear'), showClear = () => { clear.hidden = !input.value; };
+    input.addEventListener('input', showClear);
+    clear.addEventListener('click', () => { input.value = ''; items = []; activeIdx = -1; results.classList.add('hidden'); showClear(); input.focus(); });
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         if (activeIdx >= 0 && items[activeIdx] && !results.classList.contains('hidden')) choose(items[activeIdx]);

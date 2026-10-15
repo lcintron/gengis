@@ -717,7 +717,7 @@ window.MB = window.MB || {};
           const rt = this.rt[s.id], sc = this.srcConf(s.id);
           html += `<div class="data-item${rt.on ? ' on' : ''}" data-ais="${s.id}">
             <div class="ds-head"><label class="check"><input type="checkbox" data-act="ais-toggle"${rt.on ? ' checked' : ''}> <span class="dname">${s.site ? `<a href="${s.site}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}</span></label>${MB.data.infoIcon(s.desc)}</div>
-            ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="ais-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8100" autocomplete="off" spellcheck="false"></div>
+            ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="ais-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8100" inputmode="url" spellcheck="false"></div>
             <div class="row adsb-row"><label>Refresh</label><select class="ais-interval">${s.intervals.map(n => `<option value="${n}"${+sc.interval === n ? ' selected' : ''}>every ${n} s</option>`).join('')}</select></div>`
             : `<div class="row adsb-row"><label>API key</label><input type="password" class="ais-key" data-keep-focus value="${esc(sc.key)}" placeholder="Key from aisstream.io" autocomplete="off" spellcheck="false"></div>`}
             <div class="dstatus${rt.on && rt.error ? ' err' : ''}" id="aisStatus-${s.id}">${esc(this.statusText(s.id))}</div>
