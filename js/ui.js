@@ -224,19 +224,21 @@ window.MB = window.MB || {};
     const av = $('#aboutVersion'); if (av) av.textContent = MB.APP.version;
     const cu = $('#checkUpdate'); if (cu) cu.addEventListener('click', () => checkForUpdate(cu, $('#updateResult')));
     const sv = $('#splash .ver'); if (sv) sv.textContent = 'Version ' + MB.APP.version;
-    ['#aboutDialog', '#sourcesDialog'].forEach(sel => {
-      const dlg = $(sel);
-      dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-act="close"]')) closeDialog(dlg); });
-      dlg.addEventListener('keydown', e => {
-        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeDialog(dlg); return; }
-        if (e.key !== 'Tab') return;
-        const f = $$('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])', dlg).filter(x => !x.disabled && x.getClientRects().length);
-        if (!f.length) return;
-        const i = f.indexOf(document.activeElement);
-        if (e.shiftKey ? i <= 0 : (i === -1 || i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
-      });
-    });
+    ['#aboutDialog', '#sourcesDialog'].forEach(sel => MB.ui.wireDialog($(sel)));
   }
+
+  // A dialog: closed by its ✕, Esc or a click on the backdrop; Tab stays inside it.
+  MB.ui.wireDialog = function (dlg) {
+    dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-act="close"]')) closeDialog(dlg); });
+    dlg.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeDialog(dlg); return; }
+      if (e.key !== 'Tab') return;
+      const f = $$('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])', dlg).filter(x => !x.disabled && x.getClientRects().length);
+      if (!f.length) return;
+      const i = f.indexOf(document.activeElement);
+      if (e.shiftKey ? i <= 0 : (i === -1 || i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+    });
+  };
 
   // A dialog takes the keyboard while open (focus on its ✕) and gives it back where it was when it closes (the menu
   // that opened it is gone by then: the menu button instead).
@@ -252,6 +254,8 @@ window.MB = window.MB || {};
     dlg._back = null;
     if (back && back.focus) back.focus();
   }
+  MB.ui.openDialog = openDialog;
+  MB.ui.closeDialog = closeDialog;
 
   // About → Check for updates: the latest release on GitHub against this version. The desktop app links to its
   // installers; on the web the service worker fetches the new version, then a reload runs it.
@@ -1677,6 +1681,7 @@ window.MB = window.MB || {};
       if (e.key === 'Enter' && MB.measure.active) { MB.measure.finish(); return; }
       if (e.key === '/') { e.preventDefault(); MB.ui.focusSearch(); return; }
       if (e.key.toLowerCase() === 'f') { e.preventDefault(); MB.presenter.enter(); return; }
+      if (e.key.toLowerCase() === 'i' && MB.icons) { e.preventDefault(); MB.icons.open(); return; } // the icon picker
       const map = { v: 'select', g: 'move', k: 'scale', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', d: 'measure-distance', a: 'measure-area' };
       const tool = map[e.key.toLowerCase()];
       if (tool === 'rectangle' && MB.shapes) { e.preventDefault(); MB.shapes.activate(); return; } // R: the Shapes button's shape

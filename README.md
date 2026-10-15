@@ -23,6 +23,7 @@ A free map builder that runs in the browser (installable, works offline) or as a
 
 - **Draw and edit** markers, text, lines, polygons, rectangles, circles and SVG images, with snapping, name labels and full styling. By default, each new object gets its own color. Texts take a font, a background opacity and an editable shadow.
 - **Move and resize**: the Move tool drags objects and shows a box around what it moves; the Scale tool resizes from any corner or side (Shift keeps proportions, Alt resizes from the center).
+- **Icons**: pick from 1,600+ open-source [Lucide](https://lucide.dev) icons (search by name or tag, any color, an optional dark outline for imagery) and place them like an SVG.
 - **Combine and reuse**: multi-select, join lines into shapes, join overlapping shapes into one polygon, duplicate, and copy a style to paste on other objects.
 - **Measure** distances and areas in metric, imperial or nautical units, with a scale bar. A circle shows its radius while you draw it, and objects can show their length, perimeter, area, radius or position on the map.
 - **Layers** with show/hide, lock and draw order, duplicate, and **groups**: a grouped layer's objects are selected, moved, resized and deleted together. Locked objects can still be selected and inspected. Undo/redo, right-click menus, presenter mode with full screen.
@@ -82,4 +83,4 @@ Map tiles, [Nominatim](https://operations.osmfoundation.org/policies/nominatim/)
 
 ## License
 
-[MIT](LICENSE). Bundled Leaflet (BSD 2-Clause), Leaflet-Geoman (MIT) and polygon-clipping (MIT) keep their own licenses.
+[MIT](LICENSE). Bundled Leaflet (BSD 2-Clause), Leaflet-Geoman (MIT), polygon-clipping (MIT) and the Lucide icons (ISC) keep their own licenses.
