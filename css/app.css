@@ -516,6 +516,14 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .modal-x:hover { background: #363d4e; color: var(--text); }
 .modal-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .kbd-list { line-height: 2; }
+/* Cast to a screen (cast.js): the presenter-mode button, then how to mirror on this device */
+.cast-box { max-width: 460px; }
+.cast-box > .note { margin: 0 0 14px; }
+.cast-actions { margin-bottom: 14px; }
+.cast-actions .btn { width: 100%; }
+.cast-list { margin: 10px 0 0; padding-left: 20px; line-height: 1.5; }
+.cast-list li { margin-bottom: 6px; }
+.cast-tip { margin: 10px 0 0; font-size: 12px; }
 /* Export image or PDF (export.js): its choices, then Cancel / Export under a rule, the progress beside them */
 .export-box { max-width: 460px; }
 .export-box > .note { margin: 0 0 16px; }
