@@ -328,7 +328,7 @@ window.MB = window.MB || {};
             failedUrl = u;
             try {
               list = parseFeed(await getJson(u), rt.clock); rt.resolved = u;
-              if (cf.found !== u || cf.foundFor !== cf.url) { cf.found = u; cf.foundFor = cf.url; this.save(); } // locked in, across reloads
+              if (cf.found !== u || cf.foundFor !== cf.url) { cf.found = u; cf.foundFor = cf.url; MB.saveSettings(); } // locked in, across reloads (a device setting: no project autosave)
               break;
             } catch (e) {
               if (gen !== rt.gen) return;
