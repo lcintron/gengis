@@ -54,14 +54,16 @@ window.MB = window.MB || {};
       return L.Util.template(layer._url, L.extend(data, o));
     },
 
+    // One tile's addresses: a blended map's tile is each of its layers' tiles (mapsources.js), any other one address.
+    tileUrlsAt(layer, x, y, z) {
+      if (MB.BlendedTileLayer && layer instanceof MB.BlendedTileLayer) return layer._subs.filter(s => z >= s.minZoom && z <= s.maxZoom).map(s => layer.subUrl(s, x, y, z));
+      return [this.tileUrl(layer, x, y, z)];
+    },
+
     *tileUrls(layer, bounds, zMin, zMax) {
       for (let z = zMin; z <= zMax; z++) {
         const r = this.tileRange(bounds, z);
-        const blended = MB.BlendedTileLayer && layer instanceof MB.BlendedTileLayer; // its layers, each (mapsources.js)
-        for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) {
-          if (blended) { for (const s of layer._subs) if (z >= s.minZoom && z <= s.maxZoom) yield layer.subUrl(s, x, y, z); }
-          else yield this.tileUrl(layer, x, y, z);
-        }
+        for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) yield* this.tileUrlsAt(layer, x, y, z);
       }
     },
 
@@ -149,7 +151,7 @@ window.MB = window.MB || {};
         const r = this.tileRange(bounds, z);
         for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) {
           const covered = others.some(o => z >= o.zMin && z <= o.zMax && (() => { const rr = this.tileRange(L.latLngBounds(o.bounds), z); return x >= rr.x0 && x <= rr.x1 && y >= rr.y0 && y <= rr.y1; })());
-          if (!covered) { try { await cache.delete(this.tileUrl(layer, x, y, z)); } catch (e) { /* provider needs a live map for URL templating; leave the tile */ } }
+          if (!covered) { try { for (const u of this.tileUrlsAt(layer, x, y, z)) await cache.delete(u); } catch (e) { /* provider needs a live map for URL templating; leave the tile */ } }
         }
       }
       MB.emit('offline');

@@ -51,11 +51,12 @@ window.MB = window.MB || {};
     const keyed = KEY_RE.test(url); KEY_RE.lastIndex = 0;
     return { url: url.replace(KEY_RE, '{key}'), keyed };
   }
+  const dec = s => { try { return decodeURIComponent(s); } catch (e) { return s; } }; // a stray % keeps its raw text
   function params(s) {
     const out = {};
     String(s || '').replace(/^[?&]+/, '').split('&').forEach(kv => {
       if (!kv) return;
-      const i = kv.indexOf('='), k = decodeURIComponent((i < 0 ? kv : kv.slice(0, i)).trim()), v = i < 0 ? '' : decodeURIComponent(kv.slice(i + 1).trim());
+      const i = kv.indexOf('='), k = dec((i < 0 ? kv : kv.slice(0, i)).trim()), v = i < 0 ? '' : dec(kv.slice(i + 1).trim());
       if (k) out[k] = v;
     });
     return out;
@@ -86,7 +87,7 @@ window.MB = window.MB || {};
   function wmsBase(url) {
     const q = url.indexOf('?');
     if (q < 0) return url;
-    const kept = url.slice(q + 1).split('&').filter(kv => kv && !WMS_OWN.includes(decodeURIComponent(kv.split('=')[0]).toUpperCase()));
+    const kept = url.slice(q + 1).split('&').filter(kv => kv && !WMS_OWN.includes(dec(kv.split('=')[0]).toUpperCase()));
     return url.slice(0, q) + (kept.length ? '?' + kept.join('&') : '');
   }
   function fromWms(el) {
