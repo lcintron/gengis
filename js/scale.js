@@ -20,6 +20,7 @@ window.MB = window.MB || {};
     onAdd(map) {
       this._map = map;
       this._el = L.DomUtil.create('div', 'mb-scale');
+      this._labels = null; this._w = this._mid = this._end = null; // (built, and written, afresh)
       L.DomEvent.disableClickPropagation(this._el);
       map.on('move zoom zoomend moveend resize', this.update, this);
       this.update();
@@ -39,10 +40,14 @@ window.MB = window.MB || {};
       const block = roundNum(half * perMeter);
       const total = block * 2;
       const width = Math.round(this.options.maxWidth * total / (maxMeters * perMeter));
-      this._el.style.width = width + 'px';
-      this._el.innerHTML =
-        '<div class="mb-scale-bar"><span></span><span></span></div>' +
-        `<div class="mb-scale-labels"><span>0</span><span>${fmt(block)}</span><span>${fmt(total)} ${unit}</span></div>`;
+      const mid = fmt(block), end = fmt(total) + ' ' + unit;
+      if (!this._labels) {
+        this._el.innerHTML = '<div class="mb-scale-bar"><span></span><span></span></div><div class="mb-scale-labels"><span>0</span><span></span><span></span></div>';
+        this._labels = this._el.querySelectorAll('.mb-scale-labels span');
+      }
+      if (width !== this._w) { this._el.style.width = width + 'px'; this._w = width; }
+      if (mid !== this._mid) { this._labels[1].textContent = mid; this._mid = mid; }
+      if (end !== this._end) { this._labels[2].textContent = end; this._end = end; }
     }
   });
 })(window.MB);
