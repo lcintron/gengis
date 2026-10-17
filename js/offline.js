@@ -57,7 +57,11 @@ window.MB = window.MB || {};
     *tileUrls(layer, bounds, zMin, zMax) {
       for (let z = zMin; z <= zMax; z++) {
         const r = this.tileRange(bounds, z);
-        for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) yield this.tileUrl(layer, x, y, z);
+        const blended = MB.BlendedTileLayer && layer instanceof MB.BlendedTileLayer; // its layers, each (mapsources.js)
+        for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) {
+          if (blended) { for (const s of layer._subs) if (z >= s.minZoom && z <= s.maxZoom) yield layer.subUrl(s, x, y, z); }
+          else yield this.tileUrl(layer, x, y, z);
+        }
       }
     },
 

@@ -24,6 +24,21 @@ window.MB = window.MB || {};
 
   MB.clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
+  // A map's credits as HTML that can do no harm: its text, and links to http(s) addresses (opening a new tab);
+  // anything else (scripts, handlers, other elements) is left out, its text kept.
+  MB.safeAttribution = function (html) {
+    const s = String(html || '');
+    if (!/[<&]/.test(s)) return s;
+    const doc = new DOMParser().parseFromString('<body>' + s + '</body>', 'text/html');
+    const walk = n => Array.from(n.childNodes).map(c => {
+      if (c.nodeType === 3) return MB.escapeHtml(c.textContent);
+      if (c.nodeType !== 1 || /^(script|style|noscript|template)$/.test(c.localName)) return ''; // (not even their text)
+      const inner = walk(c), href = c.localName === 'a' ? (c.getAttribute('href') || '').trim() : '';
+      return /^https?:\/\//i.test(href) ? `<a href="${MB.escapeHtml(href)}" target="_blank" rel="noopener">${inner}</a>` : inner;
+    }).join('');
+    return walk(doc.body);
+  };
+
   MB.escapeHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));

@@ -72,8 +72,26 @@ window.MB = window.MB || {};
   }
 
   const WMS_OWN = ['SERVICE', 'REQUEST', 'LAYERS', 'VERSION', 'FORMAT', 'STYLES', 'TRANSPARENT', 'SRS', 'CRS', 'BBOX', 'WIDTH', 'HEIGHT'];
+  let optionNames = null; // Leaflet's tile layer options (attribution, crs, tileSize, crossOrigin…), lower-cased
+  const isOption = k => { if (!optionNames) { optionNames = new Set(); for (const o in L.TileLayer.WMS.prototype.options) optionNames.add(o.toLowerCase()); } return optionNames.has(k.toLowerCase()); };
+  // Extra WMS parameters as they may be sent: a name that is a request parameter of WMS itself or an option of the
+  // layer (which would change the layer, or its credits shown as HTML) is dropped, wherever the parameters came from.
+  function safeWmsParams(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    const out = {};
+    Object.keys(obj).forEach(k => { if (/^[A-Za-z0-9_.:-]{1,64}$/.test(k) && !WMS_OWN.includes(k.toUpperCase()) && !isOption(k)) out[k] = String(obj[k]).slice(0, 500); });
+    return Object.keys(out).length ? out : null;
+  }
+  // A WMS address without the request parameters Leaflet adds itself (SERVICE=WMS&…), nor a trailing ? or &.
+  function wmsBase(url) {
+    const q = url.indexOf('?');
+    if (q < 0) return url;
+    const kept = url.slice(q + 1).split('&').filter(kv => kv && !WMS_OWN.includes(decodeURIComponent(kv.split('=')[0]).toUpperCase()));
+    return url.slice(0, q) + (kept.length ? '?' + kept.join('&') : '');
+  }
   function fromWms(el) {
-    const { url, keyed } = httpUrl(el);
+    const { url: raw, keyed } = httpUrl(el);
+    const url = wmsBase(raw);
     const layers = val(el, 'layers');
     if (!layers) throw new Error('it names no <layers>');
     const crs = (val(el, 'coordinatesystem') || 'EPSG:3857').toUpperCase();
@@ -85,8 +103,8 @@ window.MB = window.MB || {};
       styles: val(el, 'styles') || up.STYLES || '', transparent: /^true$/i.test(up.TRANSPARENT || ''), tileSize: 256
     }, zooms(el));
     if (crs === 'EPSG:4326') p.crs = 'EPSG:4326';
-    const rest = {}; Object.keys(extra).forEach(k => { if (!WMS_OWN.includes(k.toUpperCase())) rest[k] = extra[k]; });
-    if (Object.keys(rest).length) p.wmsParams = rest;
+    const rest = safeWmsParams(extra);
+    if (rest) p.wmsParams = rest;
     return { p, keyed };
   }
 
@@ -120,12 +138,27 @@ window.MB = window.MB || {};
     p.name = (val(root, 'name') || 'Imported map').slice(0, 120);
     const credit = creditFor(p.type === 'multi' ? p.sublayers.map(s => s.url).join(' ') : p.url);
     if (credit) p.attribution = credit;
-    const bg = val(root, 'backgroundColor');
-    if (/^#[0-9a-f]{6}$/i.test(bg)) p.background = bg;
+    const [n, s, e, w] = ['north', 'south', 'east', 'west'].map(t => parseFloat(val(root, t)));
+    if ([n, s, e, w].every(isFinite) && n > s && n <= 90 && s >= -90 && e > w && e <= 180 && w >= -180) p.bounds = [[s, w], [n, e]];
     return { p, keyed };
   }
 
   /* ---------- reading a .zip ---------- */
+  // Deflated bytes inflated up to MAX_XML: null past it (the inflating stops there, whatever the zip claims).
+  async function inflateCapped(data) {
+    const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+    const parts = []; let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_XML) { reader.cancel().catch(() => {}); return null; }
+      parts.push(value);
+    }
+    const out = new Uint8Array(total); let at = 0;
+    parts.forEach(v => { out.set(v, at); at += v.byteLength; });
+    return out;
+  }
   async function unzip(buf, onEntry) {
     const dv = new DataView(buf), u8 = new Uint8Array(buf), dec = new TextDecoder();
     let eocd = -1;
@@ -150,9 +183,9 @@ window.MB = window.MB || {};
       try {
         let bytes;
         if (method === 0) bytes = data;
-        else if (method === 8) bytes = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+        else if (method === 8) bytes = await inflateCapped(data);
         else { onEntry(name, null, 'its compression is not supported'); continue; }
-        if (bytes.byteLength > MAX_XML) { onEntry(name, null, 'it is too large for a map source'); continue; }
+        if (!bytes || bytes.byteLength > MAX_XML) { onEntry(name, null, 'it is too large for a map source'); continue; }
         onEntry(name, dec.decode(bytes), null);
       } catch (e) { onEntry(name, null, 'it could not be decompressed'); }
     }
@@ -206,7 +239,7 @@ window.MB = window.MB || {};
   const sameSource = (a, b) => a.type === b.type && String(a.url).replace(/[?&]+$/, '') === String(b.url).replace(/[?&]+$/, '') && String(a.layers || '') === String(b.layers || '');
 
   MB.mapSources = {
-    quadkey, parseSource, unzip,
+    quadkey, parseSource, unzip, safeWmsParams,
 
     pick() {
       let input = document.getElementById('mapSourceFile');

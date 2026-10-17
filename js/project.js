@@ -74,6 +74,7 @@ window.MB = window.MB || {};
     const d = clone(def);
     delete d.key;
     if (d.url) d.url = sanitizeUrl(d.url);
+    if (Array.isArray(d.sublayers)) d.sublayers = d.sublayers.map(s => Object.assign({}, s, { url: sanitizeUrl(s.url) })); // a blended map's layers
     return d;
   }
 

@@ -83,18 +83,23 @@ window.MB = window.MB || {};
       // subdomains: letters ("abc") as before, or a list ("1 2 3 4", "mt0,mt1": map sources imported from MOBAC)
       const subs = s => (/[\s,]/.test(String(s || '').trim()) ? String(s).trim().split(/[\s,]+/) : (s || 'abc'));
       const url = withKey(p.url);
-      const common = { attribution: p.attribution || '', maxZoom: +p.maxZoom || 19, subdomains: subs(p.subdomains), crossOrigin: true, keepBuffer: 2, updateWhenZooming: false, updateInterval: 150 };
+      const common = { attribution: MB.safeAttribution(p.attribution), maxZoom: +p.maxZoom || 19, subdomains: subs(p.subdomains), crossOrigin: true, keepBuffer: 2, updateWhenZooming: false, updateInterval: 150 };
       if (+p.minZoom > 0) common.minZoom = +p.minZoom;
       if (p.tms) common.tms = true;
+      if (Array.isArray(p.bounds) && p.bounds.length === 2) { const b = L.latLngBounds(p.bounds); if (b.isValid()) common.bounds = b; } // its coverage: no requests outside
       if (p.type === 'multi' && MB.BlendedTileLayer && Array.isArray(p.sublayers) && p.sublayers.length) { // layers blended per tile (mapsources.js)
         const layers = p.sublayers.map(s => Object.assign({}, s, { url: withKey(s.url), subdomains: subs(s.subdomains) }));
+        common.subdomains = layers[0].subdomains; // (the layer's own address is its first sub-layer's)
         return new MB.BlendedTileLayer(layers, p.alphas || [], common);
       }
       if (p.type === 'wms') {
         const o = { layers: p.layers || '', format: p.format || 'image/png', transparent: !!p.transparent, version: p.version || '1.1.1' };
         if (p.styles) o.styles = p.styles;
         if (p.crs === 'EPSG:4326') o.crs = L.CRS.EPSG4326;
-        return L.tileLayer.wms(url, Object.assign(common, o, p.wmsParams || {})); // (extra options become WMS parameters)
+        const layer = L.tileLayer.wms(url, Object.assign(common, o));
+        const extra = MB.mapSources ? MB.mapSources.safeWmsParams(p.wmsParams) : null;
+        if (extra) layer.setParams(extra, true); // request parameters only: never options of the layer (credits, CRS, tile size…)
+        return layer;
       }
       if (+p.tileSize === 512) Object.assign(common, { tileSize: 512, zoomOffset: -1 });
       if (/\{q\}/.test(url) && MB.QuadKeyTileLayer) return new MB.QuadKeyTileLayer(url, common); // Bing's quadkey addresses
