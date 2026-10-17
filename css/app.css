@@ -516,6 +516,11 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .modal-x:hover { background: #363d4e; color: var(--text); }
 .modal-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .kbd-list { line-height: 2; }
+/* Map sources imported (mapsources.js): what came in, what needs a key, what was left out and why */
+.map-import-box { max-width: 520px; }
+.map-import-box ul { margin: 6px 0 12px; max-height: 40vh; overflow: auto; }
+.map-import-skipped li { font-size: 12px; color: var(--text-dim); }
+.map-import-box .btn-row { margin-top: 14px; }
 /* Cast to a screen (cast.js): the presenter-mode button, then how to mirror on this device */
 .cast-box { max-width: 460px; }
 .cast-box > .note { margin: 0 0 14px; }

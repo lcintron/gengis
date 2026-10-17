@@ -116,8 +116,9 @@ window.MB = window.MB || {};
         </div>
         <p class="note">XYZ tiles (<code>{z}/{x}/{y}</code>, optional <code>{s}</code>, <code>{r}</code>, <code>{key}</code>) or WMS.</p>
         <div class="section"><h3>Configured providers</h3>
-          ${list.length ? '<div class="prov-list">' + list.map(x => `<div class="prov-item"><span class="pname">${esc(x.name)}</span><span class="badge">${x.type.toUpperCase()}</span>${x.url.includes('{key}') ? `<span class="badge${x.key ? '' : ' warn'}">${x.key ? 'key set' : 'needs key'}</span>` : ''}
-            <span class="grow"></span><button class="btn small" data-use="${x.id}">Use</button><button class="btn small" data-edit="${x.id}">Edit</button><button class="btn small danger" data-del="${x.id}">Remove</button></div>`).join('') + '</div>'
+          <div class="btn-row"><button type="button" class="btn small" data-import="1" title="MOBAC map sources, as ATAK takes them: one .xml, or a .zip of many">Import map sources (.xml / .zip)…</button></div>
+          ${list.length ? '<div class="prov-list">' + list.map(x => `<div class="prov-item"><span class="pname">${esc(x.name)}</span><span class="badge">${x.type === 'multi' ? 'BLENDED' : x.type.toUpperCase()}</span>${x.group ? `<span class="badge" title="Imported map source">${esc(x.group)}</span>` : ''}${x.url.includes('{key}') ? `<span class="badge${x.key ? '' : ' warn'}">${x.key ? 'key set' : 'needs key'}</span>` : ''}
+            <span class="grow"></span><button class="btn small" data-use="${x.id}">Use</button>${x.type === 'multi' ? '' : `<button class="btn small" data-edit="${x.id}">Edit</button>`}<button class="btn small danger" data-del="${x.id}">Remove</button></div>`).join('') + '</div>'
           : '<p class="note">None yet.</p>'}
         </div>
         <div class="section"><h3>${editing ? 'Edit provider' : 'Add provider'}</h3>
@@ -177,7 +178,8 @@ window.MB = window.MB || {};
       panel.addEventListener('click', e => {
         const b = e.target.closest('button');
         if (!b) return;
-        if (b.dataset.edit) { this.editingId = b.dataset.edit; this.render(); }
+        if (b.dataset.import) { MB.mapSources.pick(); }
+        else if (b.dataset.edit) { this.editingId = b.dataset.edit; this.render(); }
         else if (b.dataset.del) {
           const x = MB.getProvider(b.dataset.del);
           if (x && confirm('Remove provider "' + x.name + '"?')) {

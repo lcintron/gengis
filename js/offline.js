@@ -47,7 +47,8 @@ window.MB = window.MB || {};
         // as Leaflet 1.9.4's getTileUrl: "@2x" on any high-density screen, whatever detectRetina says (the map
         // requests those tiles there, so offline areas and prefetching must fetch the same ones)
         r: L.Browser.retina ? '@2x' : '',
-        s: layer._getSubdomain({ x, y }), x, y, z: zz
+        s: layer._getSubdomain({ x, y }), x, y, z: zz,
+        q: MB.mapSources ? MB.mapSources.quadkey(x, y, zz) : '' // Bing's quadkey addresses ({q}: imported map sources)
       };
       if (layer._map && !layer._map.options.crs.infinite) { const inv = layer._globalTileRange.max.y - y; if (o.tms) data.y = inv; data['-y'] = inv; }
       return L.Util.template(layer._url, L.extend(data, o));

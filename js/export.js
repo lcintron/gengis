@@ -73,6 +73,7 @@ window.MB = window.MB || {};
   function deeperBase(scale) {
     const base = MB.baseLayer;
     if (!base || !(base instanceof L.TileLayer) || base instanceof L.TileLayer.WMS || scale <= 1) return null;
+    if (base.getTileUrl !== L.TileLayer.prototype.getTileUrl || base.createTile !== L.TileLayer.prototype.createTile) return null; // quadkey or blended (mapsources.js)
     const o = base.options, size = o.tileSize || 256, zoom = Math.round(MB.map.getZoom());
     const max = o.maxNativeZoom || o.maxZoom || 19;
     let k = Math.min(Math.floor(Math.log2(scale + 0.01)), max - (zoom + (o.zoomOffset || 0)));
