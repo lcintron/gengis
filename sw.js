@@ -64,7 +64,23 @@ self.addEventListener('activate', e => {
   );
 });
 
-let putCount = 0;
+// The tile path is hot (every tile on screen passes through it), so it does as little as it can: the offline-area
+// cache is only looked in when it exists (checked every few seconds), a tile's fetch time travels in its own stored
+// headers (one lookup on a hit, one write on a miss), only tiles shown on the map are kept (an <img>: not the app's
+// own preloads or area downloads, which the HTTP cache or the offline-area cache hold), and the cache is trimmed on
+// an idle timer after many writes, never during a fetch. Caches are opened per request, not kept open: a cache the
+// browser clears or evicts would leave a kept handle writing into nothing, and opening one costs a fraction of a ms.
+const cacheOf = name => caches.open(name);
+let offlineKnown = { has: false, at: 0 };
+async function hasOfflineAreas() {
+  if (Date.now() - offlineKnown.at > 5000) offlineKnown = { has: await caches.has(OFFLINE_CACHE), at: Date.now() };
+  return offlineKnown.has;
+}
+let putCount = 0, trimTimer = null;
+function trimSoon() {
+  if (++putCount < 300 || trimTimer) return;
+  trimTimer = setTimeout(() => { trimTimer = null; putCount = 0; trimTiles().catch(() => {}); }, 15000);
+}
 async function trimTiles() {
   const cache = await caches.open(TILE_CACHE);
   const keys = await cache.keys();
@@ -101,26 +117,39 @@ self.addEventListener('fetch', e => {
   if (url.origin !== location.origin && /\.(png|jpe?g|webp|pbf)(\?|$)/i.test(url.pathname + url.search) || TILE_HOSTS.test(url.hostname) || /\/tile\/|\/tiles\/|\/wms/i.test(url.pathname)) {
     // Tiles: offline areas first (deliberately downloaded, never refetched), then the rolling tile cache served
     // immediately while a background fetch refreshes it (stale-while-revalidate), then the network.
+    const keep = req.destination === 'image'; // a tile on the map (preloads and area downloads come from fetch())
     e.respondWith((async () => {
-      const offline = await caches.open(OFFLINE_CACHE);
-      const pinned = await offline.match(req.url);
-      if (pinned) return pinned;
-      const cache = await caches.open(TILE_CACHE);
+      if (await hasOfflineAreas()) {
+        const pinned = await (await cacheOf(OFFLINE_CACHE)).match(req.url);
+        if (pinned) return pinned;
+      }
+      const cache = await cacheOf(TILE_CACHE);
       const cached = await cache.match(req);
       const refresh = () => fetch(req).then(res => {
-        if (res && (res.ok || res.type === 'opaque')) {
-          cache.put(req, res.clone());
-          caches.open(STAMP_CACHE).then(c => c.put(req.url, new Response(String(Date.now()))));
-          if (++putCount % 100 === 0) trimTiles();
+        if (keep && res && (res.ok || res.type === 'opaque')) {
+          const now = Date.now();
+          if (res.type === 'opaque') { // no headers to carry the time: the separate stamp, as before
+            cache.put(req, res.clone());
+            cacheOf(STAMP_CACHE).then(c => c.put(req.url, new Response(String(now))));
+          } else {
+            const copy = res.clone();
+            copy.blob().then(body => {
+              const h = new Headers(copy.headers); h.set('X-MB-Fetched', String(now));
+              return cache.put(req, new Response(body, { status: copy.status, statusText: copy.statusText, headers: h }));
+            }).catch(() => {});
+          }
+          trimSoon();
         }
         return res;
       });
       if (cached) {
         // Serve from cache; go to the network only when the stored copy is older than TILE_MAX_AGE.
-        const stamps = await caches.open(STAMP_CACHE);
-        const st = await stamps.match(req.url);
-        let fetchedAt = st ? +(await st.text()) : 0;
-        if (!fetchedAt) { fetchedAt = Date.now(); e.waitUntil(stamps.put(req.url, new Response(String(fetchedAt)))); } // legacy entry: stamp it now
+        let fetchedAt = +(cached.headers.get('X-MB-Fetched') || 0);
+        if (!fetchedAt) { // an entry stored before the time travelled with it (or an opaque one): its stamp
+          const st = await (await cacheOf(STAMP_CACHE)).match(req.url);
+          fetchedAt = st ? +(await st.text()) : 0;
+          if (!fetchedAt) { fetchedAt = Date.now(); e.waitUntil(cacheOf(STAMP_CACHE).then(c => c.put(req.url, new Response(String(fetchedAt))))); }
+        }
         if (Date.now() - fetchedAt > TILE_MAX_AGE) e.waitUntil(refresh().catch(() => {}));
         return cached;
       }

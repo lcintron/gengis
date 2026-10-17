@@ -36,36 +36,72 @@
     });
   }
 
-  // Every wheel notch zooms a quarter level, in or out, whatever the browser and the system report for it (Leaflet
-  // maps the scroll distance through a curve, and the distance differs between them). A mouse notch is about 100 px
-  // of scroll (3 lines, the usual setting) and counts whole; a trackpad's small steps add up to a notch first (a
-  // pause drops a part-notch). Notches that arrive while a zoom is still animating follow it, none is lost.
-  function wheelQuarters(map) {
-    const h = map.scrollWheelZoom, NOTCH = 100;
-    let acc = 0, forget = null, waiting = false;
+  // The wheel zooms continuously, like a slippy map should: every notch moves a target a quarter level in or out
+  // (whatever the browser and the system report for it: a mouse notch is about 100 px of scroll and counts whole; a
+  // trackpad's small steps add up to a notch first, and a pause drops a part-notch), and the map glides towards
+  // the target frame by frame, keeping the point under the pointer still. Notches that arrive mid-glide extend the
+  // target instead of waiting for a stop. Only transforms move during the glide (Leaflet's own fly-to path: the tiles
+  // and shapes are scaled, nothing is reloaded or rebuilt); the tiles of the new level load, and everything that
+  // listens for the end of a zoom runs, once, when it settles on the target (a quarter level).
+  // The +/- buttons, the keyboard and a double-click keep Leaflet's animated whole-level zoom.
+  function wheelGlide(map) {
+    const h = map.scrollWheelZoom, NOTCH = 100, EASE = 0.28;
+    let acc = 0, forget = null, target = null, frame = 0, gliding = false, own = false, pivot = null, pivotLL = null;
     const px = e => (e.deltaMode === 1 ? e.deltaY * NOTCH / 3 : e.deltaMode === 2 ? e.deltaY * 8 * NOTCH : e.deltaY);
+    // the centre that keeps pivotLL under the pivot point at zoom z
+    const centreFor = z => {
+      const half = map.getSize().divideBy(2);
+      return map.unproject(map.project(pivotLL, z).subtract(pivot.subtract(half)), z);
+    };
+    const settle = reached => { // at the target (reached), or cut short (a drag, a pinch, a button zoom): the end of one zoom
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      if (!gliding) return;
+      gliding = false;
+      const z = reached && target != null ? target : map.getZoom();
+      target = null;
+      map._move(pivotLL ? centreFor(z) : map.getCenter(), z); // (no fly-to flag: the tiles of this level load now)
+      map._moveEnd(true);
+    };
+    const step = () => {
+      frame = 0;
+      const z = map.getZoom(), d = target - z;
+      const nz = Math.abs(d) < 0.003 ? target : z + d * EASE;
+      if (nz === target) { settle(true); return; }
+      map._move(centreFor(nz), nz, { flyTo: true });
+      frame = requestAnimationFrame(step);
+    };
     h._performZoom = function () {
       this._delta = 0; this._startTime = null;
-      if (map._animatingZoom) { // after this zoom: from where it lands
-        if (!waiting) { waiting = true; map.once('zoomend', () => { waiting = false; this._performZoom(); }); }
-        return;
-      }
       const steps = Math.trunc(acc + Math.sign(acc) * 1e-6); // whole notches (ten tenths are one); a part-notch waits for more
       acc -= steps;
       if (!steps) return;
-      map._stop();
-      const zoom = map.getZoom(), target = map._limitZoom(MB.snapZoom(zoom) - steps * MB.ZOOM_STEP); // scrolling down zooms out
-      if (target === zoom) return;
-      if (map.options.scrollWheelZoom === 'center') map.setZoom(target); // kept on a point (my location)
-      else map.setZoomAround(this._lastMousePos, target);
+      if (map._animatingZoom) { map.once('zoomend', () => { acc += steps; this._performZoom(); }); return; } // a button zoom first
+      const base = gliding ? target : MB.snapZoom(map.getZoom());
+      const t = map._limitZoom(base - steps * MB.ZOOM_STEP); // scrolling down zooms out
+      const half = map.getSize().divideBy(2);
+      const at = map.options.scrollWheelZoom === 'center' ? half : (this._lastMousePos || half); // kept on a point (my location)
+      // the map point under the pointer, taken once per glide (again only if the pointer moved): taken at every notch,
+      // the pixel rounding of each step would add up and the map would creep under a still pointer
+      if (!gliding || !pivot || !at.equals(pivot)) { pivot = at; pivotLL = map.containerPointToLatLng(pivot); }
+      if (!gliding) {
+        if (t === map.getZoom()) return;
+        map._stop();
+        own = true; map._moveStart(true, false); own = false;
+        gliding = true;
+      }
+      target = t;
+      if (!frame) frame = requestAnimationFrame(step);
     };
+    map.on('zoomstart', () => { if (gliding && !own) settle(false); }); // another zoom (a pinch, a button) takes over
+    map.on('dragstart', () => settle(false));
     const enabled = h.enabled();
     if (enabled) h.disable(); // its listener was added with the original handler: re-added with this one
     const onWheel = h._onWheelScroll;
     h._onWheelScroll = function (e) {
       const d = px(e);
       acc += Math.abs(d) >= NOTCH / 2 ? Math.sign(d) * Math.max(1, Math.round(Math.abs(d) / NOTCH)) : d / NOTCH;
-      clearTimeout(forget); forget = setTimeout(() => { if (!waiting) acc = 0; }, 400);
+      clearTimeout(forget); forget = setTimeout(() => { acc = 0; }, 400);
       return onWheel.call(this, e);
     };
     if (enabled) h.enable();
@@ -84,17 +120,18 @@
       center: [40.7128, -74.006], zoom: 13, zoomControl: false, attributionControl: false,
       worldCopyJump: true, doubleClickZoom: true,
       // The wheel and pinch settle on quarter levels (tiles exist at whole levels only: a quarter level shows the
-      // nearest whole one scaled, nothing more to load); a wheel notch is a quarter level (wheelQuarters). The
+      // nearest whole one scaled, nothing more to load); a wheel notch is a quarter level (wheelGlide). The
       // buttons, the keyboard and a double-click still step a whole level (zoomDelta).
       zoomSnap: MB.ZOOM_STEP, zoomDelta: 1
     });
-    wheelQuarters(MB.map);
+    wheelGlide(MB.map);
     wholeLevelButtons(MB.map);
     L.control.zoom({ position: 'topright' }).addTo(MB.map);
     L.control.attribution({ position: 'bottomleft', prefix: '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>' }).addTo(MB.map);
 
     MB.map.pm.setGlobalOptions({ pmIgnore: false, allowSelfIntersection: true });
     MB.loadSettings();
+    MB.applyTileFade();
     MB.initTooltipDelay(MB.map);
     MB.setBasemap(MB.state.basemap); // the default until the autosaved project says otherwise
 

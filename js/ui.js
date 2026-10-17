@@ -25,6 +25,14 @@ window.MB = window.MB || {};
 
   MB.ui = {};
 
+  // Map tiles fade in (Leaflet's default) or appear the moment they are ready (Settings > Interface, to compare).
+  MB.applyTileFade = function () {
+    if (!MB.map) return;
+    const on = !(MB.settings && MB.settings.tileFade === false) && L.Browser.any3d;
+    MB.map._fadeAnimated = on;
+    MB.map.getContainer().classList.toggle('leaflet-fade-anim', on);
+  };
+
   /* ---------- sliders: a number box with - and + beside each ----------
    * Every slider (input[type=range]) in the page gets one, as it appears (an observer on the page). The box shows the
    * value as its readout did (a 0-1 slider in %, others with their unit) and sets the slider like a drag would
@@ -1477,7 +1485,9 @@ window.MB = window.MB || {};
         <div class="field"><span class="field-label">Toolbar</span>
           <div class="seg" role="radiogroup" aria-label="Toolbar position">${[['left', 'Left side'], ['right', 'Right side']].map(([v, t]) => `<button type="button" role="radio" aria-checked="${MB.ui.toolbarSide() === v}" data-tb-side="${v}"${MB.ui.toolbarSide() === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div></div>
         <div class="field"><label class="field-label" for="setTipDelay">Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'Immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
-        <div class="field"><label class="field-label" for="setPrefetch">Preload tiles</label><select id="setPrefetch">${[['auto', 'Automatic (off on volunteer servers)'], ['on', 'Always'], ['off', 'Never']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div class="field"><label class="field-label" for="setPrefetch">Preload the next zoom level</label><select id="setPrefetch">${[['off', 'Off (fastest map)'], ['on', 'On, after the map is still']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) === 'on' ? 'on' : 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
+          <p class="field-hint">Never on volunteer-run map servers.</p></div>
+        <label class="check"><input type="checkbox" id="setTileFade"${MB.settings && MB.settings.tileFade === false ? '' : ' checked'}> Fade in map tiles</label>
       </div>
       <div class="section"><h3>Drawing</h3>
         <label class="check"><input type="checkbox" id="setMeasure"${s.showMeasurements ? ' checked' : ''}> Measurement labels on shapes</label>
@@ -1502,6 +1512,7 @@ window.MB = window.MB || {};
     $('#setMeasure', panel).addEventListener('change', e => { s.showMeasurements = e.target.checked; MB.refreshAllTooltips(); MB.autosave(); });
     $('#setTipDelay', panel).addEventListener('change', e => { MB.settings.tooltipDelayMs = +e.target.value; MB.saveSettings(); });
     $('#setPrefetch', panel).addEventListener('change', e => { MB.settings.prefetchTiles = e.target.value; MB.saveSettings(); MB.tilePrefetch.lastKey = ''; MB.tilePrefetch.schedule(); });
+    $('#setTileFade', panel).addEventListener('change', e => { MB.settings.tileFade = e.target.checked; MB.saveSettings(); MB.applyTileFade(); });
     $('#setContinue', panel).addEventListener('change', e => { s.continueDrawing = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setSnap', panel).addEventListener('change', e => { s.snapping = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setReset', panel).addEventListener('click', async () => {
@@ -1648,7 +1659,8 @@ window.MB = window.MB || {};
       const p = ll || MB.map.getCenter(), g = MB.mgrs && MB.mgrs.on ? MB.mgrs.forward(p.lat, p.lng, 5) : null; // with the MGRS grid shown
       ctl._div.querySelector('.coords').textContent = MB.formatLatLng(p) + (g ? '  ·  ' + g.text : '') + '  ·  zoom ' + MB.formatZoom(z);
     };
-    MB.map.on('mousemove', e => upd(e.latlng));
+    let at = null, frame = 0;
+    MB.map.on('mousemove', e => { at = e.latlng; if (!frame) frame = requestAnimationFrame(() => { frame = 0; upd(at); }); }); // one write per frame
     MB.map.on('moveend zoomend', () => upd());
     MB.on('project', () => upd());
     MB.on('mgrs', () => upd());
