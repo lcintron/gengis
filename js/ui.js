@@ -1485,8 +1485,8 @@ window.MB = window.MB || {};
         <div class="field"><span class="field-label">Toolbar</span>
           <div class="seg" role="radiogroup" aria-label="Toolbar position">${[['left', 'Left side'], ['right', 'Right side']].map(([v, t]) => `<button type="button" role="radio" aria-checked="${MB.ui.toolbarSide() === v}" data-tb-side="${v}"${MB.ui.toolbarSide() === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div></div>
         <div class="field"><label class="field-label" for="setTipDelay">Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'Immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
-        <div class="field"><label class="field-label" for="setPrefetch">Preload the next zoom level</label><select id="setPrefetch">${[['off', 'Off (fastest map)'], ['on', 'On, after the map is still']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) === 'on' ? 'on' : 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
-          <p class="field-hint">Never on volunteer-run map servers.</p></div>
+        <div class="field"><label class="field-label" for="setPrefetch">Preload the next zoom level</label><select id="setPrefetch" aria-describedby="setPrefetchHint">${[['off', 'Off (fastest map)'], ['on', 'On, after the map is still']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) === 'on' ? 'on' : 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
+          <p class="field-hint" id="setPrefetchHint">Never on volunteer-run map servers.</p></div>
         <label class="check"><input type="checkbox" id="setTileFade"${MB.settings && MB.settings.tileFade === false ? '' : ' checked'}> Fade in map tiles</label>
       </div>
       <div class="section"><h3>Drawing</h3>

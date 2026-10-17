@@ -93,8 +93,9 @@
       target = t;
       if (!frame) frame = requestAnimationFrame(step);
     };
-    map.on('zoomstart', () => { if (gliding && !own) settle(false); }); // another zoom (a pinch, a button) takes over
-    map.on('dragstart', () => settle(false));
+    // another zoom (a pinch, a button) or a move (a drag, the keyboard, a pan to a point) takes over: the glide ends
+    // first, so its end-of-zoom work does not run in the middle of the next move (a drag fires movestart, then dragstart)
+    map.on('zoomstart movestart', () => { if (gliding && !own) settle(false); });
     const enabled = h.enabled();
     if (enabled) h.disable(); // its listener was added with the original handler: re-added with this one
     const onWheel = h._onWheelScroll;
@@ -122,7 +123,8 @@
       // The wheel and pinch settle on quarter levels (tiles exist at whole levels only: a quarter level shows the
       // nearest whole one scaled, nothing more to load); a wheel notch is a quarter level (wheelGlide). The
       // buttons, the keyboard and a double-click still step a whole level (zoomDelta).
-      zoomSnap: MB.ZOOM_STEP, zoomDelta: 1
+      zoomSnap: MB.ZOOM_STEP, zoomDelta: 1,
+      wheelDebounceTime: 10 // a notch extends the glide at once (wheelGlide): no need to wait for more
     });
     wheelGlide(MB.map);
     wholeLevelButtons(MB.map);

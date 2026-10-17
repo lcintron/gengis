@@ -60,6 +60,7 @@ self.addEventListener('activate', e => {
       await migrateOldTileCaches(keys);
       const keep = [SHELL_CACHE, TILE_CACHE, OFFLINE_CACHE, STAMP_CACHE];
       await Promise.all(keys.filter(k => !keep.includes(k) && !/-tiles$/.test(k)).map(k => caches.delete(k)));
+      trimTiles().catch(() => {}); // the cap's backstop: a worker can stop before its idle trim runs (not awaited)
     }).then(() => self.clients.claim())
   );
 });
