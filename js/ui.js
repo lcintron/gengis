@@ -140,11 +140,14 @@ window.MB = window.MB || {};
       });
       bm.appendChild(g1);
       const custom = (MB.settings && MB.settings.providers) || [];
-      if (custom.length) {
-        const g2 = document.createElement('optgroup'); g2.label = 'Configured providers';
-        custom.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).forEach(p => { const o = document.createElement('option'); o.value = 'custom:' + p.id; o.textContent = p.name + (p.url.includes('{key}') && !p.key ? ' (needs key)' : ''); g2.appendChild(o); });
+      // configured providers first, then imported map sources grouped by the folder they came in (Google, ESRI…)
+      const groups = new Map();
+      custom.forEach(p => { const g = p.group ? 'Imported: ' + p.group : 'Configured providers'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(p); });
+      Array.from(groups.keys()).sort((a, b) => (a === 'Configured providers' ? -1 : b === 'Configured providers' ? 1 : a.localeCompare(b))).forEach(label => {
+        const g2 = document.createElement('optgroup'); g2.label = label;
+        groups.get(label).sort((a, b) => String(a.name).localeCompare(String(b.name))).forEach(p => { const o = document.createElement('option'); o.value = 'custom:' + p.id; o.textContent = p.name + (String(p.url).includes('{key}') && !p.key ? ' (needs key)' : ''); g2.appendChild(o); });
         bm.appendChild(g2);
-      }
+      });
       bm.value = MB.state.basemap;
     };
     fillBasemaps();
@@ -356,6 +359,7 @@ window.MB = window.MB || {};
       case 'present': MB.presenter.enter(); break;
       case 'cast': MB.cast.open(); break;
       case 'apis': MB.settingsDialog.open(); break;
+      case 'importmaps': MB.mapSources.pick(); break;
     }
   };
 
@@ -1342,6 +1346,8 @@ window.MB = window.MB || {};
       const files = Array.from(e.dataTransfer.files || []);
       const svgs = files.filter(f => MB.isSvgFile(f) || MB.isRasterFile(f));
       const others = files.filter(f => /\.(geo)?json$/i.test(f.name));
+      const maps = files.filter(f => MB.mapSources && MB.mapSources.isMapSourceFile(f)); // MOBAC / ATAK map sources
+      if (maps.length) MB.mapSources.importFiles(maps);
       if (svgs.length) MB.addImageFiles(svgs).then(ids => { if (ids.length) { MB.svgPlace.svgId = ids[0]; MB.tools.set('svg'); } });
       if (others.length) MB.openFile(others[0]);
     });
