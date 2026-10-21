@@ -276,7 +276,7 @@ window.MB = window.MB || {};
     if (!MB.mavlink || !t || typeof t !== 'object') return;
     const cf = MB.mavlink.conf();
     const k = MB.mavlink.kinds[t.connection], here = !!k && (!k.desktop || !!window.gengisDesktop), mine = !!cf.url;
-    if (!mine && here && typeof t.uri === 'string' && t.uri) { cf.kind = t.connection; cf.url = t.uri; } // a server set on this device stays
+    if (!mine && here && typeof t.uri === 'string' && (t.uri || t.connection === 'listen')) { cf.kind = t.connection; cf.url = t.uri; } // a server set on this device stays (listening needs no address)
     cf.on = !!t.enabled && (here || mine); // a connection only the desktop app can open stays off in a web page
     if (typeof t.labels === 'boolean') cf.labels = t.labels;
     if (typeof t.trails === 'boolean') cf.trails = t.trails;

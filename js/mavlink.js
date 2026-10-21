@@ -156,7 +156,7 @@ window.MB = window.MB || {};
       if (!/^wss?:\/\//i.test(s)) s = 'ws://' + s.replace(/^https?:\/\//i, '');
       try {
         const u = new URL(s);
-        if (!u.port) u.port = String(k.port);
+        if (!u.port && !/^wss?:\/\/(?:\[[^\]]*\]|[^/?#:]*):\d+(?:[/?#]|$)/i.test(s)) u.port = String(k.port); // (an explicit :80 or :443 reads back as no port)
         return { url: u.href };
       } catch (e) { return null; }
     }
@@ -375,7 +375,7 @@ window.MB = window.MB || {};
       let v = this.vehicles.get(sysid);
       if (!v) {
         v = { sysid, compid: null, type: null, autopilot: null, baseMode: 0, customMode: null, sysStatus: null, seen: 0, hb: 0,
-          lat: null, lon: null, alt: null, relAlt: null, posTime: 0, gpiTime: 0, heading: null, yaw: null, hud: null, cog: null, gs: null, airspeed: null, climb: null, battPct: null, volt: null, amp: null, mah: null, battLeft: null, fix: null, sats: null, eph: null, landed: 0, home: null, text: null,
+          lat: null, lon: null, alt: null, relAlt: null, posTime: 0, gpiTime: 0, heading: null, yaw: null, hud: null, cog: null, gs: null, airspeed: null, climb: null, battPct: null, sysPct: null, bsPct: null, volt: null, amp: null, mah: null, battLeft: null, fix: null, sats: null, eph: null, landed: 0, home: null, text: null,
           trail: [], marker: null, line: null, homeMarker: null };
         this.vehicles.set(sysid, v);
       }
@@ -426,14 +426,16 @@ window.MB = window.MB || {};
         case 74: v.airspeed = fin(f32(d, 0)); v.climb = fin(f32(d, 12)); v.hud = i16(d, 16); break; // VFR_HUD
         case 1: { // SYS_STATUS
           const mv = u16(d, 14), ca = i16(d, 16), pct = i8(d, 30);
-          v.volt = mv === 65535 ? null : mv / 1000; v.amp = ca === -1 ? null : ca / 100; v.battPct = pct < 0 ? null : pct;
+          v.volt = mv === 65535 ? null : mv / 1000; v.amp = ca === -1 ? null : ca / 100; v.sysPct = pct < 0 ? null : pct;
+          v.battPct = v.sysPct != null ? v.sysPct : v.bsPct;
           break;
         }
         case 147: { // BATTERY_STATUS: the main battery's use and time left
           if (u8(d, 32) !== 0) break;
           const mah = i32(d, 0), left = i32(d, 36), pct = i8(d, 35);
           v.mah = mah < 0 ? null : mah; v.battLeft = left > 0 ? left : null;
-          if (v.battPct == null && pct >= 0) v.battPct = pct;
+          v.bsPct = pct < 0 ? null : pct;
+          v.battPct = v.sysPct != null ? v.sysPct : v.bsPct; // SYS_STATUS's figure when it has one, else this one
           break;
         }
         case 242: { // HOME_POSITION
