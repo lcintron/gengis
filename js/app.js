@@ -162,6 +162,7 @@
     MB.mgrs.init();
     MB.adsb.init();
     MB.ais.init();
+    MB.mavlink.init();
     MB.locate.init();
     MB.offline.init();
     MB.busy.init();

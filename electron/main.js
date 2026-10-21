@@ -7,6 +7,7 @@
 const { app, BrowserWindow, ipcMain, session, shell } = require('electron');
 const path = require('path');
 const files = require('./files');
+const mavlink = require('./mavlink');
 
 function parseArgs() {
   const q = {};
@@ -67,6 +68,7 @@ app.commandLine.appendSwitch('disable-features', (offFeatures ? offFeatures + ',
 
 app.whenReady().then(() => {
   files.register(); // project files on disk: electron/files.js
+  mavlink.register(); // live drones: receive-only MAVLink links, electron/mavlink.js
   ipcMain.on('app:leave-fullscreen', e => {
     const win = files.trusted(e) && BrowserWindow.fromWebContents(e.sender);
     if (win) win.setFullScreen(false);

@@ -233,8 +233,10 @@ window.MB = window.MB || {};
     save() { MB.saveSettings(); if (MB.autosave) MB.autosave(); }, // the project records which sources and options are in use
 
     init() {
-      const pane = MB.map.createPane('mb-adsb'); // above the data layers, below the user's own objects
-      pane.style.zIndex = 370;
+      // Above everything else drawn on the map (the user's objects included), so a click on an aircraft always opens its
+      // details; under the location dot (which takes no clicks), tooltips and popups. Drawing tools click through it (css).
+      const pane = MB.map.createPane('mb-adsb');
+      pane.style.zIndex = 625;
       SOURCES.forEach(s => { this.rt[s.id] = { on: false, timer: null, gen: 0, busy: false, error: null, fails: 0, total: 0, withPos: 0, lastOk: 0, resolved: null, note: '', clock: { now: null, at: 0 } }; });
       this.buildLegend();
       MB.map.on('zoomstart', () => pane.classList.remove('smooth'));

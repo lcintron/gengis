@@ -263,8 +263,8 @@ window.MB = window.MB || {};
     save() { MB.saveSettings(); if (MB.autosave) MB.autosave(); }, // the project records which sources and options are in use
 
     init() {
-      const pane = MB.map.createPane('mb-ais'); // above the place names, under live air traffic
-      pane.style.zIndex = 368;
+      const pane = MB.map.createPane('mb-ais'); // above the user's objects, under live air traffic (see adsb.js)
+      pane.style.zIndex = 615;
       SOURCES.forEach(s => { this.rt[s.id] = { on: false, timer: null, gen: 0, busy: false, error: null, fails: 0, total: 0, withPos: 0, lastOk: 0, resolved: null, ws: null, store: new Map(), dirty: false, sent: '', sentAt: 0, subTimer: null }; });
       MB.map.on('zoomend', () => this.applyPaneState());
       MB.map.on('moveend', () => {

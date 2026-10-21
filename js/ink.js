@@ -1,5 +1,6 @@
 /* GenGIS - the annotation tool: freehand ink drawn with a stylus, into the "Annotations" layer
- * - a pen only: fingers and the mouse keep moving and zooming the map (a resting palm draws nothing)
+ * - a pen, or the mouse (or touchpad) with Shift held: fingers and the plain mouse keep moving and zooming the map (a
+ *   resting palm draws nothing)
  * - a pen (solid) and a highlighter (wide, see-through, neon colors), each with its own color and size, and an eraser
  *   in four sizes that wipes what it passes over (a stroke it crosses is cut in two); the stylus's own eraser end
  *   erases too, whichever is chosen. Strokes drawn with the marker of 0.13.0 stay as they were drawn.
@@ -56,6 +57,9 @@ window.MB = window.MB || {};
     return out;
   }
 
+  // What draws: a stylus, or the mouse (or touchpad) with Shift held.
+  const drawsWith = e => e.pointerType === 'pen' || (e.pointerType === 'mouse' && e.shiftKey);
+
   // The layer strokes go to: "Annotations", made (not activated) on the first stroke.
   const isInkLayer = l => l.name.trim().toLowerCase() === LAYER.toLowerCase();
   function inkLayer() {
@@ -74,7 +78,7 @@ window.MB = window.MB || {};
       wrap.addEventListener('click', e => { if (this.swallow && Date.now() < this.swallow && this.onMap(e)) { e.stopPropagation(); e.preventDefault(); } }, true); // the stroke's own click
       MB.map.on('zoomstart', () => this.cancel()); // a pinch while drawing: the stroke would land elsewhere
       // the eraser's ring: gone once the pen leaves (lifted out of range, or onto the panel), or the page is hidden
-      wrap.addEventListener('pointerleave', e => { if (!this.stroke && e.pointerType === 'pen' && (e.target === wrap || e.target === MB.map.getContainer())) this.hideCursor(); }, true); // (not each tile it crosses)
+      wrap.addEventListener('pointerleave', e => { if (!this.stroke && (e.pointerType === 'pen' || e.pointerType === 'mouse') && (e.target === wrap || e.target === MB.map.getContainer())) this.hideCursor(); }, true); // (not each tile it crosses)
       document.addEventListener('visibilitychange', () => { if (document.hidden && !this.stroke) this.hideCursor(); });
     },
 
@@ -95,9 +99,9 @@ window.MB = window.MB || {};
       return t && t.closest && t.closest('.leaflet-container') && !t.closest('.leaflet-control-container, .tool-hint, #toolbar, .mb-scale-box');
     },
     down(e) {
-      if (this.stroke && e.pointerType !== 'pen') { e.preventDefault(); e.stopPropagation(); return; } // a palm on the glass while writing: nothing
-      if (!this.active || e.pointerType !== 'pen' || this.stroke || !this.onMap(e)) return;
-      const end = e.button === 5 || (e.buttons & 32); // the stylus turned over: its eraser end
+      if (this.stroke && e.pointerType !== this.stroke.type) { e.preventDefault(); e.stopPropagation(); return; } // a palm on the glass while writing: nothing
+      if (!this.active || !drawsWith(e) || this.stroke || !this.onMap(e)) return;
+      const end = e.pointerType === 'pen' && (e.button === 5 || (e.buttons & 32)); // the stylus turned over: its eraser end
       if (e.button !== 0 && !end) return; // the barrel button (2): nothing
       e.preventDefault(); e.stopPropagation();
       const target = MB.state.layers.find(isInkLayer), erase = end || conf().tip === 'eraser';
@@ -107,7 +111,7 @@ window.MB = window.MB || {};
       try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* gone already */ }
       if (erase) {
         const p = this.point(e);
-        this.stroke = { id: e.pointerId, erase: true, r: eraserSize() / 2, last: p, todo: [p], changed: false };
+        this.stroke = { id: e.pointerId, type: e.pointerType, erase: true, r: eraserSize() / 2, last: p, todo: [p], changed: false };
         this.showCursor(p);
         this.eraseAlong(this.stroke);
         return;
@@ -115,15 +119,15 @@ window.MB = window.MB || {};
       const style = strokeStyle(), ls = MB.toLeafletStyle(style);
       const p = this.point(e);
       this.stroke = {
-        id: e.pointerId, style, pts: [p],
+        id: e.pointerId, type: e.pointerType, style, pts: [p],
         preview: L.polyline([MB.map.containerPointToLatLng(p), MB.map.containerPointToLatLng(p)], Object.assign(ls, { fill: false, interactive: false, className: 'mb-ink mb-ink-' + style.ink })).addTo(MB.map)
       };
     },
     move(e) {
       const s = this.stroke;
-      if (s && e.pointerType !== 'pen') { e.stopPropagation(); return; } // the palm again
-      if (!s) { // the pen hovering: the eraser's ring follows it
-        if (this.active && e.pointerType === 'pen' && conf().tip === 'eraser' && this.onMap(e)) this.showCursor(this.point(e));
+      if (s && e.pointerType !== s.type) { e.stopPropagation(); return; } // the palm again
+      if (!s) { // the pen hovering (or the mouse with Shift held): the eraser's ring follows it
+        if (this.active && drawsWith(e) && conf().tip === 'eraser' && this.onMap(e)) this.showCursor(this.point(e));
         else this.hideCursor();
         return;
       }
@@ -144,7 +148,7 @@ window.MB = window.MB || {};
     },
     up(e, cancelled) {
       const s = this.stroke;
-      if (s && e.pointerType !== 'pen') { e.stopPropagation(); return; }
+      if (s && e.pointerType !== s.type) { e.stopPropagation(); return; }
       if (!s || e.pointerId !== s.id) return;
       e.preventDefault(); e.stopPropagation();
       this.swallow = Date.now() + 400;
@@ -272,7 +276,7 @@ window.MB = window.MB || {};
             <label class="ink-color ink-custom${colors.includes(t.color) ? '' : ' active'}" title="Another color"><input type="color" value="${esc(t.color)}" aria-label="Another color"><i style="background:${colors.includes(t.color) ? 'conic-gradient(#f44, #fd0, #4d4, #0cf, #44f, #f4f, #f44)' : esc(t.color)}"></i></label>
           </div>
         </div>`}
-        <div class="ink-note">${eraser ? 'Wipe with the stylus: what it passes over goes.' : 'Draw with a stylus (its eraser end erases).'} Fingers<span class="ink-mouse"> and the mouse</span> move the map.</div>
+        <div class="ink-note">${eraser ? 'Wipe with the stylus<span class="ink-mouse"> (or Shift + drag)</span>: what it passes over goes.' : 'Draw with a stylus (its eraser end erases)<span class="ink-mouse">, or Shift + drag with the mouse</span>.'} Fingers<span class="ink-mouse"> and the mouse</span> move the map.</div>
       </div>`;
       const bar = hint.firstElementChild;
       const refocus = sel => { const b = hint.querySelector(sel); if (b) b.focus(); };

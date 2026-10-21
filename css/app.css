@@ -1040,6 +1040,46 @@ body.presenting .mb-ident-own .btn-row { display: none; }
 .mb-vs-links { margin-top: 6px; font-size: 11px; }
 .mb-vs-links:empty { display: none; }
 
+/* live traffic sits above the user's objects (aircraft, vessels and drones open their details on a click); the
+   drawing tools and Scale click straight through it */
+#map.mb-crosshair :is(.leaflet-mb-adsb-pane, .leaflet-mb-ais-pane, .leaflet-mb-uav-pane) .leaflet-marker-icon,
+#map.mb-scale-tool :is(.leaflet-mb-adsb-pane, .leaflet-mb-ais-pane, .leaflet-mb-uav-pane) .leaflet-marker-icon { pointer-events: none; }
+
+/* ---------- live drones (MAVLink) ---------- */
+.mb-uav { background: transparent; border: 0; }
+.mb-uav-rot { width: 100%; height: 100%; }
+.mb-uav-rot svg, .mav-veh svg { width: 100%; height: 100%; display: block; overflow: visible; }
+:is(.mb-uav-rot, .mav-veh) svg :is(path, circle) { fill: currentColor; stroke: #0b1118; stroke-width: 1.5; stroke-linejoin: round; paint-order: stroke; }
+:is(.mb-uav-rot, .mav-veh) svg .rotor { fill-opacity: .3; stroke: currentColor; stroke-width: 1.6; }
+:is(.mb-uav-rot, .mav-veh) svg .arm-bg { fill: none; stroke: #0b1118; stroke-width: 4.4; stroke-linecap: round; }
+:is(.mb-uav-rot, .mav-veh) svg .arm { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; paint-order: normal; }
+:is(.mb-uav-rot, .mav-veh) svg .mark { fill: #0b1118; stroke: none; }
+.mb-uav.stale { opacity: .45; }
+.mb-uav.sel .mb-uav-rot { filter: drop-shadow(0 0 3px #ffd166) drop-shadow(0 0 2px #ffd166); }
+.mb-uav-label {
+  display: none; position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 3px; white-space: nowrap; pointer-events: none;
+  font-size: 10.5px; font-weight: 600; line-height: 1; color: #fff; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 2px #000;
+}
+.leaflet-mb-uav-pane.labels .mb-uav-label, .mb-uav.sel .mb-uav-label { display: block; }
+.mb-uav-home {
+  background: #0b1118; color: #fff; border: 1.5px solid #fff; border-radius: 50%; box-sizing: border-box;
+  font: 700 9.5px/13px system-ui, sans-serif; text-align: center; pointer-events: none;
+}
+.mb-uav-info .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; border: 1px solid rgba(255,255,255,.3); }
+.mb-uav-info .warn { color: var(--warn); font-weight: 600; }
+.data-item .mav-help { margin: 6px 0 0 23px; }
+.data-item .mav-help code { font-size: 10.5px; background: rgba(255,255,255,.06); border-radius: 3px; padding: 0 3px; word-break: break-all; }
+.mav-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.mav-list:empty { display: none; }
+.mav-veh {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 4px 8px; text-align: left;
+  background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--text); font: inherit; cursor: pointer;
+}
+.mav-veh:hover, .mav-veh.sel { background: rgba(255,255,255,.05); border-color: var(--border); }
+.mav-veh svg { flex: 0 0 18px; width: 18px; height: 18px; }
+.mav-veh .nm { font-weight: 600; white-space: nowrap; }
+.mav-veh .dim { margin-left: auto; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* ---------- place names (Settings → Map overlays) ---------- */
 .mb-place { background: transparent; border: 0; width: 0 !important; height: 0 !important; pointer-events: none; }
 .mb-place span {
