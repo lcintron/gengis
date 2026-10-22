@@ -1398,7 +1398,7 @@ window.MB = window.MB || {};
     });
     const zoom = MB.map.getZoom();
     const s = this.settings;
-    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0);
+    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.mavlink ? MB.mavlink.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0);
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
       <div class="row ds-tools"><input type="text" inputmode="search" enterkeyhint="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" spellcheck="false"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
       <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
@@ -1407,6 +1407,8 @@ window.MB = window.MB || {};
     html += adsbHtml;
     const aisHtml = MB.ais ? MB.ais.panelHtml(q, ui.filter) : ''; // live vessel traffic, the same way
     html += aisHtml;
+    const mavHtml = MB.mavlink ? MB.mavlink.panelHtml(q, ui.filter) : ''; // live drones (MAVLink), the same way
+    html += mavHtml;
     const declHtml = MB.declination ? MB.declination.panelHtml(q, ui.filter) : ''; // magnetic declination, computed here
     html += declHtml;
     let shownTotal = 0;
@@ -1449,7 +1451,7 @@ window.MB = window.MB || {};
     });
       html += '</details>';
     });
-    if (!shownTotal && !adsbHtml && !aisHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
+    if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
     html += `<div class="section"><h3>Options</h3>
       <div class="row"><label>Data opacity</label><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div>
       <div class="row" title="How often each service's last-edit stamp is compared; changed datasets are re-downloaded"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
@@ -1486,6 +1488,7 @@ window.MB = window.MB || {};
     panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
     if (MB.adsb) MB.adsb.bindPanel(panel);
     if (MB.ais) MB.ais.bindPanel(panel);
+    if (MB.mavlink) MB.mavlink.bindPanel(panel);
     if (MB.declination) MB.declination.bindPanel(panel);
     panel.querySelectorAll('details.ds-source[data-src]').forEach(d => d.addEventListener('toggle', () => {
       if (ui.q.trim()) return; // opened by a search, not by the user

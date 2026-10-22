@@ -29,12 +29,13 @@ A free map builder that runs in the browser (installable, works offline) or as a
 - **Measure** distances and areas in metric, imperial or nautical units, with a scale bar. A circle shows its radius while you draw it, and objects can show their length, perimeter, area, radius or position on the map.
 - **Layers** with show/hide, lock and draw order, duplicate, and **groups**: a grouped layer's objects are selected, moved, resized and deleted together. Locked objects can still be selected and inspected. Undo/redo, right-click menus, presenter mode with full screen. Cast to a screen (project menu) mirrors the map on a TV in presenter mode. The toolbar sits on the left or the right of the map (Settings → Interface).
 - **Projects** save automatically on the device as you work, with recent projects and earlier copies to restore; save/open as `.gengis.json`; GeoJSON import/export; the map exported as a PNG, JPEG or PDF (up to 4× resolution, paper size and margins). In the desktop app each named project is also kept as a file (`Documents\GenGIS` by default).
-- **Annotations**: draw freehand on the map with a stylus (pen or highlighter, color and width; an eraser in four sizes, or the stylus's own eraser end), into an Annotations layer; fingers and the mouse keep moving the map.
+- **Annotations**: draw freehand on the map with a stylus, or Shift + drag with a mouse or touchpad (pen or highlighter, color and width; an eraser in four sizes, or the stylus's own eraser end), into an Annotations layer; fingers and the mouse keep moving the map.
 - **More base maps, the ATAK way**: import MOBAC map sources (one .xml, or a .zip of many, such as the [ATAK-Maps](https://github.com/joshuafuller/ATAK-Maps) set): tile servers (including Bing quadkeys and rotating servers), WMS layers (EPSG:3857 or 4326) and blended multi-layer maps. They join the base map list, grouped by folder; sources that need an API key say so.
 - **Search** addresses, places and coordinates; find points of interest; center on **your location**, with a beam showing which way the device points (compass, or direction of travel).
 - **FAA data**, live for the area in view: Class B–E airspace with floors and ceilings, special use airspace, LAANC ceilings, security flight restrictions, TFRs, airports (with radio frequencies) and more. Click anywhere to see everything under that point; the feature's source, geometry and attributes show in Properties. Country and state borders at every zoom. Any public ArcGIS layer can be added.
 - **Live air traffic (ADS-B)** from your own receiver (dump1090-fa / SkyAware, dump1090-mutability, readsb, tar1090, or the original dump1090's built-in server; GenGIS finds the data path and remembers it for that address) or the adsb.fi and adsb.lol networks, with type icons colored by altitude and aircraft look-up.
 - **Live vessel traffic (AIS)** from your own AIS-catcher receiver or the aisstream.io network, colored by ship type, with vessel details.
+- **Live drones (MAVLink)** from a [mavp2p](https://github.com/bluenviron/mavp2p) server: every vehicle it relays, by type, orange when armed, with its trail and home. Click one for its flight mode (ArduPilot and PX4), altitude, speed, battery, GPS and latest message. Read only: GenGIS never sends a vehicle a command. Live traffic always draws above your own objects, so a click on it opens its details.
 - **Grids and coordinates**: optional latitude/longitude and MGRS grids (Settings → Grid systems) that get finer as you zoom in, labelled along the edges or the center lines; coordinates shown in decimal degrees, degrees and minutes, or degrees, minutes and seconds. Search any MGRS reference (a grid zone down to 1 m) to center on its square.
 - **Magnetic declination** from the World Magnetic Model (WMM2025), computed on the device: isogonic lines on the map, and a click anywhere gives the declination and heading correction there.
 - **Place names**: countries, major cities, and oceans and seas, each toggled in Settings next to the borders.
@@ -63,6 +64,19 @@ Browsers only read another server's data when it allows them to (CORS), and bloc
 | adsb.fi, adsb.lol | yes | no | no |
 | AIS-catcher (web viewer on, `-N 8100`) | yes | yes | only on `localhost` or over HTTPS |
 | aisstream.io (free API key) | yes | no | no |
+
+### Live drones (MAVLink): connecting to mavp2p
+
+Data → MAVLink live drones: choose how to connect and enter the address of the computer running mavp2p. A web page cannot open TCP or UDP connections, so the web app connects through a WebSocket bridge; the desktop app connects directly.
+
+| Connect | mavp2p endpoint | Address in GenGIS | Works in |
+| --- | --- | --- | --- |
+| TCP | `tcps:0.0.0.0:5760` | `192.168.1.20` (port 5760) | desktop app |
+| UDP | `udps:0.0.0.0:14550` | `192.168.1.20` (port 14550) | desktop app |
+| UDP, listen here | `udpc:<this computer>:14550` | `14550` | desktop app |
+| WebSocket | `tcps:0.0.0.0:5760`, plus `websockify 5761 localhost:5760` | `192.168.1.20:5761` | desktop app, and the web app over `http://` (over HTTPS: `wss://`, or on `localhost`) |
+
+For example `mavp2p serial:/dev/ttyUSB0:57600 tcps:0.0.0.0:5760`. Over UDP to a server, GenGIS sends a keepalive once a second so the server keeps sending (not a ground station's heartbeat). mavp2p asks ArduPilot vehicles for their telemetry itself, unless started with `--streamreq-disable`.
 
 ## Releasing
 

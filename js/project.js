@@ -166,6 +166,7 @@ window.MB = window.MB || {};
       p.dataOpacity = MB.data ? MB.data.settings.opacity : 1;
       p.liveTraffic = trafficRef();
       p.vesselTraffic = vesselRef();
+      p.drones = droneRef();
       p.placeLabels = Object.assign({}, s.placeLabels);
       p.magneticDeclination = { enabled: !!(s.declination && s.declination.on) };
       p.mgrsGrid = { enabled: !!(s.mgrsGrid && s.mgrsGrid.on) };
@@ -264,6 +265,25 @@ window.MB = window.MB || {};
     MB.ais.applyConf();
   }
 
+  // Live drones (MAVLink): the connection and the display options.
+  function droneRef() {
+    if (!MB.mavlink) return undefined;
+    const cf = MB.mavlink.conf();
+    return { connection: cf.kind, uri: sanitizeUrl(cf.url || ''), enabled: !!cf.on, labels: !!cf.labels, trails: !!cf.trails };
+  }
+
+  function applyDrones(t) {
+    if (!MB.mavlink || !t || typeof t !== 'object') return;
+    const cf = MB.mavlink.conf();
+    const k = MB.mavlink.kinds[t.connection], here = !!k && (!k.desktop || !!window.gengisDesktop), mine = !!cf.url;
+    if (!mine && here && typeof t.uri === 'string' && (t.uri || t.connection === 'listen')) { cf.kind = t.connection; cf.url = t.uri; } // a server set on this device stays (listening needs no address)
+    cf.on = !!t.enabled && (here || mine); // a connection only the desktop app can open stays off in a web page
+    if (typeof t.labels === 'boolean') cf.labels = t.labels;
+    if (typeof t.trails === 'boolean') cf.trails = t.trails;
+    MB.saveSettings();
+    MB.mavlink.applyConf();
+  }
+
   function placeLabels(v, keep) {
     const def = { countries: true, cities: true, marine: true };
     if (!v || typeof v !== 'object') return keep && MB.state.placeLabels ? MB.state.placeLabels : def;
@@ -329,6 +349,7 @@ window.MB = window.MB || {};
     }
     if (p.liveTraffic) applyTraffic(p.liveTraffic);
     if (p.vesselTraffic) applyVessels(p.vesselTraffic);
+    if (p.drones) applyDrones(p.drones);
     if (!opts.keepView && p.view && MB.map) MB.map.setView([p.view.lat, p.view.lng], p.view.zoom);
     MB.emit('units', MB.state.units);
     MB.emit('layers');
