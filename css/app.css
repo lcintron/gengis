@@ -559,7 +559,8 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
     border-radius: 14px 14px 0 0; z-index: 30; box-shadow: 0 -8px 24px rgba(0,0,0,.5); padding-bottom: env(safe-area-inset-bottom); }
   .tabs { position: relative; }
   .tabs button { padding: 12px 6px; }
-  .tabs .sheet-close { margin-left: 0; }
+  .tabs::after { display: none; } /* the close button ends the row, at its right edge (kept in view if the tabs scroll) */
+  .tabs .sheet-close { flex: 0 0 36px; padding: 0; position: sticky; right: 0; background: var(--bg-2); }
   .sheet-close { display: flex; align-items: center; justify-content: center; flex: 0 0 36px; height: 40px; border: 0; background: transparent; color: var(--text-dim); font-size: 14px; }
   .tab-panel { padding: 10px; }
   /* toolbar: compact column that fits a phone's height */
