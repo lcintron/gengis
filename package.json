@@ -3,6 +3,8 @@
   "version": "0.16.2",
   "description": "Standalone map building tool: draw shapes, place SVGs, layers, measurement, search. PWA + Electron.",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Luis Cintron",
   "main": "electron/main.js",
   "scripts": {
     "serve": "node serve.js 8080",
@@ -17,7 +19,7 @@
   "build": {
     "appId": "local.gengis",
     "productName": "GenGIS",
-    "files": ["index.html", "sw.js", "manifest.webmanifest", "css/**", "js/**", "vendor/**", "data/**", "icons/**", "branding/splash/**", "electron/**"],
+    "files": ["LICENSE", "index.html", "sw.js", "manifest.webmanifest", "css/**", "js/**", "vendor/**", "data/**", "icons/**", "branding/splash/**", "electron/**"],
     "directories": { "output": "dist" },
     "artifactName": "GenGIS-${version}-${os}-${arch}.${ext}",
     "icon": "icons/icon-512.png",
