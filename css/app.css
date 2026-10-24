@@ -689,6 +689,7 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 @media (max-width: 640px) {
   .form-grid { grid-template-columns: minmax(0, 1fr); gap: 4px 0; }
   .form-grid label { margin-top: 6px; }
+  .form-grid > span:empty { display: none; } /* the column spacers before notes and buttons */
   .prov-item .pname { flex: 1 1 100%; }
 }
 .badge.warn { color: var(--warn); }
