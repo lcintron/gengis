@@ -118,7 +118,7 @@ window.MB = window.MB || {};
         <div class="section"><h3>Configured providers</h3>
           <div class="btn-row"><button type="button" class="btn small" data-import="1" title="MOBAC map sources, as ATAK takes them: one .xml, or a .zip of many">Import map sources (.xml / .zip)…</button></div>
           ${list.length ? '<div class="prov-list">' + list.map(x => `<div class="prov-item"><span class="pname">${esc(x.name)}</span><span class="badge">${x.type === 'multi' ? 'BLENDED' : x.type.toUpperCase()}</span>${x.group ? `<span class="badge" title="Imported map source">${esc(x.group)}</span>` : ''}${x.url.includes('{key}') ? `<span class="badge${x.key ? '' : ' warn'}">${x.key ? 'key set' : 'needs key'}</span>` : ''}
-            <span class="grow"></span><button class="btn small" data-use="${x.id}">Use</button>${x.type === 'multi' ? '' : `<button class="btn small" data-edit="${x.id}">Edit</button>`}<button class="btn small danger" data-del="${x.id}">Remove</button></div>`).join('') + '</div>'
+            <span class="grow"></span><button class="btn small" data-use="${x.id}">Use</button>${x.type === 'multi' ? '' : MB.iconBtn('edit', 'Edit', `data-edit="${x.id}"`, '', 'Edit ' + x.name)}${MB.iconBtn('trash', 'Remove', `data-del="${x.id}"`, 'danger', 'Remove ' + x.name)}</div>`).join('') + '</div>'
           : '<p class="note">None yet.</p>'}
         </div>
         <div class="section"><h3>${editing ? 'Edit provider' : 'Add provider'}</h3>

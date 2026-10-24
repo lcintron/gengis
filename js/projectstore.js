@@ -500,7 +500,7 @@ window.MB = window.MB || {};
       <p class="dim">Saved automatically on this device as you work.</p>
       <div class="recent-list">${list.length ? list.map(r => `<div class="recent-item${r.id === cur ? ' current' : ''}">
           <div class="recent-main"><b>${esc(r.name)}</b><span class="dim">${esc(when(r.savedAt))} · ${objects(r.objects)}</span></div>
-          ${r.id === cur ? '<span class="badge">open</span>' : `<button class="btn small" data-open="${esc(r.id)}">Open</button><button class="icon-btn mini danger" data-del="${esc(r.id)}" title="Delete from this device" aria-label="Delete ${esc(r.name)} from this device"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>`}
+          ${r.id === cur ? '<span class="badge">open</span>' : MB.iconBtn('open', 'Open', `data-open="${esc(r.id)}"`, '', 'Open ' + r.name) + MB.iconBtn('trash', 'Delete from this device', `data-del="${esc(r.id)}"`, 'danger', 'Delete ' + r.name + ' from this device')}
         </div>`).join('') : '<p class="note">Nothing saved yet.</p>'}</div>
       <h3>Earlier copies of “${esc(MB.state.projectName)}”</h3>
       <div class="recent-list">${snaps.length ? snaps.map(s => `<div class="recent-item">
@@ -510,12 +510,12 @@ window.MB = window.MB || {};
       ${DF.available ? `<h3>Files on this computer</h3>
       <div class="recent-list">${files.length ? files.map(f => `<div class="recent-item">
           <div class="recent-main"><b>${esc(f.name)}</b><span class="dim" title="${esc(f.file)}">${esc(f.folder)} · ${esc(when(f.modified))}</span></div>
-          <button class="btn small" data-file="${esc(f.file)}">Open</button>
+          ${MB.iconBtn('open', 'Open', `data-file="${esc(f.file)}"`, '', 'Open ' + f.name)}
         </div>`).join('') : '<p class="note">Project files you open or save appear here.</p>'}</div>` : ''}
       ${BF.available ? `<h3>Files on this computer</h3>
       <div class="recent-list">${linked.length ? linked.map(f => `<div class="recent-item">
           <div class="recent-main"><b>${esc(f.name)}</b><span class="dim">${f.lastWritten ? esc(when(f.lastWritten)) : ''}</span></div>
-          <button class="btn small" data-linked="${esc(f.id)}">Open</button>
+          ${MB.iconBtn('open', 'Open', `data-linked="${esc(f.id)}"`, '', 'Open ' + f.name)}
         </div>`).join('') : '<p class="note">Project files you open or save from this browser appear here.</p>'}</div>` : ''}`;
     box.querySelectorAll('[data-file]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await DF.openRecent(b.dataset.file); }));
     box.querySelectorAll('[data-linked]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await BF.openRecent(b.dataset.linked); }));

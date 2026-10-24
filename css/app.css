@@ -59,7 +59,8 @@ kbd { background: var(--bg-3); border: 1px solid var(--border); border-bottom-wi
 .search-clear[hidden] { display: none; }
 .search-clear:hover { background: var(--bg-3); color: var(--text); }
 .search-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-#searchBtn { border-radius: 0 8px 8px 0; height: 34px; border-left: 0; }
+#searchBtn { border-radius: 0 8px 8px 0; height: 34px; border-left: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; }
+#searchBtn svg { pointer-events: none; }
 
 .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
@@ -98,6 +99,7 @@ html.tb-right body.presenting #mapwrap .leaflet-top.leaflet-right { top: max(60p
 .btn.ghost { background: transparent; }
 .btn.small { padding: 4px 9px; font-size: 12px; }
 .btn:disabled { opacity: .45; cursor: default; }
+.icon-btn svg { pointer-events: none; } /* a click on the icon is the button's */
 .icon-btn {
   width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px;
   background: var(--bg-3); border: 1px solid var(--border); cursor: pointer; color: var(--text); padding: 0;
@@ -108,6 +110,7 @@ html.tb-right body.presenting #mapwrap .leaflet-top.leaflet-right { top: max(60p
 .icon-btn.mini:hover { background: var(--bg-3); color: var(--text); }
 .icon-btn.mini.on { color: var(--text); }
 .icon-btn.mini.danger:hover { color: var(--danger); }
+@media (hover: none) { .icon-btn.mini.danger { color: rgba(255,92,92,.75); } } /* touch: no hover to show it is a delete */
 
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg button { background: var(--bg); border: 0; padding: 7px 12px; cursor: pointer; color: var(--text-dim); }
@@ -342,7 +345,8 @@ body.presenting .mb-scale-box { display: none !important; }
 .leaflet-popup-content { margin: 10px 12px; }
 .mb-popup-title { font-weight: 600; margin-bottom: 4px; }
 .mb-popup-coords { color: var(--text-dim); font-size: 11px; margin-bottom: 8px; }
-.mb-popup-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.mb-popup-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.mb-popup-actions .grow { flex: 1 1 auto; }
 
 .leaflet-tooltip.mb-measure-label, .leaflet-tooltip.mb-measure-result {
   background: rgba(27,31,39,.88); color: #fff; border: 1px solid rgba(255,255,255,.2); border-radius: 6px; padding: 3px 7px;
@@ -484,6 +488,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .svg-card .name { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 4px; }
 .svg-card .del { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; font-size: 12px; line-height: 20px; padding: 0; display: none; }
 .svg-card:hover .del { display: block; }
+.svg-card .del svg { width: 12px; height: 12px; display: block; margin: auto; pointer-events: none; }
 .drop-zone { border: 1px dashed var(--border); border-radius: 8px; padding: 14px; text-align: center; color: var(--text-dim); margin-bottom: 12px; cursor: pointer; }
 .drop-zone.over { border-color: var(--accent); color: var(--text); background: rgba(29,179,169,.08); }
 
@@ -599,6 +604,8 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .export-actions .btn { flex: 1 1 0; min-height: 42px; }
   .btn, .icon-btn { min-height: 36px; }
   .layer-node .icon-btn.mini, .obj-item .icon-btn.mini, .info-line .icon-btn.mini { width: 28px; height: 28px; min-height: 28px; }
+  /* the icon actions in dialogs, popups and panels: a finger-sized square */
+  :is(.recent-item, .prov-item, .area-head, .mb-popup-actions, .panel-head, .btn-row) .icon-btn.mini { width: 36px; height: 36px; }
 }
 @media (hover: none) and (pointer: coarse) {
   /* touch: bigger hit areas, no hover-only affordances */
@@ -818,7 +825,7 @@ button.link:hover { text-decoration: underline; }
 /* ---------- offline areas ---------- */
 .area-item { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; }
 .area-head { display: flex; align-items: center; gap: 8px; }
-.area-head .aname { font-weight: 500; flex: 1; }
+.area-head .aname { font-weight: 500; flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .progress { height: 8px; background: var(--bg-3); border-radius: 4px; overflow: hidden; margin: 8px 0 4px; }
 .progress .bar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 .warn { color: var(--warn); }
