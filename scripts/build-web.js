@@ -9,7 +9,7 @@ const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'www');
 // what the app needs at run time (as in package.json build.files, without the desktop app's own code)
 const FILES = ['index.html', 'sw.js', 'manifest.webmanifest', 'LICENSE'];
-const DIRS = ['css', 'js', 'vendor', 'data', 'icons', 'branding/splash'];
+const DIRS = ['css', 'js', 'vendor', 'data', 'icons']; // (the splash images go in as Android resources: android-prepare.js)
 
 function copyDir(from, to) {
   fs.mkdirSync(to, { recursive: true });

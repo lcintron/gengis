@@ -29,7 +29,9 @@ edit(path.join(APP, 'src', 'main', 'AndroidManifest.xml'), s => {
     const line = `<uses-permission android:name="android.permission.${p}" />`;
     if (!s.includes(line)) s = s.replace('</manifest>', `    ${line}\n</manifest>`);
   }
-  if (!s.includes('android:usesCleartextTraffic')) s = s.replace('<application', '<application\n        android:usesCleartextTraffic="true"');
+  // (a value a future template sets is replaced, not left in place)
+  if (/android:usesCleartextTraffic="[^"]*"/.test(s)) s = s.replace(/android:usesCleartextTraffic="[^"]*"/, 'android:usesCleartextTraffic="true"');
+  else s = s.replace('<application', '<application\n        android:usesCleartextTraffic="true"');
   return s;
 });
 

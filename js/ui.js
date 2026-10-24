@@ -321,6 +321,10 @@ window.MB = window.MB || {};
         out.innerHTML = `Version ${esc(latest)} is available. <a href="${esc(url)}" target="_blank" rel="noopener">Download it</a>`;
         return;
       }
+      if (MB.native && MB.native.app) { // the Android app updates through Google Play, not by reloading
+        out.innerHTML = `Version ${esc(latest)} is available. <a href="https://play.google.com/store/apps/details?id=com.luiscintron.gengis" target="_blank" rel="noopener">Update on Google Play</a>`;
+        return;
+      }
       out.textContent = `Version ${latest} is available. Downloading…`;
       const got = await fetchNewVersion(latest);
       if (got === 'ready') {

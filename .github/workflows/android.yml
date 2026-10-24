@@ -19,8 +19,6 @@ on:
       - 'js/native.js'
       - '.github/workflows/android.yml'
       - 'package.json'
-  push:
-    branches: [feat/android-app]
 
 permissions:
   contents: read
@@ -62,9 +60,9 @@ jobs:
         working-directory: android
         run: |
           echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          trap 'rm -f "$RUNNER_TEMP/upload.jks"' EXIT   # gone whether the build succeeds or not
           export GENGIS_KEYSTORE="$RUNNER_TEMP/upload.jks"
           ./gradlew --no-daemon bundleRelease assembleRelease
-          rm -f "$RUNNER_TEMP/upload.jks"
       - name: Collect
         run: |
           mkdir -p out
