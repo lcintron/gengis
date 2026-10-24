@@ -90,11 +90,9 @@ window.MB = window.MB || {};
       el.className = 'mb-popup';
       el.innerHTML = `<div class="mb-popup-title">${MB.escapeHtml(label)}</div>
         <div class="mb-popup-coords">${MB.formatLatLng(latlng)}</div>
-        <div class="mb-popup-actions"><button class="btn small" data-act="add">Add marker to layer</button>
-        <button class="btn small ghost" data-act="copy">Copy coords</button>
-        <button class="btn small ghost" data-act="close">Dismiss</button></div>`;
+        <div class="mb-popup-actions">${MB.iconBtn('pinAdd', 'Add a marker here', 'data-act="add"')}${MB.iconBtn('copy', 'Copy coordinates', 'data-act="copy"')}<span class="grow"></span>${MB.iconBtn('close', 'Dismiss', 'data-act="close"')}</div>`;
       el.addEventListener('click', ev => {
-        const act = ev.target.getAttribute('data-act');
+        const btn = ev.target.closest('[data-act]'), act = btn && btn.getAttribute('data-act'); // (the click may land on its icon)
         if (act === 'add') {
           const f = MB.restoreFeature({ type: 'marker', latlng: [latlng.lat, latlng.lng], name: label.split(',')[0], style: MB.newShapeStyle(true) });
           MB.commit('add search marker');

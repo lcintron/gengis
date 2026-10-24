@@ -728,7 +728,7 @@ window.MB = window.MB || {};
       html += `<div class="section"><h3>Vessels shown</h3><div class="data-item adsb-display">
           <div class="subsets ais-types">${TYPE_KEYS.map(k => `<label class="sub${cf.off.includes(k) ? ' off' : ''}"><input type="checkbox" data-ais-type="${k}"${cf.off.includes(k) ? '' : ' checked'}><svg viewBox="0 0 32 32" aria-hidden="true" style="color:${TYPES[k].color}">${SHAPES[k === 'aton' ? 'aton' : 'moving']}</svg>${esc(TYPES[k].name)}</label>`).join('')}</div>
           <div class="subsets"><label class="sub"><input type="checkbox" id="aisStationary"${cf.stationary ? ' checked' : ''}>Moored and at anchor</label><label class="sub"><input type="checkbox" id="aisLabels"${cf.labels ? ' checked' : ''}>Name labels</label></div>
-          <form class="row adsb-row" id="aisFind"><input type="text" data-keep-focus value="${esc(this.findState.q)}" placeholder="Find vessel name, call sign or MMSI" enterkeyhint="search" spellcheck="false"><button class="btn small" type="submit">Find</button></form>
+          <form class="row adsb-row" id="aisFind"><input type="text" data-keep-focus value="${esc(this.findState.q)}" placeholder="Find vessel name, call sign or MMSI" enterkeyhint="search" spellcheck="false"><button class="icon-btn mini" type="submit" title="Find" aria-label="Find">${MB.ICON.search}</button></form>
           <div id="aisFindOut">${this.findState.html}</div>
           <div class="note">Icon color shows the vessel type; a circle is a vessel under ${MOVING} kn. Click a vessel for details.</div>
         </div></div></details>`;

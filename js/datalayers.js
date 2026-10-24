@@ -1571,7 +1571,7 @@ window.MB = window.MB || {};
   }
   // A legend swatch: a color square, or a sample of the chart symbol (css: i.sym-*) in that color.
   const swatch = (c, sym) => sym ? `<i class="sym sym-${esc(sym)}" style="--c:${esc(c)}"></i>` : `<i style="background:${esc(c)}"></i>`;
-  const trashIcon = '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+  const trashIcon = MB.ICON.trash; // (the app's one bin icon: util.js)
 
   MB.data.renderPanelSoon = MB.debounce(() => MB.data.renderPanel(), 250);
 })(window.MB);

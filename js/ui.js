@@ -651,8 +651,8 @@ window.MB = window.MB || {};
     unlock: '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 7.5-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
     up: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 14l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     down: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 10l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    trash: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
-    edit: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    trash: MB.ICON.trash,
+    edit: MB.ICON.edit,
     more: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="5" cy="12" r="1.9" fill="currentColor"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/><circle cx="19" cy="12" r="1.9" fill="currentColor"/></svg>',
     group: '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="3.5" y="3.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="9.5" y="9.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>'
   };
@@ -884,7 +884,7 @@ window.MB = window.MB || {};
     convert: svgIcon('M4 8h14l-3-3M20 16H6l3 3'),
     front: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3" y="9" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="3" width="12" height="12" rx="1.5" fill="currentColor" stroke="currentColor" stroke-width="2"/></svg>`,
     back: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="9" y="3" width="12" height="12" rx="1.5" fill="currentColor" stroke="currentColor" stroke-width="2" opacity=".45"/><rect x="3" y="9" width="12" height="12" rx="1.5" fill="var(--bg-2)" stroke="currentColor" stroke-width="2"/></svg>`,
-    del: svgIcon('M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13'),
+    del: MB.ICON.trash,
     copyStyle: svgIcon('M15 4.5l4.5 4.5M13.5 6l4.5 4.5M17 2.5a2.1 2.1 0 0 1 3 3L17.5 8 16 6.5zM12.5 7.5l-8 8V20h4.5l8-8'), // an eyedropper
     pasteStyle: svgIcon('M5 4h11v4H5zM16 6h3v5h-8v3M10 14h2v7h-2z') // a paint roller
   };
@@ -979,9 +979,9 @@ window.MB = window.MB || {};
     const lines = list.filter(l => l.mb.type === 'line' || l.mb.type === 'measure-line');
     const union = MB.shapeUnion(list); // shown when two or more shapes are selected: joinable when they overlap
     const gid = MB.selectedGroup(), grp = gid && MB.getLayer(gid);
-    panel.innerHTML = `<div class="panel-head"><h3>${grp ? `Group · ${list.length} objects` : `${list.length} objects selected`}</h3><button class="btn small ghost" data-act="clear">Clear</button></div>
+    panel.innerHTML = `<div class="panel-head"><h3>${grp ? `Group · ${list.length} objects` : `${list.length} objects selected`}</h3>${MB.iconBtn('close', 'Clear selection', 'data-act="clear"')}</div>
       ${grp ? `<div class="group-note"><span>${icons.group}</span><span class="grow">Layer “${esc(grp.name)}” is grouped: Move drags it, Scale resizes it, as one.</span></div>
-      <div class="btn-row"><button class="btn small" data-act="ungroup">Ungroup</button><button class="btn small" data-act="dup-layer">Duplicate layer</button></div>` : ''}
+      <div class="btn-row"><button class="btn small" data-act="ungroup">Ungroup</button>${MB.iconBtn('copy', 'Duplicate layer', 'data-act="dup-layer"')}</div>` : ''}
       <div class="feature-list" style="max-height:180px">${list.map(l => `<div class="feature-item"><span class="swatch" style="background:${l.mb.type === 'svg' ? 'transparent' : l.mb.style.color}"></span><span class="fname">${esc(l.mb.name || MB.typeLabels[l.mb.type])}</span><span class="ftype">${MB.typeLabels[l.mb.type]}</span></div>`).join('')}</div>
       <div class="section" style="margin-top:12px"><h3>Lines (${lines.length})</h3>
         <div class="btn-row"><button class="btn small primary" data-act="join"${lines.length < 1 ? ' disabled' : ''}>Join lines</button><button class="btn small" data-act="poly"${lines.length < 1 ? ' disabled' : ''}>Polygon from lines (keep lines)</button></div>
@@ -993,7 +993,7 @@ window.MB = window.MB || {};
       </div>` : ''}
       <div class="section"><h3>All selected</h3>
         <div class="row"><label>Move to layer</label><select id="multiLayer"><option value="">— choose —</option>${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div>
-        <div class="btn-row">${MB.styleClipboard ? `<button class="btn small" data-act="paste-style"${list.some(MB.canPasteStyle) ? '' : ' disabled'} title="The copied style on the selected objects it fits">Paste style (${list.filter(MB.canPasteStyle).length})</button>` : ''}<button class="btn small danger" data-act="delete">Delete ${list.length} objects</button></div>
+        <div class="btn-row">${MB.styleClipboard ? `<button class="btn small" data-act="paste-style"${list.some(MB.canPasteStyle) ? '' : ' disabled'} title="The copied style on the selected objects it fits">Paste style (${list.filter(MB.canPasteStyle).length})</button>` : ''}${MB.iconBtn('trash', 'Delete ' + list.length + ' objects', 'data-act="delete"', 'danger')}</div>
       </div>`;
     $$('[data-act]', panel).forEach(btn => btn.addEventListener('click', () => {
       const act = btn.dataset.act;
@@ -1306,7 +1306,7 @@ window.MB = window.MB || {};
     const isGround = d.mode === 'ground';
     panel.innerHTML = `<div class="panel-head"><h3>Image library</h3><button class="btn small" data-act="upload">+ Upload</button></div>
       <div class="drop-zone" id="svgDrop">Drop SVG, PNG, JPEG, WebP or GIF files here, or click to upload</div>
-      ${lib.length ? '<div class="svg-grid">' + lib.map(l => `<div class="svg-card${MB.svgPlace.svgId === l.id && MB.tools.current === 'svg' ? ' active' : ''}" data-id="${l.id}" title="Click to place on the map"><button class="del" title="Remove from library">×</button><img src="${l.dataUrl}" alt=""><div class="name">${esc(l.name)}</div></div>`).join('') + '</div>'
+      ${lib.length ? '<div class="svg-grid">' + lib.map(l => `<div class="svg-card${MB.svgPlace.svgId === l.id && MB.tools.current === 'svg' ? ' active' : ''}" data-id="${l.id}" title="Click to place on the map"><button class="del" title="Remove from library" aria-label="Remove from library">${MB.ICON.trash}</button><img src="${l.dataUrl}" alt=""><div class="name">${esc(l.name)}</div></div>`).join('') + '</div>'
         : '<p class="note">Upload an image, then click it to place it.</p>'}
       <div class="section" style="margin-top:16px"><h3>Placement defaults</h3>
         <p class="note">Pictures (PNG, JPEG, WebP, GIF) always scale with the map; these sizes are for SVGs.</p>
@@ -1324,7 +1324,7 @@ window.MB = window.MB || {};
     drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); MB.addImageFiles(e.dataTransfer.files); });
     $$('.svg-card', panel).forEach(card => {
       card.addEventListener('click', e => {
-        if (e.target.classList.contains('del')) { MB.removeSvg(card.dataset.id); return; }
+        if (e.target.closest('.del')) { MB.removeSvg(card.dataset.id); return; }
         MB.svgPlace.svgId = card.dataset.id;
         if (MB.tools.current !== 'svg') MB.tools.set('svg'); else MB.emit('tool', 'svg');
       });

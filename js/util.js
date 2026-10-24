@@ -293,6 +293,24 @@ window.MB = window.MB || {};
   // carries data-act="close", so a dialog that closes on [data-act="close"] clicks needs nothing more.
   MB.modalCloseHtml = '<button type="button" class="modal-x" data-act="close" aria-label="Close" title="Close">✕</button>';
 
+  // The everyday actions as icons, one drawing each everywhere in the app (open is Project → Open's folder, edit a
+  // pencil, delete a bin...). An icon button carries its words as its tooltip and its accessible name.
+  const ic = d => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  MB.ICON = {
+    open: ic('<path d="M6 14l1.5-2.9A2 2 0 0 1 9.2 10H20a2 2 0 0 1 1.9 2.5l-1.5 6a2 2 0 0 1-2 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.7.9l.8 1.2a2 2 0 0 0 1.7.9H18a2 2 0 0 1 2 2v2"/>'),
+    edit: ic('<path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/>'),
+    trash: ic('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>'),
+    goto: ic('<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>'),
+    refresh: ic('<path d="M20 12a8 8 0 1 1-2.3-5.6L20 9"/><path d="M20 4v5h-5"/>'),
+    copy: ic('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>'),
+    close: ic('<path d="M6 6l12 12M18 6L6 18"/>'),
+    search: ic('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>'),
+    pinAdd: ic('<path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 1.3-.3 2.5-.8 3.6"/><circle cx="12" cy="10" r="2"/><path d="M18 16v6M15 19h6"/>')
+  };
+  // An icon-only button. attrs: its other attributes as HTML (data-…, disabled); cls: more classes; label: what a
+  // screen reader says when the short tooltip is not enough (in a list: which row, as 'Delete Alpha').
+  MB.iconBtn = (icon, title, attrs, cls, label) => `<button type="button" class="icon-btn mini${cls ? ' ' + cls : ''}" title="${MB.escapeHtml(title)}" aria-label="${MB.escapeHtml(label || title)}"${attrs ? ' ' + attrs : ''}>${MB.ICON[icon]}</button>`;
+
   MB.ask = function (message, yes, no) {
     return new Promise(resolve => {
       const dlg = document.createElement('div');
