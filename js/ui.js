@@ -1659,11 +1659,14 @@ window.MB = window.MB || {};
     });
     const ctl = new Status({ position: 'bottomleft' }).addTo(MB.map);
     MB.statusControl = ctl;
-    ctl._div.innerHTML = '<div class="coords"></div>';
+    // the zoom level after a magnifier, not the word
+    ctl._div.innerHTML = '<span class="coords"></span><span class="zoom"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><span class="sr-only">Zoom </span><span></span></span>';
+    const coords = ctl._div.querySelector('.coords'), zoom = ctl._div.querySelector('.zoom'), zoomText = zoom.lastChild;
     const upd = ll => {
-      const z = MB.map.getZoom();
+      const z = MB.formatZoom(MB.map.getZoom());
       const p = ll || MB.map.getCenter(), g = MB.mgrs && MB.mgrs.on ? MB.mgrs.forward(p.lat, p.lng, 5) : null; // with the MGRS grid shown
-      ctl._div.querySelector('.coords').textContent = MB.formatLatLng(p) + (g ? '  ·  ' + g.text : '') + '  ·  zoom ' + MB.formatZoom(z);
+      coords.textContent = MB.formatLatLng(p) + (g ? '  ·  ' + g.text : '');
+      if (zoomText.textContent !== z) { zoomText.textContent = z; zoom.title = 'Zoom ' + z; } // (screen readers: the hidden "Zoom ")
     };
     let at = null, frame = 0;
     MB.map.on('mousemove', e => { at = e.latlng; if (!frame) frame = requestAnimationFrame(() => { frame = 0; upd(at); }); }); // one write per frame
