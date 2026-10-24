@@ -152,16 +152,12 @@ window.MB = window.MB || {};
     return list.map(a => normalize(a, at)).filter(Boolean);
   }
 
+  // (MB.getText: fetch, or in the Android app Android's own HTTP, which the ADS-B networks and plain-HTTP receivers allow)
   async function getJson(url) {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), TIMEOUT);
-    try {
-      const res = await fetch(url, { cache: 'no-store', signal: ctl.signal });
-      if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
-      const text = await res.text();
-      if (/^\s*</.test(text)) { const e = new Error('web page'); e.html = true; throw e; } // a map page, not data
-      return JSON.parse(text);
-    } finally { clearTimeout(timer); }
+    const res = await MB.getText(url, TIMEOUT);
+    if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+    if (/^\s*</.test(res.text)) { const e = new Error('web page'); e.html = true; throw e; } // a map page, not data
+    return JSON.parse(res.text);
   }
 
   // "192.168.1.50:8080", "pi.local/skyaware/" or a full .../aircraft.json -> the URLs worth trying, in order.
@@ -198,7 +194,8 @@ window.MB = window.MB || {};
     if (err instanceof SyntaxError) return 'That address did not answer with aircraft data.';
     if (err instanceof TypeError) {
       if (!navigator.onLine) return 'Offline';
-      if (src.kind === 'area') return src.name + ' does not accept requests from web pages. This source works in the GenGIS desktop app.';
+      if (MB.native.app) return 'Could not reach ' + (src.kind === 'area' ? src.name : 'the receiver') + '. Check the address and that this phone is on the same network.';
+      if (src.kind === 'area') return src.name + ' does not accept requests from web pages. This source works in the GenGIS desktop and Android apps.';
       if (location.protocol === 'https:' && /^http:/i.test(url || '') && !isLocalHost(url)) {
         return 'This page is served over HTTPS, so the browser blocks a plain-HTTP receiver. Use the desktop app, open GenGIS from http://localhost, or reach the receiver over HTTPS.';
       }

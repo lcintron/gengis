@@ -78,6 +78,14 @@ Data → MAVLink live drones: choose how to connect and enter the address of the
 
 For example `mavp2p serial:/dev/ttyUSB0:57600 tcps:0.0.0.0:5760`. Over UDP to a server, GenGIS sends a keepalive once a second so the server keeps sending (not a ground station's heartbeat). mavp2p asks ArduPilot vehicles for their telemetry itself, unless started with `--streamreq-disable`.
 
+### Android app
+
+The same app as a native Android app ([Capacitor](https://capacitorjs.com)), package `com.luiscintron.gengis`. It reads what a web page may not: the adsb.fi and adsb.lol networks, aircraft look-ups, and dump1090 or AIS-catcher receivers on your network over plain HTTP. Saving a project or exporting a map opens Android's share sheet; the back button closes dialogs and panels first.
+
+- **Build**: the **Android** workflow (Actions → Android → Run workflow, or any pull request that touches the app) builds a debug APK to install for testing, and, once the signing secrets are set, a signed `.aab` for Google Play and a signed `.apk`. Locally: `npm install`, `npx cap add android` (once), `npm run android:sync`, then open `android/` in Android Studio.
+- **Signing** (once): create an upload key with `keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000`, then add the repository secrets `ANDROID_KEYSTORE_BASE64` (the file, base64-encoded), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Keep the key safe: Google Play only accepts updates signed with it.
+- Not in the Android app yet: the aisstream.io stream (it refuses connections from apps' web views as from web pages), and MAVLink over TCP or UDP (the WebSocket bridge works).
+
 ## Releasing
 
 Releases run in CI on demand: **Actions → Release → Run workflow** on `main` (or `gh workflow run release.yml -f bump=auto`). By default, the version bump is derived from conventional commits (or choose one in the form). The workflow tags the release, builds Windows, macOS and Linux installers, publishes a GitHub Release, and deploys the site. **Dry run** only reports the version it would release. `make serve`, `make build` and `make release DRY=1` do the same locally.

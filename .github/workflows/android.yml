@@ -1,0 +1,79 @@
+name: Android
+
+# The Android app (Capacitor): the web app's files in a native shell. Builds on demand and on pull requests that touch
+# the app; the android/ project is generated here each time (npx cap add android), then made GenGIS's own by
+# scripts/android-prepare.js.
+#
+# Outputs (as workflow artifacts):
+# - gengis-debug.apk: installable on a phone for testing (Settings > install unknown apps)
+# - gengis-release.aab and gengis-release.apk: signed with the upload key, for Google Play and direct installs,
+#   only when the signing secrets are set: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+#   ANDROID_KEY_PASSWORD
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'capacitor.config.json'
+      - 'scripts/build-web.js'
+      - 'scripts/android-prepare.js'
+      - 'js/native.js'
+      - '.github/workflows/android.yml'
+      - 'package.json'
+  push:
+    branches: [feat/android-app]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SIGNED: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}   # the upload key is set: signed release builds too
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false   # no lock file to key a cache on
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Android project
+        run: |
+          node scripts/build-web.js
+          npx cap add android
+          npx cap sync android
+          node scripts/android-prepare.js
+      - name: Debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Release AAB and APK (signed)
+        if: env.SIGNED == 'true'
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GENGIS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          GENGIS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          GENGIS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: android
+        run: |
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export GENGIS_KEYSTORE="$RUNNER_TEMP/upload.jks"
+          ./gradlew --no-daemon bundleRelease assembleRelease
+          rm -f "$RUNNER_TEMP/upload.jks"
+      - name: Collect
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk out/gengis-debug.apk
+          if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then cp android/app/build/outputs/bundle/release/app-release.aab out/gengis-release.aab; fi
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then cp android/app/build/outputs/apk/release/app-release.apk out/gengis-release.apk; fi
+          ls -la out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gengis-android
+          path: out/
+          if-no-files-found: error

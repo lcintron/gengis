@@ -188,14 +188,11 @@ window.MB = window.MB || {};
     return r;
   }
 
+  // (MB.getText: fetch, or in the Android app Android's own HTTP, which plain-HTTP receivers allow)
   async function getJson(url) {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), TIMEOUT);
-    try {
-      const res = await fetch(url, { cache: 'no-store', signal: ctl.signal });
-      if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
-      return await res.json();
-    } finally { clearTimeout(timer); }
+    const res = await MB.getText(url, TIMEOUT);
+    if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+    return JSON.parse(res.text);
   }
 
   // "192.168.1.50:8100" or a full .../ships.json -> the URLs worth trying, in order.
@@ -219,8 +216,9 @@ window.MB = window.MB || {};
     if (err && err.status) return src.name + ' answered ' + err.message;
     if (err instanceof TypeError) {
       if (!navigator.onLine) return 'Offline';
+      if (MB.native.app) return 'Could not reach the receiver. Check the address, that this phone is on the same network, and that AIS-catcher\'s web viewer is on (-N).';
       if (location.protocol === 'https:' && /^http:/i.test(url || '') && !isLocalHost(url)) {
-        return 'This page is served over HTTPS, so the browser blocks a plain-HTTP receiver. Use the desktop app, open GenGIS from http://localhost, or reach the receiver over HTTPS.';
+        return 'This page is served over HTTPS, so the browser blocks a plain-HTTP receiver. Use the desktop or Android app, open GenGIS from http://localhost, or reach the receiver over HTTPS.';
       }
       return 'Could not read the receiver. Check the address, and that AIS-catcher\'s web viewer is on (-N).';
     }
