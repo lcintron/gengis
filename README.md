@@ -29,6 +29,7 @@ A free map builder that runs in the browser (installable, works offline) or as a
 - **Measure** distances and areas in metric, imperial or nautical units, with a scale bar. A circle shows its radius while you draw it, and objects can show their length, perimeter, area, radius or position on the map.
 - **Layers** with show/hide, lock and draw order, duplicate, and **groups**: a grouped layer's objects are selected, moved, resized and deleted together. Locked objects can still be selected and inspected. Undo/redo, right-click menus, presenter mode with full screen. Cast to a screen (project menu) mirrors the map on a TV in presenter mode. The toolbar sits on the left or the right of the map (Settings → Interface).
 - **Projects** save automatically on the device as you work, with recent projects and earlier copies to restore; save/open as `.gengis.json`; GeoJSON import/export; the map exported as a PNG, JPEG or PDF (up to 4× resolution, paper size and margins). In the desktop app each named project is also kept as a file (`Documents\GenGIS` by default).
+- **Cloud sync** (web app): keep named projects in your own OneDrive (personal, or Microsoft 365 work or school) and open them on your other devices. Changes go up a few seconds after you make them and come down when another device changes them; a project edited in two places is never overwritten: you choose. No GenGIS server: files go straight between your device and your account (`OneDrive/Apps/GenGIS`).
 - **Annotations**: draw freehand on the map with a stylus, or Shift + drag with a mouse or touchpad (pen or highlighter, color and width; an eraser in four sizes, or the stylus's own eraser end), into an Annotations layer; fingers and the mouse keep moving the map.
 - **More base maps, the ATAK way**: import MOBAC map sources (one .xml, or a .zip of many, such as the [ATAK-Maps](https://github.com/joshuafuller/ATAK-Maps) set): tile servers (including Bing quadkeys and rotating servers), WMS layers (EPSG:3857 or 4326) and blended multi-layer maps. They join the base map list, grouped by folder; sources that need an API key say so.
 - **Search** addresses, places and coordinates; find points of interest; center on **your location**, with a beam showing which way the device points (compass, or direction of travel).
@@ -77,6 +78,22 @@ Data → MAVLink live drones: choose how to connect and enter the address of the
 | WebSocket | `tcps:0.0.0.0:5760`, plus `websockify 5761 localhost:5760` | `192.168.1.20:5761` | desktop app, and the web app over `http://` (over HTTPS: `wss://`, or on `localhost`) |
 
 For example `mavp2p serial:/dev/ttyUSB0:57600 tcps:0.0.0.0:5760`. Over UDP to a server, GenGIS sends a keepalive once a second so the server keeps sending (not a ground station's heartbeat). mavp2p asks ArduPilot vehicles for their telemetry itself, unless started with `--streamreq-disable`.
+
+### Cloud sync: setting up OneDrive (once, for whoever hosts GenGIS)
+
+Cloud sync stays hidden until the app has a Microsoft Entra app registration:
+
+1. [entra.microsoft.com](https://entra.microsoft.com) → App registrations → New registration: name **GenGIS**, supported accounts **any Entra ID tenant and personal Microsoft accounts**.
+2. Authentication → Add a platform → **Single-page application**, redirect URIs `https://g2.luiscintron.com/` and `http://localhost:8080/`. Leave implicit grant off; no client secret.
+3. API permissions → Microsoft Graph, delegated: `Files.ReadWrite.AppFolder`, `offline_access`, `openid`, `profile`, `email`. Don't grant admin consent: users consent for themselves.
+4. Branding: name, logo, home page and privacy page on your domain, then **publisher verification** (a free Microsoft partner ID), which lets more Microsoft 365 organizations allow the app.
+5. Put the Application (client) ID in `CLIENT_ID` in `js/cloud-onedrive.js`.
+
+To try it locally first: `localStorage.setItem('gengis.dev.onedriveClientId', '<client id>')` on `http://localhost:8080`. In a web browser Microsoft keeps a sign-in for 24 hours; GenGIS renews it on start-up, usually without asking.
+
+## Tests
+
+`npm test` runs the automated tests (no installs): cloud sync's sign-in, the OneDrive adapter, the sync engine, and load, stress, chaos and performance runs against a fake Microsoft. They run on every pull request.
 
 ## Releasing
 

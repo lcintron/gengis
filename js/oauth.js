@@ -41,8 +41,10 @@ window.MB = window.MB || {};
     return null;
   }
 
-  // The address the provider sends the code back to: this page, without its parameters (registered as is).
-  const redirectUri = () => location.origin + location.pathname;
+  // The address the provider sends the code back to: this page, without its parameters or "index.html" (registered as
+  // is: "https://site/" serves the same page as "https://site/index.html").
+  const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/i, '');
+  const ios = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
   MB.oauth = {
     challenge, idClaims, random, redirectUri,
@@ -51,7 +53,8 @@ window.MB = window.MB || {};
     // Resolves { url, pending } without going there (begin() goes).
     async prepare(cfg, info) {
       const verifier = random(48), state = random(24);
-      const pending = Object.assign({ state, verifier, provider: cfg.provider, redirectUri: cfg.redirectUri || redirectUri(), at: Date.now() }, info || {});
+      // (the page's own parameters, ?lat=… or ?q=…, come back with it)
+      const pending = Object.assign({ state, verifier, provider: cfg.provider, redirectUri: cfg.redirectUri || redirectUri(), search: typeof location !== 'undefined' ? location.search : '', at: Date.now() }, info || {});
       const q = new URLSearchParams(Object.assign({
         client_id: cfg.clientId, response_type: 'code', redirect_uri: pending.redirectUri, scope: cfg.scopes.join(' '),
         state, code_challenge: await challenge(verifier), code_challenge_method: 'S256'
@@ -80,8 +83,12 @@ window.MB = window.MB || {};
       }
       const pending = readPending();
       try { localStorage.removeItem(PENDING); } catch (e) { /* ignore */ }
-      if (!pending) return { pending: null, error: 'no_pending', description: 'This sign-in was not started in this browser (or took too long). Connect again.' };
+      if (!pending) return { pending: null, error: 'no_pending', description: ios() ? 'Sign-in did not come back to the app it started in. On iPhone and iPad, connect from Safari (not the Home Screen app).' : 'This sign-in was not started in this browser (or took too long). Connect again.' };
       if (pending.state !== out.state) return { pending: null, error: 'state_mismatch', description: 'The sign-in answer did not match the request. Connect again.' };
+      // the page's own parameters, as they were when the sign-in started
+      if (search == null && pending.search && !params.toString()) {
+        try { history.replaceState(history.state, '', location.pathname + pending.search + location.hash); } catch (e) { /* ignore */ }
+      }
       return out.error ? { pending, error: out.error, description: out.description } : { pending, code: out.code };
     },
 

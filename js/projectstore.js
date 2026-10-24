@@ -349,7 +349,7 @@ window.MB = window.MB || {};
     return run(['projects', 'snapshots'], 'readwrite', async (projects, snaps) => {
       projects.delete(id);
       (await snapsOf(snaps, id)).forEach(s => snaps.delete(s.key));
-    }).then(() => { delete lastSnap[id]; }).catch(() => {});
+    }).then(() => { delete lastSnap[id]; MB.emit('project-removed', id); }).catch(() => {});
   };
 
   // "Reset everything": the open project's saved copies go; other projects stay.

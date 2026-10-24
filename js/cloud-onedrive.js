@@ -24,6 +24,7 @@ window.MB = window.MB || {};
   const CHUNK = 16 * 320 * 1024;        // 5 MiB: upload session chunks must be multiples of 320 KiB
   const PERSONAL_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad'; // personal Microsoft accounts' tenant
   const SELECT = 'id,name,eTag,size,lastModifiedDateTime,file,deleted';
+  const MAX_READ = 200 * 1024 * 1024; // bytes: a cloud file larger than this is not read (not a project anyone made here)
 
   const enc = name => encodeURIComponent(name).replace(/'/g, '%27');
 
@@ -126,9 +127,12 @@ window.MB = window.MB || {};
     },
 
     meta: (ctx, fileId) => graph(ctx, 'GET', '/me/drive/items/' + enc(fileId) + '?$select=' + SELECT).then(item),
+    // A file in GenGIS's folder by its name, or null.
+    byName: (ctx, name) => graph(ctx, 'GET', ROOT + ':/' + enc(name) + ':?$select=' + SELECT).then(item, e => { if (e.status === 404) return null; throw e; }),
 
     async get(ctx, fileId) {
       const meta = await OD.meta(ctx, fileId);
+      if (meta.size > MAX_READ) { const err = new Error('The cloud file is too large to open (' + Math.round(meta.size / 1048576) + ' MB)'); err.code = 'tooLarge'; throw err; }
       const res = await graph(ctx, 'GET', '/me/drive/items/' + enc(fileId) + '/content', { raw: true });
       return Object.assign(meta, { text: await res.text() });
     },
@@ -156,7 +160,10 @@ window.MB = window.MB || {};
 
     // What changed in GenGIS's folder since cursor (none: everything there now). Resolves { items, cursor, reset }:
     // reset when the cursor is too old (the caller starts again without one).
+    // Where an account's drive does not offer the folder's change feed, the whole folder is listed each time instead
+    // (one request per 200 files): { items, cursor: 'list', full: true }.
     async changes(ctx, cursor) {
+      if (cursor === 'list') return { items: await OD.list(ctx), cursor: 'list', full: true, reset: false };
       const items = [];
       let next = cursor || ROOT + '/delta?$select=' + SELECT, last = null;
       try {
@@ -171,6 +178,7 @@ window.MB = window.MB || {};
         }
       } catch (e) {
         if (e.status === 410 || e.code === 'resyncRequired') return { items: [], cursor: null, reset: true };
+        if (!cursor && [400, 403, 404, 405, 501].includes(e.status)) return { items: await OD.list(ctx), cursor: 'list', full: true, reset: false }; // no feed for this folder
         throw e;
       }
       return { items, cursor: last, reset: false };

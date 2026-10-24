@@ -6,7 +6,7 @@ const path = require('path');
 const vm = require('vm');
 const crypto = require('crypto');
 
-const ROOT = path.join(__dirname, '..');
+const ROOT = process.env.GENGIS_ROOT || path.join(__dirname, '..'); // (GENGIS_ROOT: run the tests against another copy of the code)
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const LOGIN = 'https://login.microsoftonline.com/common/oauth2/v2.0';
 const UPLOAD = 'https://upload.test/session/';
@@ -41,10 +41,14 @@ function makeServer(opts) {
     latency: opts.latency || 0,
     now: () => Date.now(),
     tooOld: new Set(),         // delta tokens answered with 410
+    noDelta: false,            // this drive offers no change feed for the folder (403)
+    omitEtag: false,           // write answers come without an eTag
+    hidden: new Set(),         // file ids a listing does not show yet (it lags behind a write)
+    sizeOf: new Map(),         // file id -> size reported in its metadata (a huge file without sending one)
     chunkSizes: []
   };
   const etag = f => `"{${f.id}},${f.version}"`;
-  const item = f => ({ id: f.id, name: f.name, eTag: etag(f), size: f.content.length, lastModifiedDateTime: new Date(f.modified).toISOString(), file: { mimeType: 'application/json' } });
+  const item = f => ({ id: f.id, name: f.name, eTag: etag(f), size: S.sizeOf.get(f.id) || f.content.length, lastModifiedDateTime: new Date(f.modified).toISOString(), file: { mimeType: 'application/json' } });
   const touch = f => { f.version++; f.modified = S.now(); S.log.push({ seq: ++S.seq, id: f.id }); };
   const byName = name => [...S.files.values()].find(f => !f.deleted && f.name.toLowerCase() === name.toLowerCase());
   S.create = (name, content) => {
@@ -118,7 +122,7 @@ function makeServer(opts) {
     let m;
     if (p === '/me/drive/special/approot' && method === 'GET') return json(200, { id: 'root', name: 'GenGIS' });
     if (p === '/me/drive/special/approot/children' && method === 'GET') {
-      const page = +(u.searchParams.get('page') || 0), all = S.live().sort((a, b) => a.id.localeCompare(b.id));
+      const page = +(u.searchParams.get('page') || 0), all = S.live().filter(f => !S.hidden.has(f.id)).sort((a, b) => a.id.localeCompare(b.id));
       const slice = all.slice(page * S.pageSize, (page + 1) * S.pageSize);
       const out = { value: slice.map(item) };
       if ((page + 1) * S.pageSize < all.length) out['@odata.nextLink'] = GRAPH + '/me/drive/special/approot/children?page=' + (page + 1);
@@ -126,19 +130,26 @@ function makeServer(opts) {
     }
     if (p === '/me/drive/special/approot/delta' && method === 'GET') {
       const token = u.searchParams.get('token'), from = token == null ? 0 : +token, page = +(u.searchParams.get('page') || 0);
+      if (S.noDelta) return gerr(403, 'accessDenied', 'delta is not supported on this folder');
       if (token != null && S.tooOld.has(token)) return gerr(410, 'resyncRequired');
       const upTo = u.searchParams.has('upto') ? +u.searchParams.get('upto') : S.seq;
       const ids = [...new Set(S.log.filter(e => e.seq > from && e.seq <= upTo).map(e => e.id))];
-      const items = ids.map(id => S.files.get(id)).filter(f => token != null || !f.deleted)
+      const items = ids.map(id => S.files.get(id)).filter(f => !S.hidden.has(f.id) && (token != null || !f.deleted))
         .map(f => f.deleted ? { id: f.id, deleted: { state: 'deleted' } } : item(f));
       const slice = items.slice(page * S.pageSize, (page + 1) * S.pageSize), out = { value: slice };
       if ((page + 1) * S.pageSize < items.length) out['@odata.nextLink'] = GRAPH + '/me/drive/special/approot/delta?' + (token != null ? 'token=' + token + '&' : '') + 'upto=' + upTo + '&page=' + (page + 1);
       else out['@odata.deltaLink'] = GRAPH + '/me/drive/special/approot/delta?token=' + upTo;
       return json(200, out);
     }
+    if ((m = /^\/me\/drive\/special\/approot:\/(.+):$/.exec(p)) && method === 'GET') {
+      const f = byName(m[1]);
+      return f ? json(200, item(f)) : gerr(404, 'itemNotFound');
+    }
     if ((m = /^\/me\/drive\/special\/approot:\/(.+):\/content$/.exec(p)) && method === 'PUT') {
       if (byName(m[1])) return gerr(409, 'nameAlreadyExists');
-      return json(201, item(S.create(m[1], Buffer.from(o.body))));
+      const made = item(S.create(m[1], Buffer.from(o.body)));
+      if (S.omitEtag) delete made.eTag;
+      return json(201, made);
     }
     if ((m = /^\/me\/drive\/special\/approot:\/(.+):\/createUploadSession$/.exec(p)) && method === 'POST') {
       if (byName(m[1])) return gerr(409, 'nameAlreadyExists');
@@ -166,7 +177,9 @@ function makeServer(opts) {
       if (method === 'PUT') {
         if (ifMatch && ifMatch !== etag(f)) return gerr(412, 'resourceModified');
         f.content = Buffer.from(o.body); touch(f);
-        return json(200, item(f));
+        const out = item(f);
+        if (S.omitEtag) delete out.eTag;
+        return json(200, out);
       }
     }
     if ((m = /^\/me\/drive\/items\/([^/]+)\/createUploadSession$/.exec(p)) && method === 'POST') {
@@ -218,7 +231,7 @@ function makeApp(o) {
     getItem: k => (device.ls.has(k) ? device.ls.get(k) : null), setItem: (k, v) => device.ls.set(k, String(v)), removeItem: k => device.ls.delete(k)
   };
   let search = '';
-  const state = { projectId: o.open || null, projectName: '' };
+  const state = { projectId: o.open || null, projectName: '', current: null };
   const projects = device.projects;
   const P = {
     dirtyFlag: false,
@@ -232,6 +245,7 @@ function makeApp(o) {
     flush: async () => true,
     beforeOpen: async () => true,
     markFileBacked: () => { const r = projects.recs.get(state.projectId); if (r) r.fileBacked = true; },
+    remove: async id => { projects.recs.delete(id); MB.emit('project-removed', id); },
     list_: null
   };
   const MB = {
@@ -243,7 +257,9 @@ function makeApp(o) {
     emit: (e, d) => (events[e] || []).forEach(fn => fn(d)),
     toast: m => toasts.push(m),
     escapeHtml: s => String(s),
-    loadProject: (data) => { loaded.push(data); state.projectId = data.id; state.projectName = data.name; }
+    loadProject: (data) => { loaded.push(data); state.projectId = data.id; state.projectName = data.name; state.current = JSON.parse(JSON.stringify(data)); },
+    // what the real app saves of the open project: with its own version, and this device's own live-traffic server
+    serializeProject: () => Object.assign(JSON.parse(JSON.stringify(state.current || {})), { generator: { name: 'GenGIS', version: o.version || '1.0' }, liveTraffic: { sources: [{ kind: 'receiver', uri: 'http://' + tabId + '.local:8080' }] } })
   };
   const win = { MB, gengisDesktop: undefined };
   const ctx = {
@@ -252,7 +268,7 @@ function makeApp(o) {
     setTimeout, clearTimeout, setInterval: () => 0, clearInterval: () => {},
     location: { protocol: 'https:', origin: 'https://g2.test', pathname: '/', hash: '', get search() { return search; }, assign: () => {} },
     history: { state: null, replaceState: (s, t, url) => { search = url.includes('?') ? url.slice(url.indexOf('?')) : ''; } },
-    navigator: { onLine: true },
+    navigator: { onLine: true, userAgent: o.userAgent || 'Mozilla/5.0 (Windows NT 10.0) Chrome/130', platform: 'Win32', maxTouchPoints: 0 },
     document: { visibilityState: 'visible', addEventListener: (e, fn) => { (listeners[e] = listeners[e] || []).push(fn); } },
     fetch: server.fetch
   };
@@ -268,9 +284,12 @@ function makeApp(o) {
     MB, C, P, device, server, toasts, loaded, tabId, events, listeners, wentTo: null,
     setSearch: s => { search = s; },
     setOnline: v => { online = v; ctx.navigator.onLine = v; if (v) (listeners.online || []).forEach(fn => fn()); },
-    open: id => { state.projectId = id; const r = projects.recs.get(id); state.projectName = r ? r.name : ''; device.locksHeld.set(id, tabId); },
+    open: id => { state.projectId = id; const r = projects.recs.get(id); state.projectName = r ? r.name : ''; state.current = r ? JSON.parse(JSON.stringify(r.data)) : null; device.locksHeld.set(id, tabId); },
+    // the autosave the real app makes after a project is loaded or edited
+    autosave: () => { const p = MB.serializeProject(); projects.put(p); MB.emit('saved', p.id); },
     // a background save of a project of this device (what projectstore emits as 'saved')
-    save: (data, opts) => { projects.put(data, !(opts && opts.draft)); MB.emit('saved', data.id); },
+    save: (data, opts) => { if (state.projectId === data.id) state.current = JSON.parse(JSON.stringify(data)); projects.put(data, !(opts && opts.draft)); MB.emit('saved', data.id); },
+    getSearch: () => search,
     // the whole sign-in round trip: to the provider (stubbed) and back with a code
     async connect() {
       await C.connect('onedrive');

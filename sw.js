@@ -99,7 +99,8 @@ self.addEventListener('fetch', e => {
 
   if (url.origin === location.origin) {
     const fromNetwork = () => fetch(req).then(res => {
-      if (res && res.ok) caches.open(SHELL_CACHE).then(c => c.put(req, res.clone()));
+      // (a page address with parameters, such as a sign-in coming back with its code, is never kept)
+      if (res && res.ok && !(req.mode === 'navigate' && url.search)) caches.open(SHELL_CACHE).then(c => c.put(req, res.clone()));
       return res;
     });
     if (DEV) {

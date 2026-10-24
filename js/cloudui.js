@@ -71,7 +71,9 @@ window.MB = window.MB || {};
     const box = dlg.querySelector('.modal-box'), c = C();
     const offered = c.offered(), accs = c.accounts;
     const list = accs.length ? await MB.projects.list() : [];
-    const focusKey = document.activeElement && box.contains(document.activeElement) ? document.activeElement.dataset.key : null;
+    const active = document.activeElement && box.contains(document.activeElement) ? document.activeElement : null;
+    if (active && active.tagName === 'SELECT') { clearTimeout(renderTimer); renderTimer = setTimeout(U.render, 600); return; } // a list being chosen from: after
+    const focusKey = active ? active.dataset.key : null, scroll = box.scrollTop;
     let html = `${MB.modalCloseHtml}<div class="cloud-head"><span class="cloud-head-ic">${ICON}</span><h2 id="cloudTitle">Cloud sync</h2>
         ${tip('Your named projects in your own cloud storage, on all your devices. They stay saved here too and work offline. No GenGIS server; API keys never leave this device.')}</div>
       ${c.lastError ? `<div class="cloud-error" role="alert">${I.error}<span>${esc(c.lastError)}</span>${iconBtn('data-act="dismiss"', '✕', 'Dismiss')}</div>` : ''}`;
@@ -85,7 +87,7 @@ window.MB = window.MB || {};
         const initial = (a.name || a.email || '?').trim().charAt(0).toUpperCase();
         html += `<div class="cloud-acc${a.state === 'signin' ? ' out' : ''}">
           <span class="cloud-avatar" aria-hidden="true">${esc(initial)}</span>
-          <div class="cloud-acc-main"><b>${esc(a.name || a.email)}</b><small>${esc(p.name)} · ${a.kind === 'personal' ? 'Personal' : 'Work or school'}</small></div>
+          <div class="cloud-acc-main"><b>${esc(a.name || a.email)}</b><small>${esc(p.name)} · ${a.kind === 'personal' ? 'Personal' : 'Work or school'}</small>${a.pullError && a.state !== 'signin' ? `<small class="cloud-warn" title="${esc(a.pullError)}">${I.error} Can't check for changes</small>` : ''}</div>
           ${a.state === 'signin' ? `<button type="button" class="btn small primary" data-signin="${esc(a.id)}" data-key="s-${esc(a.id)}" title="${esc(a.error || 'Signed out')}">Sign in</button>` : iconBtn('data-act="syncnow" data-key="sync"', I.refresh, 'Sync now')}
           ${iconBtn(`data-disconnect="${esc(a.id)}" data-key="d-${esc(a.id)}"`, I.logout, 'Disconnect')}
         </div>
@@ -103,8 +105,9 @@ window.MB = window.MB || {};
       });
     }
     box.innerHTML = html;
+    box.scrollTop = scroll;
     bind(box);
-    if (focusKey) { const el = box.querySelector(`[data-key="${focusKey}"]`); if (el) el.focus(); }
+    if (focusKey) { const el = box.querySelector(`[data-key="${CSS.escape(focusKey)}"]`); if (el) el.focus(); }
   };
 
   function projectRow(r, accs) {
@@ -126,10 +129,12 @@ window.MB = window.MB || {};
         <div class="cloud-main"><b>${esc(r.name)}</b><small>${sub}</small></div>${where}${conflict}</div>`;
   }
 
+  const connect = (pid, acc) => C().connect(pid, acc).catch(e => MB.toast('Could not start the sign-in: ' + (e.message || e), 6000));
+
   function bind(box) {
     const on = (sel, fn) => box.querySelectorAll(sel).forEach(el => el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'click', () => fn(el)));
-    on('[data-connect]', b => C().connect(b.dataset.connect));
-    on('[data-signin]', b => { const a = C().accounts.find(x => x.id === b.dataset.signin); C().connect(a.provider, a); });
+    on('[data-connect]', b => connect(b.dataset.connect));
+    on('[data-signin]', b => { const a = C().accounts.find(x => x.id === b.dataset.signin); connect(a.provider, a); });
     on('[data-disconnect]', async b => {
       const a = C().accounts.find(x => x.id === b.dataset.disconnect);
       if (await MB.ask('Disconnect ' + accLabel(a) + '?\n\nNothing is deleted: files stay in ' + provName(a.provider) + ', projects stay here.', 'Disconnect', 'Cancel')) C().disconnect(a.id);
@@ -156,7 +161,7 @@ window.MB = window.MB || {};
     btn.addEventListener('click', U.open);
     act.addEventListener('click', () => {
       const a = C().accountOf(MB.state.projectId);
-      if (act.dataset.do === 'signin' && a) C().connect(a.provider, a); else U.open();
+      if (act.dataset.do === 'signin' && a) connect(a.provider, a); else U.open();
     });
     const paint = () => {
       const c = C(), st = c.ready && c.accounts.length ? c.status(MB.state.projectId) : null, a = c.accountOf(MB.state.projectId);
@@ -177,6 +182,7 @@ window.MB = window.MB || {};
       if (isOpen()) { clearTimeout(renderTimer); renderTimer = setTimeout(U.render, 150); }
     };
     MB.on('cloudsync', paint);
+    MB.on('cloud-return', () => U.open());
     MB.on('project', paint);
     paint();
   }

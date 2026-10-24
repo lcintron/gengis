@@ -74,10 +74,13 @@ window.MB = window.MB || {};
   const store = () => env.store || (env.store = idbStore());
 
   /* ---------- project content: what counts as a change ---------- */
-  // The project without what changes on its own (the save time, the view): a pan is not worth an upload.
+  // The project without what changes on its own (the save time, the view: a pan is not worth an upload) and without
+  // what each device keeps its own (the app's version; live traffic and drone servers set on a device stay there):
+  // two devices must not upload back and forth over those.
+  const LOCAL_ONLY = ['savedAt', 'view', 'generator', 'liveTraffic', 'vesselTraffic', 'drones'];
   const sorted = v => Array.isArray(v) ? v.map(sorted)
     : (v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = sorted(v[k]); return o; }, Object.create(null)) : v);
-  function canon(p) { const c = sorted(p || {}); delete c.savedAt; delete c.view; return JSON.stringify(c); }
+  function canon(p) { const c = sorted(p || {}); LOCAL_ONLY.forEach(k => { delete c[k]; }); return JSON.stringify(c); }
   async function hashOf(p) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canon(p)));
     return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
@@ -88,6 +91,7 @@ window.MB = window.MB || {};
   function fileName(name, n) {
     let base = String(name || 'map').replace(/[\\/:*?"<>|#%\u0000-\u001f]+/g, '_').replace(/[. ]+$/, '').trim() || 'map';
     if (base.length > 120) base = base.slice(0, 120).trim();
+    if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(base)) base = '_' + base; // names Windows (and so OneDrive) reserve
     return base + (n > 1 ? ' (' + n + ')' : '') + MB.PROJECT_EXT;
   }
   C.fileName = fileName;
@@ -99,7 +103,7 @@ window.MB = window.MB || {};
 
   async function readAccounts() {
     const all = await store().all('accounts');
-    C.accounts = all.map(a => ({ id: a.id, provider: a.provider, name: a.name, email: a.email, kind: a.kind, state: a.state || 'ok', error: a.error || '', auto: a.auto !== false }));
+    C.accounts = all.map(a => ({ id: a.id, provider: a.provider, name: a.name, email: a.email, kind: a.kind, state: a.state || 'ok', error: a.error || '', auto: a.auto !== false, pullError: a.pullError || '' }));
     return all;
   }
   async function readLinks() {
@@ -223,12 +227,18 @@ window.MB = window.MB || {};
             l.fileId = null; // deleted in the cloud while edited here: written again as a new file
           }
         }
-        if (!l.fileId) out = await create(prov, ctx, rec.name, text, onProgress);
+        if (!l.fileId) out = await create(prov, ctx, rec, text, onProgress);
         else if (!out) out = { fileId: l.fileId, name: l.name, etag: l.etag };
         // the project was renamed here: its file follows (a name taken in the folder gets a number)
-        if (renamed && l.fileId) out = await renameTo(prov, ctx, out, rec.name);
+        if (renamed && l.fileId && !out.adopted) out = await renameTo(prov, ctx, out, rec.name);
+        if (!out.etag) out = Object.assign(out, await prov.meta(ctx, out.fileId)); // never left without the version to guard the next write
       });
       delete C.progress[projectId];
+      if (out.adopted) { // this project's own file was already there (another device, or before a reconnect)
+        Object.assign(l, { fileId: out.fileId, name: out.name, nameFor: rec.name, etag: out.etag, remoteEtag: null });
+        if (out.hash === hash) { Object.assign(l, { hash, syncedAt: env.now() }); retries.delete(projectId); setState(l, 'synced'); await saveLink(l); return; }
+        l.hash = null; l.state = 'conflict'; l.error = ''; await saveLink(l); notify(l, 'conflict'); emit(); return;
+      }
       Object.assign(l, { fileId: out.fileId, name: out.name, nameFor: rec.name, etag: out.etag, hash, syncedAt: env.now(), remoteEtag: null });
       retries.delete(projectId);
       setState(l, 'synced');
@@ -240,12 +250,27 @@ window.MB = window.MB || {};
   }
   C._push = push;
 
-  async function create(prov, ctx, name, text, onProgress) {
+  // A new file for a project. A name already taken in the folder may be this very project's file (opened on another
+  // device, or synced before a disconnect): then that file is adopted, not duplicated. Otherwise the next number.
+  async function create(prov, ctx, rec, text, onProgress) {
     for (let n = 1; n < 50; n++) {
-      try { return await prov.put(ctx, { name: fileName(name, n), text, onProgress }); }
-      catch (e) { if (e.status !== 409) throw e; } // the name is taken in the folder: the next number
+      const name = fileName(rec.name, n);
+      try { return await prov.put(ctx, { name, text, onProgress }); }
+      catch (e) {
+        if (e.status !== 409) throw e;
+        const mine = await sameProject(prov, ctx, name, rec.id);
+        if (mine) return mine;
+      }
     }
     throw new Error('Could not find a free file name');
+  }
+  async function sameProject(prov, ctx, name, projectId) {
+    const meta = await prov.byName(ctx, name).catch(() => null);
+    if (!meta) return null;
+    let data;
+    try { const f = await prov.get(ctx, meta.fileId); data = JSON.parse(f.text); Object.assign(meta, { etag: f.etag }); } catch (e) { return null; }
+    if (!data || !MB.isProject(data) || data.id !== projectId) return null;
+    return Object.assign(meta, { adopted: true, hash: await hashOf(data) });
   }
   async function renameTo(prov, ctx, out, name) {
     for (let n = 1; n < 50; n++) {
@@ -265,7 +290,9 @@ window.MB = window.MB || {};
     if (e.status === 507 || e.code === 'quotaLimitReached' || e.code === 'insufficientStorage') { setState(l, 'error', 'The cloud storage is full'); await saveLink(l); notify(l, 'error'); return; }
     setState(l, transient ? 'pending' : 'error', e.message);
     await saveLink(l);
-    if (transient) retryLater(l, e); else notify(l, 'error');
+    if (!transient) { notify(l, 'error'); return; }
+    retryLater(l, e);
+    if ((retries.get(l.projectId) || 0) >= 6) notify(l, 'retrying'); // still trying, a few minutes apart: said once
   }
 
   // One message per project and state change (no toast storms).
@@ -276,6 +303,7 @@ window.MB = window.MB || {};
     const name = (l.nameFor || (l.name || '').replace(/\.gengis\.json$/i, '')) || 'A project';
     if (what === 'conflict') MB.toast('"' + name + '" was edited in two places. Tap Resolve.', 6000);
     else if (what === 'error') MB.toast('Could not sync "' + name + '": ' + (l.error || 'error') + '. Still saved here.', 6000);
+    else if (what === 'retrying') MB.toast('Can\'t reach the cloud for "' + name + '". Still saved here; trying again.', 6000);
   }
 
   /* ---------- pulling ---------- */
@@ -287,21 +315,31 @@ window.MB = window.MB || {};
     pulling = env.lock(async () => {
       for (const acc of await store().all('accounts')) {
         if (acc.state === 'signin' || !env.online()) continue;
-        try { await pullAccount(acc); } catch (e) { if (e.code !== 'signin' && e.code !== 'network') console.warn('Cloud sync: checking for changes', e); }
+        let problem = '';
+        try { await pullAccount(acc); }
+        catch (e) { if (e.code !== 'signin' && e.code !== 'network') { problem = e.message || String(e); console.warn('Cloud sync: checking for changes', e); } }
+        // a check that keeps failing shows on the account (changes from other devices are not arriving)
+        const fresh = await store().get('accounts', acc.id);
+        if (fresh && (fresh.pullError || '') !== problem) { fresh.pullError = problem; await store().put('accounts', fresh); }
       }
       await settleRemote();
+      await readAccounts(); await readLinks(); // what other tabs changed shows here too
     }).finally(() => { pulling = null; emit(); });
     return pulling;
   };
 
   async function pullAccount(acc) {
     let res = await call(acc, (prov, ctx) => prov.changes(ctx, acc.cursor || null));
-    const full = !acc.cursor || res.reset; // everything in the folder, not just what changed
-    if (res.reset) { acc.cursor = null; res = await call(acc, (prov, ctx) => prov.changes(ctx, null)); }
+    let full = !acc.cursor || res.reset || res.full; // everything in the folder, not just what changed
+    if (res.reset) { acc.cursor = null; res = await call(acc, (prov, ctx) => prov.changes(ctx, null)); full = true; }
     const links = (await store().all('links')).filter(l => l.accountId === acc.id && l.fileId);
-    if (full) { // a linked file missing from the whole folder was deleted while no feed reported it
+    if (full) { // a linked file missing from the whole folder may have been deleted while no feed reported it:
       const live = new Set(res.items.filter(it => !it.deleted).map(it => it.fileId));
-      for (const l of links) if (!live.has(l.fileId)) await removedRemotely(l);
+      for (const l of links) {
+        if (live.has(l.fileId)) continue;
+        // ...only when the file itself says so (a listing can lag a moment behind a write)
+        try { await call(acc, (prov, ctx) => prov.meta(ctx, l.fileId)); } catch (e) { if (e.status === 404) await removedRemotely(l); }
+      }
     }
     for (const it of res.items) {
       const l = links.find(x => x.fileId === it.fileId);
@@ -341,6 +379,7 @@ window.MB = window.MB || {};
     const remoteHash = await hashOf(data);
     if (remoteHash === l.hash) { l.etag = remote.etag; l.remoteEtag = null; await saveLink(l); return; } // the same content
     const rec = await MB.projects.get(l.projectId);
+    if (!rec) { await store().del('links', l.projectId); delete C.links[l.projectId]; emit(); return; } // deleted here: nothing to sync to
     const open = MB.state.projectId === l.projectId;
     const localChanged = !rec || (await hashOf(rec.data)) !== l.hash || (open && MB.projects.dirty());
     if (localChanged) { l.state = 'conflict'; l.remoteEtag = remote.etag; await saveLink(l); notify(l, 'conflict'); emit(); return; }
@@ -351,8 +390,13 @@ window.MB = window.MB || {};
   async function takeRemote(l, data, remote, remoteHash) {
     data = Object.assign({}, data, { id: l.projectId }); // the file belongs to this project, whatever id it carries
     if (!(await MB.projects.putSaved(data, 'before a cloud copy replaced it'))) throw new Error('Could not save the cloud copy on this device');
-    if (MB.state.projectId === l.projectId && MB.projects.owns()) MB.loadProject(data, { keepView: true, keepHistory: false });
-    Object.assign(l, { etag: remote.etag, name: remote.name, nameFor: data.name, hash: remoteHash || await hashOf(data), remoteEtag: null, syncedAt: env.now() });
+    let hash = remoteHash || await hashOf(data);
+    if (MB.state.projectId === l.projectId && MB.projects.owns()) {
+      MB.loadProject(data, { keepView: true, keepHistory: false });
+      // what this device will save of it from now on (its own normalization included): not a change to upload
+      if (MB.serializeProject) hash = await hashOf(MB.serializeProject());
+    }
+    Object.assign(l, { etag: remote.etag, name: remote.name, nameFor: data.name, hash, remoteEtag: null, syncedAt: env.now() });
     told[l.projectId] = null;
     setState(l, 'synced');
     await saveLink(l);
@@ -362,7 +406,14 @@ window.MB = window.MB || {};
   // choice: 'both' (the cloud copy becomes a project of its own, this one replaces the file), 'cloud' (the cloud
   // copy replaces this one; this one is kept as a recovery copy), 'mine' (this one replaces the file; the cloud
   // keeps the old version in its history).
-  C.resolve = function (projectId, choice) {
+  C.resolve = async function (projectId, choice) {
+    // another tab edits it: there, or that tab would save its own copy over the choice made here
+    if (!(MB.state.projectId === projectId && MB.projects.owns()) && await MB.projects.openElsewhere(projectId)) {
+      MB.toast('This map is open in another tab. Resolve it there.', 5000);
+      emit();
+      return;
+    }
+    if (MB.state.projectId === projectId) await MB.projects.flush(); // the last moments' edits are in what is kept
     return env.lock(async () => {
       const l = await store().get('links', projectId), acc = l && await store().get('accounts', l.accountId);
       if (!l || !acc) return;
@@ -405,10 +456,15 @@ window.MB = window.MB || {};
     if (!prov || !prov.available()) return;
     await MB.projects.flush();
     if (!silent) MB.toast(prov.name + ' sign-in…', 3000);
-    await MB.oauth.begin(prov.auth(prov.signInExtra(acc, silent)), { silent: !!silent }, env.go);
+    await MB.oauth.begin(prov.auth(prov.signInExtra(acc, silent)), { silent: !!silent, reopen: !silent }, env.go);
   };
 
+  // A sign-in came back: finished here, and the user taken back to the dialog it started from (with any error).
   async function finishSignIn(r) {
+    await finishSignInNow(r);
+    if (!r.pending || r.pending.reopen) MB.emit('cloud-return', C);
+  }
+  async function finishSignInNow(r) {
     const prov = r.pending && providers()[r.pending.provider];
     if (!prov) { if (r.error) C.lastError = r.description; return; }
     if (r.error) {
@@ -457,9 +513,11 @@ window.MB = window.MB || {};
     emit();
     if (accId) C.schedule(projectId, 0);
   };
+  // "Sync all projects": one account at a time (new projects go there).
   C.setAuto = async function (accId, on) {
     const acc = await store().get('accounts', accId);
     if (!acc) return;
+    if (on) for (const other of await store().all('accounts')) if (other.id !== accId && other.auto !== false) { other.auto = false; await store().put('accounts', other); }
     acc.auto = !!on; await store().put('accounts', acc); await readAccounts(); emit();
     if (on) (await MB.projects.list()).forEach(r => { if (!isDraftRec(r)) C.schedule(r.id, 300); });
   };
@@ -506,21 +564,47 @@ window.MB = window.MB || {};
   /* ---------- start ---------- */
   C.init = async function () {
     if (!C.offered().length && !returned) return;
-    if (C.ready) { if (returned) { const r = returned; returned = null; await finishSignIn(r); } return; }
+    if (C.ready) { if (returned) { const r = returned; returned = null; await finishSignIn(r); C.pull(true); } return; }
     try { await readAccounts(); await readLinks(); } catch (e) { console.warn('Cloud sync unavailable', e); return; }
     C.ready = true;
     if (returned) { const r = returned; returned = null; await finishSignIn(r); }
     emit();
     MB.on('saved', id => C.schedule(id));
     MB.on('project', emit);
+    MB.on('project-removed', id => env.lock(() => store().del('links', id)).then(() => { delete C.links[id]; emit(); }));
     window.addEventListener('online', () => { C.pull(true); Object.keys(C.links).forEach(id => { if (['offline', 'pending'].includes(C.links[id].state)) C.schedule(id, 500); }); });
-    document.addEventListener('visibilitychange', () => { if (env.visible()) C.pull(false); });
+    // hidden (on a phone, often the last moment before the page is stopped): what waits to upload goes now
+    document.addEventListener('visibilitychange', () => { if (env.visible()) C.pull(false); else C.flushNow(); });
     setInterval(() => { if (env.visible()) C.pull(true); }, PULL_EVERY);
-    // what waited: offline, or a page closed before its upload
-    Object.keys(C.links).forEach(id => { const s = C.links[id].state; if (s && s !== 'synced' && s !== 'conflict') C.schedule(id, 1500); });
+    await scanAll();
     await silentSignIn();
     C.pull(true);
   };
+
+  // Uploads waiting for their delay: now.
+  C.flushNow = function () {
+    timers.forEach((t, id) => { clearTimeout(t); queue.add(id); });
+    timers.clear();
+    if (queue.size) pump();
+  };
+
+  // At start-up, every project whose content differs from what was last synced (the page was closed before its
+  // upload, or the device was offline), and (syncing all) every named project not synced yet.
+  async function scanAll() {
+    const accs = await store().all('accounts');
+    if (!accs.length) return;
+    const auto = accs.some(a => a.auto !== false);
+    for (const r of await MB.projects.list()) {
+      if (isDraftRec(r)) continue;
+      const l = C.links[r.id];
+      if (l && l.excluded) continue;
+      if (!l) { if (auto) C.schedule(r.id, 1500); continue; }
+      if (l.state === 'conflict') continue;
+      if (l.state !== 'synced') { C.schedule(r.id, 1500); continue; }
+      const rec = await MB.projects.get(r.id);
+      if (rec && (await hashOf(rec.data)) !== l.hash) C.schedule(r.id, 1500);
+    }
+  }
 
   // At start-up, an account whose sign-in ran out: renewed with a quick trip to the provider that shows nothing
   // while the user's session there is alive (at most twice a day; otherwise the "Sign in again" button).

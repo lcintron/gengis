@@ -1132,6 +1132,7 @@ body.presenting .mb-ident-own .btn-row { display: none; }
 .cloud-status { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; margin: 0 2px;
   background: transparent; border: 0; border-radius: 6px; color: var(--text-dim); cursor: pointer; }
 .cloud-status:hover { background: var(--bg-3); }
+.cloud-status:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 :is(.cloud-status, .cloud-st, .cloud-box, .cloud-ic) svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
 [data-state="synced"].cloud-status, .cloud-st.synced { color: var(--accent); }
@@ -1177,6 +1178,8 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 .cloud-row.off .cloud-main b { color: var(--text-dim); }
 .cloud-st { display: inline-flex; color: var(--text-dim); }
 .cloud-main { flex: 1 1 0; }
+.cloud-acc-main .cloud-warn { display: inline-flex; align-items: center; gap: 4px; color: var(--danger); }
+.cloud-acc-main .cloud-warn svg { width: 13px; height: 13px; }
 .cloud-chip { display: inline-block; align-self: flex-start; border-radius: 10px; padding: 0 8px; font-size: 11px; line-height: 18px; background: rgba(255,92,92,.12); color: var(--danger); white-space: nowrap; }
 .cloud-row select { flex: 0 0 auto; max-width: 48%; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); height: 30px; padding: 0 6px; }
 .cloud-conflict { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--border); }
@@ -1185,7 +1188,10 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 .cloud-ic svg { width: 14px; height: 14px; }
 .cloud-line-set .file-name { flex: 1 1 auto; }
 @media (max-width: 640px) {
+  /* the top bar keeps its room for the project name: the cloud shows only when it needs attention, and its own tap
+     opens the dialog (no Resolve / Sign in button beside it) */
   .cloud-status { width: 34px; height: 34px; }
+  .cloud-status[data-state="synced"], .cloud-status[data-state="pending"], #cloudAction { display: none !important; }
   .cloud-row { padding: 10px; }
   .cloud-row select { flex: 1 0 100%; max-width: none; height: 38px; }
   .cloud-conflict .btn { min-height: 38px; }
