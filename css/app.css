@@ -332,7 +332,11 @@ body.presenting .mb-scale-box { display: none !important; }
 .mb-status {
   background: rgba(27,31,39,.85); color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 11px; font-variant-numeric: tabular-nums;
   margin: 0 0 12px 12px !important; border: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; /* the coordinates and the zoom; the loading line (busy.js) below them */
 }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; } /* read aloud, not shown */
+.mb-status .zoom { display: inline-flex; align-items: center; gap: 3px; color: var(--text); }
+.mb-status .zoom svg { width: 1.15em; height: 1.15em; fill: none; stroke: var(--text-dim); stroke-width: 2.4; stroke-linecap: round; flex: 0 0 auto; }
 .leaflet-popup-content-wrapper { background: var(--bg-2); color: var(--text); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
 .leaflet-popup-tip { background: var(--bg-2); }
 .leaflet-popup-content { margin: 10px 12px; }
@@ -913,7 +917,7 @@ button.link:hover { text-decoration: underline; }
 .measure-box.with-show .mm-name { padding-left: 19px; }
 
 /* ---------- busy indicator (under the coordinates readout) ---------- */
-.mb-busy { display: flex; align-items: center; gap: 6px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.mb-busy { flex: 1 0 100%; display: flex; align-items: center; gap: 6px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 .mb-busy.hidden { display: none; }
 .mb-busy .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid rgba(29,179,169,.25); border-top-color: var(--accent); animation: mb-spin .8s linear infinite; flex: 0 0 auto; }
 @keyframes mb-spin { to { transform: rotate(360deg); } }

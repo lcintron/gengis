@@ -129,7 +129,8 @@
     wheelGlide(MB.map);
     wholeLevelButtons(MB.map);
     L.control.zoom({ position: 'topright' }).addTo(MB.map);
-    L.control.attribution({ position: 'bottomleft', prefix: '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>' }).addTo(MB.map);
+    // The map data's credits only: Leaflet is credited with the other libraries (About, README, vendor/leaflet/LICENSE).
+    L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(MB.map);
 
     MB.map.pm.setGlobalOptions({ pmIgnore: false, allowSelfIntersection: true });
     MB.loadSettings();
