@@ -100,4 +100,8 @@ Map tiles, [Nominatim](https://operations.osmfoundation.org/policies/nominatim/)
 
 ## License
 
-[MIT](LICENSE). Bundled Leaflet (BSD 2-Clause), Leaflet-Geoman (MIT), polygon-clipping (MIT), html-to-image (MIT) and the Lucide icons (ISC) keep their own licenses.
+GenGIS is **free for noncommercial use** under the [PolyForm Strict License 1.0.0](LICENSE): personal use, hobby projects, study and research, and use by noncommercial organizations such as charities, schools, public research, public safety, health, environmental protection and government organizations (see the license for the exact terms).
+
+**Commercial use, changes and redistribution need a commercial license.** Get in touch through [github.com/lcintron](https://github.com/lcintron).
+
+Versions up to and including 0.16.2 were released under the MIT License and stay available under it. Bundled Leaflet (BSD 2-Clause), Leaflet-Geoman (MIT), polygon-clipping (MIT), html-to-image (MIT) and the Lucide icons (ISC) keep their own licenses. Live data services (map tiles, search, air and vessel traffic) have their own terms of use, which apply to whoever uses them.
