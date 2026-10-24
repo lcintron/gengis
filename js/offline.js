@@ -172,7 +172,7 @@ window.MB = window.MB || {};
       const list = this.areas.slice().sort((a, b) => b.created - a.created);
       box.innerHTML = `<div class="btn-row" style="margin:0 0 8px"><button class="btn small primary" data-act="new">Download current view…</button></div>
         ${list.length ? list.map(a => `<div class="area-item" data-id="${a.id}">
-          <div class="area-head"><span class="aname">${esc(a.name)}</span><span class="badge">${esc(a.basemapName || a.basemap)}</span>${MB.iconBtn('goto', 'Go to', 'data-act="goto"', '', 'Go to ' + a.name)}${MB.iconBtn('refresh', 'Re-download', 'data-act="refresh"', '', 'Re-download ' + a.name)}${MB.iconBtn('trash', 'Delete', 'data-act="delete"', 'danger', 'Delete ' + a.name)}</div>
+          <div class="area-head"><span class="aname">${esc(a.name)}</span><span class="badge">${esc(a.basemapName || a.basemap)}</span>${MB.iconBtn('goto', 'Go to', 'data-act="goto"', '', 'Go to ' + a.name)}${MB.iconBtn('download', 'Re-download', 'data-act="refresh"', '', 'Re-download ' + a.name)}${MB.iconBtn('trash', 'Delete', 'data-act="delete"', 'danger', 'Delete ' + a.name)}</div>
           <div class="note">zoom ${a.zMin}–${a.zMax} · ${a.tiles.toLocaleString()} tiles · ${(a.bytes / 1048576).toFixed(1)} MB${a.dataCells ? ' · ' + a.dataCells + ' data cells' : ''}${a.failed ? ' · <span class="warn">' + a.failed + ' failed</span>' : ''} · ${new Date(a.created).toLocaleDateString()}</div>
         </div>`).join('') : '<p class="note">Map tiles for a region, usable offline.</p>'}
         <div id="offlineStats" class="note" style="margin-top:6px"></div>`;
