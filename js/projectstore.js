@@ -358,6 +358,26 @@ window.MB = window.MB || {};
     return P.remove(MB.state.projectId);
   };
 
+  /* ---------- for cloud sync (cloudsync.js) ---------- */
+
+  P.keepCopy = keepCopy;
+  P.isDraft = isDraft;
+  P.owns = () => canWrite();
+  // Changes the database does not hold yet (still to be saved, or being saved).
+  P.dirty = () => pending || dbRev !== rev || !!inflight;
+  P.openElsewhere = async id => (await openElsewhere()).has(lockName(id));
+  // What is saved for a project: { id, name, savedAt, fileBacked, data }, or null.
+  P.get = id => run('projects', 'readonly', s => done(s.get(id))).then(r => r || null).catch(() => null);
+  // A project saved as given (a copy from the cloud): what was saved for it before is kept as a recovery copy first.
+  // It is a named project (not a draft). Resolves true once saved.
+  P.putSaved = async function (data, reason) {
+    const now = Date.now();
+    if (reason && (await keepCopy(data.id, reason)) === false) return false;
+    const p = Object.assign({}, data, { savedAt: new Date(now).toISOString() });
+    return run('projects', 'readwrite', st => { st.put(Object.assign(summary(p), { savedAt: now, fileBacked: true, data: p })); })
+      .then(() => { if (p.id === MB.state.projectId) dbRev = rev; return true; }, () => false);
+  };
+
   /* ---------- storage that the browser does not clear ---------- */
 
   const installed = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;

@@ -350,6 +350,7 @@ window.MB = window.MB || {};
         break;
       case 'saveas': if (MB.desktopFiles.available) MB.desktopFiles.saveAs(); else MB.browserFiles.saveAs(); break;
       case 'recent': MB.projects.openDialog(); break;
+      case 'cloud': MB.cloudUI.open(); break;
       case 'save': MB.saveToFile(); break;
       case 'geojson': MB.exportGeoJSON(); break;
       case 'export': MB.exportMap.open(); break;
@@ -1503,6 +1504,7 @@ window.MB = window.MB || {};
       <div class="section"><h3>Project</h3>
         <div class="info-line" id="saveWhere"></div>
         <div id="desktopFilesBox"></div>
+        <div id="cloudBox"></div>
         <div class="btn-row"><button class="btn small with-icon" id="setPersist" hidden><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>Keep on this device</button><button class="btn small danger with-icon" id="setReset"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reset project</button></div>
       </div>
 `;
@@ -1531,6 +1533,7 @@ window.MB = window.MB || {};
     $('#setPersist', panel).addEventListener('click', () => MB.projects.persist(true).then(ok => MB.toast(ok ? 'Kept on this device: the browser will not clear it to free space.' : 'The browser did not agree to keep it. Save important projects to a file.', 4500)));
     MB.ui.renderSaveWhere();
     MB.ui.renderDesktopFiles();
+    if (MB.cloudUI) MB.cloudUI.renderSettings();
   };
 
   /* ================= saving status ================= */

@@ -1,0 +1,23 @@
+name: Tests
+
+# The automated tests (tests/*.test.js: cloud sync's sign-in, OneDrive adapter, sync engine, load, stress, chaos and
+# performance) on every pull request and on main. No dependencies to install: Node's own test runner.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false   # no lock file to key a cache on
+      - run: npm test

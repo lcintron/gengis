@@ -1,0 +1,541 @@
+/* GenGIS - cloud sync: projects kept in step with the user's OneDrive (and, later, Google Drive).
+ *
+ * Local first: the project store (projectstore.js) stays the main copy and keeps working offline; the cloud copy is
+ * one more, like a project file. Each named project is one .gengis.json file in GenGIS's folder of the account.
+ * - push: a few seconds after a background save, when the project's content changed (panning and zooming alone do
+ *   not upload); offline, or while signed out, it waits and goes when it can
+ * - pull: at start-up, when the app comes back into view, every few minutes, and when the network returns, through
+ *   the provider's change feed; a project changed in the cloud and not here is updated here (a recovery copy is kept)
+ * - never lose work: a file is only replaced when it is still the version last synced (its eTag); otherwise the
+ *   project is in conflict and the user chooses (keep both, the cloud copy, or this one)
+ * - one tab at a time does the work (Web Locks), re-reading the shared records inside the lock
+ * Accounts and tokens live in this module's own database ("gengis-cloud"), never in settings, projects or the
+ * address. State per project: synced | pending | syncing | offline | conflict | error | signin.
+ */
+window.MB = window.MB || {};
+(function (MB) {
+  'use strict';
+
+  const PUSH_DELAY = 5000;            // ms after a background save (a burst of saves is one upload)
+  const PULL_EVERY = 5 * 60 * 1000;   // ms between change-feed checks while the app is in view
+  const PULL_MIN = 60 * 1000;         // ...and at least this long between checks on focus
+  const TOKEN_MARGIN = 5 * 60 * 1000; // an access token is renewed when it has less left than this
+  const SILENT_EVERY = 12 * 3600 * 1000; // a silent sign-in at start-up at most this often
+  const BACKOFF_MAX = 5 * 60 * 1000;
+  const LOCK = 'gengis.cloud.sync';
+
+  /* ---------- the module's database (replaceable: tests use a memory store) ---------- */
+  function idbStore() {
+    let dbp = null;
+    const db = () => dbp || (dbp = new Promise((res, rej) => {
+      let r;
+      try { r = indexedDB.open('gengis-cloud', 1); } catch (e) { rej(e); return; }
+      r.onupgradeneeded = () => {
+        const d = r.result;
+        if (!d.objectStoreNames.contains('accounts')) d.createObjectStore('accounts', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('links')) d.createObjectStore('links', { keyPath: 'projectId' });
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = r.onblocked = () => rej(r.error || new Error('no database'));
+    }));
+    const tx = (table, mode, fn) => db().then(d => new Promise((res, rej) => {
+      const t = d.transaction(table, mode), q = fn(t.objectStore(table));
+      t.oncomplete = () => res(q && q.result);
+      t.onerror = t.onabort = () => rej(t.error);
+    }));
+    return {
+      get: (t, k) => tx(t, 'readonly', s => s.get(k)).then(v => v || null),
+      all: t => tx(t, 'readonly', s => s.getAll()).then(v => v || []),
+      put: (t, v) => tx(t, 'readwrite', s => s.put(v)),
+      del: (t, k) => tx(t, 'readwrite', s => s.delete(k))
+    };
+  }
+
+  const C = MB.cloud = {
+    ready: false,
+    accounts: [],         // as last read: { id, provider, name, email, kind, state, error, auto }
+    links: {},            // projectId -> link, as last read (the store is the truth: re-read inside the lock)
+    progress: {},         // projectId -> { done, total } while a large file uploads
+    lastError: '',        // the last sign-in failure, for the dialog
+    env: {                // what the engine runs on (tests replace these)
+      store: null, fetch: (u, o) => fetch(u, o), now: () => Date.now(),
+      online: () => navigator.onLine !== false, visible: () => document.visibilityState !== 'hidden',
+      lock: fn => (navigator.locks ? navigator.locks.request(LOCK, () => fn()) : fn()),
+      go: null,           // where a sign-in navigates (location.assign)
+      pushDelay: PUSH_DELAY,
+      backoffBase: 2000   // ms: the first retry after a passing failure (doubling, to BACKOFF_MAX)
+    }
+  };
+  const env = C.env;
+  const providers = () => MB.cloudProviders || {};
+  const providerOf = acc => providers()[acc && acc.provider];
+  C.offered = () => Object.keys(providers()).filter(k => providers()[k].available());
+  const emit = () => MB.emit('cloudsync', C);
+  const store = () => env.store || (env.store = idbStore());
+
+  /* ---------- project content: what counts as a change ---------- */
+  // The project without what changes on its own (the save time, the view): a pan is not worth an upload.
+  const sorted = v => Array.isArray(v) ? v.map(sorted)
+    : (v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = sorted(v[k]); return o; }, Object.create(null)) : v);
+  function canon(p) { const c = sorted(p || {}); delete c.savedAt; delete c.view; return JSON.stringify(c); }
+  async function hashOf(p) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canon(p)));
+    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+  }
+  C.canon = canon; C.hashOf = hashOf;
+
+  // The cloud file's name for a project (characters OneDrive and Drive refuse, replaced).
+  function fileName(name, n) {
+    let base = String(name || 'map').replace(/[\\/:*?"<>|#%\u0000-\u001f]+/g, '_').replace(/[. ]+$/, '').trim() || 'map';
+    if (base.length > 120) base = base.slice(0, 120).trim();
+    return base + (n > 1 ? ' (' + n + ')' : '') + MB.PROJECT_EXT;
+  }
+  C.fileName = fileName;
+  const isDraftRec = rec => /^\s*untitled( map)?\s*$/i.test(rec.name || (rec.data && rec.data.name) || '') && !rec.fileBacked;
+
+  /* ---------- accounts and tokens ---------- */
+  const tokens = new Map();     // accountId -> { access, exp }
+  const renewing = new Map();   // accountId -> Promise of an access token
+
+  async function readAccounts() {
+    const all = await store().all('accounts');
+    C.accounts = all.map(a => ({ id: a.id, provider: a.provider, name: a.name, email: a.email, kind: a.kind, state: a.state || 'ok', error: a.error || '', auto: a.auto !== false }));
+    return all;
+  }
+  async function readLinks() {
+    const all = await store().all('links');
+    C.links = {};
+    all.forEach(l => { C.links[l.projectId] = l; });
+    return all;
+  }
+  const signinError = msg => Object.assign(new Error(msg || 'Sign in again'), { code: 'signin' });
+
+  // An access token for an account: the one in memory while it lasts, else from its refresh token.
+  function accessToken(accId) {
+    const t = tokens.get(accId);
+    if (t && t.exp - env.now() > TOKEN_MARGIN) return Promise.resolve(t.access);
+    if (renewing.has(accId)) return renewing.get(accId);
+    const p = (async () => {
+      const acc = await store().get('accounts', accId);
+      if (!acc) throw signinError('The account is no longer connected');
+      if (acc.state === 'signin' || !acc.refreshToken) throw signinError(acc.error);
+      const prov = providerOf(acc);
+      let r;
+      try { r = await MB.oauth.refresh(prov.auth(), acc.refreshToken, env.fetch); }
+      catch (e) {
+        if (e.code === 'network' || (e.status >= 500)) throw e; // try again later; the sign-in may still be good
+        acc.state = 'signin'; acc.error = prov.explain(e.code, e.description);
+        await store().put('accounts', acc);
+        await readAccounts(); emit();
+        throw signinError(acc.error);
+      }
+      tokens.set(accId, { access: r.access_token, exp: env.now() + (+r.expires_in || 3600) * 1000 });
+      if (r.refresh_token && r.refresh_token !== acc.refreshToken) { acc.refreshToken = r.refresh_token; acc.refreshedAt = env.now(); await store().put('accounts', acc); }
+      return r.access_token;
+    })();
+    renewing.set(accId, p);
+    const clear = () => renewing.delete(accId);
+    p.then(clear, clear);
+    return p;
+  }
+
+  // A provider call for an account; an expired token (401) is renewed and the call made once more.
+  async function call(acc, fn) {
+    const prov = providerOf(acc);
+    const ctx = { fetch: env.fetch, token: () => accessToken(acc.id) };
+    try { return await fn(prov, ctx); }
+    catch (e) {
+      if (e.status !== 401) throw e;
+      tokens.delete(acc.id);
+      return fn(prov, ctx);
+    }
+  }
+
+  /* ---------- links ---------- */
+  async function saveLink(l) { await store().put('links', l); C.links[l.projectId] = l; }
+  function setState(l, state, error) {
+    l.state = state; l.error = error || '';
+    C.links[l.projectId] = l;
+    emit();
+  }
+  // The account a project syncs to: its link's, or (named projects, not excluded) the first account syncing all.
+  async function accountFor(projectId) {
+    const l = await store().get('links', projectId);
+    if (l && l.excluded) return null;
+    const accs = await store().all('accounts');
+    if (l && l.accountId) return accs.find(a => a.id === l.accountId) || null;
+    return accs.find(a => a.auto !== false) || null;
+  }
+
+  /* ---------- the queue ---------- */
+  const queue = new Set(), timers = new Map(), retries = new Map();
+  let pumping = null;
+
+  // A project to upload soon (after a background save, or when something it waited for comes back).
+  C.schedule = function (projectId, delay) {
+    if (!C.ready || !projectId) return;
+    clearTimeout(timers.get(projectId));
+    timers.set(projectId, setTimeout(() => { timers.delete(projectId); queue.add(projectId); pump(); }, delay == null ? env.pushDelay : delay));
+  };
+  function pump() {
+    if (pumping) { pumping.then(() => { if (queue.size) pump(); }); return pumping; }
+    pumping = (async () => {
+      while (queue.size) {
+        const id = queue.values().next().value;
+        queue.delete(id);
+        try { await env.lock(() => push(id)); } catch (e) { console.warn('Cloud sync', e); }
+      }
+    })().finally(() => { pumping = null; });
+    return pumping;
+  }
+  function retryLater(l, e) {
+    const n = (retries.get(l.projectId) || 0) + 1;
+    retries.set(l.projectId, n);
+    const wait = e && e.retryAfter ? e.retryAfter * 1000 : Math.min(BACKOFF_MAX, env.backoffBase * Math.pow(2, n - 1)) * (0.75 + Math.random() * 0.5);
+    C.schedule(l.projectId, wait);
+  }
+
+  // Upload a project if its content differs from what was last synced. Inside the lock.
+  async function push(projectId, force) {
+    const acc = await accountFor(projectId);
+    if (!acc) return;
+    const rec = await MB.projects.get(projectId);
+    if (!rec || isDraftRec(rec)) return;
+    let l = await store().get('links', projectId) || { projectId, accountId: acc.id, state: 'pending' };
+    if (l.excluded) return;
+    l.accountId = acc.id;
+    if (l.state === 'conflict' && !force) { C.links[projectId] = l; emit(); return; } // the user decides
+    const hash = await hashOf(rec.data);
+    const renamed = l.fileId && l.nameFor !== rec.name;
+    if (!force && l.fileId && hash === l.hash && !renamed) { retries.delete(projectId); if (l.state !== 'synced') { setState(l, 'synced'); await saveLink(l); } return; }
+    if (!env.online()) { setState(l, 'offline'); await saveLink(l); return; }
+    if (acc.state === 'signin') { setState(l, 'signin', acc.error); await saveLink(l); return; }
+    setState(l, 'syncing');
+    const text = JSON.stringify(rec.data, null, 1);
+    try {
+      let out;
+      await call(acc, async (prov, ctx) => {
+        const onProgress = (d, t) => { C.progress[projectId] = { done: d, total: t }; emit(); };
+        if (l.fileId && (force || hash !== l.hash)) {
+          try { out = await prov.put(ctx, { fileId: l.fileId, text, ifMatch: force ? force.ifMatch : l.etag, onProgress }); }
+          catch (e) {
+            if (e.status !== 404) throw e;
+            l.fileId = null; // deleted in the cloud while edited here: written again as a new file
+          }
+        }
+        if (!l.fileId) out = await create(prov, ctx, rec.name, text, onProgress);
+        else if (!out) out = { fileId: l.fileId, name: l.name, etag: l.etag };
+        // the project was renamed here: its file follows (a name taken in the folder gets a number)
+        if (renamed && l.fileId) out = await renameTo(prov, ctx, out, rec.name);
+      });
+      delete C.progress[projectId];
+      Object.assign(l, { fileId: out.fileId, name: out.name, nameFor: rec.name, etag: out.etag, hash, syncedAt: env.now(), remoteEtag: null });
+      retries.delete(projectId);
+      setState(l, 'synced');
+      await saveLink(l);
+    } catch (e) {
+      delete C.progress[projectId];
+      await failed(l, e);
+    }
+  }
+  C._push = push;
+
+  async function create(prov, ctx, name, text, onProgress) {
+    for (let n = 1; n < 50; n++) {
+      try { return await prov.put(ctx, { name: fileName(name, n), text, onProgress }); }
+      catch (e) { if (e.status !== 409) throw e; } // the name is taken in the folder: the next number
+    }
+    throw new Error('Could not find a free file name');
+  }
+  async function renameTo(prov, ctx, out, name) {
+    for (let n = 1; n < 50; n++) {
+      const want = fileName(name, n);
+      if (out.name === want) return out;
+      try { return await prov.rename(ctx, out.fileId, want); }
+      catch (e) { if (e.status !== 409) return out; } // keep the old name if it cannot be renamed
+    }
+    return out;
+  }
+
+  async function failed(l, e) {
+    if (e.status === 412) { l.state = 'conflict'; l.error = ''; await saveLink(l); notify(l, 'conflict'); emit(); return; }
+    if (e.code === 'signin') { setState(l, 'signin', e.message); await saveLink(l); return; }
+    if (!env.online()) { setState(l, 'offline'); await saveLink(l); return; } // resumes when the network returns
+    const transient = e.status === 429 || e.status >= 500 || e.status === 423 || e.code === 'network';
+    if (e.status === 507 || e.code === 'quotaLimitReached' || e.code === 'insufficientStorage') { setState(l, 'error', 'The cloud storage is full'); await saveLink(l); notify(l, 'error'); return; }
+    setState(l, transient ? 'pending' : 'error', e.message);
+    await saveLink(l);
+    if (transient) retryLater(l, e); else notify(l, 'error');
+  }
+
+  // One message per project and state change (no toast storms).
+  const told = {};
+  function notify(l, what) {
+    if (told[l.projectId] === what) return;
+    told[l.projectId] = what;
+    const name = (l.nameFor || (l.name || '').replace(/\.gengis\.json$/i, '')) || 'A project';
+    if (what === 'conflict') MB.toast('"' + name + '" was edited in two places. Tap Resolve.', 6000);
+    else if (what === 'error') MB.toast('Could not sync "' + name + '": ' + (l.error || 'error') + '. Still saved here.', 6000);
+  }
+
+  /* ---------- pulling ---------- */
+  let lastPull = 0, pulling = null;
+  C.pull = function (force) {
+    if (!C.ready || pulling) return pulling || Promise.resolve();
+    if (!force && env.now() - lastPull < PULL_MIN) return Promise.resolve();
+    lastPull = env.now();
+    pulling = env.lock(async () => {
+      for (const acc of await store().all('accounts')) {
+        if (acc.state === 'signin' || !env.online()) continue;
+        try { await pullAccount(acc); } catch (e) { if (e.code !== 'signin' && e.code !== 'network') console.warn('Cloud sync: checking for changes', e); }
+      }
+      await settleRemote();
+    }).finally(() => { pulling = null; emit(); });
+    return pulling;
+  };
+
+  async function pullAccount(acc) {
+    let res = await call(acc, (prov, ctx) => prov.changes(ctx, acc.cursor || null));
+    const full = !acc.cursor || res.reset; // everything in the folder, not just what changed
+    if (res.reset) { acc.cursor = null; res = await call(acc, (prov, ctx) => prov.changes(ctx, null)); }
+    const links = (await store().all('links')).filter(l => l.accountId === acc.id && l.fileId);
+    if (full) { // a linked file missing from the whole folder was deleted while no feed reported it
+      const live = new Set(res.items.filter(it => !it.deleted).map(it => it.fileId));
+      for (const l of links) if (!live.has(l.fileId)) await removedRemotely(l);
+    }
+    for (const it of res.items) {
+      const l = links.find(x => x.fileId === it.fileId);
+      if (!l) continue;
+      if (it.deleted) { await removedRemotely(l); continue; }
+      if (it.etag !== l.etag) { l.remoteEtag = it.etag; await saveLink(l); }
+    }
+    const fresh = await store().get('accounts', acc.id); // (its token may have been renewed meanwhile)
+    if (fresh) { fresh.cursor = res.cursor; await store().put('accounts', fresh); }
+  }
+
+  // Deleted in the cloud: the project stays here and stops syncing (not uploaded again unless the user chooses to).
+  async function removedRemotely(l) {
+    await saveLink({ projectId: l.projectId, excluded: true, state: '' });
+    MB.toast('"' + (l.nameFor || l.name) + '" was deleted from the cloud. Kept here, sync off.', 6000);
+  }
+
+  // Links whose cloud file changed: taken here when this tab may (the project is not open in another tab).
+  async function settleRemote() {
+    for (const l of await store().all('links')) {
+      if (!l.remoteEtag || l.remoteEtag === l.etag || l.state === 'conflict') continue;
+      const mine = MB.state.projectId === l.projectId && MB.projects.owns();
+      if (!mine && await MB.projects.openElsewhere(l.projectId)) continue; // another tab edits it: that tab takes it
+      const acc = await store().get('accounts', l.accountId);
+      if (!acc || acc.state === 'signin') continue;
+      try { await remoteChanged(acc, l); } catch (e) { if (e.code !== 'network') console.warn('Cloud sync: taking a cloud change', e); }
+    }
+  }
+
+  // A project's cloud file changed: take it if this device has no changes of its own since the last sync; otherwise
+  // the user chooses.
+  async function remoteChanged(acc, l) {
+    const remote = await call(acc, (prov, ctx) => prov.get(ctx, l.fileId));
+    let data;
+    try { data = JSON.parse(remote.text); } catch (e) { data = null; }
+    if (!data || !MB.isProject(data)) { l.remoteEtag = null; l.etag = remote.etag; setState(l, 'error', 'The cloud file is not a GenGIS project'); await saveLink(l); return; }
+    const remoteHash = await hashOf(data);
+    if (remoteHash === l.hash) { l.etag = remote.etag; l.remoteEtag = null; await saveLink(l); return; } // the same content
+    const rec = await MB.projects.get(l.projectId);
+    const open = MB.state.projectId === l.projectId;
+    const localChanged = !rec || (await hashOf(rec.data)) !== l.hash || (open && MB.projects.dirty());
+    if (localChanged) { l.state = 'conflict'; l.remoteEtag = remote.etag; await saveLink(l); notify(l, 'conflict'); emit(); return; }
+    await takeRemote(l, data, remote, remoteHash);
+    MB.toast('"' + (data.name || l.nameFor) + '" updated from ' + providerOf(acc).name, 3500);
+  }
+
+  async function takeRemote(l, data, remote, remoteHash) {
+    data = Object.assign({}, data, { id: l.projectId }); // the file belongs to this project, whatever id it carries
+    if (!(await MB.projects.putSaved(data, 'before a cloud copy replaced it'))) throw new Error('Could not save the cloud copy on this device');
+    if (MB.state.projectId === l.projectId && MB.projects.owns()) MB.loadProject(data, { keepView: true, keepHistory: false });
+    Object.assign(l, { etag: remote.etag, name: remote.name, nameFor: data.name, hash: remoteHash || await hashOf(data), remoteEtag: null, syncedAt: env.now() });
+    told[l.projectId] = null;
+    setState(l, 'synced');
+    await saveLink(l);
+  }
+
+  /* ---------- conflicts ---------- */
+  // choice: 'both' (the cloud copy becomes a project of its own, this one replaces the file), 'cloud' (the cloud
+  // copy replaces this one; this one is kept as a recovery copy), 'mine' (this one replaces the file; the cloud
+  // keeps the old version in its history).
+  C.resolve = function (projectId, choice) {
+    return env.lock(async () => {
+      const l = await store().get('links', projectId), acc = l && await store().get('accounts', l.accountId);
+      if (!l || !acc) return;
+      const prov = providerOf(acc);
+      try {
+        if (choice === 'cloud') {
+          const remote = await call(acc, (p, ctx) => p.get(ctx, l.fileId));
+          const data = JSON.parse(remote.text);
+          if (!MB.isProject(data)) throw new Error('The cloud file is not a GenGIS project');
+          await takeRemote(l, data, remote);
+          MB.toast('Using the ' + prov.name + ' version. Yours is in earlier copies.', 5000);
+          return;
+        }
+        const meta = await call(acc, (p, ctx) => p.meta(ctx, l.fileId));
+        if (choice === 'both') {
+          const remote = await call(acc, (p, ctx) => p.get(ctx, l.fileId));
+          const data = JSON.parse(remote.text);
+          if (MB.isProject(data)) {
+            const stamp = new Date(remote.modified || env.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+            const copy = Object.assign({}, data, { id: MB.uid(), name: (data.name || 'Untitled map') + ' (' + prov.name + ', ' + stamp + ')' });
+            await MB.projects.putSaved(copy);
+            C.schedule(copy.id, 0); // it gets a file of its own
+          }
+        }
+        told[projectId] = null;
+        l.state = 'pending'; await saveLink(l);
+        await push(projectId, { ifMatch: meta.etag });
+        if (choice === 'both') MB.toast('Kept both. The cloud version is a separate project now.', 5000);
+      } catch (e) { await failed(l, e); }
+    });
+  };
+
+  /* ---------- connecting ---------- */
+  let returned = null; // a sign-in coming back (taken from the address before anything else reads it)
+  C.takeRedirect = function () { returned = MB.oauth.take(); return returned; };
+
+  // Connect an account: to the provider's sign-in page and back (what is pending is saved first).
+  C.connect = async function (providerId, acc, silent) {
+    const prov = providers()[providerId];
+    if (!prov || !prov.available()) return;
+    await MB.projects.flush();
+    if (!silent) MB.toast(prov.name + ' sign-in…', 3000);
+    await MB.oauth.begin(prov.auth(prov.signInExtra(acc, silent)), { silent: !!silent }, env.go);
+  };
+
+  async function finishSignIn(r) {
+    const prov = r.pending && providers()[r.pending.provider];
+    if (!prov) { if (r.error) C.lastError = r.description; return; }
+    if (r.error) {
+      // a silent renewal that needs the user: no message, the "Sign in again" button is shown
+      if (r.pending.silent && /login_required|interaction_required|consent_required|account_selection_required/.test(r.error)) return;
+      C.lastError = prov.explain(r.error, r.description);
+      MB.toast(C.lastError, 9000);
+      return;
+    }
+    let tok;
+    try { tok = await MB.oauth.exchange(prov.auth(), r.code, r.pending, env.fetch); }
+    catch (e) { C.lastError = prov.explain(e.code, e.description || e.message); MB.toast(C.lastError, 9000); return; }
+    const who = prov.account(tok), old = await store().get('accounts', who.id);
+    const acc = Object.assign(old || { auto: true }, who, { refreshToken: tok.refresh_token || '', signedInAt: env.now(), state: tok.refresh_token ? 'ok' : 'signin', error: '' });
+    await store().put('accounts', acc);
+    tokens.set(acc.id, { access: tok.access_token, exp: env.now() + (+tok.expires_in || 3600) * 1000 });
+    C.lastError = '';
+    await readAccounts();
+    if (!r.pending.silent) MB.toast('Connected to ' + prov.name, 3500);
+    // what waited for the sign-in, and (syncing all) every named project
+    const ids = new Set(Object.keys(C.links).filter(id => C.links[id].accountId === acc.id && !C.links[id].excluded));
+    if (acc.auto) (await MB.projects.list()).forEach(r2 => { if (!isDraftRec(r2)) ids.add(r2.id); });
+    ids.forEach(id => C.schedule(id, 500)); // (the queue takes them one at a time)
+  }
+
+  C.disconnect = async function (accId) {
+    const acc = await store().get('accounts', accId);
+    if (!acc) return;
+    const prov = providerOf(acc);
+    await env.lock(async () => {
+      for (const l of await store().all('links')) if (l.accountId === accId) await store().del('links', l.projectId);
+      await store().del('accounts', accId);
+    });
+    tokens.delete(accId);
+    await readAccounts(); await readLinks(); emit();
+    MB.toast('Disconnected. Files stay in ' + prov.folder + '.', 5000);
+  };
+
+  // Sync one project to an account, or not at all (null): an explicit choice the "sync all" default respects.
+  C.setSync = async function (projectId, accId) {
+    await env.lock(async () => {
+      const l = await store().get('links', projectId);
+      if (!accId) await saveLink(Object.assign(l || { projectId }, { excluded: true, state: '' }));
+      else await saveLink(Object.assign(l && !l.excluded && l.accountId === accId ? l : { projectId, state: 'pending' }, { accountId: accId, excluded: false }));
+    });
+    emit();
+    if (accId) C.schedule(projectId, 0);
+  };
+  C.setAuto = async function (accId, on) {
+    const acc = await store().get('accounts', accId);
+    if (!acc) return;
+    acc.auto = !!on; await store().put('accounts', acc); await readAccounts(); emit();
+    if (on) (await MB.projects.list()).forEach(r => { if (!isDraftRec(r)) C.schedule(r.id, 300); });
+  };
+
+  // The cloud's project files that are not linked to a project here (for "Open from the cloud").
+  C.listRemote = async function (accId) {
+    const acc = await store().get('accounts', accId);
+    if (!acc) return [];
+    const files = await call(acc, (p, ctx) => p.list(ctx));
+    const linked = new Set((await store().all('links')).filter(l => l.accountId === accId).map(l => l.fileId));
+    return files.filter(f => !linked.has(f.fileId)).sort((a, b) => b.modified - a.modified);
+  };
+
+  // Open a project from the cloud: it becomes the open project, linked to its file.
+  C.openRemote = async function (accId, fileId) {
+    const acc = await store().get('accounts', accId);
+    if (!acc) return;
+    let remote, data;
+    try { remote = await call(acc, (p, ctx) => p.get(ctx, fileId)); data = JSON.parse(remote.text); }
+    catch (e) { MB.toast('Could not open it: ' + (e.message || e), 6000); return; }
+    if (!MB.isProject(data)) { MB.toast('That file is not a GenGIS project.', 5000); return; }
+    if (!(await MB.projects.beforeOpen(data))) return;
+    const id = data.id;
+    MB.loadProject(data);
+    MB.projects.markFileBacked();
+    const l = { projectId: MB.state.projectId, accountId: accId, fileId, name: remote.name, nameFor: MB.state.projectName, etag: remote.etag, hash: await hashOf(data), syncedAt: env.now(), state: 'synced' };
+    if (id && id !== l.projectId) l.hash = null; // an id-less (older) file got a new id: synced again as is
+    await env.lock(() => saveLink(l));
+    emit();
+  };
+
+  // A project's state; its account being signed out shows (a conflict still comes first: it is the user's to settle).
+  C.status = id => {
+    const l = C.links[id];
+    if (!l || l.excluded) return null;
+    const acc = C.accounts.find(x => x.id === l.accountId);
+    if (acc && acc.state === 'signin' && l.state !== 'conflict') return 'signin';
+    return l.state || 'pending';
+  };
+  C.accountOf = id => { const l = C.links[id]; return l && C.accounts.find(a => a.id === l.accountId); };
+  C._busy = async () => !!(queue.size || timers.size || pumping || pulling || renewing.size);
+  C.syncNow = async function () { await C.pull(true); queue.add(MB.state.projectId); return pump(); };
+
+  /* ---------- start ---------- */
+  C.init = async function () {
+    if (!C.offered().length && !returned) return;
+    if (C.ready) { if (returned) { const r = returned; returned = null; await finishSignIn(r); } return; }
+    try { await readAccounts(); await readLinks(); } catch (e) { console.warn('Cloud sync unavailable', e); return; }
+    C.ready = true;
+    if (returned) { const r = returned; returned = null; await finishSignIn(r); }
+    emit();
+    MB.on('saved', id => C.schedule(id));
+    MB.on('project', emit);
+    window.addEventListener('online', () => { C.pull(true); Object.keys(C.links).forEach(id => { if (['offline', 'pending'].includes(C.links[id].state)) C.schedule(id, 500); }); });
+    document.addEventListener('visibilitychange', () => { if (env.visible()) C.pull(false); });
+    setInterval(() => { if (env.visible()) C.pull(true); }, PULL_EVERY);
+    // what waited: offline, or a page closed before its upload
+    Object.keys(C.links).forEach(id => { const s = C.links[id].state; if (s && s !== 'synced' && s !== 'conflict') C.schedule(id, 1500); });
+    await silentSignIn();
+    C.pull(true);
+  };
+
+  // At start-up, an account whose sign-in ran out: renewed with a quick trip to the provider that shows nothing
+  // while the user's session there is alive (at most twice a day; otherwise the "Sign in again" button).
+  async function silentSignIn() {
+    if (!env.online() || !env.visible()) return;
+    for (const acc of await store().all('accounts')) {
+      const prov = providerOf(acc);
+      if (!prov || !prov.available()) continue;
+      const expired = acc.state === 'signin' || (prov.signInDays && env.now() - (acc.signedInAt || 0) > prov.signInDays * 86400000 - 3600000);
+      if (!expired || env.now() - (acc.silentAt || 0) < SILENT_EVERY) continue;
+      const needed = acc.auto || Object.values(C.links).some(l => l.accountId === acc.id);
+      if (!needed) continue;
+      acc.silentAt = env.now(); await store().put('accounts', acc);
+      await C.connect(acc.provider, acc, true);
+      return; // the page goes to the provider and comes back
+    }
+  }
+})(window.MB);

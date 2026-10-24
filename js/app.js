@@ -133,6 +133,7 @@
     L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(MB.map);
 
     MB.map.pm.setGlobalOptions({ pmIgnore: false, allowSelfIntersection: true });
+    if (MB.cloud) MB.cloud.takeRedirect(); // a cloud sign-in coming back: its code leaves the address before anything reads it
     MB.loadSettings();
     MB.applyTileFade();
     MB.initTooltipDelay(MB.map);
@@ -155,7 +156,9 @@
     MB.ui.init();
     MB.shapes.init();
     MB.icons.init();
-    MB.projects.start(); // the saved copy in the database, if newer; saving starts once it has settled
+    MB.projects.start() // the saved copy in the database, if newer; saving starts once it has settled
+      .then(() => MB.cloud && MB.cloud.init()).catch(e => console.warn('Cloud sync', e)); // then cloud sync (once the open project is settled)
+    if (MB.cloudUI) MB.cloudUI.init();
     MB.data.init();
     MB.places.init();
     MB.declination.init();
