@@ -586,8 +586,6 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .mb-scale { margin: 0 8px 8px 0 !important; }
   .leaflet-control-attribution { max-width: 60vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row label { flex: 0 0 80px; }
-  .form-grid { grid-template-columns: 1fr; gap: 4px 0; }
-  .form-grid label { margin-top: 6px; }
   .modal-box { padding: 14px; max-height: 92vh; }
   .modal-x { width: 34px; height: 34px; margin: -6px -6px 6px 10px; } /* a finger-sized target */
   /* the buttons stay at the box's foot while its choices scroll; the progress takes its own line above them */
@@ -684,8 +682,15 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .form-grid textarea { height: auto; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .form-grid input:focus, .form-grid select:focus, .form-grid textarea:focus { outline: none; border-color: var(--accent); }
 .prov-list { display: flex; flex-direction: column; gap: 6px; }
-.prov-item { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
-.prov-item .pname { font-weight: 500; }
+.prov-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.prov-item .pname { font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+/* phones: labels above their fields (after the rules above, which it overrides), and each provider's name on its own
+   line, its badges and buttons wrapping below it; nothing wider than the dialog */
+@media (max-width: 640px) {
+  .form-grid { grid-template-columns: minmax(0, 1fr); gap: 4px 0; }
+  .form-grid label { margin-top: 6px; }
+  .prov-item .pname { flex: 1 1 100%; }
+}
 .badge.warn { color: var(--warn); }
 
 /* ---------- layers tree ---------- */
