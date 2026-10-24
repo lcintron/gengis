@@ -26,9 +26,7 @@ window.MB = window.MB || {};
     error: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.5"/>'),
     signin: svg('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>'),
     off: svg('<path d="M7 18h10.5a4.5 4.5 0 0 0 .6-8.96A6 6 0 0 0 6.3 9.5 4.25 4.25 0 0 0 7 18z" stroke-dasharray="2.5 2.5"/>'),
-    refresh: svg('<path d="M20 12a8 8 0 1 1-2.3-5.6L20 9"/><path d="M20 4v5h-5"/>'),
     logout: svg('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>'),
-    open: svg('<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/>'),
     file: svg('<path d="M6 3h8l4 4v14H6z M14 3v4h4"/>')
   };
   const when = ts => { if (!ts) return ''; const m = Math.round((Date.now() - ts) / 60000); return m < 1 ? 'now' : (m < 60 ? m + ' min' : (m < 1440 ? Math.round(m / 60) + ' h' : new Date(ts).toLocaleDateString())); };
@@ -88,7 +86,7 @@ window.MB = window.MB || {};
         html += `<div class="cloud-acc${a.state === 'signin' ? ' out' : ''}">
           <span class="cloud-avatar" aria-hidden="true">${esc(initial)}</span>
           <div class="cloud-acc-main"><b>${esc(a.name || a.email)}</b><small>${esc(p.name)} · ${a.kind === 'personal' ? 'Personal' : 'Work or school'}</small>${a.pullError && a.state !== 'signin' ? `<small class="cloud-warn" title="${esc(a.pullError)}">${I.error} Can't check for changes</small>` : ''}</div>
-          ${a.state === 'signin' ? `<button type="button" class="btn small primary" data-signin="${esc(a.id)}" data-key="s-${esc(a.id)}" title="${esc(a.error || 'Signed out')}">Sign in</button>` : iconBtn('data-act="syncnow" data-key="sync"', I.refresh, 'Sync now')}
+          ${a.state === 'signin' ? `<button type="button" class="btn small primary" data-signin="${esc(a.id)}" data-key="s-${esc(a.id)}" title="${esc(a.error || 'Signed out')}">Sign in</button>` : iconBtn('data-act="syncnow" data-key="sync"', MB.ICON.refresh, 'Sync now')}
           ${iconBtn(`data-disconnect="${esc(a.id)}" data-key="d-${esc(a.id)}"`, I.logout, 'Disconnect')}
         </div>
         <div class="cloud-auto"><span>Sync all projects</span>${tip('Named projects sync automatically. Switch one off below to keep it on this device only.')}${toggle(`data-auto="${esc(a.id)}" data-key="a-${esc(a.id)}"`, a.auto, 'Sync all projects')}</div>`;
@@ -101,7 +99,7 @@ window.MB = window.MB || {};
         if (!rm || rm.loading || rm.error || !rm.files.length) return;
         html += `<h3 class="cloud-h">Only in ${esc(provName(a.provider))}</h3><div class="cloud-list">${rm.files.map(f => `<div class="cloud-row">
             <span class="cloud-st">${I.file}</span><div class="cloud-main"><b>${esc(f.name.replace(/\.gengis\.json$|\.json$/i, ''))}</b><small>${esc(when(f.modified))}</small></div>
-            <button type="button" class="btn small with-icon" data-openremote="${esc(a.id)}" data-file="${esc(f.fileId)}">${I.open}Open</button></div>`).join('')}</div>`;
+            ${MB.iconBtn('open', 'Open', `data-openremote="${esc(a.id)}" data-file="${esc(f.fileId)}"`, '', 'Open ' + f.name.replace(/\.gengis\.json$|\.json$/i, ''))}</div>`).join('')}</div>`;
       });
     }
     box.innerHTML = html;
