@@ -16,9 +16,13 @@ window.MB = window.MB || {};
 (function (MB) {
   'use strict';
 
-  const PUSH_DELAY = 5000;            // ms after a background save (a burst of saves is one upload)
-  const PULL_EVERY = 5 * 60 * 1000;   // ms between change-feed checks while the app is in view
-  const PULL_MIN = 60 * 1000;         // ...and at least this long between checks on focus
+  const PUSH_DELAY = 3000;            // ms after a background save (a burst of saves is one upload)
+  // Checking the cloud for changes while the app is in view: often while someone is working (a change made here or
+  // arriving from elsewhere in the last couple of minutes), less when all is quiet; never while hidden. Fast enough
+  // for two devices on one map, slow enough to stay far below OneDrive's request limits and spare a phone's battery
+  // (instant updates would need a server for the provider's notifications; GenGIS has none).
+  const PULL_ACTIVE = 10 * 1000, PULL_IDLE = 30 * 1000, ACTIVE_FOR = 2 * 60 * 1000;
+  const PULL_MIN = 10 * 1000;         // at least this long between checks when the app comes into view or focus
   const TOKEN_MARGIN = 5 * 60 * 1000; // an access token is renewed when it has less left than this
   const SILENT_EVERY = 12 * 3600 * 1000; // a silent sign-in at start-up at most this often
   const BACKOFF_MAX = 5 * 60 * 1000;
@@ -307,7 +311,10 @@ window.MB = window.MB || {};
   }
 
   /* ---------- pulling ---------- */
-  let lastPull = 0, pulling = null;
+  let lastPull = 0, pulling = null, lastActivity = 0;
+  // How long until the next check is due (ms): sooner while there is activity.
+  C.pullInterval = () => (env.now() - lastActivity < ACTIVE_FOR ? PULL_ACTIVE : PULL_IDLE);
+  C.activity = () => { lastActivity = env.now(); };
   C.pull = function (force) {
     if (!C.ready || pulling) return pulling || Promise.resolve();
     if (!force && env.now() - lastPull < PULL_MIN) return Promise.resolve();
@@ -383,6 +390,7 @@ window.MB = window.MB || {};
     const open = MB.state.projectId === l.projectId;
     const localChanged = !rec || (await hashOf(rec.data)) !== l.hash || (open && MB.projects.dirty());
     if (localChanged) { l.state = 'conflict'; l.remoteEtag = remote.etag; await saveLink(l); notify(l, 'conflict'); emit(); return; }
+    C.activity(); // someone is working on it elsewhere: check more often for a while
     await takeRemote(l, data, remote, remoteHash);
     MB.toast('"' + (data.name || l.nameFor) + '" updated from ' + providerOf(acc).name, 3500);
   }
@@ -575,7 +583,9 @@ window.MB = window.MB || {};
     window.addEventListener('online', () => { C.pull(true); Object.keys(C.links).forEach(id => { if (['offline', 'pending'].includes(C.links[id].state)) C.schedule(id, 500); }); });
     // hidden (on a phone, often the last moment before the page is stopped): what waits to upload goes now
     document.addEventListener('visibilitychange', () => { if (env.visible()) C.pull(false); else C.flushNow(); });
-    setInterval(() => { if (env.visible()) C.pull(true); }, PULL_EVERY);
+    MB.on('saved', C.activity);
+    window.addEventListener('focus', () => C.pull(false)); // clicking into this window (another one beside it may have changed the map)
+    setInterval(() => { if (env.visible() && env.now() - lastPull >= C.pullInterval()) C.pull(true); }, 2000);
     await scanAll();
     await silentSignIn();
     C.pull(true);

@@ -209,6 +209,36 @@ test('P2-14: the redirect address is the same for /index.html; the page\'s own p
   assert.equal(app.getSearch(), '?lat=40.7&lon=-74&zoom=12');
 });
 
+test('checking cadence: every 10 s for two minutes after activity, then every 30 s', async () => {
+  const app = makeApp({ server: makeServer() });
+  let now = 1e12;
+  app.C.env.now = () => now;
+  assert.equal(app.C.pullInterval(), 30000, 'quiet');
+  app.C.activity();
+  assert.equal(app.C.pullInterval(), 10000, 'just after a change');
+  now += 119000;
+  assert.equal(app.C.pullInterval(), 10000, 'still within two minutes');
+  now += 2000;
+  assert.equal(app.C.pullInterval(), 30000, 'quiet again');
+  assert.equal(app.C.env.pushDelay, 0, '(tests upload at once)');
+  assert.equal(makeApp({ server: makeServer(), pushDelay: 'default' }).C.env.pushDelay, 3000, 'the app uploads 3 s after a save');
+});
+
+test('a focus check runs at most every 10 s; a forced one always', async () => {
+  const { server, app } = await connected();
+  let now = Date.now();
+  app.C.env.now = () => now;
+  await app.C.pull(true); await app.settle();
+  server.calls.length = 0;
+  await app.C.pull(false); await app.settle();
+  assert.equal(server.calls.length, 0, 'too soon after the last check');
+  now += 11000;
+  await app.C.pull(false); await app.settle();
+  assert.equal(server.calls.length, 1, 'due');
+  await app.C.pull(true); await app.settle();
+  assert.equal(server.calls.length, 2, 'forced');
+});
+
 test('start-up: a named project never synced (sync all) is uploaded, without waiting for an edit', async () => {
   const { server, app } = await connected();
   app.device.projects.put(project('p7', 'Later'));

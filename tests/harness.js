@@ -279,7 +279,7 @@ function makeApp(o) {
   MB.cloudProviders.onedrive.clientId = 'test-client';
   const C = MB.cloud;
   let online = true;
-  Object.assign(C.env, { store: device.store, lock: device.lock, fetch: server.fetch, online: () => online, visible: () => true, go: url => { app.wentTo = url; }, pushDelay: o.pushDelay == null ? 0 : o.pushDelay });
+  Object.assign(C.env, { store: device.store, lock: device.lock, fetch: server.fetch, online: () => online, visible: () => true, go: url => { app.wentTo = url; }, pushDelay: o.pushDelay === 'default' ? C.env.pushDelay : (o.pushDelay == null ? 0 : o.pushDelay) });
   const app = {
     MB, C, P, device, server, toasts, loaded, tabId, events, listeners, wentTo: null,
     setSearch: s => { search = s; },
