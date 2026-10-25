@@ -112,7 +112,8 @@ window.MB = window.MB || {};
         tid, kind: tid === PERSONAL_TENANT ? 'personal' : 'work' };
     },
 
-    root: ctx => graph(ctx, 'GET', ROOT + '?$select=id,name').then(it => it.id),
+    // GenGIS's folder ({ fileId, name }): Microsoft makes a new one if it was renamed, moved or deleted
+    root: ctx => graph(ctx, 'GET', ROOT + '?$select=id,name').then(it => ({ fileId: it.id, name: it.name })),
 
     // The project files in GenGIS's folder.
     async list(ctx) {

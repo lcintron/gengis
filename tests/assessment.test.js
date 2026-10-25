@@ -227,6 +227,23 @@ test('one folder only: every request stays in the app folder or targets a file b
   server.live().forEach(f => assert.ok(!/[\\/]/.test(f.name), 'no file name makes a subfolder: ' + f.name));
 });
 
+test('a new app folder from Microsoft (old one renamed, moved or deleted): projects are uploaded to it, not turned off', async () => {
+  const { server, app } = await connected({ projects: [project('p1', 'Alpha', 2), project('p2', 'Beta', 3)] });
+  const oldIds = server.inRoot().map(f => f.id).sort();
+  server.newRoot('GenGIS 1');
+  const b = makeApp({ server, device: app.device });      // the next start
+  await b.C.init(); await new Promise(r => setTimeout(r, 1200)); await b.settle();
+  const now = server.inRoot();
+  assert.deepEqual(now.map(f => f.name).sort(), ['Alpha.gengis.json', 'Beta.gengis.json']);
+  assert.ok(now.every(f => !oldIds.includes(f.id)), 'new files in the new folder');
+  assert.equal(JSON.parse(now.find(f => f.name === 'Beta.gengis.json').content.toString()).features.length, 3);
+  assert.equal(b.C.links.p1.state, 'synced');
+  assert.notEqual(b.C.links.p1.excluded, true);
+  assert.ok(b.toasts.some(t => /new folder/.test(t)));
+  assert.ok(!b.toasts.some(t => /deleted from the cloud/.test(t)));
+  assert.equal(server.live().length, 4, 'the old files are left where they were');
+});
+
 test('checking cadence: every 10 s for two minutes after activity, then every 30 s', async () => {
   const app = makeApp({ server: makeServer() });
   let now = 1e12;

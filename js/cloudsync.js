@@ -335,7 +335,30 @@ window.MB = window.MB || {};
     return pulling;
   };
 
+  // GenGIS's folder, checked once a session and on every full re-check: when Microsoft has given GenGIS a new one
+  // (the old one was renamed, moved or deleted), every project is uploaded to it again rather than taken for deleted.
+  const rootSeen = new Set();
+  async function checkRoot(acc) {
+    const root = await call(acc, (prov, ctx) => prov.root(ctx));
+    rootSeen.add(acc.id);
+    if (acc.rootId === root.fileId) return;
+    const changed = !!acc.rootId;
+    const fresh = await store().get('accounts', acc.id);
+    if (fresh) { fresh.rootId = root.fileId; if (changed) fresh.cursor = null; await store().put('accounts', fresh); }
+    acc.rootId = root.fileId;
+    if (!changed) return;
+    acc.cursor = null;
+    for (const l of await store().all('links')) {
+      if (l.accountId !== acc.id || !l.fileId) continue;
+      Object.assign(l, { fileId: null, etag: null, hash: null, remoteEtag: null, name: null, state: 'pending', error: '' });
+      await saveLink(l);
+      C.schedule(l.projectId, 500);
+    }
+    MB.toast('OneDrive gave GenGIS a new folder (Apps/' + root.name + '): the old one was renamed, moved or deleted. Your projects are being uploaded to it.', 9000);
+  }
+
   async function pullAccount(acc) {
+    if (!rootSeen.has(acc.id) || !acc.cursor) await checkRoot(acc);
     let res = await call(acc, (prov, ctx) => prov.changes(ctx, acc.cursor || null));
     let full = !acc.cursor || res.reset || res.full; // everything in the folder, not just what changed
     if (res.reset) { acc.cursor = null; res = await call(acc, (prov, ctx) => prov.changes(ctx, null)); full = true; }

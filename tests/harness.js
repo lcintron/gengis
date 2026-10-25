@@ -50,9 +50,13 @@ function makeServer(opts) {
   const etag = f => `"{${f.id}},${f.version}"`;
   const item = f => ({ id: f.id, name: f.name, eTag: etag(f), size: S.sizeOf.get(f.id) || f.content.length, lastModifiedDateTime: new Date(f.modified).toISOString(), file: { mimeType: 'application/json' } });
   const touch = f => { f.version++; f.modified = S.now(); S.log.push({ seq: ++S.seq, id: f.id }); };
-  const byName = name => [...S.files.values()].find(f => !f.deleted && f.name.toLowerCase() === name.toLowerCase());
+  // GenGIS's app folder: Microsoft may hand out a new one (the old renamed, moved or deleted); files elsewhere are out of reach
+  S.root = { id: 'root', name: 'GenGIS' };
+  S.newRoot = name => { S.root = { id: 'root' + (++S.ids), name: name || 'GenGIS 1' }; S.log.push({ seq: ++S.seq, id: null }); };
+  const here = f => f && !f.deleted && f.root === S.root.id;
+  const byName = name => [...S.files.values()].find(f => here(f) && f.name.toLowerCase() === name.toLowerCase());
   S.create = (name, content) => {
-    const f = { id: 'F' + (++S.ids), name, content: Buffer.from(content), version: 0, modified: S.now(), deleted: false };
+    const f = { id: 'F' + (++S.ids), name, content: Buffer.from(content), version: 0, modified: S.now(), deleted: false, root: S.root.id };
     S.files.set(f.id, f); touch(f); return f;
   };
   // another device (or the user in OneDrive) changes a file
@@ -60,6 +64,7 @@ function makeServer(opts) {
   S.deleteRemote = id => { const f = S.files.get(id); f.deleted = true; touch(f); };
   S.renameRemote = (id, name) => { const f = S.files.get(id); f.name = name; touch(f); };
   S.live = () => [...S.files.values()].filter(f => !f.deleted);
+  S.inRoot = () => S.live().filter(here);
   S.issueCode = verifier => { const code = 'code-' + crypto.randomBytes(6).toString('hex'); S.codes.set(code, sha256url(verifier)); return code; };
   S.idToken = claims => 'eyJhbGciOiJub25lIn0.' + b64url(JSON.stringify(claims)) + '.sig';
   S.claims = { oid: 'user-1', tid: '9188040d-6c67-4c5b-b112-36a304b66dad', name: 'Test User', preferred_username: 'test@example.com' };
@@ -118,11 +123,12 @@ function makeServer(opts) {
     if (!S.tokens.has(auth) || S.tokens.get(auth) < S.now()) return gerr(401, 'InvalidAuthenticationToken', 'Access token has expired');
     const u = new URL(url), p = decodeURIComponent(u.pathname.replace('/v1.0', ''));
     const ifMatch = h['If-Match'];
-    const live = id => { const f = S.files.get(id); return f && !f.deleted ? f : null; };
+    const live = id => { const f = S.files.get(id); return here(f) ? f : null; };
+    const gone = id => { const f = S.files.get(id); return f && !f.deleted ? gerr(403, 'accessDenied', 'outside the app folder') : gerr(404, 'itemNotFound'); };
     let m;
-    if (p === '/me/drive/special/approot' && method === 'GET') return json(200, { id: 'root', name: 'GenGIS' });
+    if (p === '/me/drive/special/approot' && method === 'GET') return json(200, { id: S.root.id, name: S.root.name });
     if (p === '/me/drive/special/approot/children' && method === 'GET') {
-      const page = +(u.searchParams.get('page') || 0), all = S.live().filter(f => !S.hidden.has(f.id)).sort((a, b) => a.id.localeCompare(b.id));
+      const page = +(u.searchParams.get('page') || 0), all = S.inRoot().filter(f => !S.hidden.has(f.id)).sort((a, b) => a.id.localeCompare(b.id));
       const slice = all.slice(page * S.pageSize, (page + 1) * S.pageSize);
       const out = { value: slice.map(item) };
       if ((page + 1) * S.pageSize < all.length) out['@odata.nextLink'] = GRAPH + '/me/drive/special/approot/children?page=' + (page + 1);
@@ -133,8 +139,8 @@ function makeServer(opts) {
       if (S.noDelta) return gerr(403, 'accessDenied', 'delta is not supported on this folder');
       if (token != null && S.tooOld.has(token)) return gerr(410, 'resyncRequired');
       const upTo = u.searchParams.has('upto') ? +u.searchParams.get('upto') : S.seq;
-      const ids = [...new Set(S.log.filter(e => e.seq > from && e.seq <= upTo).map(e => e.id))];
-      const items = ids.map(id => S.files.get(id)).filter(f => !S.hidden.has(f.id) && (token != null || !f.deleted))
+      const ids = [...new Set(S.log.filter(e => e.id && e.seq > from && e.seq <= upTo).map(e => e.id))];
+      const items = ids.map(id => S.files.get(id)).filter(f => f.root === S.root.id && !S.hidden.has(f.id) && (token != null || !f.deleted))
         .map(f => f.deleted ? { id: f.id, deleted: { state: 'deleted' } } : item(f));
       const slice = items.slice(page * S.pageSize, (page + 1) * S.pageSize), out = { value: slice };
       if ((page + 1) * S.pageSize < items.length) out['@odata.nextLink'] = GRAPH + '/me/drive/special/approot/delta?' + (token != null ? 'token=' + token + '&' : '') + 'upto=' + upTo + '&page=' + (page + 1);
@@ -158,7 +164,7 @@ function makeServer(opts) {
     }
     if ((m = /^\/me\/drive\/items\/([^/]+)$/.exec(p))) {
       const f = live(m[1]);
-      if (!f) return gerr(404, 'itemNotFound');
+      if (!f) return gone(m[1]);
       if (method === 'GET') return json(200, item(f));
       if (method === 'PATCH') {
         const body = JSON.parse(o.body);
@@ -172,7 +178,7 @@ function makeServer(opts) {
     }
     if ((m = /^\/me\/drive\/items\/([^/]+)\/content$/.exec(p))) {
       const f = live(m[1]);
-      if (!f) return gerr(404, 'itemNotFound');
+      if (!f) return gone(m[1]);
       if (method === 'GET') return new Res(200, Buffer.from(f.content));
       if (method === 'PUT') {
         if (ifMatch && ifMatch !== etag(f)) return gerr(412, 'resourceModified');
@@ -184,7 +190,7 @@ function makeServer(opts) {
     }
     if ((m = /^\/me\/drive\/items\/([^/]+)\/createUploadSession$/.exec(p)) && method === 'POST') {
       const f = live(m[1]);
-      if (!f) return gerr(404, 'itemNotFound');
+      if (!f) return gone(m[1]);
       if (ifMatch && ifMatch !== etag(f)) return gerr(412, 'resourceModified');
       const sid = 'S' + (++S.ids); S.sessions.set(sid, { fileId: f.id, parts: [], received: 0 });
       return json(200, { uploadUrl: UPLOAD + sid });
