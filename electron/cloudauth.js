@@ -188,7 +188,8 @@ async function cloudFetch(o) {
   const body = o.body == null ? undefined : (typeof o.body === 'string' ? o.body : Buffer.from(o.body));
   if (body && body.length > MAX_BODY) return { error: 'too_large' };
   let res;
-  try { res = await env.fetch(u.toString(), { method, headers, body }); }
+  // (a redirect is not followed here: it goes back to the page, whose next request is checked like this one)
+  try { res = await env.fetch(u.toString(), { method, headers, body, redirect: 'manual' }); }
   catch (e) { return { error: 'network', message: e.message }; }
   const out = {};
   KEEP_HEADERS.forEach(h => { const v = res.headers.get(h); if (v != null) out[h] = v; });

@@ -37,6 +37,8 @@ function makeGoogle(opts) {
     now: () => Date.now(),
     user: { sub: 'g-user-1', email: 'test@gmail.com', name: 'Test G' },
     chunkSizes: [],
+    shortWrites: 0,       // chunks Drive takes only part of (it says how much in Range)
+    stall: false,         // Drive takes nothing more
     lagFolders: 0         // folder listings that still miss a folder just made (Drive's search index lags a moment)
   };
   const touch = f => { f.version++; f.modified = S.now() + (S.ids++); S.log.push({ seq: ++S.seq, id: f.id }); };
@@ -103,6 +105,8 @@ function makeGoogle(opts) {
       if (a !== s.received || body.length !== b - a + 1) return gerr(400, 'badRange', 'expected ' + s.received);
       if (b + 1 < total && body.length % CHUNK_UNIT) return gerr(400, 'badRange', 'chunk not a multiple of 256 KiB');
       S.chunkSizes.push(body.length);
+      if (S.stall) return new Res(308, '', s.received ? { Range: 'bytes=0-' + (s.received - 1) } : {});
+      if (S.shortWrites > 0 && body.length >= 2 * CHUNK_UNIT) { S.shortWrites--; const keep = Math.floor(body.length / 2 / CHUNK_UNIT) * CHUNK_UNIT; s.parts.push(body.subarray(0, keep)); s.received += keep; return new Res(308, '', { Range: 'bytes=0-' + (s.received - 1) }); }
       s.parts.push(body); s.received = b + 1;
       if (s.received < total) return new Res(308, '', { Range: 'bytes=0-' + b });
       S.sessions.delete(url.slice(SESSION.length));
@@ -152,7 +156,12 @@ function makeGoogle(opts) {
       const f = S.files.get(decodeURIComponent(m[1]));
       if (!f) return gerr(404, 'notFound', 'File not found: ' + m[1]);
       if (method === 'GET') return u.searchParams.get('alt') === 'media' ? new Res(200, Buffer.from(f.content)) : json(200, meta(f));
-      if (method === 'PATCH') { const b = JSON.parse(o.body); if (b.name) f.name = b.name; touch(f); return json(200, meta(f)); }
+      if (method === 'PATCH') {
+        const b = JSON.parse(o.body), add = u.searchParams.get('addParents'), rm = u.searchParams.get('removeParents');
+        if (b.name) f.name = b.name;
+        if (add) f.parents = f.parents.filter(x => x !== rm).concat(add);
+        touch(f); return json(200, meta(f));
+      }
       if (method === 'DELETE') { S.purge(f.id); return json(204, null); }
     }
     return gerr(400, 'badRequest', method + ' ' + p);

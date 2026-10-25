@@ -236,3 +236,12 @@ test('the cloud requests it makes for the page: the cloud\'s hosts over HTTPS on
   T.set({ fetch: async () => { throw new TypeError('fetch failed'); } });
   assert.equal((await T.cloudFetch({ url: 'https://graph.microsoft.com/' })).error, 'network');
 });
+
+test('the cloud requests it makes for the page never follow a redirect themselves', async () => {
+  let opts;
+  T.set({ fetch: async (url, o) => { opts = o; return { status: 302, headers: { get: k => (k === 'location' ? 'https://evil.example/' : null) }, arrayBuffer: async () => new ArrayBuffer(0) }; } });
+  const r = await T.cloudFetch({ url: 'https://graph.microsoft.com/v1.0/x' });
+  assert.equal(opts.redirect, 'manual');
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.location, 'https://evil.example/', 'handed back to the page, whose next request is checked');
+});

@@ -51,15 +51,16 @@ test('Drive: two devices making the folder at the same moment keep one (the olde
   assert.equal(a.fileId, google.folders()[0].id);
 });
 
-test('Drive: a folder with files in it is never removed, even when it is the newer one', async () => {
+test('Drive: a folder made at the same moment never loses its files: they move to the folder kept', async () => {
   const { google, GD, ctx } = adapter();
   const older = google.add('GenGIS', '', { mimeType: FOLDER, appProperties: { gengis: 'root' } });
   const newer = google.add('GenGIS', '', { mimeType: FOLDER, appProperties: { gengis: 'root' } });
-  google.add('x.gengis.json', '{}', { parents: [newer.id] });
+  const x = google.add('x.gengis.json', '{}', { parents: [newer.id] });
   google.lagFolders = 1; // the first lookup misses both: a folder is made, then the extras are looked at
   const root = await GD.root(ctx());
   assert.equal(root.fileId, older.id);
-  assert.ok(google.files.has(newer.id), 'the newer folder with a file stays');
+  assert.deepEqual(google.files.get(x.id).parents, [older.id], 'its file is in the folder kept');
+  assert.equal(google.folders().length, 1);
 });
 
 test('Drive: create, name clash (409), stale version (412), update at the right version', async () => {
@@ -386,4 +387,75 @@ test('desktop: the cloud requests through the main process look like fetch to th
   const r401 = await f('https://www.googleapis.com/drive/v3/files');
   assert.equal(r401.status, 401);
   assert.equal(r401.headers.get('Retry-After'), null);
+});
+
+/* ---------------------------------------------------------------- review fixes */
+
+test('Drive: a chunk Drive takes only part of is sent again from where Drive says it stopped', async () => {
+  const { google, GD, ctx } = adapter();
+  google.shortWrites = 2;
+  const big = project('p1', 'Big', 1, { pad: 'y'.repeat(11 * 1024 * 1024) });
+  const out = await GD.put(ctx(), { name: 'Big.gengis.json', text: JSON.stringify(big) });
+  assert.equal(google.shortWrites, 0, 'Drive did take less');
+  assert.equal(google.files.get(out.fileId).content.toString(), JSON.stringify(big), 'intact');
+});
+
+test('Drive: an upload Drive stops taking fails (to be tried again), never loops', async () => {
+  const { google, GD, ctx } = adapter();
+  google.stall = true;
+  await assert.rejects(GD.put(ctx(), { name: 'Big.gengis.json', text: JSON.stringify(project('p1', 'Big', 1, { pad: 'z'.repeat(7 * 1024 * 1024) })) }), e => e.status === 503);
+  assert.ok(google.chunkSizes.length <= 5);
+});
+
+test('Drive: a second GenGIS folder with files in it is merged into the older one', async () => {
+  const { google, GD, ctx } = adapter();
+  const older = google.add('GenGIS', '', { mimeType: FOLDER, appProperties: { gengis: 'root' } });
+  const newer = google.add('GenGIS', '', { mimeType: FOLDER, appProperties: { gengis: 'root' } });
+  const f = google.add('Beta.gengis.json', '{}', { parents: [newer.id] });
+  const root = await GD.root(ctx());
+  assert.equal(root.fileId, older.id);
+  assert.deepEqual(google.files.get(f.id).parents, [older.id], 'its file moved in');
+  assert.ok(!google.files.has(newer.id), 'the extra folder is gone');
+  assert.equal(google.folders().length, 1);
+});
+
+test('Drive: a file moved out of the folder, or renamed away from .json, reads as removed', async () => {
+  const { google, GD, ctx } = adapter();
+  const a = await GD.put(ctx(), { name: 'A.gengis.json', text: '{}' });
+  const b = await GD.put(ctx(), { name: 'B.gengis.json', text: '{}' });
+  const first = await GD.changes(ctx(), null);
+  google.files.get(a.fileId).parents = ['myDrive']; google.writeRemote(a.fileId, '{"moved":1}');
+  google.files.get(b.fileId).name = 'B.txt'; google.writeRemote(b.fileId, '{}');
+  const next = await GD.changes(ctx(), first.cursor);
+  assert.ok(next.items.some(i => i.fileId === a.fileId && i.deleted));
+  assert.ok(next.items.some(i => i.fileId === b.fileId && i.deleted));
+});
+
+test('Drive: files arriving from a merged folder start a fresh look, not removals', async () => {
+  const { google, GD, ctx } = adapter();
+  const mine = await GD.root(ctx('dev-b'));               // this device uses a folder...
+  const first = await GD.changes(ctx('dev-b'), null);
+  const older = google.add('GenGIS', '', { mimeType: FOLDER, appProperties: { gengis: 'root' } });
+  google.files.get(older.id).created = 0;                  // ...and an older one turns up (another device's)
+  const f = await GD.put(ctx('dev-b'), { name: 'C.gengis.json', text: '{}' });
+  google.files.get(f.fileId).parents = [older.id]; google.writeRemote(f.fileId, '{}'); // merged there by that device
+  const next = await GD.changes(ctx('dev-b'), first.cursor);
+  assert.equal(next.reset, true);
+  assert.notEqual((await GD.root(ctx('dev-b'))).fileId, mine.fileId);
+});
+
+test('desktop: a redirect is followed by the page, without the access token, each hop checked by the main process', async () => {
+  const google = makeGoogle(), server = makeServer(), desktop = {}, sent = [];
+  desktop.cloud = fakeDesktop(google, server);
+  desktop.cloud.fetch = async (url, method, headers) => {
+    sent.push({ url, method, headers });
+    if (url.startsWith('https://graph.microsoft.com/')) return { status: 302, headers: { location: 'https://public.dm.files.1drv.com/y4m?x' }, body: Buffer.alloc(0) };
+    return { status: 200, headers: { 'content-type': 'application/json' }, body: Buffer.from('{"ok":true}') };
+  };
+  const app = makeApp({ server, google, desktop });
+  const res = await app.C._desktopFetch('https://graph.microsoft.com/v1.0/me/drive/items/1/content', { headers: { Authorization: 'Bearer secret' } });
+  assert.deepEqual(await res.json(), { ok: true });
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].url, 'https://public.dm.files.1drv.com/y4m?x');
+  assert.equal(sent[1].headers.Authorization, undefined, 'the token does not follow a redirect');
 });

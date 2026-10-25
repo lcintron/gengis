@@ -81,11 +81,20 @@ window.MB = window.MB || {};
   const sourceOf = acc => acc.source || 'refresh';
   // In the desktop app the cloud's requests go through its main process (a file:// page has no origin for the APIs'
   // CORS): what comes back is made to look like fetch's answer. An address it refuses is an error, not a network blip.
-  async function desktopFetch(url, o) {
+  async function desktopFetch(url, o, hops) {
     o = o || {};
     const body = o.body == null ? null : (ArrayBuffer.isView(o.body) ? o.body.slice() : o.body); // (a chunk alone, not its whole buffer)
     const r = await desktop().fetch(String(url), o.method || 'GET', o.headers || {}, body);
     if (r && r.error === 'network') throw new TypeError(r.message || 'Failed to fetch');
+    // a redirect (a download's own address): followed here, without the access token, and checked again over there
+    // (a 308 without an address is Drive's "upload incomplete", an answer)
+    const loc = r && !r.error && [301, 302, 303, 307, 308].includes(r.status) && r.headers && r.headers.location;
+    if (loc) {
+      if ((hops || 0) >= 5) throw new TypeError('Too many redirects');
+      const keep = r.status === 307 || r.status === 308;
+      const headers = Object.assign({}, o.headers || {}); delete headers.Authorization;
+      return desktopFetch(new URL(loc, String(url)).toString(), { method: keep ? o.method : 'GET', headers, body: keep ? o.body : null }, (hops || 0) + 1);
+    }
     const status = r && r.error ? 400 : r.status, h = (r && r.headers) || {};
     const bytes = r && r.body ? new Uint8Array(r.body) : new Uint8Array(0);
     const text = () => (r && r.error ? JSON.stringify({ error: { message: 'Not allowed: ' + r.error } }) : new TextDecoder().decode(bytes));

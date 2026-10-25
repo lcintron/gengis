@@ -20,7 +20,7 @@ window.MB = window.MB || {};
   const GIS = 'https://accounts.google.com/gsi/client';
   const SCOPES = ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/drive.file'];
   const FOLDER = 'application/vnd.google-apps.folder';
-  const FIELDS = 'id,name,version,modifiedTime,size,trashed,parents,createdTime';
+  const FIELDS = 'id,name,mimeType,version,modifiedTime,size,trashed,parents,createdTime';
   const SIMPLE_MAX = 5 * 1024 * 1024;   // bytes: larger files go up resumably
   const CHUNK = 20 * 256 * 1024;        // 5 MiB: resumable chunks are multiples of 256 KiB
   const MAX_READ = 200 * 1024 * 1024;
@@ -81,10 +81,16 @@ window.MB = window.MB || {};
     if (!found.length) {
       await api(ctx, 'POST', API + '/files?fields=id,name,createdTime', { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'GenGIS', mimeType: FOLDER, appProperties: { gengis: 'root' } }) });
       found = await findFolders(ctx); // another device may have made one at the same moment: the older one stays
-      for (const extra of found.slice(1)) {
-        const inside = await list(ctx, q(extra.id) + ' in parents and trashed=false', 'id');
-        if (!inside.length) await api(ctx, 'DELETE', API + '/files/' + encodeURIComponent(extra.id)).catch(() => {});
+    }
+    // more than one (made at the same moment): what is in the newer ones moves into the older one, then they go
+    for (const extra of found.slice(1)) {
+      const inside = await list(ctx, q(extra.id) + ' in parents and trashed=false', 'id');
+      let moved = true;
+      for (const f of inside) {
+        try { await api(ctx, 'PATCH', API + '/files/' + encodeURIComponent(f.id) + '?addParents=' + encodeURIComponent(found[0].id) + '&removeParents=' + encodeURIComponent(extra.id) + '&fields=id', { headers: { 'Content-Type': 'application/json' }, body: '{}' }); }
+        catch (e) { moved = false; }
       }
+      if (moved) await api(ctx, 'DELETE', API + '/files/' + encodeURIComponent(extra.id)).catch(() => {});
     }
     if (!found.length) throw new Error('Could not make the GenGIS folder in Google Drive');
     return { fileId: found[0].id, name: found[0].name };
@@ -209,7 +215,7 @@ window.MB = window.MB || {};
         const start = await api(ctx, 'GET', API + '/changes/startPageToken');
         return { items: await GD.list(ctx), cursor: start.startPageToken, full: true, reset: false };
       }
-      const items = [];
+      const items = [], outside = [];
       let token = cursor, next = null;
       try {
         while (token) {
@@ -218,6 +224,7 @@ window.MB = window.MB || {};
           (page.changes || []).forEach(c => {
             if (c.removed || (c.file && c.file.trashed)) items.push({ fileId: c.fileId, deleted: true });
             else if (c.file && (c.file.parents || []).includes(f.fileId) && /\.json$/i.test(c.file.name)) items.push(item(c.file));
+            else if (c.file && c.file.mimeType !== FOLDER) outside.push(c.file);
           });
           token = page.nextPageToken || null;
           next = page.newStartPageToken || next;
@@ -225,6 +232,13 @@ window.MB = window.MB || {};
       } catch (e) {
         if (e.status === 400 || e.status === 404 || e.status === 410) return { items: [], cursor: null, reset: true };
         throw e;
+      }
+      if (outside.length) {
+        // a file not (or no longer) in GenGIS's folder: moved away by the user, unless GenGIS's folder itself changed
+        // (two folders merged): then everything is looked at again
+        const now = await folder(ctx, true);
+        if (now.fileId !== f.fileId) return { items: [], cursor: null, reset: true };
+        outside.forEach(x => items.push({ fileId: x.id, deleted: true }));
       }
       return { items, cursor: next || cursor, reset: false };
     }
@@ -253,16 +267,22 @@ window.MB = window.MB || {};
       { raw: true, headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/json', 'X-Upload-Content-Length': String(bytes.length) }, body: JSON.stringify(meta || {}) });
     const session = start.headers.get('Location');
     if (!session) throw new Error('No upload session');
-    let at = 0, res;
-    while (at < bytes.length) {
+    // Drive says how much it has (308 + Range): the next chunk starts there, which may be short of what was sent
+    let at = 0, stalls = 0;
+    for (;;) {
       const end = Math.min(at + CHUNK, bytes.length);
+      let res;
       try { res = await ctx.fetch(session, { method: 'PUT', headers: { Authorization: 'Bearer ' + await ctx.token(), 'Content-Range': `bytes ${at}-${end - 1}/${bytes.length}` }, body: bytes.subarray(at, end) }); }
       catch (e) { const err = new Error('offline'); err.code = 'network'; throw err; }
-      if (res.status !== 308 && !res.ok) throw await httpError(res, 'upload');
-      at = end;
+      if (res.ok) { if (o.onProgress) o.onProgress(bytes.length, bytes.length); return item(await res.json()); }
+      if (res.status !== 308) throw await httpError(res, 'upload');
+      const m = /bytes=0-(\d+)/.exec(res.headers.get('Range') || '');
+      const got = m ? +m[1] + 1 : 0;
+      stalls = got > at ? 0 : stalls + 1;
+      if (stalls > 3 || got >= bytes.length) throw Object.assign(new Error('The upload did not go through'), { status: 503 }); // (tried again later, from the start)
+      at = got;
       if (o.onProgress) o.onProgress(at, bytes.length);
     }
-    return item(await res.json());
   }
 
   MB.cloudProviders = MB.cloudProviders || {};

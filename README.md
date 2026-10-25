@@ -98,7 +98,7 @@ In a web browser Microsoft keeps a sign-in for 24 hours; GenGIS renews it on sta
 1. [console.cloud.google.com](https://console.cloud.google.com) → a new project **GenGIS** → APIs & Services → Library → enable the **Google Drive API**.
 2. Google Auth Platform → Branding: app name **GenGIS**, logo `branding/store/gengis-logo-120.png`, home page, privacy and terms URLs as above, authorized domain `luiscintron.com`. Audience: **External**. Data access: `openid`, `email`, `profile` and `.../auth/drive.file` (non-sensitive: only files GenGIS creates).
 3. Clients → Create client → **Web application**, authorized JavaScript origins `https://g2.luiscintron.com` and `http://localhost:8080`. Put its client ID in `WEB_CLIENT_ID` in `js/cloud-gdrive.js`.
-4. Clients → Create client → **Desktop app**. Put its client ID and secret in `PROVIDERS.gdrive` in `electron/cloudauth.js` (an installed app's secret is not confidential: Google's guidance).
+4. Clients → Create client → **Desktop app**. Put its client ID and secret in `PROVIDERS.gdrive` in `electron/cloudauth.js` (an installed app's secret is not confidential: Google's guidance). It ships inside the desktop app; to rotate it, add a new secret to the client, release, then delete the old one.
 5. Keep both clients in this one project: Drive lets a project's clients see the files any of them created.
 6. Publish the app (Audience → Publish) and submit the branding for verification, so users don't see the "unverified app" screen.
 
