@@ -87,9 +87,9 @@ Cloud sync stays hidden until the app has a Microsoft Entra app registration:
 2. Authentication → Add a platform → **Single-page application**, redirect URIs `https://g2.luiscintron.com/` and `http://localhost:8080/`. Leave implicit grant off; no client secret.
 3. API permissions → Microsoft Graph, delegated: `Files.ReadWrite.AppFolder`, `offline_access`, `openid`, `profile`, `email`. Don't grant admin consent: users consent for themselves.
 4. Branding: name, logo, home page and privacy page on your domain, then **publisher verification** (a free Microsoft partner ID), which lets more Microsoft 365 organizations allow the app.
-5. Put the Application (client) ID in `CLIENT_ID` in `js/cloud-onedrive.js`.
+5. Put the Application (client) ID in `CLIENT_ID` in `js/cloud-onedrive.js`. Use this one registration everywhere (web, desktop, Android: add platforms to it): OneDrive gives each registration its own folder, so a second registration would mean a second "GenGIS 1" folder.
 
-To try it locally first: `localStorage.setItem('gengis.dev.onedriveClientId', '<client id>')` on `http://localhost:8080`. In a web browser Microsoft keeps a sign-in for 24 hours; GenGIS renews it on start-up, usually without asking.
+In a web browser Microsoft keeps a sign-in for 24 hours; GenGIS renews it on start-up, usually without asking.
 
 ## Tests
 

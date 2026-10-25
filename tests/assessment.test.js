@@ -209,6 +209,24 @@ test('P2-14: the redirect address is the same for /index.html; the page\'s own p
   assert.equal(app.getSearch(), '?lat=40.7&lon=-74&zoom=12');
 });
 
+test('one folder only: every request stays in the app folder or targets a file by id, and nothing creates a folder', async () => {
+  const server = makeServer();
+  const big = project('pb', 'Big one', 1, { svgLibrary: { i: { dataUrl: 'x'.repeat(5 * 1024 * 1024) } } });
+  const { app } = await connected({ server, projects: [project('p1', 'Alpha'), project('p2', 'a/b\\c'), big] });
+  app.save(project('p1', 'Renamed/with slash', 2)); await app.settle();          // rename
+  server.writeRemote(fileOf(server, 'Big one.gengis.json').id, JSON.stringify(Object.assign({}, big, { name: 'Big one' })));
+  app.save(Object.assign({}, big, { features: [] })); await app.settle();         // a conflict
+  await app.C.resolve('pb', 'both'); await app.settle();
+  await app.C.pull(true); await app.settle();
+  await app.C.disconnect(app.C.accounts[0].id); await app.connect(); await app.settle(); // a reconnect
+  const graph = server.calls.filter(c => c.url.startsWith('https://graph.microsoft.com/'));
+  assert.ok(graph.length > 10);
+  const allowed = /^https:\/\/graph\.microsoft\.com\/v1\.0\/me\/drive\/(special\/approot(\?|\/children\?|\/delta\?|:\/[^/]+:(\?|\/content|\/createUploadSession))|items\/[^/?]+(\?|\/content$|\/createUploadSession$|$))/;
+  graph.forEach(c => assert.match(c.url, allowed, c.method + ' ' + c.url));
+  assert.ok(!graph.some(c => c.method === 'POST' && /\/children/.test(c.url)), 'never creates an item under a folder');
+  server.live().forEach(f => assert.ok(!/[\\/]/.test(f.name), 'no file name makes a subfolder: ' + f.name));
+});
+
 test('checking cadence: every 10 s for two minutes after activity, then every 30 s', async () => {
   const app = makeApp({ server: makeServer() });
   let now = 1e12;

@@ -11,12 +11,12 @@ window.MB = window.MB || {};
 (function (MB) {
   'use strict';
 
-  // The Application (client) ID of GenGIS's Entra app registration. Empty: OneDrive is not offered. On a development
-  // host (localhost) a test registration's id may be set instead: localStorage 'gengis.dev.onedriveClientId'.
-  const DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  let devId = '';
-  try { devId = DEV ? localStorage.getItem('gengis.dev.onedriveClientId') || '' : ''; } catch (e) { /* none */ }
-  const CLIENT_ID = devId || '7beaabe0-cfb2-406e-b687-7eace44b2edb'; // GenGIS (multitenant, single-page application)
+  // The Application (client) ID of GenGIS's Entra app registration (multitenant, single-page application). OneDrive
+  // gives each registration its own folder (Apps/GenGIS) the first time it is used, so every GenGIS (web, desktop,
+  // Android) signs in with this one registration, as a platform added to it, never a registration of its own: a second
+  // registration would mean a second folder ("GenGIS 1"). GenGIS itself never creates folders: it writes files in that
+  // one folder, by name (slashes in names are replaced) or by id.
+  const CLIENT_ID = '7beaabe0-cfb2-406e-b687-7eace44b2edb';
   const AUTHORITY = 'https://login.microsoftonline.com/common/oauth2/v2.0';
   const GRAPH = 'https://graph.microsoft.com/v1.0';
   const ROOT = '/me/drive/special/approot';

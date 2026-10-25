@@ -1,6 +1,5 @@
 /* A fake Microsoft (sign-in + Graph) for trying cloud sync in a browser on localhost, without an Entra app.
  * Never deployed (tests/ is excluded from the site). In the page's console:
- *   localStorage.setItem('gengis.dev.onedriveClientId', 'test'); location.reload();
  *   await import('/tests/browser/fake-microsoft.js'); await window.fakeMicrosoft.signIn();
  * Then: fakeMicrosoft.remote(fileId, text) edits a file "on another device"; fakeMicrosoft.fail = (method, url) => Response
  * injects failures; fakeMicrosoft.expire() ends the sign-in. */
