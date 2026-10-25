@@ -41,7 +41,7 @@
     <ul>
       <li>It reads your name and email address to show which account is connected.</li>
       <li>It uploads each named project you choose to sync as a <code>.gengis.json</code> file, reads those files back to keep your devices in step, renames a file when you rename its project, and lists that one folder to show projects from your other devices.</li>
-      <li>It never deletes your files (the one exception: an empty duplicate GenGIS folder it has just made itself, when two devices made one at the same moment). Disconnecting leaves them where they are.</li>
+      <li>It never deletes your files. (If two devices each made a GenGIS folder at the same moment, it moves the project files from the second folder into the first and sends the emptied second folder to the Drive trash.) Disconnecting leaves them where they are.</li>
     </ul>
     <h3>Sign-in tokens</h3>
     <p>The tokens that keep you signed in are stored on your device only: in the web app's own storage for this site, or, in the desktop app, encrypted by your operating system (Windows DPAPI, macOS Keychain, or the Linux secret service). They are never sent anywhere except to Microsoft or Google to keep you signed in.</p>

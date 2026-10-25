@@ -39,6 +39,7 @@ function makeGoogle(opts) {
     chunkSizes: [],
     shortWrites: 0,       // chunks Drive takes only part of (it says how much in Range)
     stall: false,         // Drive takes nothing more
+    hideRange: false,     // a browser not shown the Range header (CORS)
     lagFolders: 0         // folder listings that still miss a folder just made (Drive's search index lags a moment)
   };
   const touch = f => { f.version++; f.modified = S.now() + (S.ids++); S.log.push({ seq: ++S.seq, id: f.id }); };
@@ -108,7 +109,7 @@ function makeGoogle(opts) {
       if (S.stall) return new Res(308, '', s.received ? { Range: 'bytes=0-' + (s.received - 1) } : {});
       if (S.shortWrites > 0 && body.length >= 2 * CHUNK_UNIT) { S.shortWrites--; const keep = Math.floor(body.length / 2 / CHUNK_UNIT) * CHUNK_UNIT; s.parts.push(body.subarray(0, keep)); s.received += keep; return new Res(308, '', { Range: 'bytes=0-' + (s.received - 1) }); }
       s.parts.push(body); s.received = b + 1;
-      if (s.received < total) return new Res(308, '', { Range: 'bytes=0-' + b });
+      if (s.received < total) return new Res(308, '', S.hideRange ? {} : { Range: 'bytes=0-' + b });
       S.sessions.delete(url.slice(SESSION.length));
       const content = Buffer.concat(s.parts);
       if (s.fileId) { const f = S.files.get(s.fileId); if (!f) return gerr(404, 'notFound'); f.content = content; touch(f); return json(200, meta(f)); }
@@ -159,6 +160,7 @@ function makeGoogle(opts) {
       if (method === 'PATCH') {
         const b = JSON.parse(o.body), add = u.searchParams.get('addParents'), rm = u.searchParams.get('removeParents');
         if (b.name) f.name = b.name;
+        if (b.trashed) f.trashed = true;
         if (add) f.parents = f.parents.filter(x => x !== rm).concat(add);
         touch(f); return json(200, meta(f));
       }

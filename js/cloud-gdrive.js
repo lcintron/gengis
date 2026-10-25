@@ -2,7 +2,7 @@
  * - least access: drive.file, the files GenGIS itself created; they sit in one "GenGIS" folder in My Drive, ordinary
  *   files the user can see, open and share
  * - one folder only: GenGIS's folder is found by its own mark (appProperties gengis=root) before one is ever made;
- *   two devices making it at the same moment keep the older one (the newer, empty one is removed)
+ *   two devices making it at the same moment keep the older one (the newer one's project files move into it, and the emptied folder goes to the trash)
  * - a file is replaced only at the version last synced (Drive has no If-Match on uploads: the version is checked just
  *   before), as with OneDrive's eTags; large files go up resumably
  * - sign-in: the web app uses Google's own library (a pop-up; Google gives a web app an hour, then a tap reconnects);
@@ -90,7 +90,8 @@ window.MB = window.MB || {};
         try { await api(ctx, 'PATCH', API + '/files/' + encodeURIComponent(f.id) + '?addParents=' + encodeURIComponent(found[0].id) + '&removeParents=' + encodeURIComponent(extra.id) + '&fields=id', { headers: { 'Content-Type': 'application/json' }, body: '{}' }); }
         catch (e) { moved = false; }
       }
-      if (moved) await api(ctx, 'DELETE', API + '/files/' + encodeURIComponent(extra.id)).catch(() => {});
+      // to the trash, not deleted: a user's own files in it are not visible to GenGIS (drive.file) and must survive
+      if (moved) await api(ctx, 'PATCH', API + '/files/' + encodeURIComponent(extra.id) + '?fields=id', { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) }).catch(() => {});
     }
     if (!found.length) throw new Error('Could not make the GenGIS folder in Google Drive');
     return { fileId: found[0].id, name: found[0].name };
@@ -277,7 +278,7 @@ window.MB = window.MB || {};
       if (res.ok) { if (o.onProgress) o.onProgress(bytes.length, bytes.length); return item(await res.json()); }
       if (res.status !== 308) throw await httpError(res, 'upload');
       const m = /bytes=0-(\d+)/.exec(res.headers.get('Range') || '');
-      const got = m ? +m[1] + 1 : 0;
+      const got = m ? +m[1] + 1 : end; // (a browser may not be shown Range: then the chunk counts as taken, and a gap is Drive's 400)
       stalls = got > at ? 0 : stalls + 1;
       if (stalls > 3 || got >= bytes.length) throw Object.assign(new Error('The upload did not go through'), { status: 503 }); // (tried again later, from the start)
       at = got;

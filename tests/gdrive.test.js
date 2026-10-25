@@ -403,7 +403,7 @@ test('Drive: a chunk Drive takes only part of is sent again from where Drive say
 test('Drive: an upload Drive stops taking fails (to be tried again), never loops', async () => {
   const { google, GD, ctx } = adapter();
   google.stall = true;
-  await assert.rejects(GD.put(ctx(), { name: 'Big.gengis.json', text: JSON.stringify(project('p1', 'Big', 1, { pad: 'z'.repeat(7 * 1024 * 1024) })) }), e => e.status === 503);
+  await assert.rejects(GD.put(ctx(), { name: 'Big.gengis.json', text: JSON.stringify(project('p1', 'Big', 1, { pad: 'z'.repeat(7 * 1024 * 1024) })) }), e => e.status >= 400);
   assert.ok(google.chunkSizes.length <= 5);
 });
 
@@ -415,7 +415,7 @@ test('Drive: a second GenGIS folder with files in it is merged into the older on
   const root = await GD.root(ctx());
   assert.equal(root.fileId, older.id);
   assert.deepEqual(google.files.get(f.id).parents, [older.id], 'its file moved in');
-  assert.ok(!google.files.has(newer.id), 'the extra folder is gone');
+  assert.equal(google.files.get(newer.id).trashed, true, 'the extra folder is in the trash, not deleted');
   assert.equal(google.folders().length, 1);
 });
 
@@ -458,4 +458,12 @@ test('desktop: a redirect is followed by the page, without the access token, eac
   assert.equal(sent.length, 2);
   assert.equal(sent[1].url, 'https://public.dm.files.1drv.com/y4m?x');
   assert.equal(sent[1].headers.Authorization, undefined, 'the token does not follow a redirect');
+});
+
+test('Drive: a browser not shown the Range header (CORS) still uploads a large project', async () => {
+  const { google, GD, ctx } = adapter();
+  google.hideRange = true;
+  const big = project('p1', 'Big', 1, { pad: 'w'.repeat(13 * 1024 * 1024) });
+  const out = await GD.put(ctx(), { name: 'Big.gengis.json', text: JSON.stringify(big) });
+  assert.equal(google.files.get(out.fileId).content.toString(), JSON.stringify(big));
 });
