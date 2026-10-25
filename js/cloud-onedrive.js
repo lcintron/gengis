@@ -90,8 +90,13 @@ window.MB = window.MB || {};
     clientId: CLIENT_ID,
     explain,
 
-    // Offered in the web app once the app is registered (the desktop app signs in its own way: not yet).
-    available() { return !!OD.clientId && /^https?:$/.test(location.protocol) && !window.gengisDesktop; },
+    // Offered in the web app once the app is registered; in the desktop app when its main process signs in to it
+    // (electron/cloudauth.js, the same registration as a desktop platform).
+    available() {
+      const d = window.gengisDesktop && window.gengisDesktop.cloud;
+      if (window.gengisDesktop) return !!d && (d.providers || []).includes('onedrive');
+      return !!OD.clientId && /^https?:$/.test(location.protocol);
+    },
 
     auth(extra) {
       return { provider: OD.id, authorize: AUTHORITY + '/authorize', token: AUTHORITY + '/token', clientId: OD.clientId,

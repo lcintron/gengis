@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GenGIS Privacy Policy</title>
+<meta name="description" content="How GenGIS handles your data: your maps stay on your device and in your own cloud storage. GenGIS has no server.">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/legal.css">
+</head>
+<body>
+<main>
+  <header>
+    <a class="brand" href="./"><img src="icons/icon.svg" alt="" width="40" height="40"><span>GenGIS</span></a>
+    <h1>Privacy Policy</h1>
+    <p class="dim">Effective 25 October 2026 · applies to the GenGIS web app (g2.luiscintron.com), the desktop app and the Android app</p>
+  </header>
+
+  <section class="summary">
+    <h2>In short</h2>
+    <ul>
+      <li>GenGIS has <b>no server</b> and no accounts of its own. Nobody at GenGIS can see your maps.</li>
+      <li>Your projects are saved <b>on your device</b>. If you turn on cloud sync, they are also saved in <b>your own</b> OneDrive or Google Drive, in a folder GenGIS can use and nothing else.</li>
+      <li>No analytics, no advertising, no tracking, no selling or sharing of data.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What stays on your device</h2>
+    <p>Projects (shapes, markers, pictures, layers, notes), earlier copies of them, settings, map tiles you downloaded for offline use, and any API keys you enter for map or search services are stored in your browser's or app's own storage on your device. They do not leave it unless you export a file, share one, or turn on cloud sync.</p>
+  </section>
+
+  <section>
+    <h2>Cloud sync (optional)</h2>
+    <p>When you connect an account, GenGIS talks <b>directly</b> from your device to Microsoft or Google. There is no GenGIS server in between.</p>
+    <h3>Microsoft OneDrive</h3>
+    <p>Permission requested: <code>Files.ReadWrite.AppFolder</code>, plus your basic profile (<code>openid</code>, <code>profile</code>, <code>email</code>) and <code>offline_access</code> to stay signed in. GenGIS can only read and write its own folder, <b>OneDrive → Apps → GenGIS</b>. It cannot see any other file in your OneDrive.</p>
+    <h3>Google Drive</h3>
+    <p>Permission requested: <code>drive.file</code>, plus your basic profile (<code>openid</code>, <code>profile</code>, <code>email</code>). GenGIS can only see and change files it created itself: one folder named <b>GenGIS</b> in My Drive and the project files in it. It cannot see any other file in your Google Drive.</p>
+    <h3>What GenGIS does with that access</h3>
+    <ul>
+      <li>It reads your name and email address to show which account is connected.</li>
+      <li>It uploads each named project you choose to sync as a <code>.gengis.json</code> file, reads those files back to keep your devices in step, renames a file when you rename its project, and lists that one folder to show projects from your other devices.</li>
+      <li>It never deletes your files (the one exception: an empty duplicate GenGIS folder it has just made itself, when two devices made one at the same moment). Disconnecting leaves them where they are.</li>
+    </ul>
+    <h3>Sign-in tokens</h3>
+    <p>The tokens that keep you signed in are stored on your device only: in the web app's own storage for this site, or, in the desktop app, encrypted by your operating system (Windows DPAPI, macOS Keychain, or the Linux secret service). They are never sent anywhere except to Microsoft or Google to keep you signed in.</p>
+    <h3>Google API Services: Limited Use</h3>
+    <p>GenGIS's use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. Google user data is used only to provide the sync feature described above, on your device. It is not transferred to anyone, not used for advertising, not used to train AI or machine-learning models, and not read by people.</p>
+    <h3>Stopping cloud sync</h3>
+    <p>Choose <b>Project → Cloud sync → Disconnect</b>. GenGIS forgets the sign-in on that device. You can also remove GenGIS's access at any time in your account settings: <a href="https://account.live.com/consent/Manage">Microsoft (personal)</a>, <a href="https://myapps.microsoft.com">Microsoft (work or school)</a>, or <a href="https://myaccount.google.com/permissions">Google</a>. Your files stay in your cloud storage until you delete them there.</p>
+  </section>
+
+  <section>
+    <h2>Services your device contacts</h2>
+    <p>Like any map app, GenGIS loads data from third-party services. Each of these receives your device's IP address and the request itself (for example, the map area being shown, or the place you search for), under that service's own privacy policy:</p>
+    <ul>
+      <li><b>Map tiles</b> from the map you choose (for example OpenStreetMap, CARTO, Esri, OpenTopoMap, Stadia Maps, Thunderforest, MapTiler, Mapbox).</li>
+      <li><b>Place search</b> through the search service you choose (for example OpenStreetMap Nominatim, LocationIQ, Geoapify, Maps.co).</li>
+      <li><b>Live aircraft and vessel traffic</b>, only when you turn it on (for example adsb.lol, adsb.fi, aisstream.io, or a receiver you set up).</li>
+      <li><b>Update check</b>: GitHub, to see whether a newer version exists.</li>
+      <li><b>Cloud sync</b>: Microsoft and Google, as described above. In the web app, opening the Cloud sync window loads Google's sign-in script from accounts.google.com, so that its button can open Google's sign-in window.</li>
+    </ul>
+    <p>GenGIS sends these services only what each request needs. API keys you enter go only to the service they belong to.</p>
+  </section>
+
+  <section>
+    <h2>Children</h2>
+    <p>GenGIS is not directed at children under 13 and does not knowingly collect any personal information.</p>
+  </section>
+
+  <section>
+    <h2>Changes and contact</h2>
+    <p>If this policy changes, the new version will be posted here with a new effective date. Questions: open an issue at <a href="https://github.com/lcintron/gengis/issues">github.com/lcintron/gengis</a>.</p>
+    <p class="dim"><a href="terms.html">Terms of Use</a> · <a href="./">Open GenGIS</a></p>
+  </section>
+</main>
+</body>
+</html>

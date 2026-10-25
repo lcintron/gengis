@@ -1,0 +1,27 @@
+/* GenGIS - the privacy and terms pages (privacy.html, terms.html): readable, light or dark with the system. */
+:root {
+  --bg: #f6f8fb; --fg: #17202b; --dim: #5b6776; --card: #ffffff; --line: #dde3ea; --accent: #1f6feb; --code: #eef2f7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0b1118; --fg: #e6ebf2; --dim: #9aa7b6; --card: #121a24; --line: #233041; --accent: #58a6ff; --code: #1a2533; }
+}
+:root[data-theme="dark"] { --bg: #0b1118; --fg: #e6ebf2; --dim: #9aa7b6; --card: #121a24; --line: #233041; --accent: #58a6ff; --code: #1a2533; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+header { margin-bottom: 24px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--fg); text-decoration: none; font-weight: 700; font-size: 18px; }
+.brand img { border-radius: 9px; }
+h1 { font-size: 30px; line-height: 1.2; margin: 18px 0 6px; }
+h2 { font-size: 20px; margin: 0 0 8px; }
+h3 { font-size: 16px; margin: 18px 0 4px; }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+section.summary { border-color: var(--accent); }
+p, ul { margin: 6px 0; }
+ul { padding-left: 22px; }
+li { margin: 4px 0; }
+a { color: var(--accent); overflow-wrap: anywhere; }
+code { background: var(--code); border-radius: 5px; padding: 1px 5px; font-size: 14px; overflow-wrap: anywhere; }
+.dim { color: var(--dim); }
+@media (max-width: 480px) { h1 { font-size: 25px; } section { padding: 14px 14px; } }

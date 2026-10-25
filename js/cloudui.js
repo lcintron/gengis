@@ -4,7 +4,7 @@
  * - a cloud beside the save status: the open project's sync state; a click opens the dialog, and a conflict or an
  *   expired sign-in adds a button there
  * - Settings → Project: one line with the account and the open project's state
- * Nothing shows until a provider is offered (cloud-onedrive.js has a client id).
+ * Nothing shows until a provider is offered (cloud-onedrive.js or cloud-gdrive.js has a client id).
  */
 window.MB = window.MB || {};
 (function (MB) {
@@ -49,12 +49,15 @@ window.MB = window.MB || {};
       MB.ui.wireDialog(dlg);
     }
     remote = {};
+    preload(C().offered());
     U.render();
     MB.ui.openDialog(dlg);
     C().pull(false);
     C().accounts.filter(a => a.state !== 'signin').forEach(a => loadRemote(a.id));
   };
   const isOpen = () => dlg && !dlg.classList.contains('hidden');
+  // A provider that signs in in a pop-up loads its sign-in beforehand (a pop-up opened after a wait is blocked).
+  const preload = ids => ids.forEach(id => { const p = MB.cloudProviders[id]; if (p && p.preload) p.preload(); });
 
   // The cloud's projects that are not here: listed only when there are some.
   async function loadRemote(accId) {
@@ -177,6 +180,7 @@ window.MB = window.MB || {};
       act.textContent = need === 'conflict' ? 'Resolve' : 'Sign in';
       act.title = need === 'conflict' ? 'Edited here and in the cloud: choose which to keep' : 'Signed out of the cloud: sign in to sync';
       renderSettings();
+      preload([...new Set(c.accounts.map(x => x.provider))]); // (a connected account's "Sign in" button beside the save status)
       if (isOpen()) { clearTimeout(renderTimer); renderTimer = setTimeout(U.render, 150); }
     };
     MB.on('cloudsync', paint);

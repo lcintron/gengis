@@ -1,4 +1,4 @@
-/* GenGIS - cloud sync: projects kept in step with the user's OneDrive (and, later, Google Drive).
+/* GenGIS - cloud sync: projects kept in step with the user's OneDrive or Google Drive.
  *
  * Local first: the project store (projectstore.js) stays the main copy and keeps working offline; the cloud copy is
  * one more, like a project file. Each named project is one .gengis.json file in GenGIS's folder of the account.
@@ -10,7 +10,9 @@
  *   project is in conflict and the user chooses (keep both, the cloud copy, or this one)
  * - one tab at a time does the work (Web Locks), re-reading the shared records inside the lock
  * Accounts and tokens live in this module's own database ("gengis-cloud"), never in settings, projects or the
- * address. State per project: synced | pending | syncing | offline | conflict | error | signin.
+ * address; in the desktop app the sign-in itself stays in its main process (electron/cloudauth.js), encrypted, and
+ * this page only ever holds short-lived access tokens. State per project: synced | pending | syncing | offline |
+ * conflict | error | signin.
  */
 window.MB = window.MB || {};
 (function (MB) {
@@ -62,7 +64,7 @@ window.MB = window.MB || {};
     progress: {},         // projectId -> { done, total } while a large file uploads
     lastError: '',        // the last sign-in failure, for the dialog
     env: {                // what the engine runs on (tests replace these)
-      store: null, fetch: (u, o) => fetch(u, o), now: () => Date.now(),
+      store: null, fetch: (u, o) => (desktop() && desktop().fetch ? desktopFetch(u, o) : fetch(u, o)), now: () => Date.now(),
       online: () => navigator.onLine !== false, visible: () => document.visibilityState !== 'hidden',
       lock: fn => (navigator.locks ? navigator.locks.request(LOCK, () => fn()) : fn()),
       go: null,           // where a sign-in navigates (location.assign)
@@ -73,6 +75,23 @@ window.MB = window.MB || {};
   const env = C.env;
   const providers = () => MB.cloudProviders || {};
   const providerOf = acc => providers()[acc && acc.provider];
+  const desktop = () => window.gengisDesktop && window.gengisDesktop.cloud;
+  // Where an account's sign-in is kept: 'refresh' (a refresh token here: OneDrive on the web), 'web' (an access token
+  // only, for its hour: Google Drive on the web), 'desktop' (in the desktop app's main process).
+  const sourceOf = acc => acc.source || 'refresh';
+  // In the desktop app the cloud's requests go through its main process (a file:// page has no origin for the APIs'
+  // CORS): what comes back is made to look like fetch's answer. An address it refuses is an error, not a network blip.
+  async function desktopFetch(url, o) {
+    o = o || {};
+    const body = o.body == null ? null : (ArrayBuffer.isView(o.body) ? o.body.slice() : o.body); // (a chunk alone, not its whole buffer)
+    const r = await desktop().fetch(String(url), o.method || 'GET', o.headers || {}, body);
+    if (r && r.error === 'network') throw new TypeError(r.message || 'Failed to fetch');
+    const status = r && r.error ? 400 : r.status, h = (r && r.headers) || {};
+    const bytes = r && r.body ? new Uint8Array(r.body) : new Uint8Array(0);
+    const text = () => (r && r.error ? JSON.stringify({ error: { message: 'Not allowed: ' + r.error } }) : new TextDecoder().decode(bytes));
+    return { status, ok: status >= 200 && status < 300, headers: { get: k => (h[String(k).toLowerCase()] != null ? h[String(k).toLowerCase()] : null) },
+      text: async () => text(), json: async () => JSON.parse(text()), arrayBuffer: async () => bytes.slice().buffer };
+  }
   C.offered = () => Object.keys(providers()).filter(k => providers()[k].available());
   const emit = () => MB.emit('cloudsync', C);
   const store = () => env.store || (env.store = idbStore());
@@ -118,7 +137,7 @@ window.MB = window.MB || {};
   }
   const signinError = msg => Object.assign(new Error(msg || 'Sign in again'), { code: 'signin' });
 
-  // An access token for an account: the one in memory while it lasts, else from its refresh token.
+  // An access token for an account: the one in memory while it lasts, else a new one from where its sign-in is kept.
   function accessToken(accId) {
     const t = tokens.get(accId);
     if (t && t.exp - env.now() > TOKEN_MARGIN) return Promise.resolve(t.access);
@@ -126,20 +145,20 @@ window.MB = window.MB || {};
     const p = (async () => {
       const acc = await store().get('accounts', accId);
       if (!acc) throw signinError('The account is no longer connected');
-      if (acc.state === 'signin' || !acc.refreshToken) throw signinError(acc.error);
+      if (acc.state === 'signin') throw signinError(acc.error);
       const prov = providerOf(acc);
       let r;
-      try { r = await MB.oauth.refresh(prov.auth(), acc.refreshToken, env.fetch); }
+      try { r = await renew(acc, prov); }
       catch (e) {
         if (e.code === 'network' || (e.status >= 500)) throw e; // try again later; the sign-in may still be good
-        acc.state = 'signin'; acc.error = prov.explain(e.code, e.description);
+        acc.state = 'signin'; acc.error = prov.explain(e.code, e.description || e.message);
+        delete acc.accessToken; delete acc.accessExp;
         await store().put('accounts', acc);
         await readAccounts(); emit();
         throw signinError(acc.error);
       }
-      tokens.set(accId, { access: r.access_token, exp: env.now() + (+r.expires_in || 3600) * 1000 });
-      if (r.refresh_token && r.refresh_token !== acc.refreshToken) { acc.refreshToken = r.refresh_token; acc.refreshedAt = env.now(); await store().put('accounts', acc); }
-      return r.access_token;
+      tokens.set(accId, { access: r.access, exp: env.now() + r.expiresIn * 1000 });
+      return r.access;
     })();
     renewing.set(accId, p);
     const clear = () => renewing.delete(accId);
@@ -147,14 +166,38 @@ window.MB = window.MB || {};
     return p;
   }
 
+  // A new access token ({ access, expiresIn } s) from where the account's sign-in is kept.
+  async function renew(acc, prov) {
+    const src = sourceOf(acc);
+    if (src === 'desktop') {
+      const r = desktop() ? await desktop().token(acc.id) : { error: 'signin' };
+      if (r && r.accessToken) return { access: r.accessToken, expiresIn: +r.expiresIn || 3600 };
+      const code = (r && r.error) || 'signin';
+      if (code === 'network' || code === 'server') throw Object.assign(new Error((r && r.message) || 'offline'), { code: 'network' });
+      throw Object.assign(new Error((r && r.message) || 'Sign in again'), { code });
+    }
+    if (src === 'web') return prov.renew(acc, env.now());
+    if (!acc.refreshToken) throw Object.assign(new Error(acc.error || 'Sign in again'), { code: 'signin' });
+    const r = await MB.oauth.refresh(prov.auth(), acc.refreshToken, env.fetch);
+    if (r.refresh_token && r.refresh_token !== acc.refreshToken) { acc.refreshToken = r.refresh_token; acc.refreshedAt = env.now(); await store().put('accounts', acc); }
+    return { access: r.access_token, expiresIn: +r.expires_in || 3600 };
+  }
+
+  // An access token refused (401): forgotten, and one kept for its hour (a web app's Google sign-in) no longer trusted.
+  async function dropToken(accId) {
+    tokens.delete(accId);
+    const acc = await store().get('accounts', accId);
+    if (acc && acc.accessToken) { delete acc.accessToken; delete acc.accessExp; await store().put('accounts', acc); }
+  }
+
   // A provider call for an account; an expired token (401) is renewed and the call made once more.
   async function call(acc, fn) {
     const prov = providerOf(acc);
-    const ctx = { fetch: env.fetch, token: () => accessToken(acc.id) };
+    const ctx = { fetch: env.fetch, token: () => accessToken(acc.id), account: acc.id };
     try { return await fn(prov, ctx); }
     catch (e) {
       if (e.status !== 401) throw e;
-      tokens.delete(acc.id);
+      await dropToken(acc.id);
       return fn(prov, ctx);
     }
   }
@@ -354,7 +397,7 @@ window.MB = window.MB || {};
       await saveLink(l);
       C.schedule(l.projectId, 500);
     }
-    MB.toast('OneDrive gave GenGIS a new folder (Apps/' + root.name + '): the old one was renamed, moved or deleted. Your projects are being uploaded to it.', 9000);
+    MB.toast(providerOf(acc).name + ' has a new folder for GenGIS (' + root.name + '): the old one was renamed, moved or deleted. Your projects are being uploaded to it.', 9000);
   }
 
   async function pullAccount(acc) {
@@ -481,10 +524,38 @@ window.MB = window.MB || {};
   let returned = null; // a sign-in coming back (taken from the address before anything else reads it)
   C.takeRedirect = function () { returned = MB.oauth.take(); return returned; };
 
-  // Connect an account: to the provider's sign-in page and back (what is pending is saved first).
+  // Connect an account (or sign in to one again): in the desktop app through the user's browser; in the web app in a
+  // pop-up (Google), or on the provider's sign-in page and back (OneDrive: what is pending is saved first).
   C.connect = async function (providerId, acc, silent) {
     const prov = providers()[providerId];
     if (!prov || !prov.available()) return;
+    if (desktop() || prov.popup) {
+      if (silent) return; // (the desktop app renews by itself; a pop-up needs a tap)
+      let who, t, kept = true;
+      try {
+        if (desktop()) {
+          MB.toast('Continue in your browser to sign in to ' + prov.name + '.', 6000);
+          const r = await desktop().signIn(providerId, (acc && acc.email) || '');
+          if (!r || r.error) throw Object.assign(new Error((r && r.message) || ''), { code: (r && r.error) || 'failed' });
+          who = r.account; kept = r.kept !== false;
+          t = { source: 'desktop', access: r.accessToken, expiresIn: +r.expiresIn || 3600 };
+        } else {
+          const r = await prov.signIn(acc);
+          who = await prov.whoami(r.access, env.fetch);
+          t = { source: 'web', access: r.access, expiresIn: +r.expiresIn || 3600 };
+        }
+      } catch (e) {
+        C.lastError = prov.explain(e.code, e.message);
+        MB.toast(C.lastError, 9000);
+        MB.emit('cloud-return', C);
+        return;
+      }
+      await finishAccount(prov, who, t);
+      C.pull(true); // (its folder and change feed noted now, as after a sign-in that comes back to the page)
+      if (!kept) MB.toast('This computer cannot keep the sign-in encrypted: you will sign in again when GenGIS restarts.', 8000);
+      MB.emit('cloud-return', C);
+      return;
+    }
     await MB.projects.flush();
     if (!silent) MB.toast(prov.name + ' sign-in…', 3000);
     await MB.oauth.begin(prov.auth(prov.signInExtra(acc, silent)), { silent: !!silent, reopen: !silent }, env.go);
@@ -508,17 +579,27 @@ window.MB = window.MB || {};
     let tok;
     try { tok = await MB.oauth.exchange(prov.auth(), r.code, r.pending, env.fetch); }
     catch (e) { C.lastError = prov.explain(e.code, e.description || e.message); MB.toast(C.lastError, 9000); return; }
-    const who = prov.account(tok), old = await store().get('accounts', who.id);
-    const acc = Object.assign(old || { auto: true }, who, { refreshToken: tok.refresh_token || '', signedInAt: env.now(), state: tok.refresh_token ? 'ok' : 'signin', error: '' });
+    await finishAccount(prov, prov.account(tok), { source: 'refresh', access: tok.access_token, expiresIn: +tok.expires_in || 3600, refresh: tok.refresh_token || '' }, r.pending.silent);
+  }
+
+  // A signed-in account, kept. The first one connected syncs all projects (one account at a time does).
+  async function finishAccount(prov, who, t, quiet) {
+    const old = await store().get('accounts', who.id);
+    const auto = old ? old.auto !== false : !(await store().all('accounts')).some(a => a.auto !== false);
+    const acc = Object.assign(old || {}, who, { auto, source: t.source, refreshToken: t.refresh || '', signedInAt: env.now(), state: 'ok', error: '' });
+    delete acc.accessToken; delete acc.accessExp;
+    if (t.source === 'web') { acc.accessToken = t.access; acc.accessExp = env.now() + t.expiresIn * 1000; } // (Google gives a web app nothing longer)
+    if (t.source === 'refresh' && !t.refresh) acc.state = 'signin';
     await store().put('accounts', acc);
-    tokens.set(acc.id, { access: tok.access_token, exp: env.now() + (+tok.expires_in || 3600) * 1000 });
+    tokens.set(acc.id, { access: t.access, exp: env.now() + t.expiresIn * 1000 });
     C.lastError = '';
     await readAccounts();
-    if (!r.pending.silent) MB.toast('Connected to ' + prov.name, 3500);
+    if (!quiet) MB.toast('Connected to ' + prov.name, 3500);
     // what waited for the sign-in, and (syncing all) every named project
     const ids = new Set(Object.keys(C.links).filter(id => C.links[id].accountId === acc.id && !C.links[id].excluded));
     if (acc.auto) (await MB.projects.list()).forEach(r2 => { if (!isDraftRec(r2)) ids.add(r2.id); });
     ids.forEach(id => C.schedule(id, 500)); // (the queue takes them one at a time)
+    emit();
   }
 
   C.disconnect = async function (accId) {
@@ -530,6 +611,9 @@ window.MB = window.MB || {};
       await store().del('accounts', accId);
     });
     tokens.delete(accId);
+    // the sign-in given up where it is kept (the desktop app's forgotten; Google's revoked)
+    if (sourceOf(acc) === 'desktop' && desktop()) desktop().signOut(accId).catch(() => {});
+    else if (prov && prov.signOut) prov.signOut(acc, env.fetch).catch(() => {});
     await readAccounts(); await readLinks(); emit();
     MB.toast('Disconnected. Files stay in ' + prov.folder + '.', 5000);
   };
@@ -589,6 +673,7 @@ window.MB = window.MB || {};
     return l.state || 'pending';
   };
   C.accountOf = id => { const l = C.links[id]; return l && C.accounts.find(a => a.id === l.accountId); };
+  C._desktopFetch = desktopFetch; // (tests)
   C._busy = async () => !!(queue.size || timers.size || pumping || pulling || renewing.size);
   C.syncNow = async function () { await C.pull(true); queue.add(MB.state.projectId); return pump(); };
 
@@ -645,7 +730,7 @@ window.MB = window.MB || {};
     if (!env.online() || !env.visible()) return;
     for (const acc of await store().all('accounts')) {
       const prov = providerOf(acc);
-      if (!prov || !prov.available()) continue;
+      if (!prov || !prov.available() || sourceOf(acc) !== 'refresh') continue; // (only a redirect sign-in renews unseen)
       const expired = acc.state === 'signin' || (prov.signInDays && env.now() - (acc.signedInAt || 0) > prov.signInDays * 86400000 - 3600000);
       if (!expired || env.now() - (acc.silentAt || 0) < SILENT_EVERY) continue;
       const needed = acc.auto || Object.values(C.links).some(l => l.accountId === acc.id);

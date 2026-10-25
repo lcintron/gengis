@@ -74,6 +74,7 @@ function makeServer(opts) {
     S.refresh.set(refresh, { valid: true });
     return { token_type: 'Bearer', access_token: access, refresh_token: refresh, expires_in: 3600, id_token: S.idToken(S.claims), scope: 'Files.ReadWrite.AppFolder' };
   }
+  S.issueAccess = () => { const a = 'at-' + crypto.randomBytes(8).toString('hex'); S.tokens.set(a, S.now() + 3600 * 1000); return a; }; // (what the desktop app's main process gets)
   S.expireAccessTokens = () => { for (const k of S.tokens.keys()) S.tokens.set(k, 0); };
 
   async function handle(url, o) {
@@ -267,7 +268,16 @@ function makeApp(o) {
     // what the real app saves of the open project: with its own version, and this device's own live-traffic server
     serializeProject: () => Object.assign(JSON.parse(JSON.stringify(state.current || {})), { generator: { name: 'GenGIS', version: o.version || '1.0' }, liveTraffic: { sources: [{ kind: 'receiver', uri: 'http://' + tabId + '.local:8080' }] } })
   };
-  const win = { MB, gengisDesktop: undefined };
+  // Google's sign-in library (the web app's pop-up): answers with a token from the fake Google, or o.googlePopup's error
+  const google = { accounts: { oauth2: { initTokenClient: cfg => ({ requestAccessToken: opts => setTimeout(() => {
+    app.popups.push({ cfg, opts });
+    const e = o.googlePopup && o.googlePopup(cfg, opts);
+    if (e) { if (e.type) cfg.error_callback(e); else cfg.callback(e); return; }
+    cfg.callback({ access_token: o.google.issue(), expires_in: 3599 });
+  }) }) } } };
+  const win = { MB, gengisDesktop: o.desktop, google: o.google ? google : undefined };
+  // requests to Google go to the fake Google, the rest to the fake Microsoft
+  const route = (url, opts) => (o.google && /^https:\/\/(www|oauth2)\.googleapis\.com\//.test(String(url)) ? o.google.fetch(url, opts) : server.fetch(url, opts));
   const ctx = {
     window: win, MB, console: { warn: () => {}, log: console.log, error: console.error },
     localStorage, crypto: globalThis.crypto, TextEncoder, TextDecoder, URLSearchParams, URL, btoa, atob, Promise, Date, JSON, Math,
@@ -276,18 +286,19 @@ function makeApp(o) {
     history: { state: null, replaceState: (s, t, url) => { search = url.includes('?') ? url.slice(url.indexOf('?')) : ''; } },
     navigator: { onLine: true, userAgent: o.userAgent || 'Mozilla/5.0 (Windows NT 10.0) Chrome/130', platform: 'Win32', maxTouchPoints: 0 },
     document: { visibilityState: 'visible', addEventListener: (e, fn) => { (listeners[e] = listeners[e] || []).push(fn); } },
-    fetch: server.fetch
+    fetch: route, google: win.google
   };
   ctx.window.addEventListener = (e, fn) => { (listeners[e] = listeners[e] || []).push(fn); };
   ctx.addEventListener = ctx.window.addEventListener;
   vm.createContext(ctx);
-  ['js/oauth.js', 'js/cloud-onedrive.js', 'js/cloudsync.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }));
+  ['js/oauth.js', 'js/cloud-onedrive.js', 'js/cloud-gdrive.js', 'js/cloudsync.js'].filter(f => fs.existsSync(path.join(ROOT, f))).forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }));
   MB.cloudProviders.onedrive.clientId = 'test-client';
+  if (MB.cloudProviders.gdrive) MB.cloudProviders.gdrive.clientId = o.google ? 'test-google' : '';
   const C = MB.cloud;
   let online = true;
-  Object.assign(C.env, { store: device.store, lock: device.lock, fetch: server.fetch, online: () => online, visible: () => true, go: url => { app.wentTo = url; }, pushDelay: o.pushDelay === 'default' ? C.env.pushDelay : (o.pushDelay == null ? 0 : o.pushDelay) });
+  Object.assign(C.env, { store: device.store, lock: device.lock, fetch: route, online: () => online, visible: () => true, go: url => { app.wentTo = url; }, pushDelay: o.pushDelay === 'default' ? C.env.pushDelay : (o.pushDelay == null ? 0 : o.pushDelay) });
   const app = {
-    MB, C, P, device, server, toasts, loaded, tabId, events, listeners, wentTo: null,
+    MB, C, P, device, server, toasts, loaded, tabId, events, listeners, wentTo: null, popups: [],
     setSearch: s => { search = s; },
     setOnline: v => { online = v; ctx.navigator.onLine = v; if (v) (listeners.online || []).forEach(fn => fn()); },
     open: id => { state.projectId = id; const r = projects.recs.get(id); state.projectName = r ? r.name : ''; state.current = r ? JSON.parse(JSON.stringify(r.data)) : null; device.locksHeld.set(id, tabId); },
@@ -304,6 +315,11 @@ function makeApp(o) {
       search = '?code=' + code + '&state=' + pending.state;
       C.takeRedirect();
       await C.init();
+    },
+    // connecting a provider that signs in without leaving the page (Google's pop-up, the desktop app's browser sign-in)
+    async connectDirect(providerId, acc) {
+      if (!C.ready) await C.init();
+      await C.connect(providerId, acc);
     },
     // until nothing is queued, pumping or pulling
     async settle(ms) {
