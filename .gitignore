@@ -13,3 +13,9 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/settings.local.json
+
+# test scratch
+tests/.tmp-*/
+
+# Google desktop client secret (the release build writes it from a GitHub secret)
+electron/cloud-secrets.json

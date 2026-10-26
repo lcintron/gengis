@@ -220,4 +220,4 @@ function register() {
   });
 }
 
-module.exports = { register, APP_PAGE, trusted };
+module.exports = { register, APP_PAGE, trusted, writeAtomic };
