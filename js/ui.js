@@ -230,12 +230,13 @@ window.MB = window.MB || {};
       $('#sidebar').classList.toggle('collapsed');
       setTimeout(() => MB.map.invalidateSize(), 50);
     });
+    initSidebarResize();
 
-    // About and Data sources dialogs: closed by their ✕, Esc or a click on the backdrop; Tab stays inside them
+    // the About dialog: closed by its ✕, Esc or a click on the backdrop; Tab stays inside it
     const av = $('#aboutVersion'); if (av) av.textContent = MB.APP.version;
     const cu = $('#checkUpdate'); if (cu) cu.addEventListener('click', () => checkForUpdate(cu, $('#updateResult')));
     const sv = $('#splash .ver'); if (sv) sv.textContent = 'Version ' + MB.APP.version;
-    ['#aboutDialog', '#sourcesDialog'].forEach(sel => MB.ui.wireDialog($(sel)));
+    MB.ui.wireDialog($('#aboutDialog'));
   }
 
   // A dialog: closed by its ✕, Esc or a click on the backdrop (unless opts.canClose() says not now); Tab stays inside
@@ -354,12 +355,12 @@ window.MB = window.MB || {};
         break;
       case 'saveas': if (MB.desktopFiles.available) MB.desktopFiles.saveAs(); else MB.browserFiles.saveAs(); break;
       case 'recent': MB.projects.openDialog(); break;
+      case 'cloud': MB.cloudUI.open(); break;
       case 'save': MB.saveToFile(); break;
       case 'geojson': MB.exportGeoJSON(); break;
       case 'export': MB.exportMap.open(); break;
       case 'install': if (MB.installPrompt) { MB.installPrompt.prompt(); MB.installPrompt = null; $('#installBtn').classList.add('hidden'); } break;
       case 'about': openDialog($('#aboutDialog')); break;
-      case 'sources': openDialog($('#sourcesDialog')); break;
       case 'present': MB.presenter.enter(); break;
       case 'cast': MB.cast.open(); break;
       case 'apis': MB.settingsDialog.open(); break;
@@ -407,7 +408,6 @@ window.MB = window.MB || {};
         results.innerHTML = `<div class="result-item empty">Search failed: ${esc(e.message)}</div>`;
       }
     }
-    $('#searchBtn').addEventListener('click', run);
     // the clear button: shown while there is text; it empties the box and its results, and keeps the keyboard there
     const clear = $('#searchClear'), showClear = () => { clear.hidden = !input.value; };
     input.addEventListener('input', showClear);
@@ -464,6 +464,62 @@ window.MB = window.MB || {};
     MB.ui.applyToolbarSide();
     MB.ui.renderSettings();
   };
+
+  // The side panel's size, dragged from its grip: its width beside the map, its height as a phone's bottom sheet (a
+  // share of the screen, so it suits the phone turned either way). Never smaller than its default size (app.css), only
+  // larger. Kept on this device; a double-click (or Home) gives the default back; arrow keys move it too.
+  function initSidebarResize() {
+    const bar = $('#sidebar'), grip = $('#sidebarGrip');
+    if (!bar || !grip) return;
+    const sheet = () => matchMedia('(max-width: 640px)').matches;
+    const W = { min: () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 330, max: () => Math.max(W.min(), Math.min(720, Math.round(innerWidth * 0.6))) };
+    const H = { min: () => document.getElementById('main').clientHeight * 0.56 / innerHeight * 100, max: () => 88 }; // % of the screen's height (the default: 56% of the area under the top bar)
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    let frame = 0;
+    const refit = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => MB.map && MB.map.invalidateSize()); };
+    function apply() {
+      const w = MB.settings.sidebarW, h = MB.settings.sheetH;
+      if (w) bar.style.setProperty('--sidebar-user', Math.min(w, W.max()) + 'px'); else bar.style.removeProperty('--sidebar-user');
+      if (h) bar.style.setProperty('--sheet-user', Math.min(h, H.max()) + 'vh'); else bar.style.removeProperty('--sheet-user');
+      const now = sheet() ? Math.round(bar.getBoundingClientRect().height / innerHeight * 100) : Math.round(bar.getBoundingClientRect().width);
+      grip.setAttribute('aria-orientation', sheet() ? 'horizontal' : 'vertical');
+      grip.setAttribute('aria-valuenow', String(now));
+      grip.setAttribute('aria-valuemin', String(Math.round(sheet() ? H.min() : W.min())));
+      grip.setAttribute('aria-valuemax', String(Math.round(sheet() ? H.max() : W.max())));
+      grip.setAttribute('aria-valuetext', sheet() ? now + '% of the screen' : now + ' px wide');
+    }
+    function set(px) { // a pointer's position or a keyboard step, in this layout's terms
+      const key = sheet() ? 'sheetH' : 'sidebarW', lim = sheet() ? H : W;
+      if (px <= lim.min()) delete MB.settings[key]; // at the least: the default itself
+      else MB.settings[key] = clamp(Math.round(px), 0, lim.max());
+      apply(); refit();
+    }
+    grip.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      document.body.classList.add('panel-resizing', sheet() ? 'rows' : 'cols');
+      const rect = bar.getBoundingClientRect();
+      const move = ev => set(sheet() ? (rect.bottom - ev.clientY) / innerHeight * 100 : rect.right - ev.clientX);
+      const up = () => {
+        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); grip.removeEventListener('lostpointercapture', up);
+        document.body.classList.remove('panel-resizing', 'rows', 'cols');
+        MB.saveSettings(); refit();
+      };
+      grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+      grip.addEventListener('lostpointercapture', up); // (the panel closed mid-drag: the map must not stay unclickable)
+    });
+    const reset = () => { if (sheet()) delete MB.settings.sheetH; else delete MB.settings.sidebarW; apply(); MB.saveSettings(); refit(); };
+    grip.addEventListener('dblclick', reset);
+    grip.addEventListener('keydown', e => {
+      const r = bar.getBoundingClientRect(), now = sheet() ? r.height / innerHeight * 100 : r.width, step = sheet() ? 5 : 24;
+      const grow = sheet() ? { ArrowUp: 1, ArrowDown: -1 } : { ArrowLeft: 1, ArrowRight: -1 };
+      if (e.key in grow) { e.preventDefault(); set(now + grow[e.key] * step); MB.saveSettings(); }
+      else if (e.key === 'Home') { e.preventDefault(); reset(); }
+    });
+    addEventListener('resize', apply);
+    apply();
+  }
 
   function initToolbar() {
     if (window.ResizeObserver) new ResizeObserver(() => fitToolbar()).observe($('#mapwrap'));
@@ -1507,6 +1563,7 @@ window.MB = window.MB || {};
       <div class="section"><h3>Project</h3>
         <div class="info-line" id="saveWhere"></div>
         <div id="desktopFilesBox"></div>
+        <div id="cloudBox"></div>
         <div class="btn-row"><button class="btn small with-icon" id="setPersist" hidden><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>Keep on this device</button><button class="btn small danger with-icon" id="setReset"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reset project</button></div>
       </div>
 `;
@@ -1535,6 +1592,7 @@ window.MB = window.MB || {};
     $('#setPersist', panel).addEventListener('click', () => MB.projects.persist(true).then(ok => MB.toast(ok ? 'Kept on this device: the browser will not clear it to free space.' : 'The browser did not agree to keep it. Save important projects to a file.', 4500)));
     MB.ui.renderSaveWhere();
     MB.ui.renderDesktopFiles();
+    if (MB.cloudUI) MB.cloudUI.renderSettings();
   };
 
   /* ================= saving status ================= */
@@ -1566,14 +1624,20 @@ window.MB = window.MB || {};
     }
     if (BF.available) {
       const resume = document.createElement('button');
-      resume.type = 'button'; resume.id = 'fileResume'; resume.className = 'btn small file-resume'; resume.hidden = true;
+      resume.type = 'button'; resume.id = 'fileResume'; resume.className = 'btn small file-resume file-resume-ic'; resume.hidden = true;
       el.insertAdjacentElement('afterend', resume);
       resume.addEventListener('click', () => BF.resume());
+      // a file with ▶ (resume saving to it) or ! (changed outside GenGIS); its words beside it, except on a phone
+      const fileWith = mark => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 3h8l4 4v14H6z M14 3v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>${mark}</svg>`;
+      const PLAY = '<path d="M10 11.5l4.5 2.75L10 17z" fill="currentColor"/>', BANG = '<path d="M12 10.5v3.5M12 16.8v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
       MB.on('browserfiles', () => {
         const need = BF.name && (BF.state === 'paused' || BF.state === 'denied' || BF.state === 'conflict');
         resume.hidden = !need;
-        resume.textContent = BF.state === 'conflict' ? 'File changed: choose…' : 'Resume saving to file';
-        resume.title = BF.state === 'conflict' ? '"' + BF.name + '" was changed outside GenGIS' : 'Allow saving changes to "' + BF.name + '" again';
+        const words = BF.state === 'conflict' ? 'File changed: choose…' : 'Resume saving to file';
+        resume.innerHTML = fileWith(BF.state === 'conflict' ? BANG : PLAY) + `<span>${esc(words)}</span>`;
+        resume.classList.toggle('warn', BF.state === 'conflict');
+        resume.title = BF.state === 'conflict' ? '"' + BF.name + '" was changed outside GenGIS: choose what to do' : 'Resume saving to "' + BF.name + '" (allow saving changes to it again)';
+        resume.setAttribute('aria-label', words);
         render(MB.projects); MB.ui.renderDesktopFiles();
       });
     }

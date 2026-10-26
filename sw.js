@@ -1,5 +1,5 @@
 /* GenGIS service worker: offline app shell + cached map tiles */
-const VERSION = 'gengis-0.16.3'; // app version; bump via scripts/release.js
+const VERSION = 'gengis-0.17.0'; // app version; bump via scripts/release.js
 const OFFLINE_CACHE = 'map-builder-offline'; // filled by the app's "Download area" feature; never trimmed or versioned
 const SHELL_CACHE = VERSION + '-shell';
 const TILE_CACHE = 'map-builder-tiles'; // not versioned: cached tiles survive app updates
@@ -10,7 +10,7 @@ const MAX_TILES = 6000;
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './css/app.css',
-  './js/util.js', './js/native.js', './js/tooltipdelay.js', './js/store.js', './js/features.js', './js/fillpatterns.js', './js/tools.js', './js/ink.js', './js/scaletool.js', './js/geometry.js', './js/search.js', './js/storage.js', './js/projectstore.js', './js/desktopfiles.js', './js/browserfiles.js',
+  './js/util.js', './js/native.js', './js/tooltipdelay.js', './js/store.js', './js/features.js', './js/fillpatterns.js', './js/tools.js', './js/ink.js', './js/scaletool.js', './js/geometry.js', './js/search.js', './js/storage.js', './js/projectstore.js', './js/desktopfiles.js', './js/browserfiles.js', './js/oauth.js', './js/cloud-onedrive.js', './js/cloud-gdrive.js', './js/cloudsync.js', './js/cloudui.js',
   './js/scale.js', './js/settings.js', './js/mapsources.js', './js/contextmenu.js', './js/presenter.js', './js/cast.js', './js/datalayers.js', './js/frequencies.js', './js/adsb.js', './js/declination.js', './js/shapes.js', './js/icons.js', './js/grids.js', './js/mgrs.js', './js/ais.js', './js/mavlink.js', './js/places.js', './js/locate.js', './js/project.js', './js/offline.js', './js/busy.js', './js/tiles.js', './js/export.js', './js/ui.js', './js/app.js',
   './data/places.js', './data/icons.js',
   './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css',
@@ -99,7 +99,8 @@ self.addEventListener('fetch', e => {
 
   if (url.origin === location.origin) {
     const fromNetwork = () => fetch(req).then(res => {
-      if (res && res.ok) caches.open(SHELL_CACHE).then(c => c.put(req, res.clone()));
+      // (a page address with parameters, such as a sign-in coming back with its code, is never kept)
+      if (res && res.ok && !(req.mode === 'navigate' && url.search)) caches.open(SHELL_CACHE).then(c => c.put(req, res.clone()));
       return res;
     });
     if (DEV) {

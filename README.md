@@ -29,6 +29,7 @@ A free map builder that runs in the browser (installable, works offline) or as a
 - **Measure** distances and areas in metric, imperial or nautical units, with a scale bar. A circle shows its radius while you draw it, and objects can show their length, perimeter, area, radius or position on the map.
 - **Layers** with show/hide, lock and draw order, duplicate, and **groups**: a grouped layer's objects are selected, moved, resized and deleted together. Locked objects can still be selected and inspected. Undo/redo, right-click menus, presenter mode with full screen. Cast to a screen (project menu) mirrors the map on a TV in presenter mode. The toolbar sits on the left or the right of the map (Settings → Interface).
 - **Projects** save automatically on the device as you work, with recent projects and earlier copies to restore; save/open as `.gengis.json`; GeoJSON import/export; the map exported as a PNG, JPEG or PDF (up to 4× resolution, paper size and margins). In the desktop app each named project is also kept as a file (`Documents\GenGIS` by default).
+- **Cloud sync** (web and desktop apps): keep named projects in your own OneDrive (personal, or Microsoft 365 work or school) or Google Drive and open them on your other devices. Changes go up a few seconds after you make them and come down when another device changes them; a project edited in two places is never overwritten: you choose. No GenGIS server: files go straight between your device and your account (`OneDrive/Apps/GenGIS`, or a `GenGIS` folder in My Drive), and GenGIS can reach nothing else there. See the [privacy policy](https://g2.luiscintron.com/privacy.html).
 - **Annotations**: draw freehand on the map with a stylus, or Shift + drag with a mouse or touchpad (pen or highlighter, color and width; an eraser in four sizes, or the stylus's own eraser end), into an Annotations layer; fingers and the mouse keep moving the map.
 - **More base maps, the ATAK way**: import MOBAC map sources (one .xml, or a .zip of many, such as the [ATAK-Maps](https://github.com/joshuafuller/ATAK-Maps) set): tile servers (including Bing quadkeys and rotating servers), WMS layers (EPSG:3857 or 4326) and blended multi-layer maps. They join the base map list, grouped by folder; sources that need an API key say so.
 - **Search** addresses, places and coordinates; find points of interest; center on **your location**, with a beam showing which way the device points (compass, or direction of travel).
@@ -84,7 +85,36 @@ The same app as a native Android app ([Capacitor](https://capacitorjs.com)), pac
 
 - **Build**: the **Android** workflow (Actions → Android → Run workflow, or any pull request that touches the app) builds a debug APK to install for testing, and, once the signing secrets are set, a signed `.aab` for Google Play and a signed `.apk`. Locally: `npm install`, `npx cap add android` (once), `npm run android:sync`, then open `android/` in Android Studio.
 - **Signing** (once): create an upload key with `keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000`, then add the repository secrets `ANDROID_KEYSTORE_BASE64` (the file, base64-encoded), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Keep the key safe: Google Play only accepts updates signed with it.
-- Not in the Android app yet: the aisstream.io stream (it refuses connections from apps' web views as from web pages), and MAVLink over TCP or UDP (the WebSocket bridge works).
+- Not in the Android app yet: the aisstream.io stream (it refuses connections from apps' web views as from web pages), MAVLink over TCP or UDP (the WebSocket bridge works), and cloud sync (its sign-in needs a way back into the app of its own).
+
+### Cloud sync: setting up OneDrive and Google Drive (once, for whoever hosts GenGIS)
+
+Each provider stays hidden until GenGIS has its app registration. The consent screens use `privacy.html`, `terms.html` and the logos in `branding/store/` (120 px for Google, 215 px for Microsoft).
+
+**OneDrive**: a Microsoft Entra app registration:
+
+1. [entra.microsoft.com](https://entra.microsoft.com) → App registrations → New registration: name **GenGIS**, supported accounts **any Entra ID tenant and personal Microsoft accounts**.
+2. Authentication → Add a platform → **Single-page application**, redirect URIs `https://g2.luiscintron.com/` and `http://localhost:8080/`. Leave implicit grant off; no client secret. For the desktop app, also add the platform **Mobile and desktop applications** with the redirect URI `http://localhost` (any port: the app listens on one for a moment while you sign in, in your own browser).
+3. API permissions → Microsoft Graph, delegated: `Files.ReadWrite.AppFolder`, `offline_access`, `openid`, `profile`, `email`. Don't grant admin consent: users consent for themselves.
+4. Branding & properties: logo `branding/store/gengis-logo-215.png`, home page `https://g2.luiscintron.com/`, terms `https://g2.luiscintron.com/terms.html`, privacy `https://g2.luiscintron.com/privacy.html`; publisher domain `g2.luiscintron.com` (verified by `.well-known/microsoft-identity-association.json`, deployed with the site). Then **publisher verification** (a free Microsoft partner ID), which lets more Microsoft 365 organizations allow the app.
+5. Put the Application (client) ID in `CLIENT_ID` in `js/cloud-onedrive.js`. Use this one registration everywhere (web, desktop, Android: add platforms to it): OneDrive gives each registration its own folder, so a second registration would mean a second "GenGIS 1" folder.
+
+In a web browser Microsoft keeps a sign-in for 24 hours; GenGIS renews it on start-up, usually without asking. The desktop app stays signed in (its sign-in is kept encrypted by the operating system).
+
+**Google Drive**: a Google Cloud project:
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → a new project **GenGIS** → APIs & Services → Library → enable the **Google Drive API**.
+2. Google Auth Platform → Branding: app name **GenGIS**, logo `branding/store/gengis-logo-120.png`, home page, privacy and terms URLs as above, authorized domain `luiscintron.com`. Audience: **External**. Data access: `openid`, `email`, `profile` and `.../auth/drive.file` (non-sensitive: only files GenGIS creates).
+3. Clients → Create client → **Web application**, authorized JavaScript origins `https://g2.luiscintron.com` and `http://localhost:8080`. Put its client ID in `WEB_CLIENT_ID` in `js/cloud-gdrive.js`.
+4. Clients → Create client → **Desktop app**. Put its client ID in `PROVIDERS.gdrive` in `electron/cloudauth.js`. Its secret stays out of the repository: add it as the repository secret `GOOGLE_DESKTOP_CLIENT_SECRET` (the release build writes it into the app), and for development put `{"googleDesktopSecret": "…"}` in `electron/cloud-secrets.json` (ignored by git). An installed app's secret is not confidential (Google's guidance), but public repositories are scanned for it. To rotate it, add a new secret to the client, update the repository secret, release, then delete the old one.
+5. Keep both clients in this one project: Drive lets a project's clients see the files any of them created.
+6. Publish the app (Audience → Publish) and submit the branding for verification, so users don't see the "unverified app" screen.
+
+Google gives a web app one hour per sign-in, with no way to renew it unseen; after that a tap on **Sign in** reconnects (nothing is lost meanwhile). The desktop app stays signed in.
+
+## Tests
+
+`npm test` runs the automated tests (no installs): cloud sync's sign-in, the OneDrive and Google Drive adapters, the desktop app's sign-in (with a real loopback listener), the sync engine, and load, stress, chaos and performance runs against a fake Microsoft and a fake Google. They run on every pull request.
 
 ## Releasing
 

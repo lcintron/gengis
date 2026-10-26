@@ -1,6 +1,6 @@
 {
   "name": "gengis",
-  "version": "0.16.3",
+  "version": "0.17.0",
   "description": "Standalone map building tool: draw shapes, place SVGs, layers, measurement, search. PWA + Electron.",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
@@ -13,6 +13,7 @@
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
     "dist:linux": "electron-builder --linux --publish never",
+    "test": "node --expose-gc --test --test-timeout=300000 \"tests/*.test.js\"",
     "android:web": "node scripts/build-web.js",
     "android:sync": "node scripts/build-web.js && npx cap sync android && node scripts/android-prepare.js",
     "release": "node scripts/release.js",
