@@ -123,6 +123,17 @@ jobs:
           package-manager-cache: false   # no lock file to key a cache on (setup-node caches npm by default since v5)
       - name: Install build tooling
         run: npm install --no-audit --no-fund
+      - name: Cloud sign-in secrets
+        shell: bash
+        env:
+          GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+        run: |
+          # Google's desktop client secret, kept out of the repository (without it the app offers OneDrive only)
+          if [ -n "$GOOGLE_DESKTOP_CLIENT_SECRET" ]; then
+            node -e 'require("fs").writeFileSync("electron/cloud-secrets.json", JSON.stringify({ googleDesktopSecret: process.env.GOOGLE_DESKTOP_CLIENT_SECRET }))'
+          else
+            echo "::warning::GOOGLE_DESKTOP_CLIENT_SECRET is not set: the desktop app will not offer Google Drive"
+          fi
       - name: Build installers
         run: npx electron-builder --publish never
         env:

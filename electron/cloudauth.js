@@ -16,6 +16,11 @@ const http = require('http');
 const path = require('path');
 const files = require('./files');
 
+function localSecret(key) {
+  if (process.env.GENGIS_GOOGLE_DESKTOP_SECRET && key === 'googleDesktopSecret') return process.env.GENGIS_GOOGLE_DESKTOP_SECRET;
+  try { return String(JSON.parse(fs.readFileSync(path.join(__dirname, 'cloud-secrets.json'), 'utf8'))[key] || ''); } catch (e) { return ''; }
+}
+
 const PROVIDERS = {
   onedrive: {
     clientId: '7beaabe0-cfb2-406e-b687-7eace44b2edb',
@@ -26,8 +31,10 @@ const PROVIDERS = {
     extra: hint => Object.assign({ prompt: 'select_account' }, hint ? { login_hint: hint } : {})
   },
   gdrive: {
-    clientId: '',      // Google Cloud → Credentials → OAuth client "Desktop app"
-    clientSecret: '',  // (an installed app's "secret" is not one: Google's guidance)
+    clientId: '383588245973-25u5uje4bbu37dbt4nsndovk26eq6ro5.apps.googleusercontent.com', // OAuth client "Desktop app"
+    // Not confidential in an installed app (Google's guidance), but kept out of the public repository: the release
+    // build writes it into electron/cloud-secrets.json from a GitHub secret (a local copy of that file for development)
+    clientSecret: localSecret('googleDesktopSecret'),
     authorize: 'https://accounts.google.com/o/oauth2/v2/auth',
     token: 'https://oauth2.googleapis.com/token',
     revoke: 'https://oauth2.googleapis.com/revoke',
@@ -41,7 +48,8 @@ const PERSONAL_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 
 const b64url = buf => Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const claims = idToken => { try { return JSON.parse(Buffer.from(String(idToken).split('.')[1], 'base64url').toString('utf8')); } catch (e) { return {}; } };
-const offered = () => Object.keys(PROVIDERS).filter(k => PROVIDERS[k].clientId);
+// (Google's token endpoint refuses a desktop client without its secret: not offered in a build that lacks it)
+const offered = () => Object.keys(PROVIDERS).filter(k => PROVIDERS[k].clientId && (k !== 'gdrive' || PROVIDERS[k].clientSecret));
 
 /* ---------- the refresh tokens, encrypted on disk ---------- */
 const memory = new Map(); // accountId -> { provider, refresh } where the OS offers no encryption

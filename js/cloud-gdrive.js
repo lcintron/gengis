@@ -14,7 +14,7 @@ window.MB = window.MB || {};
 
   // The OAuth client id of GenGIS's Google Cloud project ("Web application"). Empty: Google Drive is not offered in the
   // web app (the desktop app has its own client: electron/cloudauth.js).
-  const WEB_CLIENT_ID = '';
+  const WEB_CLIENT_ID = '383588245973-m6l0rce5egocdai8snofilk1d6jc3ibb.apps.googleusercontent.com';
   const API = 'https://www.googleapis.com/drive/v3', UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
   const USERINFO = 'https://www.googleapis.com/oauth2/v3/userinfo';
   const GIS = 'https://accounts.google.com/gsi/client';

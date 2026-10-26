@@ -245,3 +245,12 @@ test('the cloud requests it makes for the page never follow a redirect themselve
   assert.equal(r.status, 302);
   assert.equal(r.headers.location, 'https://evil.example/', 'handed back to the page, whose next request is checked');
 });
+
+test('Google Drive is offered only in a build that has the desktop client secret', () => {
+  const saved = T.PROVIDERS.gdrive.clientSecret;
+  T.PROVIDERS.gdrive.clientSecret = '';
+  assert.deepEqual(cloudauth.offered(), ['onedrive']);
+  T.PROVIDERS.gdrive.clientSecret = saved;
+  assert.deepEqual(cloudauth.offered(), ['onedrive', 'gdrive']);
+  assert.ok(!fs.readFileSync(path.join(__dirname, '..', 'electron', 'cloudauth.js'), 'utf8').includes('GOCSPX'), 'no secret in the source');
+});
