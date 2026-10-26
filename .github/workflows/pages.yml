@@ -34,7 +34,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p site
-          rsync -a --exclude '.git' --exclude '.github' --exclude 'node_modules' --exclude 'dist' --exclude 'electron' \
+          rsync -a --include '/.well-known/***' --exclude '.*' --exclude 'node_modules' --exclude 'dist' --exclude 'electron' \
                    --exclude 'scripts' --exclude 'branding/source' --exclude 'Makefile' --exclude 'package.json' \
                    --exclude 'package-lock.json' --exclude 'serve.js' --exclude '.claude' ./ site/
           echo "Deployed ${{ github.ref_name }} on $(date -u +%FT%TZ)" > site/VERSION.txt
@@ -43,5 +43,6 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+          include-hidden-files: true # (.well-known only: every other dotfile is left out above)
       - id: deployment
         uses: actions/deploy-pages@v5
