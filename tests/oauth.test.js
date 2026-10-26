@@ -7,7 +7,8 @@ const appOf = () => makeApp({ server: makeServer() });
 
 test('PKCE challenge matches RFC 7636 appendix B', async () => {
   const { MB } = appOf();
-  assert.equal(await MB.oauth.challenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'), 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+  // the RFC's own published example verifier and challenge: a public test vector, not a credential
+  assert.equal(await MB.oauth.challenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'), 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'); // ggignore
 });
 
 test('random values are URL-safe and differ', () => {
