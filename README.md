@@ -81,14 +81,14 @@ For example `mavp2p serial:/dev/ttyUSB0:57600 tcps:0.0.0.0:5760`. Over UDP to a 
 
 ### Cloud sync: setting up OneDrive and Google Drive (once, for whoever hosts GenGIS)
 
-Each provider stays hidden until GenGIS has its app registration. The consent screens use `privacy.html`, `terms.html` and the logos in `branding/store/` (120 px for Google, 240 px for Microsoft).
+Each provider stays hidden until GenGIS has its app registration. The consent screens use `privacy.html`, `terms.html` and the logos in `branding/store/` (120 px for Google, 215 px for Microsoft).
 
 **OneDrive**: a Microsoft Entra app registration:
 
 1. [entra.microsoft.com](https://entra.microsoft.com) → App registrations → New registration: name **GenGIS**, supported accounts **any Entra ID tenant and personal Microsoft accounts**.
 2. Authentication → Add a platform → **Single-page application**, redirect URIs `https://g2.luiscintron.com/` and `http://localhost:8080/`. Leave implicit grant off; no client secret. For the desktop app, also add the platform **Mobile and desktop applications** with the redirect URI `http://localhost` (any port: the app listens on one for a moment while you sign in, in your own browser).
 3. API permissions → Microsoft Graph, delegated: `Files.ReadWrite.AppFolder`, `offline_access`, `openid`, `profile`, `email`. Don't grant admin consent: users consent for themselves.
-4. Branding & properties: logo `branding/store/gengis-logo-240.png`, home page `https://g2.luiscintron.com/`, terms `https://g2.luiscintron.com/terms.html`, privacy `https://g2.luiscintron.com/privacy.html`; publisher domain `g2.luiscintron.com` (verified by `.well-known/microsoft-identity-association.json`, deployed with the site). Then **publisher verification** (a free Microsoft partner ID), which lets more Microsoft 365 organizations allow the app.
+4. Branding & properties: logo `branding/store/gengis-logo-215.png`, home page `https://g2.luiscintron.com/`, terms `https://g2.luiscintron.com/terms.html`, privacy `https://g2.luiscintron.com/privacy.html`; publisher domain `g2.luiscintron.com` (verified by `.well-known/microsoft-identity-association.json`, deployed with the site). Then **publisher verification** (a free Microsoft partner ID), which lets more Microsoft 365 organizations allow the app.
 5. Put the Application (client) ID in `CLIENT_ID` in `js/cloud-onedrive.js`. Use this one registration everywhere (web, desktop, Android: add platforms to it): OneDrive gives each registration its own folder, so a second registration would mean a second "GenGIS 1" folder.
 
 In a web browser Microsoft keeps a sign-in for 24 hours; GenGIS renews it on start-up, usually without asking. The desktop app stays signed in (its sign-in is kept encrypted by the operating system).
