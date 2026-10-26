@@ -91,10 +91,16 @@ window.MB = window.MB || {};
           <div class="cloud-acc-main"><b>${esc(a.name || a.email)}</b><small>${esc(p.name)} · ${a.kind === 'personal' ? 'Personal' : 'Work or school'}</small>${a.pullError && a.state !== 'signin' ? `<small class="cloud-warn" title="${esc(a.pullError)}">${I.error} Can't check for changes</small>` : ''}</div>
           ${a.state === 'signin' ? `<button type="button" class="btn small primary" data-signin="${esc(a.id)}" data-key="s-${esc(a.id)}" title="${esc(a.error || 'Signed out')}">Sign in</button>` : iconBtn('data-act="syncnow" data-key="sync"', MB.ICON.refresh, 'Sync now')}
           ${iconBtn(`data-disconnect="${esc(a.id)}" data-key="d-${esc(a.id)}"`, I.logout, 'Disconnect')}
-        </div>
-        <div class="cloud-auto"><span>Sync all projects</span>${tip('Named projects sync automatically. Switch one off below to keep it on this device only.')}${toggle(`data-auto="${esc(a.id)}" data-key="a-${esc(a.id)}"`, a.auto, 'Sync all projects')}</div>`;
+        </div>${accs.length === 1 ? `
+        <div class="cloud-auto"><span>Sync all projects</span>${tip('Named projects sync automatically. Switch one off below to keep it on this device only.')}${toggle(`data-auto="${esc(a.id)}" data-key="a-${esc(a.id)}"`, a.auto, 'Sync all projects')}</div>` : ''}`;
       });
     });
+    // more than one account: "sync all" goes to one of them (or none), so it is one choice, not a switch per account
+    if (accs.length > 1) {
+      const auto = accs.find(a => a.auto);
+      html += `<div class="cloud-auto"><span>Sync all projects to</span>${tip('Named projects without their own choice below sync to this account. Off: only the projects you choose.')}
+        <select data-autoto data-key="autoto" aria-label="Sync all projects to"><option value="">Off</option>${accs.map(a => `<option value="${esc(a.id)}"${auto && auto.id === a.id ? ' selected' : ''}>${esc(provName(a.provider))} · ${esc(a.email || a.name)}</option>`).join('')}</select></div>`;
+    }
     if (accs.length) {
       html += `<h3 class="cloud-h">Projects</h3><div class="cloud-list">${list.length ? list.map(r => projectRow(r, accs)).join('') : '<p class="note">Nothing here yet.</p>'}</div>`;
       accs.forEach(a => {
@@ -141,6 +147,10 @@ window.MB = window.MB || {};
       if (await MB.ask('Disconnect ' + accLabel(a) + '?\n\nNothing is deleted: files stay in ' + provName(a.provider) + ', projects stay here.', 'Disconnect', 'Cancel')) C().disconnect(a.id);
     });
     on('[data-auto]', cb => C().setAuto(cb.dataset.auto, cb.checked));
+    on('[data-autoto]', sel => {
+      const was = C().accounts.find(a => a.auto);
+      if (sel.value) C().setAuto(sel.value, true); else if (was) C().setAuto(was.id, false);
+    });
     on('[data-sync]', el => C().setSync(el.dataset.sync, el.type === 'checkbox' ? (el.checked ? el.dataset.acc : null) : (el.value || null)));
     on('[data-resolve]', b => { box.querySelectorAll(`[data-resolve][data-id="${b.dataset.id}"]`).forEach(x => { x.disabled = true; }); C().resolve(b.dataset.id, b.dataset.resolve); });
     on('[data-act="syncnow"]', b => { b.disabled = true; b.classList.add('spin'); C().syncNow().finally(() => U.render()); });
