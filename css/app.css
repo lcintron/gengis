@@ -903,7 +903,7 @@ button.link:hover { text-decoration: underline; }
 .file-resume-ic svg { flex: 0 0 auto; pointer-events: none; }
 @media (max-width: 640px) {
   /* resume saving to the file: its icon only (the words are its tooltip and label), a finger-sized square */
-  .file-resume-ic { width: 34px; height: 34px; padding: 0; justify-content: center; flex: 0 0 auto; }
+  .file-resume-ic { width: 36px; height: 36px; padding: 0; justify-content: center; flex: 0 0 auto; }
   .file-resume-ic span { display: none; }
   .file-resume-ic svg { width: 20px; height: 20px; }
 }
