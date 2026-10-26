@@ -29,7 +29,7 @@ test('every element a script looks up by id exists', () => {
   const missing = [];
   for (const [f, src] of Object.entries(js)) {
     const refs = [
-      ...src.matchAll(/\$\(\s*'#([\w-]+)'\s*\)/g),
+      ...src.matchAll(/\$\(\s*'#([\w-]+)'\s*[,)]/g), // (also $('#x', scope))
       ...src.matchAll(/getElementById\(\s*'([\w-]+)'\s*\)/g),
       ...src.matchAll(/querySelector\(\s*'#([\w-]+)'\s*\)/g)
     ];
@@ -51,7 +51,10 @@ test('every #id the stylesheet styles exists (no rules left behind for removed e
 
 test('a data-act a menu or button uses has a handler, and a handler has a button', () => {
   const acts = new Set([...html.matchAll(/data-act="([\w-]+)"/g)].map(m => m[1]));
-  const handled = new Set([...allJs.matchAll(/case '([\w-]+)':/g)].map(m => m[1]));
+  // the menu's own handler (MB.ui.menuAction's switch), not any switch anywhere
+  const body = (js['ui.js'].split('MB.ui.menuAction = function')[1] || '').split(/\n  };\r?\n/)[0];
+  assert.ok(body.includes('switch'), 'MB.ui.menuAction found');
+  const handled = new Set([...body.matchAll(/case '([\w-]+)':/g)].map(m => m[1]));
   // (close and a few others are handled by their own listeners)
   const own = new Set([...allJs.matchAll(/\[data-act="([\w-]+)"\]/g)].map(m => m[1]));
   const unhandled = [...acts].filter(a => !handled.has(a) && !own.has(a));
