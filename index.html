@@ -74,7 +74,6 @@
           <button data-act="importmaps"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/><path d="M12 22v-5"/></svg><span>Import maps (ATAK / MOBAC)…</span></button>
           <hr>
           <button data-act="install" id="installBtn" class="hidden"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 7v7M9 11l3 3 3-3M10 18h4"/></svg><span>Install as app</span></button>
-          <button data-act="sources"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><span>Data sources…</span></button>
           <button data-act="about"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></svg><span>About GenGIS</span></button>
         </div>
       </div>
@@ -167,6 +166,15 @@
     <p class="kbd-list"><kbd>V</kbd> select · <kbd>G</kbd> move · <kbd>K</kbd> scale (drag a handle: <kbd>Shift</kbd> keeps proportions, <kbd>Alt</kbd> from the center) · <kbd>F</kbd> presenter · <kbd>M</kbd> marker · <kbd>T</kbd> text · <kbd>L</kbd> line · <kbd>P</kbd> polygon · <kbd>R</kbd> shapes · <kbd>C</kbd> circle · <kbd>S</kbd> image · <kbd>I</kbd> icon · <kbd>N</kbd> annotate · <kbd>D</kbd> distance · <kbd>A</kbd> area · <kbd>Esc</kbd> cancel · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>Ctrl</kbd>+<kbd>S</kbd> save file · <kbd>/</kbd> search</p>
     <h3>License</h3>
     <p>Free for noncommercial use under the <a href="https://polyformproject.org/licenses/strict/1.0.0" target="_blank" rel="noopener">PolyForm Strict License 1.0.0</a>. Commercial use, changes and redistribution need a commercial license: <a href="https://github.com/lcintron" target="_blank" rel="noopener">contact Luis Cintron</a>. Bundled Leaflet, Leaflet-Geoman, polygon-clipping, html-to-image and the Lucide icons keep their own licenses.</p>
+    <h3>Data sources</h3>
+    <ul class="about-sources">
+      <li><b>Map tiles</b>: Esri World Imagery, OpenStreetMap, OpenTopoMap, CyclOSM, CARTO, or your own providers. Each has its own usage policy; attribution shows on the map.</li>
+      <li><b>Search</b>: <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noopener">Nominatim</a> (OpenStreetMap); points of interest: <a href="https://wiki.openstreetmap.org/wiki/Overpass_API" target="_blank" rel="noopener">Overpass API</a>. Fair use: no bulk or automated queries.</li>
+      <li><b>FAA data</b>: <a href="https://udds-faa.opendata.arcgis.com/" target="_blank" rel="noopener">FAA UAS Data Delivery System</a>. <b>Borders</b>: <a href="https://livingatlas.arcgis.com/" target="_blank" rel="noopener">Esri Living Atlas</a>.</li>
+      <li><b>Magnetic declination</b>: NOAA's <a href="https://www.ncei.noaa.gov/products/world-magnetic-model" target="_blank" rel="noopener">World Magnetic Model</a>, computed on the device. <b>Place names</b>: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>.</li>
+      <li><b>Live traffic</b>: aircraft from <a href="https://github.com/adsbfi/opendata" target="_blank" rel="noopener">adsb.fi</a> (personal, non-commercial use) or <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a> (ODbL); vessels from <a href="https://aisstream.io" target="_blank" rel="noopener">aisstream.io</a> with your own key; or your own receivers.</li>
+    </ul>
+    <p class="dim">For heavy use, point GenGIS at your own servers: Project → Map &amp; search APIs.</p>
     <p class="about-legal"><a href="https://g2.luiscintron.com/privacy.html" target="_blank" rel="noopener">Privacy</a> · <a href="https://g2.luiscintron.com/terms.html" target="_blank" rel="noopener">Terms</a> · No GenGIS server: your maps stay on your devices and in your own cloud storage.</p>
     <p class="dim">Open with URL parameters: <code>?q=Eiffel+Tower</code>, <code>?lat=48.858&amp;lon=2.294&amp;zoom=16</code>, <code>?center=48.858,2.294</code>, <code>?poi=cafe</code>.</p>
   </div>
@@ -185,18 +193,6 @@
     <div id="iconGrid" class="icon-grid" role="listbox" aria-label="Icons"></div>
     <p class="note" id="iconCount"></p>
     <p class="note">Icons by <a href="https://lucide.dev" target="_blank" rel="noopener">Lucide</a> (ISC licence). The icon you pick goes into the image library; click the map to place it.</p>
-  </div>
-</div>
-<div id="sourcesDialog" class="modal hidden">
-  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="sourcesTitle">
-    <button type="button" class="modal-x" data-act="close" aria-label="Close" title="Close">✕</button>
-    <h2 id="sourcesTitle">Data sources</h2>
-    <p class="dim">Free, no API keys.</p>
-    <ul>
-      <li>Map tiles: OpenStreetMap, OSM Humanitarian, OpenTopoMap, CyclOSM, CARTO, Esri World Imagery. Each has its own usage policy and attribution shown on the map.</li>
-      <li>Address and place search: <a href="https://nominatim.org/release-docs/latest/api/Overview/" target="_blank" rel="noopener">Nominatim</a> (OpenStreetMap). Fair use: no bulk or automated queries.</li>
-      <li>Points of interest: <a href="https://wiki.openstreetmap.org/wiki/Overpass_API" target="_blank" rel="noopener">Overpass API</a>.</li>
-    </ul>
   </div>
 </div>
 

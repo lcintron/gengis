@@ -562,6 +562,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .brand-name { display: none; } /* the logo says it */
   .topbar-right { order: 2; flex: 0 0 auto; margin-left: 0; gap: 6px; }
   #presentBtn { display: none; } /* in the menu */
+  #sidebarToggle svg { transform: rotate(90deg); } /* the panel is a sheet at the bottom here: its bar too */
   #main { position: relative; }
   /* side panel becomes a bottom sheet */
   #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: 56%; max-height: 70vh; border-left: 0; border-top: 1px solid var(--border);
@@ -896,6 +897,16 @@ button.link:hover { text-decoration: underline; }
 .file-state.conflict, .file-state.denied { color: var(--danger); }
 #tab-settings > .section + .section { border-top: 1px solid var(--border); padding-top: 14px; } /* a line between the sections */
 .file-resume { padding: 3px 8px; font-size: 11px; white-space: nowrap; } /* beside the save status, when saving to the file needs a click */
+.file-resume-ic { display: inline-flex; align-items: center; gap: 5px; color: var(--warn); border-color: rgba(255,209,102,.45); }
+.file-resume-ic span { color: var(--text); }
+.file-resume-ic.warn { color: var(--danger); border-color: rgba(255,92,92,.45); }
+.file-resume-ic svg { flex: 0 0 auto; pointer-events: none; }
+@media (max-width: 640px) {
+  /* resume saving to the file: its icon only (the words are its tooltip and label), a finger-sized square */
+  .file-resume-ic { width: 34px; height: 34px; padding: 0; justify-content: center; flex: 0 0 auto; }
+  .file-resume-ic span { display: none; }
+  .file-resume-ic svg { width: 20px; height: 20px; }
+}
 .desktop-files .path { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .recent-ask { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
 .recent-ask span { font-size: 12px; color: var(--text-dim); }

@@ -231,11 +231,11 @@ window.MB = window.MB || {};
       setTimeout(() => MB.map.invalidateSize(), 50);
     });
 
-    // About and Data sources dialogs: closed by their ✕, Esc or a click on the backdrop; Tab stays inside them
+    // the About dialog: closed by its ✕, Esc or a click on the backdrop; Tab stays inside it
     const av = $('#aboutVersion'); if (av) av.textContent = MB.APP.version;
     const cu = $('#checkUpdate'); if (cu) cu.addEventListener('click', () => checkForUpdate(cu, $('#updateResult')));
     const sv = $('#splash .ver'); if (sv) sv.textContent = 'Version ' + MB.APP.version;
-    ['#aboutDialog', '#sourcesDialog'].forEach(sel => MB.ui.wireDialog($(sel)));
+    MB.ui.wireDialog($('#aboutDialog'));
   }
 
   // A dialog: closed by its ✕, Esc or a click on the backdrop (unless opts.canClose() says not now); Tab stays inside
@@ -356,7 +356,6 @@ window.MB = window.MB || {};
       case 'export': MB.exportMap.open(); break;
       case 'install': if (MB.installPrompt) { MB.installPrompt.prompt(); MB.installPrompt = null; $('#installBtn').classList.add('hidden'); } break;
       case 'about': openDialog($('#aboutDialog')); break;
-      case 'sources': openDialog($('#sourcesDialog')); break;
       case 'present': MB.presenter.enter(); break;
       case 'cast': MB.cast.open(); break;
       case 'apis': MB.settingsDialog.open(); break;
@@ -1564,14 +1563,20 @@ window.MB = window.MB || {};
     }
     if (BF.available) {
       const resume = document.createElement('button');
-      resume.type = 'button'; resume.id = 'fileResume'; resume.className = 'btn small file-resume'; resume.hidden = true;
+      resume.type = 'button'; resume.id = 'fileResume'; resume.className = 'btn small file-resume file-resume-ic'; resume.hidden = true;
       el.insertAdjacentElement('afterend', resume);
       resume.addEventListener('click', () => BF.resume());
+      // a file with ▶ (resume saving to it) or ! (changed outside GenGIS); its words beside it, except on a phone
+      const fileWith = mark => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 3h8l4 4v14H6z M14 3v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>${mark}</svg>`;
+      const PLAY = '<path d="M10 11.5l4.5 2.75L10 17z" fill="currentColor"/>', BANG = '<path d="M12 10.5v3.5M12 16.8v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
       MB.on('browserfiles', () => {
         const need = BF.name && (BF.state === 'paused' || BF.state === 'denied' || BF.state === 'conflict');
         resume.hidden = !need;
-        resume.textContent = BF.state === 'conflict' ? 'File changed: choose…' : 'Resume saving to file';
-        resume.title = BF.state === 'conflict' ? '"' + BF.name + '" was changed outside GenGIS' : 'Allow saving changes to "' + BF.name + '" again';
+        const words = BF.state === 'conflict' ? 'File changed: choose…' : 'Resume saving to file';
+        resume.innerHTML = fileWith(BF.state === 'conflict' ? BANG : PLAY) + `<span>${esc(words)}</span>`;
+        resume.classList.toggle('warn', BF.state === 'conflict');
+        resume.title = BF.state === 'conflict' ? '"' + BF.name + '" was changed outside GenGIS: choose what to do' : 'Resume saving to "' + BF.name + '" (allow saving changes to it again)';
+        resume.setAttribute('aria-label', words);
         render(MB.projects); MB.ui.renderDesktopFiles();
       });
     }
