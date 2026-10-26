@@ -385,9 +385,18 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 
 /* ---------- sidebar ---------- */
 #sidebar {
-  width: var(--sidebar-w); flex: 0 0 auto; background: var(--bg-2); border-left: 1px solid var(--border);
-  display: flex; flex-direction: column; min-height: 0;
+  width: max(var(--sidebar-w), var(--sidebar-user, 0px)); flex: 0 0 auto; background: var(--bg-2); border-left: 1px solid var(--border); /* (the default is the least: ui.js) */
+  display: flex; flex-direction: column; min-height: 0; position: relative;
 }
+/* its grip: the left edge beside the map (drag for the width); a phone's sheet: a handle at the top (for the height) */
+.sidebar-grip { position: absolute; z-index: 5; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; touch-action: none; }
+.sidebar-grip::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background .15s; }
+.sidebar-grip:hover::after, .sidebar-grip:focus-visible::after, body.panel-resizing .sidebar-grip::after { background: var(--accent); }
+.sidebar-grip:focus-visible { outline: none; }
+body.panel-resizing { user-select: none; -webkit-user-select: none; }
+body.panel-resizing.cols, body.panel-resizing.cols * { cursor: col-resize !important; }
+body.panel-resizing.rows, body.panel-resizing.rows * { cursor: row-resize !important; }
+body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take the drag's moves */
 #sidebar.collapsed { display: none; }
 .tabs { display: flex; border-bottom: 1px solid var(--border); flex: 0 0 auto; padding: 0 4px; overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
@@ -565,8 +574,10 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   #sidebarToggle svg { transform: rotate(90deg); } /* the panel is a sheet at the bottom here: its bar too */
   #main { position: relative; }
   /* side panel becomes a bottom sheet */
-  #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: 56%; max-height: 70vh; border-left: 0; border-top: 1px solid var(--border);
-    border-radius: 14px 14px 0 0; z-index: 30; box-shadow: 0 -8px 24px rgba(0,0,0,.5); padding-bottom: env(safe-area-inset-bottom); }
+  #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: max(56%, var(--sheet-user, 0px)); max-height: 88vh; border-left: 0; border-top: 1px solid var(--border);
+    border-radius: 14px 14px 0 0; z-index: 30; box-shadow: 0 -8px 24px rgba(0,0,0,.5); padding-top: 14px; padding-bottom: env(safe-area-inset-bottom); }
+  .sidebar-grip { left: 0; right: 0; top: 0; bottom: auto; width: auto; height: 18px; cursor: row-resize; }
+  .sidebar-grip::after { left: 50%; top: 6px; bottom: auto; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
   .tabs { position: relative; }
   .tabs button { padding: 12px 6px; }
   .tabs::after { display: none; } /* the close button ends the row, at its right edge (kept in view if the tabs scroll) */

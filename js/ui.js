@@ -230,6 +230,7 @@ window.MB = window.MB || {};
       $('#sidebar').classList.toggle('collapsed');
       setTimeout(() => MB.map.invalidateSize(), 50);
     });
+    initSidebarResize();
 
     // the About dialog: closed by its ✕, Esc or a click on the backdrop; Tab stays inside it
     const av = $('#aboutVersion'); if (av) av.textContent = MB.APP.version;
@@ -459,6 +460,59 @@ window.MB = window.MB || {};
     MB.ui.applyToolbarSide();
     MB.ui.renderSettings();
   };
+
+  // The side panel's size, dragged from its grip: its width beside the map, its height as a phone's bottom sheet (a
+  // share of the screen, so it suits the phone turned either way). Never smaller than its default size (app.css), only
+  // larger. Kept on this device; a double-click (or Home) gives the default back; arrow keys move it too.
+  function initSidebarResize() {
+    const bar = $('#sidebar'), grip = $('#sidebarGrip');
+    if (!bar || !grip) return;
+    const sheet = () => matchMedia('(max-width: 640px)').matches;
+    const W = { min: () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 330, max: () => Math.max(W.min(), Math.min(720, Math.round(innerWidth * 0.6))) };
+    const H = { min: () => document.getElementById('main').clientHeight * 0.56 / innerHeight * 100, max: () => 88 }; // % of the screen's height (the default: 56% of the area under the top bar)
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    let frame = 0;
+    const refit = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => MB.map && MB.map.invalidateSize()); };
+    function apply() {
+      const w = MB.settings.sidebarW, h = MB.settings.sheetH;
+      if (w) bar.style.setProperty('--sidebar-user', Math.min(w, W.max()) + 'px'); else bar.style.removeProperty('--sidebar-user');
+      if (h) bar.style.setProperty('--sheet-user', Math.min(h, H.max()) + 'vh'); else bar.style.removeProperty('--sheet-user');
+      const now = sheet() ? Math.round(bar.getBoundingClientRect().height / innerHeight * 100) : Math.round(bar.getBoundingClientRect().width);
+      grip.setAttribute('aria-orientation', sheet() ? 'horizontal' : 'vertical');
+      grip.setAttribute('aria-valuenow', String(now));
+      grip.setAttribute('aria-valuetext', sheet() ? now + '% of the screen' : now + ' px wide');
+    }
+    function set(px) { // a pointer's position or a keyboard step, in this layout's terms
+      const key = sheet() ? 'sheetH' : 'sidebarW', lim = sheet() ? H : W;
+      if (px <= lim.min()) delete MB.settings[key]; // at the least: the default itself
+      else MB.settings[key] = clamp(Math.round(px), 0, lim.max());
+      apply(); refit();
+    }
+    grip.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      document.body.classList.add('panel-resizing', sheet() ? 'rows' : 'cols');
+      const rect = bar.getBoundingClientRect();
+      const move = ev => set(sheet() ? (rect.bottom - ev.clientY) / innerHeight * 100 : rect.right - ev.clientX);
+      const up = () => {
+        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+        document.body.classList.remove('panel-resizing', 'rows', 'cols');
+        MB.saveSettings(); refit();
+      };
+      grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+    });
+    const reset = () => { if (sheet()) delete MB.settings.sheetH; else delete MB.settings.sidebarW; apply(); MB.saveSettings(); refit(); };
+    grip.addEventListener('dblclick', reset);
+    grip.addEventListener('keydown', e => {
+      const r = bar.getBoundingClientRect(), now = sheet() ? r.height / innerHeight * 100 : r.width, step = sheet() ? 5 : 24;
+      const grow = sheet() ? { ArrowUp: 1, ArrowDown: -1 } : { ArrowLeft: 1, ArrowRight: -1 };
+      if (e.key in grow) { e.preventDefault(); set(now + grow[e.key] * step); MB.saveSettings(); }
+      else if (e.key === 'Home') { e.preventDefault(); reset(); }
+    });
+    addEventListener('resize', apply);
+    apply();
+  }
 
   function initToolbar() {
     if (window.ResizeObserver) new ResizeObserver(() => fitToolbar()).observe($('#mapwrap'));
