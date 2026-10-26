@@ -404,7 +404,6 @@ window.MB = window.MB || {};
         results.innerHTML = `<div class="result-item empty">Search failed: ${esc(e.message)}</div>`;
       }
     }
-    $('#searchBtn').addEventListener('click', run);
     // the clear button: shown while there is text; it empties the box and its results, and keeps the keyboard there
     const clear = $('#searchClear'), showClear = () => { clear.hidden = !input.value; };
     input.addEventListener('input', showClear);

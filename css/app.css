@@ -47,20 +47,20 @@ kbd { background: var(--bg-3); border: 1px solid var(--border); border-bottom-wi
 
 .search-wrap { position: relative; flex: 1 1 auto; max-width: 620px; display: flex; align-items: center; }
 .search-icon { position: absolute; left: 10px; color: var(--text-dim); pointer-events: none; }
-#searchInput {
-  flex: 1; height: 34px; padding: 0 8px 0 34px; border-radius: 8px 0 0 8px; border: 1px solid var(--border);
-  background: var(--bg); color: var(--text); outline: none; min-width: 120px;
+/* every search box (the top bar's, the cloud sync dialog's): a magnifier at the left, the clear button at the right once
+   there is text, Enter (the keyboard's Search key) to search */
+.search-input {
+  flex: 1; height: 34px; padding: 0 34px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); outline: none; min-width: 0; font: inherit;
 }
-#searchInput:focus { border-color: var(--accent); }
-#searchInput { padding-right: 34px; } /* room for the clear button */
+.search-input:focus { border-color: var(--accent); }
+#searchInput { min-width: 120px; }
 /* clear the search (a plain text box has none of its own): over the box's right end, shown once there is text */
 .search-clear { flex: 0 0 auto; z-index: 1; width: 28px; height: 28px; margin: 0 3px 0 -31px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
   border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; }
 .search-clear[hidden] { display: none; }
 .search-clear:hover { background: var(--bg-3); color: var(--text); }
 .search-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-#searchBtn { border-radius: 0 8px 8px 0; height: 34px; border-left: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; }
-#searchBtn svg { pointer-events: none; }
 
 .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
@@ -550,7 +550,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 @media (max-width: 860px) {
   :root { --sidebar-w: 280px; }
   .project-name { width: 110px; }
-  #searchInput { padding-left: 30px; }
+  .search-input { padding-left: 30px; }
   .seg button { padding: 7px 8px; }
 }
 .sheet-close { display: none; }
@@ -616,7 +616,7 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
   .stepper button { width: 24px; }
   .mb-ctx li { padding: 10px 12px; }
   .search-clear { width: 32px; height: 32px; margin-left: -34px; margin-right: 1px; } /* finger-sized, still inside the box */
-  #searchInput { padding-right: 38px; }
+  .search-input { padding-right: 38px; }
   .ink-tip, .ink-size { height: 36px; } /* finger-sized: the options are tapped, the map drawn on with the pen */
   .ink-size { width: 34px; }
   .ink-color { width: 30px; height: 30px; }
@@ -1181,8 +1181,7 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 /* many projects: the list scrolls within the dialog (the accounts stay in view), a search narrows it */
 .cloud-h-row { display: flex; align-items: center; gap: 10px; margin: 18px 0 8px; }
 .cloud-h-row .cloud-h { margin: 0; flex: 1 1 auto; }
-.cloud-search { flex: 0 1 190px; min-width: 0; height: 30px; padding: 0 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font: inherit; font-size: 13px; }
-.cloud-search:focus { outline: none; border-color: var(--accent); }
+.cloud-h-row .search-wrap { flex: 0 1 220px; min-width: 0; max-width: 220px; margin: 0; }
 .cloud-scroll { max-height: min(330px, 42vh); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-width: thin; }
 .cloud-row[hidden], .cloud-sec[hidden], .cloud-nomatch[hidden] { display: none; }
 .cloud-nomatch { margin: 6px 2px 0; }
@@ -1208,7 +1207,7 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
   .cloud-status[data-state="synced"], .cloud-status[data-state="pending"], #cloudAction { display: none !important; }
   .cloud-row { padding: 10px; }
   .cloud-row select { flex: 1 0 100%; max-width: none; height: 38px; }
-  .cloud-search { flex-basis: 150px; height: 36px; font-size: 16px; } /* (16px: no zoom on focus on iPhone) */
+  .cloud-h-row .search-wrap { flex-basis: 175px; }
   .cloud-scroll { max-height: 46vh; }
   .cloud-auto { flex-wrap: wrap; padding-right: 12px; }
   .cloud-auto select { flex: 1 0 100%; max-width: none; height: 38px; margin-left: 0; }

@@ -105,7 +105,7 @@ window.MB = window.MB || {};
       const rmFiles = accs.reduce((n, a) => n + ((remote[a.id] && remote[a.id].files) || []).length, 0);
       const searchable = list.length + rmFiles > SEARCH_FROM;
       html += `<div class="cloud-h-row"><h3 class="cloud-h">Projects <span class="dim">${list.length}</span></h3>${searchable
-        ? `<input type="search" class="cloud-search" data-search data-key="search" placeholder="Search" aria-label="Search projects" spellcheck="false" autocomplete="off" value="${esc(query)}">` : ''}</div>
+        ? `<div class="search-wrap">${SEARCH_ICON}<input class="search-input" type="text" inputmode="search" enterkeyhint="search" data-search data-key="search" placeholder="Search projects" aria-label="Search projects" spellcheck="false" value="${esc(query)}">${CLEAR_BTN}</div>` : ''}</div>
         <div class="cloud-sec"><div class="cloud-list cloud-scroll" data-list="projects">${list.length ? sortRows(list).map(r => projectRow(r, accs)).join('') : '<p class="note">Nothing here yet.</p>'}</div>
         <p class="note cloud-nomatch" hidden>No project matches.</p></div>`;
       accs.forEach(a => {
@@ -137,6 +137,9 @@ window.MB = window.MB || {};
   // Many projects: what needs the user first (a conflict, an error, signed out), then the open project, then the rest as
   // they were last saved; a search narrows the lists (it stays while they refresh).
   const SEARCH_FROM = 6;
+  // (the top bar's search box, the same look: index.html)
+  const SEARCH_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" class="search-icon" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const CLEAR_BTN = '<button type="button" class="search-clear" data-search-clear hidden aria-label="Clear search" title="Clear"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>';
   let query = '';
   const URGENT = { conflict: 0, error: 1, signin: 2 };
   function sortRows(list) {
@@ -194,9 +197,12 @@ window.MB = window.MB || {};
     on('[data-act="dismiss"]', () => { C().lastError = ''; U.render(); });
     const search = box.querySelector('[data-search]');
     if (search) {
-      search.addEventListener('input', () => { query = search.value; filter(box); });
+      const clear = box.querySelector('[data-search-clear]'), showClear = () => { clear.hidden = !search.value; };
+      showClear();
+      search.addEventListener('input', () => { query = search.value; filter(box); showClear(); });
+      clear.addEventListener('click', () => { search.value = query = ''; filter(box); showClear(); search.focus(); });
       // Esc empties the search first (and only then closes the dialog)
-      search.addEventListener('keydown', e => { if (e.key === 'Escape' && search.value) { e.preventDefault(); e.stopPropagation(); search.value = query = ''; filter(box); } });
+      search.addEventListener('keydown', e => { if (e.key === 'Escape' && search.value) { e.preventDefault(); e.stopPropagation(); search.value = query = ''; filter(box); showClear(); } });
     }
     on('[data-openremote]', async b => { MB.ui.closeDialog(dlg); await C().openRemote(b.dataset.openremote, b.dataset.file); });
   }
