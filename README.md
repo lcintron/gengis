@@ -106,7 +106,7 @@ Google gives a web app one hour per sign-in, with no way to renew it unseen; aft
 
 ## Tests
 
-`npm test` runs the automated tests (no installs): cloud sync's sign-in, the OneDrive and Google Drive adapters, the desktop app's sign-in (with a real loopback listener), the sync engine, and load, stress, chaos and performance runs against a fake Microsoft and a fake Google. They run on every pull request.
+`npm test` runs the automated tests (no installs): cloud sync's sign-in, the OneDrive and Google Drive adapters, the desktop app's sign-in (with a real loopback listener), the sync engine, load, stress, chaos and performance runs against a fake Microsoft and a fake Google, and checks of the page itself (every id a script uses exists, no styles left for removed elements, every menu action handled, and hidden elements always hidden). They run on every pull request.
 
 ## Releasing
 

@@ -1626,9 +1626,17 @@ window.MB = window.MB || {};
       // a file with ▶ (resume saving to it) or ! (changed outside GenGIS); its words beside it, except on a phone
       const fileWith = mark => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 3h8l4 4v14H6z M14 3v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>${mark}</svg>`;
       const PLAY = '<path d="M10 11.5l4.5 2.75L10 17z" fill="currentColor"/>', BANG = '<path d="M12 10.5v3.5M12 16.8v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
-      MB.on('browserfiles', () => {
-        const need = BF.name && (BF.state === 'paused' || BF.state === 'denied' || BF.state === 'conflict');
+      // A project kept in the cloud does not need its file to be safe: the reminder stays out of the top bar (Settings
+      // → Project still shows the file, with its own resume button); a file changed elsewhere is still said there.
+      const cloudKept = () => { const st = MB.cloud && MB.cloud.ready && MB.cloud.status(MB.state.projectId); return !!st && st !== 'signin' && st !== 'error'; }; // (signed out or failing: the file matters again)
+      const paint = () => {
+        const need = BF.name && (BF.state === 'paused' || BF.state === 'denied' || BF.state === 'conflict') && (BF.state === 'conflict' || !cloudKept());
         resume.hidden = !need;
+      };
+      MB.on('cloudsync', paint);
+      MB.on('project', paint);
+      MB.on('browserfiles', () => {
+        paint();
         const words = BF.state === 'conflict' ? 'File changed: choose…' : 'Resume saving to file';
         resume.innerHTML = fileWith(BF.state === 'conflict' ? BANG : PLAY) + `<span>${esc(words)}</span>`;
         resume.classList.toggle('warn', BF.state === 'conflict');
