@@ -210,7 +210,13 @@ window.MB = window.MB || {};
   F.resume = async function () {
     if (!entry) return;
     if (F.state === 'conflict') return F.resolve();
-    if (!(await allowed(true))) { show('denied'); return; }
+    if (!(await allowed(true))) {
+      show('denied');
+      // the browser said no (or showed nothing to say yes to): said so, and an end to asking offered
+      const synced = MB.cloud && MB.cloud.ready && MB.cloud.status(MB.state.projectId);
+      if (await MB.ask('The browser did not allow saving to "' + entry.name + '". This map is still saved in this browser' + (synced ? ' and in the cloud' : '') + '.\n\nStop saving it to that file? The file stays as it is.', 'Stop saving to the file', 'Keep the file')) await F.unlink();
+      return;
+    }
     show('saving');
     await P().flush();
     await writeNow(false);
