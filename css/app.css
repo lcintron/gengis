@@ -576,8 +576,8 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   /* side panel becomes a bottom sheet */
   #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: max(56%, var(--sheet-user, 0px)); max-height: 88vh; border-left: 0; border-top: 1px solid var(--border);
     border-radius: 14px 14px 0 0; z-index: 30; box-shadow: 0 -8px 24px rgba(0,0,0,.5); padding-top: 14px; padding-bottom: env(safe-area-inset-bottom); }
-  .sidebar-grip { left: 0; right: 0; top: 0; bottom: auto; width: auto; height: 18px; cursor: row-resize; }
-  .sidebar-grip::after { left: 50%; top: 6px; bottom: auto; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
+  .sidebar-grip { left: 0; right: 0; top: 0; bottom: auto; width: auto; height: 14px; cursor: row-resize; } /* (the sheet's top padding: the tabs below stay tappable) */
+  .sidebar-grip::after { left: 50%; top: 5px; bottom: auto; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
   .tabs { position: relative; }
   .tabs button { padding: 12px 6px; }
   .tabs::after { display: none; } /* the close button ends the row, at its right edge (kept in view if the tabs scroll) */

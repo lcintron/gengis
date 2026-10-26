@@ -480,6 +480,8 @@ window.MB = window.MB || {};
       const now = sheet() ? Math.round(bar.getBoundingClientRect().height / innerHeight * 100) : Math.round(bar.getBoundingClientRect().width);
       grip.setAttribute('aria-orientation', sheet() ? 'horizontal' : 'vertical');
       grip.setAttribute('aria-valuenow', String(now));
+      grip.setAttribute('aria-valuemin', String(Math.round(sheet() ? H.min() : W.min())));
+      grip.setAttribute('aria-valuemax', String(Math.round(sheet() ? H.max() : W.max())));
       grip.setAttribute('aria-valuetext', sheet() ? now + '% of the screen' : now + ' px wide');
     }
     function set(px) { // a pointer's position or a keyboard step, in this layout's terms
@@ -496,11 +498,12 @@ window.MB = window.MB || {};
       const rect = bar.getBoundingClientRect();
       const move = ev => set(sheet() ? (rect.bottom - ev.clientY) / innerHeight * 100 : rect.right - ev.clientX);
       const up = () => {
-        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); grip.removeEventListener('lostpointercapture', up);
         document.body.classList.remove('panel-resizing', 'rows', 'cols');
         MB.saveSettings(); refit();
       };
       grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+      grip.addEventListener('lostpointercapture', up); // (the panel closed mid-drag: the map must not stay unclickable)
     });
     const reset = () => { if (sheet()) delete MB.settings.sheetH; else delete MB.settings.sidebarW; apply(); MB.saveSettings(); refit(); };
     grip.addEventListener('dblclick', reset);
