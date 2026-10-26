@@ -1177,6 +1177,15 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 .cloud-auto .ds-tip { top: calc(100% + 2px); }
 .cloud-auto select { margin-left: auto; min-width: 0; max-width: 60%; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); height: 30px; padding: 0 6px; text-overflow: ellipsis; }
 .cloud-h { margin: 18px 0 8px; }
+.cloud-h .dim { font-weight: 400; margin-left: 2px; }
+/* many projects: the list scrolls within the dialog (the accounts stay in view), a search narrows it */
+.cloud-h-row { display: flex; align-items: center; gap: 10px; margin: 18px 0 8px; }
+.cloud-h-row .cloud-h { margin: 0; flex: 1 1 auto; }
+.cloud-search { flex: 0 1 190px; min-width: 0; height: 30px; padding: 0 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font: inherit; font-size: 13px; }
+.cloud-search:focus { outline: none; border-color: var(--accent); }
+.cloud-scroll { max-height: min(330px, 42vh); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-width: thin; }
+.cloud-row[hidden], .cloud-sec[hidden], .cloud-nomatch[hidden] { display: none; }
+.cloud-nomatch { margin: 6px 2px 0; }
 .cloud-list { display: flex; flex-direction: column; gap: 6px; }
 .cloud-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
 .cloud-row.current { border-color: rgba(29,179,169,.6); }
@@ -1199,6 +1208,8 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
   .cloud-status[data-state="synced"], .cloud-status[data-state="pending"], #cloudAction { display: none !important; }
   .cloud-row { padding: 10px; }
   .cloud-row select { flex: 1 0 100%; max-width: none; height: 38px; }
+  .cloud-search { flex-basis: 150px; height: 36px; font-size: 16px; } /* (16px: no zoom on focus on iPhone) */
+  .cloud-scroll { max-height: 46vh; }
   .cloud-auto { flex-wrap: wrap; padding-right: 12px; }
   .cloud-auto select { flex: 1 0 100%; max-width: none; height: 38px; margin-left: 0; }
   .cloud-conflict .btn { min-height: 38px; }

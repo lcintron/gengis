@@ -48,7 +48,7 @@ window.MB = window.MB || {};
       document.body.appendChild(dlg);
       MB.ui.wireDialog(dlg);
     }
-    remote = {};
+    remote = {}; query = '';
     preload(C().offered());
     U.render();
     MB.ui.openDialog(dlg);
@@ -102,20 +102,57 @@ window.MB = window.MB || {};
         <select data-autoto data-key="autoto" aria-label="Sync all projects to"><option value="">Off</option>${accs.map(a => `<option value="${esc(a.id)}"${auto && auto.id === a.id ? ' selected' : ''}>${esc(provName(a.provider))} · ${esc(a.email || a.name)}</option>`).join('')}</select></div>`;
     }
     if (accs.length) {
-      html += `<h3 class="cloud-h">Projects</h3><div class="cloud-list">${list.length ? list.map(r => projectRow(r, accs)).join('') : '<p class="note">Nothing here yet.</p>'}</div>`;
+      const rmFiles = accs.reduce((n, a) => n + ((remote[a.id] && remote[a.id].files) || []).length, 0);
+      const searchable = list.length + rmFiles > SEARCH_FROM;
+      html += `<div class="cloud-h-row"><h3 class="cloud-h">Projects <span class="dim">${list.length}</span></h3>${searchable
+        ? `<input type="search" class="cloud-search" data-search data-key="search" placeholder="Search" aria-label="Search projects" spellcheck="false" autocomplete="off" value="${esc(query)}">` : ''}</div>
+        <div class="cloud-sec"><div class="cloud-list cloud-scroll" data-list="projects">${list.length ? sortRows(list).map(r => projectRow(r, accs)).join('') : '<p class="note">Nothing here yet.</p>'}</div>
+        <p class="note cloud-nomatch" hidden>No project matches.</p></div>`;
       accs.forEach(a => {
         const rm = remote[a.id];
         if (!rm || rm.loading || rm.error || !rm.files.length) return;
-        html += `<h3 class="cloud-h">Only in ${esc(provName(a.provider))}</h3><div class="cloud-list">${rm.files.map(f => `<div class="cloud-row">
-            <span class="cloud-st">${I.file}</span><div class="cloud-main"><b>${esc(f.name.replace(/\.gengis\.json$|\.json$/i, ''))}</b><small>${esc(when(f.modified))}</small></div>
-            ${MB.iconBtn('open', 'Open', `data-openremote="${esc(a.id)}" data-file="${esc(f.fileId)}"`, '', 'Open ' + f.name.replace(/\.gengis\.json$|\.json$/i, ''))}</div>`).join('')}</div>`;
+        html += `<div class="cloud-sec" data-remote><h3 class="cloud-h">Only in ${esc(provName(a.provider))} <span class="dim">${rm.files.length}</span></h3><div class="cloud-list cloud-scroll" data-list="r-${esc(a.id)}">${rm.files.map(f => {
+          const name = f.name.replace(/\.gengis\.json$|\.json$/i, '');
+          return `<div class="cloud-row" data-name="${esc(name.toLowerCase())}">
+            <span class="cloud-st">${I.file}</span><div class="cloud-main"><b>${esc(name)}</b><small>${esc(when(f.modified))}</small></div>
+            ${MB.iconBtn('open', 'Open', `data-openremote="${esc(a.id)}" data-file="${esc(f.fileId)}"`, '', 'Open ' + name)}</div>`;
+        }).join('')}</div></div>`;
       });
     }
+    // what the user was doing survives the refresh: the scroll of each list, the field typed in and its caret
+    const lists = {};
+    box.querySelectorAll('[data-list]').forEach(l => { lists[l.dataset.list] = l.scrollTop; });
+    const caret = active && active.tagName === 'INPUT' ? [active.selectionStart, active.selectionEnd] : null;
     box.innerHTML = html;
+    box.querySelectorAll('[data-list]').forEach(l => { if (lists[l.dataset.list]) l.scrollTop = lists[l.dataset.list]; });
     box.scrollTop = scroll;
     bind(box);
-    if (focusKey) { const el = box.querySelector(`[data-key="${CSS.escape(focusKey)}"]`); if (el) el.focus(); }
+    filter(box);
+    if (focusKey) {
+      const el = box.querySelector(`[data-key="${CSS.escape(focusKey)}"]`);
+      if (el) { el.focus(); if (caret && el.setSelectionRange) try { el.setSelectionRange(caret[0], caret[1]); } catch (e) { /* not a text field */ } }
+    }
   };
+
+  // Many projects: what needs the user first (a conflict, an error, signed out), then the open project, then the rest as
+  // they were last saved; a search narrows the lists (it stays while they refresh).
+  const SEARCH_FROM = 6;
+  let query = '';
+  const URGENT = { conflict: 0, error: 1, signin: 2 };
+  function sortRows(list) {
+    const rank = r => { const st = C().status(r.id); return st in URGENT ? URGENT[st] : (r.id === MB.state.projectId ? 3 : 4); };
+    return list.map((r, i) => [rank(r), i, r]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
+  }
+  function filter(box) {
+    const q = query.trim().toLowerCase();
+    box.querySelectorAll('.cloud-sec').forEach(sec => {
+      let shown = 0;
+      sec.querySelectorAll('.cloud-row[data-name]').forEach(row => { const hit = !q || row.dataset.name.includes(q); row.hidden = !hit; if (hit) shown++; });
+      const none = !!q && !shown;
+      if (sec.hasAttribute('data-remote')) sec.hidden = none;
+      else { const nm = sec.querySelector('.cloud-nomatch'); if (nm) nm.hidden = !none; }
+    });
+  }
 
   function projectRow(r, accs) {
     const c = C(), l = c.links[r.id], st = c.status(r.id), draft = MB.projects.isDraft(r), prog = c.progress[r.id];
@@ -131,7 +168,7 @@ window.MB = window.MB || {};
         <button type="button" class="btn small" data-resolve="cloud" data-id="${esc(r.id)}" title="Replace this version with the cloud version (this one is kept in Recent projects → earlier copies)">Use cloud</button>
         <button type="button" class="btn small" data-resolve="mine" data-id="${esc(r.id)}" title="Replace the cloud version with this one (the cloud keeps the old one in its version history)">Use mine</button></div>` : '';
     const why = l && l.error && state === 'error' ? l.error : label;
-    return `<div class="cloud-row${r.id === MB.state.projectId ? ' current' : ''}${on ? '' : ' off'}">
+    return `<div class="cloud-row${r.id === MB.state.projectId ? ' current' : ''}${on ? '' : ' off'}" data-name="${esc(String(r.name || '').toLowerCase())}">
         <span class="cloud-st ${esc(state)}" role="img" aria-label="${esc(why)}" title="${esc(why)}">${I[state] || I.off}</span>
         <div class="cloud-main"><b>${esc(r.name)}</b><small>${sub}</small></div>${where}${conflict}</div>`;
   }
@@ -155,6 +192,12 @@ window.MB = window.MB || {};
     on('[data-resolve]', b => { box.querySelectorAll(`[data-resolve][data-id="${b.dataset.id}"]`).forEach(x => { x.disabled = true; }); C().resolve(b.dataset.id, b.dataset.resolve); });
     on('[data-act="syncnow"]', b => { b.disabled = true; b.classList.add('spin'); C().syncNow().finally(() => U.render()); });
     on('[data-act="dismiss"]', () => { C().lastError = ''; U.render(); });
+    const search = box.querySelector('[data-search]');
+    if (search) {
+      search.addEventListener('input', () => { query = search.value; filter(box); });
+      // Esc empties the search first (and only then closes the dialog)
+      search.addEventListener('keydown', e => { if (e.key === 'Escape' && search.value) { e.preventDefault(); e.stopPropagation(); search.value = query = ''; filter(box); } });
+    }
     on('[data-openremote]', async b => { MB.ui.closeDialog(dlg); await C().openRemote(b.dataset.openremote, b.dataset.file); });
   }
 
