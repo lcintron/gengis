@@ -1162,6 +1162,10 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 .cloud-connect small, .cloud-acc-main small, .cloud-main small { color: var(--text-dim); font-size: 12px; }
 .cloud-acc { display: flex; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 10px 10px 12px; }
 .cloud-acc.out { border-color: rgba(255,92,92,.45); }
+/* accounts one under another: one block, rounded on the outside only, a hairline between them */
+.cloud-acc + .cloud-acc { margin-top: -1px; border-top-left-radius: 0; border-top-right-radius: 0; }
+.cloud-acc:has(+ .cloud-acc) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.cloud-acc.out { position: relative; } /* (its red edge above its neighbour's) */
 .cloud-avatar { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
   background: rgba(29,179,169,.18); color: var(--accent); font-weight: 700; }
 .cloud-acc-main { flex: 1 1 auto; }
