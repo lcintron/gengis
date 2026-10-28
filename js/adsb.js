@@ -239,8 +239,9 @@ window.MB = window.MB || {};
       pane.style.zIndex = 625;
       SOURCES.forEach(s => { this.rt[s.id] = { on: false, timer: null, gen: 0, busy: false, error: null, fails: 0, total: 0, withPos: 0, lastOk: 0, resolved: null, note: '', clock: { now: null, at: 0 } }; });
       this.buildLegend();
-      MB.map.on('zoomstart', () => pane.classList.remove('smooth'));
-      MB.map.on('zoomend', () => { this.applyPaneState(); });
+      // A zoom re-places every icon at once: no glide from then until the next position report (see poll)
+      MB.map.on('zoomstart', () => { this.zooming = true; pane.classList.remove('smooth'); });
+      MB.map.on('zoomend', () => { this.zooming = false; this.applyPaneState(); });
       MB.map.on('moveend', () => { if (this.anyOn()) this.render(); }); // aircraft are only drawn in and near the view
       MB.on('units', () => this.updatePopup());
       document.addEventListener('visibilitychange', () => { if (!document.hidden) SOURCES.forEach(s => { if (this.rt[s.id].on) this.schedule(s, 0); }); });
@@ -358,6 +359,9 @@ window.MB = window.MB || {};
         if (rt.fails >= 3) this.ingest(src.id, []);
       } finally { rt.busy = false; }
       if (gen !== rt.gen) return;
+      // icons glide to the positions just reported (a zoom since has long been drawn: it cannot glide too)
+      const pane = MB.map.getPane('mb-adsb');
+      if (pane && !this.zooming) pane.classList.add('smooth');
       this.render();
       this.tickStatus();
       const base = cf.interval * 1000;
@@ -446,8 +450,12 @@ window.MB = window.MB || {};
       const el = e.marker.getElement();
       if (!el) return;
       const rot = el.firstChild;
-      const step = this.srcConf(a.src).interval; // glide across one refresh of the source this position came from
-      if (e.step !== step) { el.style.transitionDuration = step + 's'; e.step = step; }
+      // glide across one refresh of the fastest source reporting the aircraft: a new position is due by then, whichever
+      // source it comes from (gliding over a slower one's refresh would trail behind the faster one's reports)
+      const step = Math.min(...(e.srcs && e.srcs.length ? e.srcs : [a.src]).map(id => this.srcConf(id).interval));
+      // (a variable the pane's "smooth" rule reads, not the icon's own transition: that would glide on every move,
+      // a zoom's re-placing included)
+      if (e.step !== step) { el.style.setProperty('--glide', step + 's'); e.step = step; }
       if (e.track !== track) { rot.style.transform = `rotate(${track}deg)`; e.track = track; }
       if (e.color !== color) { rot.style.color = color; e.color = color; }
       if (e.label !== label) { el.lastChild.textContent = label; e.label = label; }
@@ -461,14 +469,13 @@ window.MB = window.MB || {};
       e.kind = null;
     },
 
-    // Pane classes: labels by zoom and setting; icons glide between position reports.
+    // Pane classes: labels by zoom and setting. (Gliding between position reports is switched on by each report.)
     applyPaneState() {
       const pane = MB.map.getPane('mb-adsb');
       if (!pane) return;
       const cf = this.conf();
       pane.classList.toggle('labels', !!cf.labels && MB.map.getZoom() >= LABEL_ZOOM);
-      // set on the next frame so markers re-placed by a zoom do not glide to their new pixel position
-      requestAnimationFrame(() => requestAnimationFrame(() => pane.classList.toggle('smooth', this.anyOn())));
+      if (!this.anyOn()) pane.classList.remove('smooth');
       if (this.legend) this.legend.classList.toggle('hidden', !this.anyOn());
     },
 

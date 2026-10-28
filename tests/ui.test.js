@@ -25,6 +25,13 @@ test('the hidden attribute always hides (no display rule of its own may show a h
   assert.match(css, /^\[hidden\]\s*\{\s*display:\s*none\s*!important;\s*\}/m, 'css/app.css keeps [hidden] { display: none !important; }');
 });
 
+test('aircraft icons glide only between position reports, never through a zoom', () => {
+  // an icon's own transition-duration (transition-property defaults to all) would glide every move, a zoom included
+  assert.doesNotMatch(js['adsb.js'], /style\.transition(Duration)?\s*=/, 'js/adsb.js sets no transition on an icon itself');
+  assert.match(css, /\.leaflet-mb-adsb-pane\.smooth \.mb-ac \{ transition: transform var\(--glide/, 'the glide is the pane\'s "smooth" rule, its length the icon\'s --glide');
+  assert.match(js['adsb.js'], /'zoomstart', \(\) => \{[^}]*classList\.remove\('smooth'\)/, 'a zoom switches the glide off');
+});
+
 test('every element a script looks up by id exists', () => {
   const missing = [];
   for (const [f, src] of Object.entries(js)) {
