@@ -57,12 +57,19 @@ window.MB = window.MB || {};
 
   // Upload sessions cut short (offline, a timeout, a passing server error), kept so that the same content written
   // again goes on from what OneDrive already has instead of from the start: account + path -> { url, expires, text }.
+  // A few at most, and none past its expiry (each holds its project's text).
   const sessions = new Map();
+  const KEEP_SESSIONS = 4;
   const network = () => Object.assign(new Error('offline'), { code: 'network' });
   function forget(key) {
     const s = sessions.get(key);
     sessions.delete(key);
     if (s) Promise.resolve().then(() => s.fetch(s.url, { method: 'DELETE' })).catch(() => {}); // (OneDrive drops it anyway when it expires)
+  }
+  function keep(key, s) {
+    sessions.forEach((v, k) => { if (v.expires < Date.now()) forget(k); });
+    sessions.set(key, s);
+    while (sessions.size > KEEP_SESSIONS) forget(sessions.keys().next().value); // (the oldest)
   }
 
   // How many bytes an upload session has (from the start), or null when it is gone.
@@ -95,25 +102,37 @@ window.MB = window.MB || {};
     }
   }
 
-  // A large file in an upload session. Content an earlier try partly uploaded goes on from where OneDrive got to; a
-  // write guarded by an eTag checks the file first (changed elsewhere since: a new session, which is refused with 412).
+  // A guarded update whose session ended may have finished with its answer lost: the file then already holds this
+  // very text, under a new eTag, and that is no change made elsewhere. Resolves the file's item, or null.
+  async function landed(ctx, o) {
+    if ((await OD.meta(ctx, o.fileId)).etag === o.ifMatch) return null;
+    const f = await OD.get(ctx, o.fileId);
+    if (f.text !== o.text) return null;
+    delete f.text;
+    return f;
+  }
+
+  // A large file in an upload session (resolves its item). Content an earlier try partly uploaded goes on from where
+  // OneDrive got to; a write guarded by an eTag checks the file first (changed elsewhere since: a new session, which
+  // is refused with 412, unless the change is this very upload having finished).
   async function uploadSession(ctx, o, path, bytes, headers, conflict) {
     const key = (ctx.account || '') + ' ' + path;
-    let s = sessions.get(key), at = 0;
+    let s = sessions.get(key), at = 0, ended = false;
     if (s && (s.text !== o.text || s.expires - Date.now() < 60 * 1000)) { forget(key); s = null; }
-    if (s && o.ifMatch && (await OD.meta(ctx, o.fileId)).etag !== o.ifMatch) { forget(key); s = null; }
-    if (s && (at = await received(ctx, s.url)) == null) { sessions.delete(key); s = null; at = 0; }
+    if (s && o.ifMatch && (await OD.meta(ctx, o.fileId)).etag !== o.ifMatch) { forget(key); s = null; ended = true; }
+    if (s && (at = await received(ctx, s.url)) == null) { sessions.delete(key); s = null; at = 0; ended = true; }
     for (let fresh = 0; ; fresh++) {
       if (!s) {
+        if (ended && o.ifMatch) { const mine = await landed(ctx, o); if (mine) return mine; }
         const r = await graph(ctx, 'POST', path, { headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': conflict } }) });
         s = { url: r.uploadUrl, expires: Date.parse(r.expirationDateTime) || Date.now() + 3600 * 1000, text: o.text, fetch: ctx.fetch };
-        sessions.set(key, s); at = 0;
+        keep(key, s); at = 0;
       }
       if (at && o.onProgress) o.onProgress(at, bytes.length);
       const done = await chunks(ctx, s, bytes, at, o.onProgress);
       sessions.delete(key);
-      if (done) return done;
-      s = null; // the session ended over there: once more, from the start (a second time: a passing failure, tried again later)
+      if (done) return item(done);
+      s = null; ended = true; // the session ended over there: once more, from the start (a second time: a passing failure, tried again later)
       if (fresh) throw Object.assign(new Error('The upload session ended'), { status: 503 });
     }
   }
@@ -196,16 +215,13 @@ window.MB = window.MB || {};
     async put(ctx, o) {
       const bytes = new TextEncoder().encode(o.text);
       const headers = o.fileId && o.ifMatch ? { 'If-Match': o.ifMatch } : {};
-      let it;
       if (bytes.length <= SIMPLE_MAX) {
         const path = o.fileId ? '/me/drive/items/' + enc(o.fileId) + '/content'
           : ROOT + ':/' + enc(o.name) + ':/content?@microsoft.graph.conflictBehavior=fail';
-        it = await graph(ctx, 'PUT', path, { headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: bytes });
-      } else {
-        const path = o.fileId ? '/me/drive/items/' + enc(o.fileId) + '/createUploadSession' : ROOT + ':/' + enc(o.name) + ':/createUploadSession';
-        it = await uploadSession(ctx, o, path, bytes, headers, o.fileId ? 'replace' : 'fail');
+        return item(await graph(ctx, 'PUT', path, { headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: bytes }));
       }
-      return item(it);
+      const path = o.fileId ? '/me/drive/items/' + enc(o.fileId) + '/createUploadSession' : ROOT + ':/' + enc(o.name) + ':/createUploadSession';
+      return uploadSession(ctx, o, path, bytes, headers, o.fileId ? 'replace' : 'fail');
     },
 
     rename: (ctx, fileId, name) => graph(ctx, 'PATCH', '/me/drive/items/' + enc(fileId), { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).then(item),

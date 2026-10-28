@@ -133,6 +133,33 @@ test('a guarded update cut short is not resumed over a change made elsewhere mea
   assert.equal(server.files.get(a.fileId).content.toString(), 'changed elsewhere');
 });
 
+test('a guarded update that finished though its last answer was lost is no conflict when tried again', async () => {
+  const { od, ctx, server } = await setup();
+  const big = JSON.stringify({ blob: 'f'.repeat(13 * 1024 * 1024) });
+  const a = await od.put(ctx, { name: 'F.gengis.json', text: 'small' });
+  const chunksIn = Math.ceil(Buffer.byteLength(big) / (16 * CHUNK_UNIT));
+  await assert.rejects(od.put(flaky(ctx, server, chunksIn, 'lost'), { fileId: a.fileId, text: big, ifMatch: a.etag }), e => e.code === 'network');
+  assert.equal(server.files.get(a.fileId).content.toString(), big, 'it did finish over there');
+  const b = await od.put(ctx, { fileId: a.fileId, text: big, ifMatch: a.etag });
+  assert.equal(b.fileId, a.fileId);
+  assert.notEqual(b.etag, a.etag, 'the version it now has');
+  assert.equal(sessionsMade(server), 1, 'nothing uploaded again');
+  // ...but a different change made elsewhere is still a conflict
+  await assert.rejects(od.put(flaky(ctx, server, 1), { fileId: a.fileId, text: big + 'x', ifMatch: b.etag }), e => e.code === 'network');
+  server.writeRemote(a.fileId, 'elsewhere');
+  await assert.rejects(od.put(ctx, { fileId: a.fileId, text: big + 'x', ifMatch: b.etag }), e => e.status === 412);
+});
+
+test('few cut-short sessions are kept, the oldest given up first (each holds a project\'s text)', async () => {
+  const { od, ctx, server } = await setup();
+  const big = JSON.stringify({ blob: 'k'.repeat(6 * 1024 * 1024) });
+  for (let i = 0; i < 7; i++) await assert.rejects(od.put(flaky(ctx, server, 2), { name: 'K' + i + '.gengis.json', text: big }), e => e.code === 'network');
+  assert.equal(od._sessions.size, 4);
+  assert.ok([...od._sessions.keys()].every(k => /K[3-6]\.gengis\.json/.test(k)), 'the newest kept');
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(server.sessions.size, 4, 'the others cancelled over there');
+});
+
 test('the 4 MiB boundary: just under goes in one request, just over in a session', async () => {
   const { od, ctx, server } = await setup();
   const under = 'a'.repeat(4 * 1024 * 1024), over = under + 'b';
