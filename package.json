@@ -1,6 +1,6 @@
 {
   "name": "gengis",
-  "version": "0.17.2",
+  "version": "0.18.0",
   "description": "Standalone map building tool: draw shapes, place SVGs, layers, measurement, search. PWA + Electron.",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
@@ -27,6 +27,7 @@
     "artifactName": "GenGIS-${version}-${os}-${arch}.${ext}",
     "icon": "icons/icon-512.png",
     "protocols": [{ "name": "GenGIS link", "schemes": ["gengis"] }],
+    "fileAssociations": [{ "ext": "gengis", "name": "GenGIS project", "description": "GenGIS project", "mimeType": "application/x-gengis", "role": "Editor" }],
     "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "icons/icon.ico" },
     "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "include": "installer/protocol.nsh" },
     "mac": { "target": ["dmg", "zip"], "category": "public.app-category.productivity" },

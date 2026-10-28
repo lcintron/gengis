@@ -40,7 +40,8 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 - **Any public ArcGIS layer**, plus borders and place names.
 - **Live air traffic (ADS-B)** from your own receiver or the adsb.fi and adsb.lol networks.
 - **Live vessel traffic (AIS)** from your own AIS-catcher or aisstream.io.
-- **Live drones (MAVLink)** from a [mavp2p](https://github.com/bluenviron/mavp2p) server. Read only: GenGIS never sends a vehicle a command.
+- **Live drones (MAVLink)** from a [mavp2p](https://github.com/bluenviron/mavp2p) server: every vehicle and ground station it relays, with telemetry you can pin beside each vehicle. Read only: GenGIS never sends a vehicle a command.
+- **Flight logs**: ArduPilot (`.bin`, `.tlog`), PX4 (`.ulg`) and Betaflight blackbox (`.bbl`, `.bfl`) logs as tracks colored by speed, altitude or flight mode, played back together on a time bar. Read on your device; a log without GPS positions is flagged.
 
 **Base maps**
 - Esri World Imagery, OpenStreetMap, OpenTopoMap and CyclOSM built in, and CARTO with a free key.
@@ -49,7 +50,7 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 
 **Projects and sharing**
 - Projects save automatically as you work, with recent projects and earlier copies to restore.
-- Save and open `.gengis.json` files; import and export GeoJSON.
+- Save and open `.gengis` project files (older `.gengis.json` files open too); import and export GeoJSON. In the desktop app, double-click a `.gengis` file to open it.
 - Export the map as PNG, JPEG or PDF, at up to 4× resolution.
 - **Cloud sync** to your own OneDrive (personal or Microsoft 365) or Google Drive. Files go straight between your device and your account, with no GenGIS server in between. A project edited in two places is never overwritten: you choose which version to keep. See the [privacy policy](https://g2.luiscintron.com/privacy.html).
 - Presenter mode, and casting to a TV.
@@ -97,7 +98,15 @@ For example: `mavp2p serial:/dev/ttyUSB0:57600 tcps:0.0.0.0:5760`.
 
 Open the web app at a place: `?q=Eiffel+Tower`, `?lat=48.858&lon=2.294&zoom=16`, `?center=48.858,2.294` or `?poi=cafe`.
 
-The installed desktop app opens `gengis://open?…` links with the same parameters, in the window already open. `gengis://open?file=<path>` opens a project file the app has opened or saved before.
+The installed desktop app opens `gengis://` links in the window already open:
+
+| Link | Opens |
+| --- | --- |
+| `gengis://open?q=Eiffel%20Tower`, `gengis://open?center=48.858,2.294&zoom=16` | A place (the same parameters as the web app) |
+| `gengis://C:/Maps/Trip.gengis`, `gengis:///home/me/Trip.gengis` | A project file on your computer (`.gengis` or `.gengis.json`) |
+| `gengis://https://example.com/Trip.gengis` | A project on the web |
+
+GenGIS asks before opening a file or web project from a link. A project opened from the web is kept in your projects folder, like any other. Links can't name network shares (`\\server\…`).
 
 ## Android app
 
@@ -159,7 +168,7 @@ Each provider stays hidden until GenGIS has its app registration. The consent sc
 1. [entra.microsoft.com](https://entra.microsoft.com) → App registrations → New registration: name **GenGIS**, supported accounts **any Entra ID tenant and personal Microsoft accounts**.
 2. Authentication → Add a platform:
    - **Single-page application**, redirect URIs `https://g2.luiscintron.com/` and `http://localhost:8080/`. No client secret.
-   - **Mobile and desktop applications**, redirect URI `http://localhost`, for the desktop app. Microsoft accepts any port with it.
+   - **Mobile and desktop applications**, redirect URI `http://127.0.0.1`, for the desktop app. Microsoft accepts any port with it. Not `http://localhost`: Microsoft ignores the port of a localhost address, so the single-page `http://localhost:8080/` entry would claim the desktop app's sign-in. (`http://localhost` can stay registered too, for desktop versions before 0.17.4.)
 3. API permissions → Microsoft Graph, delegated: `Files.ReadWrite.AppFolder`, `offline_access`, `openid`, `profile`, `email`. Users consent for themselves.
 4. Branding & properties:
    - logo `branding/store/gengis-logo-215.png`;

@@ -1409,6 +1409,8 @@ window.MB = window.MB || {};
     html += aisHtml;
     const mavHtml = MB.mavlink ? MB.mavlink.panelHtml(q, ui.filter) : ''; // live drones (MAVLink), the same way
     html += mavHtml;
+    const bfHtml = MB.betaflight ? MB.betaflight.panelHtml(q, ui.filter) : ''; // Betaflight flight logs, opened here
+    html += bfHtml;
     const declHtml = MB.declination ? MB.declination.panelHtml(q, ui.filter) : ''; // magnetic declination, computed here
     html += declHtml;
     let shownTotal = 0;
@@ -1451,7 +1453,7 @@ window.MB = window.MB || {};
     });
       html += '</details>';
     });
-    if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
+    if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
     html += `<div class="section"><h3>Options</h3>
       <div class="row"><label>Data opacity</label><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div>
       <div class="row" title="How often each service's last-edit stamp is compared; changed datasets are re-downloaded"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
@@ -1489,6 +1491,7 @@ window.MB = window.MB || {};
     if (MB.adsb) MB.adsb.bindPanel(panel);
     if (MB.ais) MB.ais.bindPanel(panel);
     if (MB.mavlink) MB.mavlink.bindPanel(panel);
+    if (MB.betaflight) MB.betaflight.bindPanel(panel);
     if (MB.declination) MB.declination.bindPanel(panel);
     panel.querySelectorAll('details.ds-source[data-src]').forEach(d => d.addEventListener('toggle', () => {
       if (ui.q.trim()) return; // opened by a search, not by the user

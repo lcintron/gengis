@@ -1405,9 +1405,13 @@ window.MB = window.MB || {};
       e.preventDefault();
       const files = Array.from(e.dataTransfer.files || []);
       const svgs = files.filter(f => MB.isSvgFile(f) || MB.isRasterFile(f));
-      const others = files.filter(f => /\.(geo)?json$/i.test(f.name));
+      const others = files.filter(f => /\.(geo)?json$/i.test(f.name) || MB.isProjectFileName(f.name));
       const maps = files.filter(f => MB.mapSources && MB.mapSources.isMapSourceFile(f)); // MOBAC / ATAK map sources
       if (maps.length) MB.mapSources.importFiles(maps);
+      const mavLogs = files.filter(f => MB.mavLogs && MB.mavLogs.isLogFile(f)); // MAVLink flight logs (.bin, .tlog, .ulg)
+      if (mavLogs.length) MB.mavLogs.openFiles(mavLogs);
+      const bfLogs = files.filter(f => MB.betaflight && MB.betaflight.isLogFile(f)); // Betaflight blackbox logs (.bbl, .bfl, .gps.csv)
+      if (bfLogs.length) MB.betaflight.openFiles(bfLogs);
       if (svgs.length) MB.addImageFiles(svgs).then(ids => { if (ids.length) { MB.svgPlace.svgId = ids[0]; MB.tools.set('svg'); } });
       if (others.length) MB.openFile(others[0]);
     });
