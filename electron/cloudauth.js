@@ -138,9 +138,6 @@ async function browserSignIn(p, provider, hint, run) {
     else finish.res(code);
   });
   const port = await listen(server, '127.0.0.1');
-  const v6 = http.createServer((req, resp) => server.emit('request', req, resp)); // "localhost" may be ::1 in the browser
-  v6.on('error', () => {});
-  try { v6.listen(port, '::1'); } catch (e) { /* no IPv6 */ }
   const redirect = p.redirect(port);
   const q = new URLSearchParams(Object.assign({
     client_id: p.clientId, response_type: 'code', redirect_uri: redirect, scope: p.scopes.join(' '),
@@ -157,7 +154,7 @@ async function browserSignIn(p, provider, hint, run) {
     return { account, accessToken: tok.access_token, expiresIn: +tok.expires_in || 3600, kept };
   } finally {
     clearTimeout(timer);
-    server.close(); try { v6.close(); } catch (e) { /* closed */ }
+    server.close();
   }
 }
 
