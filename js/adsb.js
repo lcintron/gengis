@@ -110,12 +110,13 @@ window.MB = window.MB || {};
   const legendAlt = pct => pct <= 50 ? pct / 50 * 10000 : 10000 + (pct - 50) / 50 * 30000;
 
   // An aircraft's position at time t (ms), carried on from its report along its track at its ground speed (dead
-  // reckoning), or null when the report does not say how it moves.
+  // reckoning), or null when the report does not say how it moves (or near a pole: it stays at its report there).
   const KT = 0.514444; // m/s
   function ahead(a, t) {
     if (a.gs == null || a.gs < 1 || a.track == null || Math.abs(a.lat) > 85) return null;
-    const d = a.gs * KT * Math.min(MAX_AGE, Math.max(0, (t - a.posTime) / 1000)), tr = a.track * Math.PI / 180;
-    return [a.lat + d * Math.cos(tr) / 111320, a.lon + d * Math.sin(tr) / (111320 * Math.cos(a.lat * Math.PI / 180))];
+    const d = a.gs * KT * Math.max(0, (t - a.posTime) / 1000), tr = a.track * Math.PI / 180;
+    const lon = a.lon + d * Math.sin(tr) / (111320 * Math.cos(a.lat * Math.PI / 180));
+    return [a.lat + d * Math.cos(tr) / 111320, ((lon + 540) % 360) - 180]; // (across the antimeridian: back to -180..180)
   }
 
   // "Zoom in" on the map while a network source of live traffic waits for zoom NET_ZOOM: aircraft here, vessels (ais.js).
@@ -515,7 +516,7 @@ window.MB = window.MB || {};
     },
 
     // Where an aircraft's icon goes at time t: carried on from its report, never past when its next report is due.
-    at(e, t) { return ahead(e.info, Math.min(t, e.until)) || [e.info.lat, e.info.lon]; },
+    at(e, t) { const a = e.info || e.cur; return ahead(a, Math.min(t, e.until || 0)) || [a.lat, a.lon]; },
 
     // Every icon where its aircraft is now, then gliding on to where it will be when its next report is due. The first
     // move is made with the pane's glide off and applied (a style read) before the glide is switched on for the second.
@@ -585,7 +586,7 @@ window.MB = window.MB || {};
       const node = document.createElement('div');
       node.className = 'mb-popup mb-ac-info';
       node.innerHTML = '<div class="mb-popup-title"></div><table class="mb-datatable"></table><div class="mb-ac-look"></div><div class="mb-ac-links"></div>';
-      const popup = L.popup({ className: 'mb-data-popup', maxWidth: 330, offset: [0, -8], autoPanPadding: [20, 20] }).setLatLng([e.cur.lat, e.cur.lon]).setContent(node);
+      const popup = L.popup({ className: 'mb-data-popup', maxWidth: 330, offset: [0, -8], autoPanPadding: [20, 20] }).setLatLng(this.at(e, Date.now())).setContent(node);
       popup.on('remove', () => {
         if (this.popup !== popup) return;
         this.popup = null; this.selected = null;
@@ -632,7 +633,7 @@ window.MB = window.MB || {};
       if (a.flight) links.push(`<a href="https://www.flightaware.com/live/flight/${encodeURIComponent(a.flight)}" target="_blank" rel="noopener">FlightAware</a>`);
       if (!a.nonIcao) links.push(`<a href="https://globe.adsbexchange.com/?icao=${a.hex}" target="_blank" rel="noopener">ADS-B Exchange</a>`, `<a href="https://www.planespotters.net/hex/${hexU}" target="_blank" rel="noopener">Photos</a>`);
       node.querySelector('.mb-ac-links').innerHTML = links.join(' · ');
-      popup.setLatLng([a.lat, a.lon]);
+      popup.setLatLng(this.at(e, Date.now())); // at the icon (it moves on with each render, the icon in between)
     },
 
     /* ----- look-up: registration, type, owner and route from open aircraft databases ----- */
