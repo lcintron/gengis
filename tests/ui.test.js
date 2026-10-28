@@ -32,6 +32,25 @@ test('aircraft icons glide only between position reports, never through a zoom',
   assert.match(js['adsb.js'], /'zoomstart', \(\) => \{[^}]*classList\.remove\('smooth'\)/, 'a zoom switches the glide off');
 });
 
+test('aircraft icons show where the aircraft is now: carried on from each report, not gliding up to it', () => {
+  const place = /place\(now\) \{([\s\S]*?)\n    \},/.exec(js['adsb.js']);
+  assert.ok(place, 'js/adsb.js has place(now)');
+  const body = place[1];
+  // first where it is now with the glide off, the style applied, then the glide on to where its next report is due
+  assert.ok(body.indexOf("remove('smooth')") < body.indexOf('this.at(e, now)'), 'placed at now with the glide off');
+  assert.ok(body.indexOf('this.at(e, now)') < body.indexOf('offsetWidth') && body.indexOf('offsetWidth') < body.indexOf("add('smooth')"), 'applied before the glide is switched on');
+  assert.ok(body.indexOf("add('smooth')") < body.indexOf('this.at(e, e.until)'), 'then glides on to its next report');
+  assert.match(js['adsb.js'], /'zoomend', \(\) => \{[^}]*this\.place\(/, 'the glide picks up again after a zoom');
+});
+
+test('the community networks and aisstream.io wait for zoom 8; your own receivers show at any zoom', () => {
+  assert.match(js['adsb.js'], /const NET_ZOOM = 8;/);
+  assert.match(js['adsb.js'], /if \(src\.kind !== 'receiver' && this\.zoomedOut\(\)\) \{ this\.wait\(src\); return; \}/, 'no request below it');
+  assert.match(js['ais.js'], /if \(!rt\.on \|\| s\.kind !== 'stream'\) return;/, 'only the stream waits');
+  assert.match(js['ais.js'], /if \(this\.zoomedOut\(\)\) this\.wait\(src\); else this\.connect\(src\);/, 'the stream does not connect below it');
+  assert.match(css, /\.mb-zoom-hint \{/, 'the map says to zoom in');
+});
+
 test('every element a script looks up by id exists', () => {
   const missing = [];
   for (const [f, src] of Object.entries(js)) {

@@ -17,6 +17,7 @@ window.MB = window.MB || {};
   const LABEL_ZOOM = 10;   // name labels from this zoom
   const MAX_DRAWN = 2500;  // vessels drawn at most; a wide view of a busy coast holds more
   const MOVING = 0.5;      // kn: slower than this, a vessel is drawn as stationary
+  const NET_ZOOM = MB.LIVE_ZOOM || 8; // aisstream.io from this zoom only (adsb.js): a wider view streams a sea of vessels
   const STREAM_URL = 'wss://stream.aisstream.io/v0/stream';
   // Where AIS-catcher's web viewer publishes its vessel list, relative to the address the user enters.
   const RECEIVER_PATHS = ['/api/ships.json', '/ships.json'];
@@ -266,7 +267,7 @@ window.MB = window.MB || {};
       const pane = MB.map.createPane('mb-ais'); // above the user's objects, under live air traffic (see adsb.js)
       pane.style.zIndex = 615;
       SOURCES.forEach(s => { this.rt[s.id] = { on: false, timer: null, gen: 0, busy: false, error: null, fails: 0, total: 0, withPos: 0, lastOk: 0, resolved: null, ws: null, store: new Map(), dirty: false, sent: '', sentAt: 0, subTimer: null }; });
-      MB.map.on('zoomend', () => this.applyPaneState());
+      MB.map.on('zoomend', () => { this.applyPaneState(); this.netZoom(); });
       MB.map.on('moveend', () => {
         if (this.anyOn()) this.render(); // vessels are only drawn in and near the view
         if (this.rt.aisstream.on) this.subscribeSoon();
@@ -308,18 +309,19 @@ window.MB = window.MB || {};
         cf.on = false;
         return;
       }
-      rt.on = true; rt.gen++; rt.error = null; rt.fails = 0; rt.total = 0; rt.withPos = 0; rt.lastOk = 0; rt.resolved = null; rt.store = new Map(); rt.sent = '';
+      rt.on = true; rt.gen++; rt.error = null; rt.fails = 0; rt.total = 0; rt.withPos = 0; rt.lastOk = 0; rt.resolved = null; rt.store = new Map(); rt.sent = ''; rt.waiting = false;
       cf.on = true; this.save();
       if (src.attribution && MB.map.attributionControl) MB.map.attributionControl.addAttribution(src.attribution);
       this.applyPaneState();
-      if (src.kind === 'stream') this.connect(src); else this.schedule(src, 0);
+      if (src.kind === 'stream') { if (this.zoomedOut()) this.wait(src); else this.connect(src); } else this.schedule(src, 0);
       MB.emit('data');
     },
 
     disable(id) {
       const src = SOURCES.find(s => s.id === id), rt = this.rt[id];
       if (!src || !rt.on) return;
-      rt.on = false; rt.gen++; clearTimeout(rt.timer); clearTimeout(rt.subTimer); rt.error = null; rt.total = 0; rt.withPos = 0;
+      rt.on = false; rt.gen++; clearTimeout(rt.timer); clearTimeout(rt.subTimer); rt.error = null; rt.total = 0; rt.withPos = 0; rt.waiting = false;
+      this.hint();
       if (rt.ws) { try { rt.ws.close(); } catch (e) { /* closing already */ } rt.ws = null; }
       rt.store = new Map();
       this.srcConf(id).on = false; this.save();
@@ -432,6 +434,30 @@ window.MB = window.MB || {};
       clearTimeout(rt.timer);
       rt.timer = setTimeout(() => { if (gen === rt.gen && rt.on) this.connect(src); }, wait);
     },
+
+    // Below NET_ZOOM the stream is closed and its vessels taken off the map, until the map is zoomed in again.
+    zoomedOut() { return MB.map.getZoom() < NET_ZOOM; },
+    wait(src) {
+      const rt = this.rt[src.id];
+      rt.gen++; clearTimeout(rt.timer); clearTimeout(rt.subTimer);
+      if (rt.ws) { try { rt.ws.close(); } catch (e) { /* closing already */ } rt.ws = null; }
+      rt.open = false; rt.waiting = true; rt.error = null; rt.fails = 0; rt.lastOk = 0; rt.total = 0; rt.withPos = 0;
+      rt.store = new Map();
+      this.ingest(src.id, []);
+      this.render();
+      this.hint();
+      this.tickStatus();
+    },
+    netZoom() {
+      SOURCES.forEach(s => {
+        const rt = this.rt[s.id];
+        if (!rt.on || s.kind !== 'stream') return;
+        if (this.zoomedOut()) { if (!rt.waiting) this.wait(s); }
+        else if (rt.waiting) { rt.waiting = false; rt.gen++; this.connect(s); }
+      });
+      this.hint();
+    },
+    hint() { if (MB.liveZoomHint) MB.liveZoomHint('vessels', SOURCES.some(s => this.rt[s.id].on && this.rt[s.id].waiting)); },
 
     // Send the view as the subscription (it replaces the previous one); aisstream.io takes one update a second.
     subscribe(src) {
@@ -666,6 +692,7 @@ window.MB = window.MB || {};
     statusText(id) {
       const rt = this.rt[id], src = SOURCES.find(s => s.id === id);
       if (!rt.on) return 'Off';
+      if (rt.waiting) return `Zoom in to see vessels (zoom ${NET_ZOOM} or closer)`;
       if (rt.error) return rt.error;
       if (!rt.lastOk) return rt.open ? 'Connected. Waiting for vessel reports in view (moored and anchored vessels report every 3 min).' : 'Connecting…';
       const bits = [`${rt.withPos} vessel${rt.withPos === 1 ? '' : 's'}` + (rt.total > rt.withPos ? ` (${rt.total - rt.withPos} more without a position)` : '')];
