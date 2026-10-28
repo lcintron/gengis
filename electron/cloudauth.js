@@ -125,7 +125,8 @@ async function browserSignIn(p, provider, hint, run) {
   let finish;
   const answered = new Promise((res, rej) => { finish = { res, rej }; });
   answered.catch(() => {}); // (awaited below; a timeout may come first)
-  run.cancel = () => finish.rej(Object.assign(new Error('Replaced by a new sign-in'), { code: 'superseded' }));
+  const superseded = () => Object.assign(new Error('Replaced by a new sign-in'), { code: 'superseded' });
+  run.cancel = () => { run.dead = true; finish.rej(superseded()); }; // (once its code is in, the token call ends it below)
   server.on('request', (req, resp) => {
     const u = new URL(req.url, 'http://127.0.0.1');
     if (u.pathname !== '/' || u.searchParams.get('state') !== state) { resp.writeHead(404); resp.end(); return; } // not the answer: ignored
@@ -149,6 +150,7 @@ async function browserSignIn(p, provider, hint, run) {
     await env.open(p.authorize + '?' + q.toString());
     const code = await answered;
     const tok = await tokenRequest(p, { grant_type: 'authorization_code', code, redirect_uri: redirect, code_verifier: verifier, client_id: p.clientId, scope: p.scopes.join(' ') });
+    if (run.dead) throw superseded(); // the last sign-in started is the one that counts
     const account = accountOf(provider, tok);
     const kept = tok.refresh_token ? saveRefresh(account.id, provider, tok.refresh_token) : false;
     return { account, accessToken: tok.access_token, expiresIn: +tok.expires_in || 3600, kept };
