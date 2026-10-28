@@ -111,6 +111,7 @@ test('Google: 127.0.0.1, offline access, the client secret of an installed app s
   const q = P.opened[0].searchParams;
   assert.match(q.get('redirect_uri'), /^http:\/\/127\.0\.0\.1:\d+$/);
   assert.equal(q.get('access_type'), 'offline');
+  assert.equal(q.get('prompt'), 'select_account consent', 'the account is picked, not taken from the browser');
   assert.match(q.get('scope'), /drive\.file/);
   assert.equal(P.tokenCalls[0].client_secret, 'g-secret');
   assert.equal(r.account.id, 'gdrive:g1');
@@ -139,12 +140,23 @@ test('a request to the loopback address without the right state is ignored, and 
   assert.equal(r.accessToken, 'at-1');
 });
 
-test('a sign-in refused in the browser is an error with its code; a second sign-in while one runs is refused', async () => {
+test('a sign-in refused in the browser is an error with its code', async () => {
   const P = provider({ browser: async q => { setTimeout(() => get(q.get('redirect_uri') + '/?error=access_denied&error_description=User+cancelled&state=' + q.get('state')), 30); } });
   use(P);
-  const first = T.signIn('onedrive');
-  await assert.rejects(T.signIn('gdrive'), e => e.code === 'busy');
-  await assert.rejects(first, e => e.code === 'access_denied' && /cancelled/.test(e.message));
+  await assert.rejects(T.signIn('onedrive'), e => e.code === 'access_denied' && /cancelled/.test(e.message));
+});
+
+test('a sign-in left unfinished (its tab closed) gives way to the next one at once: no wait for the timeout', async () => {
+  let port;
+  const left = provider({ browser: async q => { port = new URL(q.get('redirect_uri')).port; } }); // nobody answers
+  use(left, { timeout: 60000 });
+  const first = assert.rejects(T.signIn('gdrive'), e => e.code === 'superseded');
+  await new Promise(r => setTimeout(r, 30));
+  use(provider({ claims: { sub: 'g2', email: 'other@gmail.com' } }), { timeout: 60000 });
+  const second = await T.signIn('gdrive');
+  assert.equal(second.account.email, 'other@gmail.com');
+  await first;
+  assert.ok((await get('http://127.0.0.1:' + port + '/')).error, 'the first one\'s listener is closed');
 });
 
 test('a sign-in nobody finishes times out and closes its listener', async () => {

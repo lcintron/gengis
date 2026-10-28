@@ -40,7 +40,7 @@ const PROVIDERS = {
     revoke: 'https://oauth2.googleapis.com/revoke',
     scopes: ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/drive.file'],
     redirect: port => 'http://127.0.0.1:' + port,
-    extra: hint => Object.assign({ access_type: 'offline', prompt: 'consent' }, hint ? { login_hint: hint } : {})
+    extra: hint => Object.assign({ access_type: 'offline', prompt: 'select_account consent' }, hint ? { login_hint: hint } : {})
   }
 };
 const SIGN_IN_TIMEOUT = 5 * 60 * 1000;
@@ -104,24 +104,28 @@ function accountOf(provider, tok) {
 }
 
 /* ---------- signing in: the browser and a one-shot loopback listener ---------- */
-let signingIn = null; // a sign-in under way (one at a time)
+let signingIn = null; // the sign-in under way: { cancel } (one at a time; a new one replaces it)
 function listen(server, host) {
   return new Promise((res, rej) => { server.once('error', rej); server.listen(0, host, () => res(server.address().port)); });
 }
 async function signIn(provider, hint) {
   const p = PROVIDERS[provider];
   if (!p || !p.clientId) throw Object.assign(new Error('This provider is not set up in this app'), { code: 'unavailable' });
-  if (signingIn) throw Object.assign(new Error('A sign-in is already in progress in your browser'), { code: 'busy' });
-  signingIn = true; // (at once: a second click must not start another)
-  try { return await browserSignIn(p, provider, hint); } finally { signingIn = null; }
+  // A sign-in left behind (its browser tab closed, the wrong account picked) would hold the next one off until it
+  // timed out: the new one replaces it, and the old one ends as 'superseded' (the page shows nothing for that).
+  if (signingIn) signingIn.cancel();
+  const run = {};
+  signingIn = run;
+  try { return await browserSignIn(p, provider, hint, run); } finally { if (signingIn === run) signingIn = null; }
 }
-async function browserSignIn(p, provider, hint) {
+async function browserSignIn(p, provider, hint, run) {
   const verifier = b64url(crypto.randomBytes(48)), state = b64url(crypto.randomBytes(24));
   const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
   const server = http.createServer();
   let finish;
   const answered = new Promise((res, rej) => { finish = { res, rej }; });
   answered.catch(() => {}); // (awaited below; a timeout may come first)
+  run.cancel = () => finish.rej(Object.assign(new Error('Replaced by a new sign-in'), { code: 'superseded' }));
   server.on('request', (req, resp) => {
     const u = new URL(req.url, 'http://127.0.0.1');
     if (u.pathname !== '/' || u.searchParams.get('state') !== state) { resp.writeHead(404); resp.end(); return; } // not the answer: ignored

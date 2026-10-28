@@ -169,6 +169,7 @@ window.MB = window.MB || {};
     if (has(65001) || has(90094) || has(65004) || code === 'consent_required') return 'Your organization requires an administrator to approve GenGIS before you can connect OneDrive. Ask your IT administrator to approve the app "GenGIS".';
     if (has(53000) || has(53001) || has(53003) || has(530003)) return 'Your organization\'s sign-in policy does not allow GenGIS on this device or browser. GenGIS cannot change that; ask your IT administrator.';
     if (has(700016) || has(7000112) || has(500011)) return 'Your organization has blocked GenGIS, or it is not available in your organization.';
+    if (has(7000218) || has(50011)) return 'GenGIS\'s Microsoft sign-in is not set up for the desktop app. Use OneDrive in the web app until this is fixed (' + (has(7000218) ? 'AADSTS7000218' : 'AADSTS50011') + ').';
     if (has(50058) || code === 'login_required' || code === 'interaction_required') return 'Sign in to OneDrive again.';
     if (code === 'access_denied') return 'The sign-in was cancelled or GenGIS was not allowed access.';
     if (code === 'invalid_grant') return 'Your OneDrive sign-in has expired. Sign in again.';
