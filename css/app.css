@@ -1036,13 +1036,17 @@ body.presenting .mb-ident-own .btn-row { display: none; }
   font-size: 10.5px; font-weight: 600; line-height: 1; color: #fff; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 2px #000;
 }
 .leaflet-mb-adsb-pane.labels .mb-ac-label, .mb-ac.sel .mb-ac-label { display: block; }
-/* glide between position reports; switched off while the map zooms */
-.leaflet-mb-adsb-pane.smooth .mb-ac { transition: transform var(--glide, 1s) linear; } /* --glide: per icon, its source's refresh rate; no glide while zooming (no .smooth) */
+/* glide on from each position report along the track (dead reckoning); switched off while the map zooms */
+.leaflet-mb-adsb-pane.smooth .mb-ac { transition: transform var(--glide, 1s) linear; } /* --glide: per icon, the time until its next report is due; no glide while zooming (no .smooth) */
 .mb-alt-legend {
   width: 250px; max-width: calc(100vw - 90px); margin: 0 12px 8px 0 !important; pointer-events: none;
   background: rgba(27,31,39,.85); border: 1px solid var(--border); border-radius: 6px; padding: 5px 14px 4px; font-size: 10px; color: var(--text);
 }
-@media (max-width: 640px) { .mb-alt-legend { margin: 0 8px 14px 0 !important; } } /* clear the coordinates box on phones */
+.mb-zoom-hint {
+  margin: 0 12px 6px 0 !important; pointer-events: none; padding: 4px 10px; border-radius: 6px; font-size: 11px;
+  background: rgba(27,31,39,.85); border: 1px solid var(--border); color: var(--text);
+}
+@media (max-width: 640px) { .mb-alt-legend { margin: 0 8px 14px 0 !important; } .mb-zoom-hint { margin: 0 8px 6px 0 !important; } } /* clear the coordinates box on phones */
 .mb-alt-legend .ttl { color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
 .mb-alt-legend .scale, .mb-alt-legend .ticks { display: flex; gap: 6px; align-items: center; }
 .mb-alt-legend .scale span { height: 8px; border-radius: 2px; }

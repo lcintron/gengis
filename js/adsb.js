@@ -16,6 +16,8 @@ window.MB = window.MB || {};
   const TIMEOUT = 8000;   // ms per request
   const MAX_NM = 250;     // largest radius the community networks answer
   const LABEL_ZOOM = 8;   // callsign labels from this zoom
+  const NET_ZOOM = 8;     // the community networks from this zoom only: a wider view asks them for thousands of aircraft
+                          // every few seconds, all redrawn (your own receiver hears ~200 NM at most: shown at any zoom)
   // Where the various receiver packages publish aircraft.json, relative to the address the user enters.
   // The last is the original dump1090's built-in web server (antirez / MalcolmRobb builds): it answers every other path
   // with its map page, so it is tried after the others.
@@ -106,6 +108,32 @@ window.MB = window.MB || {};
   const LEGEND_TICKS = [0, 2000, 4000, 6000, 8000, 10000, 20000, 30000, 40000];
   const legendPos = ft => ft <= 10000 ? ft / 10000 * 50 : 50 + Math.min(1, (ft - 10000) / 30000) * 50;
   const legendAlt = pct => pct <= 50 ? pct / 50 * 10000 : 10000 + (pct - 50) / 50 * 30000;
+
+  // An aircraft's position at time t (ms), carried on from its report along its track at its ground speed (dead
+  // reckoning), or null when the report does not say how it moves.
+  const KT = 0.514444; // m/s
+  function ahead(a, t) {
+    if (a.gs == null || a.gs < 1 || a.track == null || Math.abs(a.lat) > 85) return null;
+    const d = a.gs * KT * Math.min(MAX_AGE, Math.max(0, (t - a.posTime) / 1000)), tr = a.track * Math.PI / 180;
+    return [a.lat + d * Math.cos(tr) / 111320, a.lon + d * Math.sin(tr) / (111320 * Math.cos(a.lat * Math.PI / 180))];
+  }
+
+  // "Zoom in" on the map while a network source of live traffic waits for zoom NET_ZOOM: aircraft here, vessels (ais.js).
+  MB.LIVE_ZOOM = NET_ZOOM;
+  const waitingFor = new Set();
+  let zoomHint = null;
+  MB.liveZoomHint = function (what, on) {
+    if (on) waitingFor.add(what); else waitingFor.delete(what);
+    if (!zoomHint) {
+      if (!waitingFor.size) return;
+      zoomHint = document.createElement('div');
+      zoomHint.className = 'mb-zoom-hint';
+      const Hint = L.Control.extend({ onAdd: () => zoomHint });
+      new Hint({ position: 'bottomright' }).addTo(MB.map); // stacked above the altitude legend
+    }
+    zoomHint.textContent = 'Zoom in to see live ' + [...waitingFor].sort().join(' and ');
+    zoomHint.classList.toggle('hidden', !waitingFor.size);
+  };
 
   /* ---------- parsing ---------- */
   const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
@@ -239,9 +267,9 @@ window.MB = window.MB || {};
       pane.style.zIndex = 625;
       SOURCES.forEach(s => { this.rt[s.id] = { on: false, timer: null, gen: 0, busy: false, error: null, fails: 0, total: 0, withPos: 0, lastOk: 0, resolved: null, note: '', clock: { now: null, at: 0 } }; });
       this.buildLegend();
-      // A zoom re-places every icon at once: no glide from then until the next position report (see poll)
-      MB.map.on('zoomstart', () => { this.zooming = true; pane.classList.remove('smooth'); });
-      MB.map.on('zoomend', () => { this.zooming = false; this.applyPaneState(); });
+      // A zoom re-places every icon at once, from where it is now: no glide until the zoom is over
+      MB.map.on('zoomstart', () => { this.zooming = true; pane.classList.remove('smooth'); this.place(Date.now()); });
+      MB.map.on('zoomend', () => { this.zooming = false; this.applyPaneState(); this.netZoom(); this.place(Date.now()); });
       MB.map.on('moveend', () => { if (this.anyOn()) this.render(); }); // aircraft are only drawn in and near the view
       MB.on('units', () => this.updatePopup());
       document.addEventListener('visibilitychange', () => { if (!document.hidden) SOURCES.forEach(s => { if (this.rt[s.id].on) this.schedule(s, 0); }); });
@@ -269,7 +297,7 @@ window.MB = window.MB || {};
         cf.on = false;
         return;
       }
-      rt.on = true; rt.gen++; rt.error = null; rt.fails = 0; rt.total = 0; rt.withPos = 0; rt.lastOk = 0; rt.resolved = null; rt.note = ''; rt.clock = { now: null, at: 0 };
+      rt.on = true; rt.gen++; rt.error = null; rt.fails = 0; rt.total = 0; rt.withPos = 0; rt.lastOk = 0; rt.resolved = null; rt.note = ''; rt.clock = { now: null, at: 0 }; rt.waiting = false;
       cf.on = true; this.save();
       if (src.attribution && MB.map.attributionControl) MB.map.attributionControl.addAttribution(src.attribution);
       this.applyPaneState();
@@ -280,7 +308,8 @@ window.MB = window.MB || {};
     disable(id) {
       const src = SOURCES.find(s => s.id === id), rt = this.rt[id];
       if (!src || !rt.on) return;
-      rt.on = false; rt.gen++; clearTimeout(rt.timer); rt.error = null; rt.total = 0; rt.withPos = 0;
+      rt.on = false; rt.gen++; clearTimeout(rt.timer); rt.error = null; rt.total = 0; rt.withPos = 0; rt.waiting = false;
+      this.hint();
       this.srcConf(id).on = false; this.save();
       if (src.attribution && MB.map.attributionControl) MB.map.attributionControl.removeAttribution(src.attribution);
       this.ingest(id, []);
@@ -307,6 +336,28 @@ window.MB = window.MB || {};
       if (this.rt[id].on) this.schedule(src, cf.interval * 1000);
     },
 
+    zoomedOut() { return MB.map.getZoom() < NET_ZOOM; },
+    // A network source below NET_ZOOM: no requests, its aircraft off the map, until the map is zoomed in again.
+    wait(src) {
+      const rt = this.rt[src.id];
+      clearTimeout(rt.timer); rt.gen++;
+      rt.waiting = true; rt.error = null; rt.fails = 0; rt.total = 0; rt.withPos = 0; rt.note = '';
+      this.ingest(src.id, []);
+      this.render();
+      this.hint();
+      this.tickStatus();
+    },
+    netZoom() {
+      SOURCES.forEach(s => {
+        const rt = this.rt[s.id];
+        if (!rt.on || s.kind === 'receiver') return;
+        if (this.zoomedOut()) { if (!rt.waiting) this.wait(s); }
+        else if (rt.waiting) { rt.waiting = false; rt.lastOk = 0; this.schedule(s, 0); }
+      });
+      this.hint();
+    },
+    hint() { MB.liveZoomHint('aircraft', SOURCES.some(s => this.rt[s.id].on && this.rt[s.id].waiting)); },
+
     schedule(src, delay) {
       const rt = this.rt[src.id];
       clearTimeout(rt.timer);
@@ -317,6 +368,7 @@ window.MB = window.MB || {};
       const rt = this.rt[src.id], cf = this.srcConf(src.id);
       if (!rt.on) return;
       if (document.hidden) return; // resumed by the visibilitychange handler
+      if (src.kind !== 'receiver' && this.zoomedOut()) { this.wait(src); return; } // resumed by netZoom
       if (rt.busy) { this.schedule(src, 250); return; }
       const gen = rt.gen, started = Date.now();
       rt.busy = true;
@@ -359,9 +411,6 @@ window.MB = window.MB || {};
         if (rt.fails >= 3) this.ingest(src.id, []);
       } finally { rt.busy = false; }
       if (gen !== rt.gen) return;
-      // icons glide to the positions just reported (a zoom since has long been drawn: it cannot glide too)
-      const pane = MB.map.getPane('mb-adsb');
-      if (pane && !this.zooming) pane.classList.add('smooth');
       this.render();
       this.tickStatus();
       const base = cf.interval * 1000;
@@ -407,6 +456,7 @@ window.MB = window.MB || {};
         if (!show) { this.drop(e); return; }
         this.draw(e, now);
       });
+      this.place(now);
       this.updatePopup();
     },
 
@@ -428,7 +478,13 @@ window.MB = window.MB || {};
       const a = e.info;
       const color = altColor(a.alt), track = a.track == null ? 0 : Math.round(a.track);
       const label = this.label(a), dim = (now - a.posTime) / 1000 > DIM_AGE;
-      const ll = [a.lat, a.lon];
+      // A new report: from now on the icon is carried on along the aircraft's track until the next report is due, from
+      // the fastest source reporting it (see place). Gliding to the report instead would trail the aircraft by a refresh.
+      if (e.from !== a.posTime) {
+        e.from = a.posTime;
+        e.until = now + 1000 * Math.min(...(e.srcs && e.srcs.length ? e.srcs : [a.src]).map(id => this.srcConf(id).interval));
+      }
+      const ll = this.at(e, now);
       if (!e.marker || e.kind !== a.kind) {
         this.drop(e);
         const size = TYPES[a.kind].size;
@@ -445,23 +501,40 @@ window.MB = window.MB || {};
           this.select(e.hex);
         });
         e.marker.addTo(MB.map);
-        e.kind = a.kind; e.color = e.label = e.track = e.dim = e.sel = e.step = null;
-      } else e.marker.setLatLng(ll);
+        e.kind = a.kind; e.color = e.label = e.track = e.dim = e.sel = null;
+      }
       const el = e.marker.getElement();
       if (!el) return;
       const rot = el.firstChild;
-      // glide across one refresh of the fastest source reporting the aircraft: a new position is due by then, whichever
-      // source it comes from (gliding over a slower one's refresh would trail behind the faster one's reports)
-      const step = Math.min(...(e.srcs && e.srcs.length ? e.srcs : [a.src]).map(id => this.srcConf(id).interval));
-      // (a variable the pane's "smooth" rule reads, not the icon's own transition: that would glide on every move,
-      // a zoom's re-placing included)
-      if (e.step !== step) { el.style.setProperty('--glide', step + 's'); e.step = step; }
       if (e.track !== track) { rot.style.transform = `rotate(${track}deg)`; e.track = track; }
       if (e.color !== color) { rot.style.color = color; e.color = color; }
       if (e.label !== label) { el.lastChild.textContent = label; e.label = label; }
       if (e.dim !== dim) { el.classList.toggle('stale', dim); e.dim = dim; }
       const sel = e.hex === this.selected;
       if (e.sel !== sel) { el.classList.toggle('sel', sel); e.sel = sel; }
+    },
+
+    // Where an aircraft's icon goes at time t: carried on from its report, never past when its next report is due.
+    at(e, t) { return ahead(e.info, Math.min(t, e.until)) || [e.info.lat, e.info.lon]; },
+
+    // Every icon where its aircraft is now, then gliding on to where it will be when its next report is due. The first
+    // move is made with the pane's glide off and applied (a style read) before the glide is switched on for the second.
+    // The glide's length is a variable the pane's "smooth" rule reads, not the icon's own transition: that would glide
+    // on every move, a zoom's re-placing included.
+    place(now) {
+      const pane = MB.map.getPane('mb-adsb'), drawn = [];
+      this.aircraft.forEach(e => { if (e.marker && e.info) drawn.push(e); });
+      pane.classList.remove('smooth');
+      drawn.forEach(e => e.marker.setLatLng(this.at(e, now)));
+      if (this.zooming || !drawn.length) return;
+      void pane.offsetWidth;
+      pane.classList.add('smooth');
+      drawn.forEach(e => {
+        const el = e.marker.getElement();
+        if (!el || e.until <= now || !ahead(e.info, now)) return;
+        el.style.setProperty('--glide', ((e.until - now) / 1000).toFixed(2) + 's');
+        e.marker.setLatLng(this.at(e, e.until));
+      });
     },
 
     drop(e) {
@@ -665,6 +738,7 @@ window.MB = window.MB || {};
     statusText(id) {
       const rt = this.rt[id];
       if (!rt.on) return 'Off';
+      if (rt.waiting) return `Zoom in to see aircraft (zoom ${NET_ZOOM} or closer)`;
       if (rt.error) return rt.error;
       if (!rt.lastOk) return 'Connecting…';
       const age = Math.round((Date.now() - (rt.clock.at || rt.lastOk)) / 1000); // age of the data, not of the last request
