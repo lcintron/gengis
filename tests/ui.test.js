@@ -28,18 +28,19 @@ test('the hidden attribute always hides (no display rule of its own may show a h
 test('aircraft icons glide only between position reports, never through a zoom', () => {
   // an icon's own transition-duration (transition-property defaults to all) would glide every move, a zoom included
   assert.doesNotMatch(js['adsb.js'], /style\.transition(Duration)?\s*=/, 'js/adsb.js sets no transition on an icon itself');
-  assert.match(css, /\.leaflet-mb-adsb-pane\.smooth \.mb-ac \{ transition: transform var\(--glide/, 'the glide is the pane\'s "smooth" rule, its length the icon\'s --glide');
+  assert.match(css, /\.leaflet-mb-adsb-pane\.smooth \.mb-ac\.glide \{ transition: transform var\(--glide/, 'the glide is the pane\'s "smooth" rule, its length the icon\'s --glide');
   assert.match(js['adsb.js'], /'zoomstart', \(\) => \{[^}]*classList\.remove\('smooth'\)/, 'a zoom switches the glide off');
 });
 
 test('aircraft icons show where the aircraft is now: carried on from each report, not gliding up to it', () => {
-  const place = /place\(now\) \{([\s\S]*?)\n    \},/.exec(js['adsb.js']);
-  assert.ok(place, 'js/adsb.js has place(now)');
+  const place = /place\(now, all\) \{([\s\S]*?)\n    \},/.exec(js['adsb.js']);
+  assert.ok(place, 'js/adsb.js has place(now, all)');
   const body = place[1];
   // first where it is now with the glide off, the style applied, then the glide on to where its next report is due
-  assert.ok(body.indexOf("remove('smooth')") < body.indexOf('this.at(e, now)'), 'placed at now with the glide off');
+  assert.ok(body.indexOf("remove('glide')") < body.indexOf('this.at(e, now)'), 'placed at now with its glide off');
   assert.ok(body.indexOf('this.at(e, now)') < body.indexOf('offsetWidth') && body.indexOf('offsetWidth') < body.indexOf("add('smooth')"), 'applied before the glide is switched on');
-  assert.ok(body.indexOf("add('smooth')") < body.indexOf('this.at(e, e.until)'), 'then glides on to its next report');
+  assert.ok(body.indexOf("add('glide')") < body.indexOf('this.at(e, e.until)'), 'then glides on to its next report');
+  assert.match(body, /all \|\| e\.placed !== e\.until/, 'only icons with a new report (all after a zoom): the rest glide on');
   assert.match(js['adsb.js'], /'zoomend', \(\) => \{[^}]*this\.place\(/, 'the glide picks up again after a zoom');
 });
 

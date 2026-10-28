@@ -2,7 +2,9 @@
  * - polls a dump1090-style receiver (dump1090-fa / SkyAware, dump1090-mutability, readsb, tar1090: data/aircraft.json;
  *   the original dump1090's built-in server: data.json) and the
  *   open community networks that publish the same JSON, about once a second
- * - one marker per aircraft, merged across sources by ICAO address; icon by aircraft type, color by altitude
+ * - one marker per aircraft, merged across sources by address: the freshest position wins (by the age of the data, not
+ *   the order the sources answer in), and every other field comes from the freshest report that carries it
+ * - icon by aircraft type, color by altitude
  * - click an aircraft for live details; "Look up" adds registration, type, owner and route from adsbdb.com / hexdb.io
  * Nothing is stored: positions live in memory only. Source choices and the receiver address are device settings.
  */
@@ -16,6 +18,8 @@ window.MB = window.MB || {};
   const TIMEOUT = 8000;   // ms per request
   const MAX_NM = 250;     // largest radius the community networks answer
   const LABEL_ZOOM = 8;   // callsign labels from this zoom
+  const CLOCK_SAMPLES = 20; // feed snapshots remembered to place a feed's clock on ours
+  const CLOCK_STEP = 30000; // ms: a feed whose snapshots suddenly arrive this much later than usual has changed its clock
   const NET_ZOOM = 8;     // the community networks from this zoom only: a wider view asks them for thousands of aircraft
                           // every few seconds, all redrawn (your own receiver hears ~200 NM at most: shown at any zoom)
   // Where the various receiver packages publish aircraft.json, relative to the address the user enters.
@@ -144,18 +148,25 @@ window.MB = window.MB || {};
   /* ---------- parsing ---------- */
   const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
   const str = v => (typeof v === 'string' ? v : (typeof v === 'number' ? String(v) : ''));
+  // The fields merged report by report across sources (the position goes with the report it came in).
+  const MERGED = ['alt', 'altGeom', 'gs', 'track', 'rate', 'flight', 'squawk', 'emergency', 'category', 'r', 't', 'desc', 'ownOp'];
 
-  // One record per aircraft from dump1090 / readsb / tar1090 JSON (current and legacy field names).
-  function normalize(a, now) {
-    if (!a || typeof a.hex !== 'string' || !/^~?[0-9a-f]{6}$/i.test(a.hex)) return null; // the address goes into links
+  // One record per aircraft from dump1090 / readsb / tar1090 JSON (current and legacy field names). `at`: the local
+  // time of the snapshot it came in.
+  function normalize(a, at) {
+    // `id`, the key the sources are merged by: the address in one form. A "~" marks a non-ICAO address (TIS-B, ADS-R):
+    // a different aircraft from the ICAO address of the same digits.
+    const id = a && typeof a.hex === 'string' ? a.hex.trim().toLowerCase() : '';
+    if (!/^~?[0-9a-f]{6}$/.test(id)) return null; // the address goes into links
     let lat = num(a.lat), lon = num(a.lon), seenPos = num(a.seen_pos);
     if (a.validposition === 0 || (lat === 0 && lon === 0)) { lat = null; lon = null; } // the original dump1090: no fix yet
     if (lat == null && a.lastPosition) { lat = num(a.lastPosition.lat); lon = num(a.lastPosition.lon); seenPos = num(a.lastPosition.seen_pos); }
+    const seen = num(a.seen);
+    if (seenPos == null) seenPos = seen || 0; // the original dump1090 gives only the age of the last message: the position is at least that old
     const altRaw = a.alt_baro != null ? a.alt_baro : (a.altitude != null ? a.altitude : a.alt_geom);
     const ground = altRaw === 'ground' || a.ground === true;
-    const hex = a.hex.replace(/^~/, '').toLowerCase();
     const rec = {
-      hex, nonIcao: a.hex[0] === '~',
+      id, hex: id.replace(/^~/, ''), nonIcao: id[0] === '~',
       flight: str(a.flight).trim(), r: str(a.r), t: str(a.t), desc: str(a.desc), ownOp: str(a.ownOp),
       category: str(a.category).toUpperCase(), dbFlags: a.dbFlags | 0,
       lat, lon, hasPos: lat != null && lon != null,
@@ -163,26 +174,38 @@ window.MB = window.MB || {};
       gs: num(a.gs != null ? a.gs : a.speed),
       track: a.validtrack === 0 ? null : num(a.track != null ? a.track : (a.true_heading != null ? a.true_heading : a.mag_heading)),
       rate: num(a.baro_rate != null ? a.baro_rate : (a.geom_rate != null ? a.geom_rate : a.vert_rate)),
-      squawk: str(a.squawk), emergency: (a.emergency && a.emergency !== 'none') ? str(a.emergency) : '',
+      squawk: str(a.squawk), emergency: a.emergency == null ? null : (a.emergency !== 'none' ? str(a.emergency) : ''), // (null: not reported)
       via: /mlat/.test(str(a.type)) || (a.mlat && a.mlat.length) ? 'MLAT' : (/tisb/.test(str(a.type)) || (a.tisb && a.tisb.length) ? 'TIS-B' : (/adsr/.test(str(a.type)) ? 'ADS-R' : (/mode_s|other/.test(str(a.type)) ? 'Mode S' : 'ADS-B'))),
       rssi: num(a.rssi),
-      seen: num(a.seen) || 0,
-      posTime: now - (seenPos || 0) * 1000
+      seen: seen || 0,
+      posTime: at - seenPos * 1000,                       // when the position was received
+      time: at - (seen != null ? seen : seenPos) * 1000  // when anything was last received
     };
     rec.mil = isMilitary(rec);
     rec.kind = classify(rec);
     return rec;
   }
 
-  // `clock` remembers when each snapshot (the feed's own "now") was first seen, so a feed that keeps serving the
-  // same snapshot ages instead of looking live. Local time only: the receiver's clock is never trusted.
+  // `clock` (one per source) places each snapshot on the local clock, so ages from different sources compare. The feed's
+  // own "now" (seconds from a receiver and adsb.fi, milliseconds from adsb.lol) is moved by the smallest gap seen lately
+  // between it and the moment it arrived: the quickest snapshot stands for "no delay", and one served late (a lagging
+  // server, or a feed that keeps serving the same snapshot) ages by its delay. The feed's clock does not have to be right,
+  // only steady; a gap that suddenly grows by more than CLOCK_STEP on a new snapshot is a changed clock, and is learned again.
+  // `clock.at` is when the current snapshot was first seen (the source's status line: how old its data is).
   function parseFeed(json, clock) {
     const list = Array.isArray(json) ? json : json && (Array.isArray(json.aircraft) ? json.aircraft : (Array.isArray(json.ac) ? json.ac : null)); // (a bare list: the original dump1090's data.json)
     if (!list) throw new Error('not an aircraft.json feed');
-    let at = Date.now();
-    if (clock && typeof json.now === 'number') {
-      if (clock.now === json.now) at = clock.at; else { clock.now = json.now; clock.at = at; }
-    } else if (clock) clock.at = at;
+    const arrived = Date.now();
+    let at = arrived;
+    if (clock && typeof json.now === 'number' && isFinite(json.now)) {
+      const t = json.now > 1e11 ? json.now : json.now * 1000, gap = arrived - t, fresh = t !== clock.now;
+      clock.gaps = clock.gaps || [];
+      if (fresh && clock.gaps.length && gap > Math.min.apply(null, clock.gaps) + CLOCK_STEP) clock.gaps = [];
+      clock.gaps.push(gap);
+      if (clock.gaps.length > CLOCK_SAMPLES) clock.gaps.shift();
+      if (fresh) { clock.now = t; clock.at = arrived; }
+      at = t + Math.min.apply(null, clock.gaps);
+    } else if (clock) clock.at = arrived;
     return list.map(a => normalize(a, at)).filter(Boolean);
   }
 
@@ -245,7 +268,7 @@ window.MB = window.MB || {};
   MB.adsb = {
     sources: SOURCES, types: TYPES, altColor, parseFeed, receiverUrls: receiverCandidates,
     rt: {},                 // source id -> { on, timer, gen, busy, error, fails, total, withPos, lastOk, resolved, note, clock }
-    aircraft: new Map(),    // hex -> { hex, by: { sourceId: record }, cur, info, srcs, marker }
+    aircraft: new Map(),    // id ("~" + hex for a non-ICAO address) -> { id, hex, by: { sourceId: record }, cur, info, srcs, marker }
     lookups: new Map(),     // "hex|callsign" -> Promise of details, kept for the session
     selected: null, popup: null, legend: null,
     findState: { q: '', html: '' }, // kept here because the Data panel is rebuilt whenever a data layer changes
@@ -274,8 +297,8 @@ window.MB = window.MB || {};
       SOURCES.forEach(s => { this.rt[s.id] = { on: false, timer: null, gen: 0, busy: false, error: null, fails: 0, total: 0, withPos: 0, lastOk: 0, resolved: null, note: '', clock: { now: null, at: 0 } }; });
       this.buildLegend();
       // A zoom re-places every icon at once, from where it is now: no glide until the zoom is over
-      MB.map.on('zoomstart', () => { this.zooming = true; pane.classList.remove('smooth'); this.place(Date.now()); });
-      MB.map.on('zoomend', () => { this.zooming = false; this.applyPaneState(); this.netZoom(); this.place(Date.now()); });
+      MB.map.on('zoomstart', () => { this.zooming = true; pane.classList.remove('smooth'); this.place(Date.now(), true); });
+      MB.map.on('zoomend', () => { this.zooming = false; this.applyPaneState(); this.netZoom(); this.place(Date.now(), true); });
       MB.map.on('moveend', () => { if (this.anyOn()) this.render(); }); // aircraft are only drawn in and near the view
       MB.on('units', () => this.updatePopup());
       document.addEventListener('visibilitychange', () => { if (!document.hidden) SOURCES.forEach(s => { if (this.rt[s.id].on) this.schedule(s, 0); }); });
@@ -319,7 +342,7 @@ window.MB = window.MB || {};
       this.hint();
       this.srcConf(id).on = false; this.save();
       if (src.attribution && MB.map.attributionControl) MB.map.attributionControl.removeAttribution(src.attribution);
-      this.ingest(id, []);
+      this.purge(id);
       this.render();
       this.applyPaneState();
       MB.emit('data');
@@ -349,7 +372,7 @@ window.MB = window.MB || {};
       const rt = this.rt[src.id];
       clearTimeout(rt.timer); rt.gen++;
       rt.waiting = true; rt.error = null; rt.fails = 0; rt.total = 0; rt.withPos = 0; rt.note = '';
-      this.ingest(src.id, []);
+      this.purge(src.id);
       this.render();
       this.hint();
       this.tickStatus();
@@ -415,7 +438,7 @@ window.MB = window.MB || {};
         rt.fails++;
         rt.error = explain(src, err, failedUrl);
         if (src.kind === 'receiver' && rt.fails >= 3) rt.resolved = null; // the receiver may have moved: search again
-        if (rt.fails >= 3) this.ingest(src.id, []);
+        if (rt.fails >= 3) this.purge(src.id);
       } finally { rt.busy = false; }
       if (gen !== rt.gen) return;
       this.render();
@@ -426,18 +449,47 @@ window.MB = window.MB || {};
       this.schedule(src, Math.max(200, wait - (Date.now() - started)));
     },
 
-    /* ----- store: merge the sources by ICAO address ----- */
+    /* ----- store: merge the sources by address ----- */
+    // Each source keeps its latest report of each aircraft. A report never brings back an older position than the one that
+    // source already gave (a snapshot served late, or an aircraft listed twice). An aircraft the source no longer lists is
+    // "held": its last report stays only while it is fresher than every other source's, so the marker does not jump back;
+    // pick() drops it as soon as another source has newer data, and the aircraft once no source lists it.
     ingest(srcId, list) {
-      const seen = new Set();
+      const listed = new Set();
       list.forEach(rec => {
         if (!rec.hasPos) return;
-        seen.add(rec.hex);
-        let e = this.aircraft.get(rec.hex);
-        if (!e) { e = { hex: rec.hex, by: {}, cur: null, marker: null }; this.aircraft.set(rec.hex, e); }
+        let e = this.aircraft.get(rec.id);
+        if (!e) { e = { id: rec.id, hex: rec.hex, by: {}, cur: null, marker: null }; this.aircraft.set(rec.id, e); }
+        const old = e.by[srcId];
+        listed.add(rec.id);
+        if (old && old.posTime > rec.posTime) {
+          old.held = false;
+          if (old.time >= rec.time) return; // older altogether
+          rec.lat = old.lat; rec.lon = old.lon; rec.posTime = old.posTime; // newer, but for its position
+        }
         rec.src = srcId;
         e.by[srcId] = rec;
       });
-      this.aircraft.forEach(e => { if (e.by[srcId] && !seen.has(e.hex)) delete e.by[srcId]; });
+      this.aircraft.forEach(e => { const r = e.by[srcId]; if (r && !listed.has(e.id)) r.held = true; });
+    },
+
+    // A source turned off or failing: its reports go at once.
+    purge(srcId) {
+      this.aircraft.forEach(e => { delete e.by[srcId]; });
+    },
+
+    // The report whose position is shown: the freshest. Reports too old, and held ones another source has overtaken, go.
+    pick(e, now) {
+      let cur = null, listed = false;
+      for (const k in e.by) {
+        const r = e.by[k];
+        if (now - r.posTime > MAX_AGE * 1000) { delete e.by[k]; continue; }
+        if (!r.held) listed = true;
+        if (!cur || r.posTime > cur.posTime) cur = r;
+      }
+      if (!listed) { e.by = {}; return null; }
+      for (const k in e.by) if (e.by[k].held && e.by[k] !== cur) delete e.by[k];
+      return cur;
     },
 
     /* ----- drawing ----- */
@@ -451,15 +503,13 @@ window.MB = window.MB || {};
     render() {
       const now = Date.now();
       const bounds = MB.map.getBounds().pad(0.25);
-      this.aircraft.forEach((e, hex) => {
-        // the freshest report wins; fields a feed lacks (registration, type) are filled from the others
-        let cur = null;
-        Object.keys(e.by).forEach(k => { const r = e.by[k]; if ((now - r.posTime) / 1000 > MAX_AGE) { delete e.by[k]; return; } if (!cur || r.posTime > cur.posTime) cur = r; });
-        if (!cur) { this.drop(e); this.aircraft.delete(hex); return; }
+      this.aircraft.forEach((e, id) => {
+        const cur = this.pick(e, now);
+        if (!cur) { this.drop(e); this.aircraft.delete(id); return; }
         e.cur = cur;
         e.srcs = Object.keys(e.by);
         e.info = this.merged(e);
-        const show = this.visible(e.info) && (bounds.contains([cur.lat, cur.lon]) || hex === this.selected);
+        const show = this.visible(e.info) && (bounds.contains([cur.lat, cur.lon]) || id === this.selected);
         if (!show) { this.drop(e); return; }
         this.draw(e, now);
       });
@@ -467,14 +517,17 @@ window.MB = window.MB || {};
       this.updatePopup();
     },
 
+    // What is shown: the position from the freshest report (pick), every other field from the freshest report that
+    // carries it (by when anything was last received from the aircraft), so a gap in one feed is filled by another.
     merged(e) {
       const cur = e.cur, out = Object.assign({}, cur);
-      Object.keys(e.by).forEach(k => {
-        const r = e.by[k];
-        ['flight', 'r', 't', 'desc', 'ownOp', 'category', 'squawk'].forEach(f => { if (!out[f] && r[f]) out[f] = r[f]; });
-        if (r.mil) out.mil = true;
-        out.dbFlags |= r.dbFlags;
+      const recs = Object.values(e.by);
+      if (recs.length < 2) return out;
+      recs.sort((a, b) => b.time - a.time);
+      MERGED.forEach(f => {
+        for (const r of recs) { const v = r[f]; if (v != null && (v !== '' || f === 'emergency')) { out[f] = v; break; } }
       });
+      recs.forEach(r => { if (r.mil) out.mil = true; out.dbFlags |= r.dbFlags; });
       out.kind = classify(out);
       return out;
     },
@@ -505,10 +558,10 @@ window.MB = window.MB || {};
           const t = MB.tools.current;
           if (t !== 'select' && t !== 'move' && t !== 'present') return; // drawing tools keep the click
           L.DomEvent.stopPropagation(ev);
-          this.select(e.hex);
+          this.select(e.id);
         });
         e.marker.addTo(MB.map);
-        e.kind = a.kind; e.color = e.label = e.track = e.dim = e.sel = null;
+        e.kind = a.kind; e.color = e.label = e.track = e.dim = e.sel = e.placed = null;
       }
       const el = e.marker.getElement();
       if (!el) return;
@@ -517,29 +570,32 @@ window.MB = window.MB || {};
       if (e.color !== color) { rot.style.color = color; e.color = color; }
       if (e.label !== label) { el.lastChild.textContent = label; e.label = label; }
       if (e.dim !== dim) { el.classList.toggle('stale', dim); e.dim = dim; }
-      const sel = e.hex === this.selected;
+      const sel = e.id === this.selected;
       if (e.sel !== sel) { el.classList.toggle('sel', sel); e.sel = sel; }
     },
 
     // Where an aircraft's icon goes at time t: carried on from its report, never past when its next report is due.
     at(e, t) { const a = e.info || e.cur; return ahead(a, Math.min(t, e.until || 0)) || [a.lat, a.lon]; },
 
-    // Every icon where its aircraft is now, then gliding on to where it will be when its next report is due. The first
-    // move is made with the pane's glide off and applied (a style read) before the glide is switched on for the second.
-    // The glide's length is a variable the pane's "smooth" rule reads, not the icon's own transition: that would glide
-    // on every move, a zoom's re-placing included.
-    place(now) {
-      const pane = MB.map.getPane('mb-adsb'), drawn = [];
-      this.aircraft.forEach(e => { if (e.marker && e.info) drawn.push(e); });
-      pane.classList.remove('smooth');
-      drawn.forEach(e => e.marker.setLatLng(this.at(e, now)));
-      if (this.zooming || !drawn.length) return;
+    // Each icon with a new report (all of them after a zoom) where its aircraft is now, then gliding on to where it will
+    // be when its next report is due; the others glide on undisturbed. The first move is made with the icon's glide off
+    // and applied (a style read) before its glide is switched on for the second. The glide is the pane's "smooth" rule
+    // for icons marked "glide", its length a variable: not the icon's own transition, which would glide on every move,
+    // a zoom's re-placing included.
+    place(now, all) {
+      const pane = MB.map.getPane('mb-adsb'), todo = [];
+      this.aircraft.forEach(e => { if (e.marker && e.info && (all || e.placed !== e.until)) todo.push(e); });
+      if (!todo.length) return;
+      todo.forEach(e => { const el = e.marker.getElement(); if (el) el.classList.remove('glide'); e.marker.setLatLng(this.at(e, now)); });
+      if (this.zooming) return;
       void pane.offsetWidth;
       pane.classList.add('smooth');
-      drawn.forEach(e => {
+      todo.forEach(e => {
+        e.placed = e.until;
         const el = e.marker.getElement();
         if (!el || e.until <= now || !ahead(e.info, now)) return;
         el.style.setProperty('--glide', ((e.until - now) / 1000).toFixed(2) + 's');
+        el.classList.add('glide');
         e.marker.setLatLng(this.at(e, e.until));
       });
     },
@@ -582,12 +638,12 @@ window.MB = window.MB || {};
     },
 
     /* ----- selection and popup ----- */
-    select(hex) {
-      const e = this.aircraft.get(hex);
+    select(id) {
+      const e = this.aircraft.get(id);
       if (!e || !e.cur) return;
       const prev = this.selected;
-      this.selected = hex;
-      if (prev && prev !== hex) { const p = this.aircraft.get(prev); if (p && p.marker) this.draw(p, Date.now()); }
+      this.selected = id;
+      if (prev && prev !== id) { const p = this.aircraft.get(prev); if (p && p.marker) this.draw(p, Date.now()); }
       if (this.popup) { const old = this.popup; this.popup = null; MB.map.closePopup(old); }
       const node = document.createElement('div');
       node.className = 'mb-popup mb-ac-info';
@@ -596,7 +652,7 @@ window.MB = window.MB || {};
       popup.on('remove', () => {
         if (this.popup !== popup) return;
         this.popup = null; this.selected = null;
-        const cur = this.aircraft.get(hex);
+        const cur = this.aircraft.get(id);
         if (cur && cur.marker) this.draw(cur, Date.now());
       });
       this.popup = popup;
@@ -698,10 +754,10 @@ window.MB = window.MB || {};
     renderLookup() {
       const popup = this.popup;
       if (!popup) return;
-      const hex = this.selected, e = this.aircraft.get(hex);
+      const e = this.aircraft.get(this.selected);
       const box = popup.getContent().querySelector('.mb-ac-look');
       if (!e || !e.info || e.info.nonIcao) { box.innerHTML = ''; return; }
-      const cs = e.info.flight, key = hex + '|' + cs;
+      const hex = e.hex, cs = e.info.flight, key = hex + '|' + cs;
       const show = () => {
         box.innerHTML = '<div class="note">Looking up…</div>';
         this.lookup(hex, cs).then(d => { if (this.popup === popup) { box.innerHTML = this.lookupHtml(d); popup.update(); } })
@@ -731,7 +787,7 @@ window.MB = window.MB || {};
       if (hit) {
         say(`<div class="note">${esc(this.label(hit.info))} is on the map.</div>`);
         MB.map.setView([hit.cur.lat, hit.cur.lon], Math.max(MB.map.getZoom(), 9));
-        this.select(hit.hex);
+        this.select(hit.id);
         return;
       }
       say('<div class="note">Not tracked right now. Looking it up…</div>');

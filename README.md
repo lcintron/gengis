@@ -40,7 +40,8 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 - **Any public ArcGIS layer**, plus borders and place names.
 - **Live air traffic (ADS-B)** from your own receiver or the adsb.fi and adsb.lol networks.
 - **Live vessel traffic (AIS)** from your own AIS-catcher or aisstream.io.
-- **Live drones (MAVLink)** from a [mavp2p](https://github.com/bluenviron/mavp2p) server. Read only: GenGIS never sends a vehicle a command.
+- **Live drones (MAVLink)** from a [mavp2p](https://github.com/bluenviron/mavp2p) server: every vehicle and ground station it relays, with telemetry you can pin beside each vehicle. Read only: GenGIS never sends a vehicle a command.
+- **Flight logs**: ArduPilot (`.bin`, `.tlog`), PX4 (`.ulg`) and Betaflight blackbox (`.bbl`, `.bfl`) logs as tracks colored by speed, altitude or flight mode, played back together on a time bar. Read on your device; a log without GPS positions is flagged.
 
 **Base maps**
 - Esri World Imagery, OpenStreetMap, OpenTopoMap and CyclOSM built in, and CARTO with a free key.

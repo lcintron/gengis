@@ -5,8 +5,14 @@
  * - read only: nothing is ever sent to a vehicle (over UDP to a server, the desktop app sends a keepalive of its own
  *   so the server keeps sending; it is not a ground station's heartbeat and carries no command)
  * - one marker per vehicle (MAVLink system id): icon by vehicle type, pointed along its heading, orange when armed;
- *   its trail and home position; click it for flight mode, altitude, speed, battery, GPS and its latest message
- * Nothing is stored: positions live in memory only. The connection and the display options are device settings.
+ *   its trail and home position; click it for its telemetry (mode, altitude, speeds, attitude, battery, GPS, links,
+ *   waypoint, wind, its latest message...), a row each; a row's pin shows that value beside the vehicle on the map
+ * - a ground station (MAV_TYPE_GCS heartbeat) that reports where it is has a marker of its own, without a trail;
+ *   a system that never reports a position is not shown at all
+ * - labels: "Show by default" picks the values every vehicle shows (its system id to start with); pins add more
+ * - flight logs (.bin, .tlog, .ulg) are read by mavlogs.js, which uses the decoder here; tracklogs.js draws them
+ * Nothing is stored: positions live in memory only. The connection, the display options and the pins (by system id
+ * and field) are device settings.
  */
 window.MB = window.MB || {};
 (function (MB) {
@@ -18,7 +24,7 @@ window.MB = window.MB || {};
   const TRAIL_POINTS = 900; // trail points kept per vehicle
   const TRAIL_STEP = 1.5;   // m: a new trail point once the vehicle has moved this far
   const NOT_MAVLINK = 8192; // bytes received without a single valid frame: not a MAVLink stream
-  const COLORS = { armed: '#ff8a3d', disarmed: '#3fd0f0' };
+  const COLORS = { armed: '#ff8a3d', disarmed: '#3fd0f0', gcs: '#c792ff' };
 
   // How GenGIS reaches the server. tcp, udp and listen need the desktop app (a page cannot open TCP or UDP).
   const KINDS = {
@@ -37,15 +43,23 @@ window.MB = window.MB || {};
   const MSGS = {
     0: [50, 9],      // HEARTBEAT
     1: [124, 43],    // SYS_STATUS
+    2: [137, 12],    // SYSTEM_TIME
     24: [24, 52],    // GPS_RAW_INT
     30: [39, 28],    // ATTITUDE
     33: [104, 28],   // GLOBAL_POSITION_INT
+    42: [28, 2],     // MISSION_CURRENT
+    62: [183, 26],   // NAV_CONTROLLER_OUTPUT
+    65: [118, 42],   // RC_CHANNELS
     74: [20, 20],    // VFR_HUD
+    109: [185, 9],   // RADIO_STATUS
+    144: [127, 93],  // FOLLOW_TARGET (a ground station's own position, sent for follow-me)
     147: [154, 54],  // BATTERY_STATUS
+    168: [1, 12],    // WIND (ardupilotmega.xml)
     242: [104, 60],  // HOME_POSITION
     245: [130, 2],   // EXTENDED_SYS_STATE
     253: [83, 54]    // STATUSTEXT
   };
+  const GCS = 6;     // MAV_TYPE_GCS
 
   // CRC-16/MCRF4XX (MAVLink's "x25") over buf[start, end), then the message's CRC extra.
   function crc16(buf, start, end, extra) {
@@ -56,7 +70,29 @@ window.MB = window.MB || {};
     return crc;
   }
 
-  // A byte stream in, whole messages out: { sysid, compid, msgid, v: DataView of the payload at its full length }.
+  // The frame starting at buf[i] (its first byte a start marker): { total } bytes long, with { msg } when it is a
+  // message read here and its checksum holds; { need: true } when the rest has not arrived; null when it is not a frame.
+  // msg: { sysid, compid, msgid, v: DataView of the payload at its full length }.
+  function frameAt(buf, i) {
+    const stx = buf[i];
+    if (stx !== 0xFD && stx !== 0xFE) return null;
+    const v2 = stx === 0xFD, hl = v2 ? 10 : 6;
+    if (buf.length - i < hl) return { need: true };
+    const len = buf[i + 1], flags = v2 ? buf[i + 2] : 0;
+    if (flags & ~1) return null; // an incompatibility flag this reader does not know: not a frame it can read
+    const total = hl + len + 2 + (flags & 1 ? 13 : 0); // (a signed frame carries a 13-byte signature)
+    if (buf.length - i < total) return { need: true };
+    const msgid = v2 ? buf[i + 7] | buf[i + 8] << 8 | buf[i + 9] << 16 : buf[i + 5];
+    const def = MSGS[msgid];
+    if (!def) return { total, msg: null };
+    const end = i + hl + len;
+    if (crc16(buf, i + 1, end, def[0]) !== (buf[end] | buf[end + 1] << 8)) return null;
+    const payload = new Uint8Array(Math.max(def[1], len)); // MAVLink 2 drops trailing zero bytes: put them back
+    payload.set(buf.subarray(i + hl, end));
+    return { total, msg: { sysid: buf[i + (v2 ? 5 : 3)], compid: buf[i + (v2 ? 6 : 4)], msgid, v: new DataView(payload.buffer) } };
+  }
+
+  // A byte stream in, whole messages out (frameAt's msg).
   // Frames of messages not read here are skipped whole; a frame that fails its checksum is skipped a byte at a time.
   class Parser {
     constructor(onMsg) { this.buf = new Uint8Array(0); this.onMsg = onMsg; this.valid = 0; }
@@ -65,25 +101,14 @@ window.MB = window.MB || {};
       if (this.buf.length) { buf = new Uint8Array(this.buf.length + chunk.length); buf.set(this.buf); buf.set(chunk, this.buf.length); }
       let i = 0;
       while (i < buf.length) {
-        const stx = buf[i];
-        if (stx !== 0xFD && stx !== 0xFE) { i++; continue; }
-        const v2 = stx === 0xFD, hl = v2 ? 10 : 6;
-        if (buf.length - i < hl) break;
-        const len = buf[i + 1], flags = v2 ? buf[i + 2] : 0;
-        if (flags & ~1) { i++; continue; } // an incompatibility flag this reader does not know: not a frame it can read
-        const total = hl + len + 2 + (flags & 1 ? 13 : 0); // (a signed frame carries a 13-byte signature)
-        if (buf.length - i < total) break;
-        const msgid = v2 ? buf[i + 7] | buf[i + 8] << 8 | buf[i + 9] << 16 : buf[i + 5];
-        const def = MSGS[msgid];
-        if (def) {
-          const end = i + hl + len;
-          if (crc16(buf, i + 1, end, def[0]) !== (buf[end] | buf[end + 1] << 8)) { i++; continue; }
-          const payload = new Uint8Array(Math.max(def[1], len)); // MAVLink 2 drops trailing zero bytes: put them back
-          payload.set(buf.subarray(i + hl, end));
+        const f = frameAt(buf, i);
+        if (!f) { i++; continue; }
+        if (f.need) break;
+        if (f.msg) {
           this.valid++;
-          try { this.onMsg({ sysid: buf[i + (v2 ? 5 : 3)], compid: buf[i + (v2 ? 6 : 4)], msgid, v: new DataView(payload.buffer) }); } catch (e) { /* one bad message */ }
-        } else if (i + total < buf.length && buf[i + total] !== 0xFD && buf[i + total] !== 0xFE) { i++; continue; } // (no checksum to go by: only when another frame follows it)
-        i += total;
+          try { this.onMsg(f.msg); } catch (e) { /* one bad message */ }
+        } else if (i + f.total < buf.length && buf[i + f.total] !== 0xFD && buf[i + f.total] !== 0xFE) { i++; continue; } // (no checksum to go by: only when another frame follows it)
+        i += f.total;
       }
       this.buf = i >= buf.length ? new Uint8Array(0) : buf.slice(i);
       if (this.buf.length > 65536) this.buf = new Uint8Array(0);
@@ -133,10 +158,13 @@ window.MB = window.MB || {};
     vtol: '<circle class="rotor" cx="6" cy="10" r="4"/><circle class="rotor" cx="26" cy="10" r="4"/><circle class="rotor" cx="6" cy="24" r="4"/><circle class="rotor" cx="26" cy="24" r="4"/><path d="M16 2.500c1.300 0 2 1.200 2 2.800v7.200l11 4.200v3l-11-1.200v6.300l3.500 2.600v2.400L16 28.500l-5.500 1.300v-2.400l3.500-2.600v-6.300L3 19.700v-3l11-4.200V5.300c0-1.600.7-2.800 2-2.800z"/>',
     rover: '<path d="M11 5h10a3 3 0 0 1 3 3v17a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z"/><path class="mark" d="M16 9l4.500 7h-9z"/>',
     boat: '<path d="M16 2.500c3.200 3.800 5.200 8.400 5.200 13.600v11.400c0 1-.8 1.800-1.800 1.800h-6.800c-1 0-1.800-.8-1.800-1.800V16.100c0-5.200 2-9.800 5.200-13.600z"/>',
-    other: '<path d="M16 3l10 25-10-6-10 6z"/>'
+    other: '<path d="M16 3l10 25-10-6-10 6z"/>',
+    // a ground station: a mast on a tripod, sending (never turned to a heading)
+    gcs: '<path class="wave-bg" d="M8.500 4a10 10 0 0 0 0 11M23.500 4a10 10 0 0 1 0 11"/><path class="wave" d="M8.500 4a10 10 0 0 0 0 11M23.500 4a10 10 0 0 1 0 11"/><path d="M14.600 13h2.800l5.600 15h-3.200L16 19.500 12.200 28H9z"/><circle cx="16" cy="9.500" r="4"/>'
   };
-  const SIZE = { multi: 28, heli: 28, plane: 28, vtol: 30, rover: 20, boat: 22, other: 22 };
+  const SIZE = { multi: 28, heli: 28, plane: 28, vtol: 30, rover: 20, boat: 22, other: 22, gcs: 24 };
   function shapeOf(t) {
+    if (t === GCS) return 'gcs';
     if (MULTI.includes(t)) return t === 4 || t === 3 ? 'heli' : 'multi';
     if (t >= 19 && t <= 25) return 'vtol';
     if (t === 1 || t === 16 || t === 17 || t === 28) return 'plane';
@@ -201,10 +229,143 @@ window.MB = window.MB || {};
   const u32 = (d, o) => d.getUint32(o, true), i32 = (d, o) => d.getInt32(o, true), f32 = (d, o) => d.getFloat32(o, true);
   const fin = x => (isFinite(x) ? x : null);
   const deg = r => ((r * 180 / Math.PI) % 360 + 360) % 360;
+  const validLL = (lat, lon) => !(lat === 0 && lon === 0) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+
+  /* ---------- messages -> a system's state (the live view and the .tlog reader share it) ---------- */
+  function newState(sysid) {
+    return { sysid, compid: null, gcs: false, type: null, autopilot: null, baseMode: 0, customMode: null, sysStatus: null, seen: 0, hb: 0,
+      lat: null, lon: null, alt: null, relAlt: null, posTime: 0, gpiTime: 0, heading: null, yaw: null, roll: null, pitch: null, hud: null, cog: null,
+      gs: null, airspeed: null, climb: null, thr: null, battPct: null, sysPct: null, bsPct: null, volt: null, amp: null, mah: null, battLeft: null,
+      fix: null, sats: null, eph: null, rssi: null, radio: null, wpSeq: null, wpDist: null, wind: null, landed: 0, home: null, text: null, unixOffset: null };
+  }
+
+  // One message (not a heartbeat) into a system's state, at time `now` (ms). Returns { lat, lon } when it carried a
+  // position to move the system to, else null. A ground station's messages only place it.
+  function apply(v, m, now) {
+    const d = m.v;
+    let pos = null;
+    switch (m.msgid) {
+      case 33: { // GLOBAL_POSITION_INT: the autopilot's own estimate, preferred
+        const lat = i32(d, 4) / 1e7, lon = i32(d, 8) / 1e7;
+        if (validLL(lat, lon)) { pos = { lat, lon }; v.gpiTime = now; }
+        v.alt = i32(d, 12) / 1000; v.relAlt = i32(d, 16) / 1000;
+        if (v.gcs) break;
+        const hdg = u16(d, 26); if (hdg !== 65535) v.heading = hdg / 100;
+        const vx = i16(d, 20) / 100, vy = i16(d, 22) / 100;
+        v.gs = Math.hypot(vx, vy); v.climb = -i16(d, 24) / 100;
+        break;
+      }
+      case 24: { // GPS_RAW_INT: the receiver's fix; its position only when the estimate above is not coming
+        const fix = u8(d, 28), lat = i32(d, 8) / 1e7, lon = i32(d, 12) / 1e7;
+        if (fix >= 2 && validLL(lat, lon) && now - v.gpiTime > 3000) {
+          pos = { lat, lon }; v.alt = i32(d, 16) / 1000;
+          if (!v.gcs) {
+            const vel = u16(d, 24), cog = u16(d, 26);
+            if (vel !== 65535) v.gs = vel / 100;
+            v.cog = cog === 65535 ? null : cog / 100;
+          }
+        }
+        if (v.gcs) break;
+        v.fix = fix; v.sats = u8(d, 29); const eph = u16(d, 20); v.eph = eph === 65535 ? null : eph / 100;
+        if (v.sats === 255) v.sats = null;
+        break;
+      }
+      case 144: { // FOLLOW_TARGET: where a ground station is (follow-me)
+        if (!v.gcs) break;
+        const lat = i32(d, 16) / 1e7, lon = i32(d, 20) / 1e7;
+        if (validLL(lat, lon)) { pos = { lat, lon }; const a = f32(d, 24); if (isFinite(a) && a) v.alt = a; }
+        break;
+      }
+      default: if (v.gcs && m.msgid !== 253) break; // (a ground station's text still shows)
+        switch (m.msgid) {
+          case 30: v.roll = fin(f32(d, 4) * 180 / Math.PI); v.pitch = fin(f32(d, 8) * 180 / Math.PI); v.yaw = fin(deg(f32(d, 12))); break; // ATTITUDE
+          case 74: v.airspeed = fin(f32(d, 0)); v.climb = fin(f32(d, 12)); v.hud = i16(d, 16); v.thr = u16(d, 18); break; // VFR_HUD
+          case 1: { // SYS_STATUS
+            const mv = u16(d, 14), ca = i16(d, 16), pct = i8(d, 30);
+            v.volt = mv === 65535 ? null : mv / 1000; v.amp = ca === -1 ? null : ca / 100; v.sysPct = pct < 0 ? null : pct;
+            v.battPct = v.sysPct != null ? v.sysPct : v.bsPct;
+            break;
+          }
+          case 147: { // BATTERY_STATUS: the main battery's use and time left
+            if (u8(d, 32) !== 0) break;
+            const mah = i32(d, 0), left = i32(d, 36), pct = i8(d, 35);
+            v.mah = mah < 0 ? null : mah; v.battLeft = left > 0 ? left : null;
+            v.bsPct = pct < 0 ? null : pct;
+            v.battPct = v.sysPct != null ? v.sysPct : v.bsPct; // SYS_STATUS's figure when it has one, else this one
+            break;
+          }
+          case 2: { const us = Number(d.getBigUint64(0, true)); if (us > 1e15) v.unixOffset = us / 1000 - u32(d, 8); break; } // SYSTEM_TIME: boot time to UTC
+          case 42: v.wpSeq = u16(d, 0); break; // MISSION_CURRENT
+          case 62: v.wpDist = u16(d, 24); break; // NAV_CONTROLLER_OUTPUT: distance to the waypoint
+          case 65: { const r = u8(d, 41); v.rssi = r === 255 ? null : Math.round(r / 2.54); break; } // RC_CHANNELS: the RC link
+          case 109: { const r = u8(d, 4), rr = u8(d, 5); v.radio = { rssi: r === 255 ? null : Math.round(r / 2.54), rem: rr === 255 ? null : Math.round(rr / 2.54) }; break; } // RADIO_STATUS: the telemetry radio
+          case 168: { const dir = f32(d, 0), sp = f32(d, 4); v.wind = isFinite(dir) && isFinite(sp) ? { dir: (dir % 360 + 360) % 360, speed: sp } : null; break; } // WIND: where it blows from
+          case 242: { // HOME_POSITION
+            const lat = i32(d, 0) / 1e7, lon = i32(d, 4) / 1e7;
+            if (validLL(lat, lon)) v.home = { lat, lon, alt: i32(d, 8) / 1000 };
+            break;
+          }
+          case 245: v.landed = u8(d, 1); break; // EXTENDED_SYS_STATE
+          case 253: { // STATUSTEXT
+            const bytes = new Uint8Array(d.buffer, 1, 50), end = bytes.indexOf(0);
+            const msg = new TextDecoder().decode(end < 0 ? bytes : bytes.subarray(0, end)), id = u16(d, 51);
+            if (id && u8(d, 53) > 0 && v.text && v.text.id === id) { v.text.msg = (v.text.msg + msg).trim(); v.text.time = now; } // the next piece of a long message
+            else if (msg.trim()) v.text = { msg: msg.trim(), sev: u8(d, 0), id, time: now };
+            break;
+          }
+          default: break;
+        }
+    }
+    return pos;
+  }
+
+  // A heartbeat: what kind of system sent it. 'gcs', 'vehicle', or null for a component that is neither (a companion
+  // computer, gimbal, camera, ADS-B receiver...).
+  function heartbeatKind(m) {
+    const type = u8(m.v, 4), ap = u8(m.v, 5);
+    if (type === GCS) return 'gcs';
+    if (ap === 8 || type === 18 || type === 26 || type === 27 || type === 30) return null;
+    return 'vehicle';
+  }
+  function applyHeartbeat(v, m, now) {
+    const d = m.v;
+    v.type = u8(d, 4); v.autopilot = u8(d, 5); v.baseMode = u8(d, 6); v.customMode = u32(d, 0); v.sysStatus = u8(d, 7);
+    v.gcs = v.type === GCS; v.hb = v.seen = now;
+  }
+
+  /* ---------- telemetry fields: a row each in a vehicle's details; most can be pinned beside it on the map ---------- */
+  // name: the row's; short(v): the value as a label beside the marker ('' when not known); gcs: shown for a ground station
+  const FIELDS = [
+    { key: 'id', name: 'System ID', gcs: true, short: v => (v.gcs ? 'GCS ' : '#') + v.sysid },
+    { key: 'mode', name: 'Mode', short: v => modeName(v) },
+    { key: 'state', name: 'State', short: v => (v.hb ? (v.baseMode & 128 ? 'Armed' : 'Disarmed') : '') },
+    { key: 'alt', name: 'Altitude', gcs: true, short: v => (v.relAlt != null && !v.gcs ? 'Alt ' + MB.mavlink.alt(v.relAlt) : (v.alt != null ? 'Alt ' + MB.mavlink.alt(v.alt) + ' MSL' : '')) },
+    { key: 'gs', name: 'Ground speed', short: v => (v.gs == null ? '' : 'GS ' + MB.mavlink.speed(v.gs)) },
+    { key: 'as', name: 'Airspeed', short: v => (v.airspeed == null || !winged(v) ? '' : 'AS ' + MB.mavlink.speed(v.airspeed)) },
+    { key: 'climb', name: 'Climb', short: v => (v.climb == null ? '' : 'VS ' + MB.mavlink.vspeed(v.climb)) },
+    { key: 'hdg', name: 'Heading', short: v => 'Hdg ' + Math.round(MB.mavlink.heading(v)) + '°' },
+    { key: 'att', name: 'Attitude', short: v => (v.roll == null ? '' : `Roll ${Math.round(v.roll)}° · Pitch ${Math.round(v.pitch)}°`) },
+    { key: 'thr', name: 'Throttle', short: v => (v.thr == null ? '' : 'Thr ' + v.thr + '%') },
+    { key: 'batt', name: 'Battery', short: v => { const b = [v.battPct != null ? v.battPct + '%' : '', v.volt != null ? v.volt.toFixed(1) + ' V' : ''].filter(Boolean).join(' · '); return b ? 'Bat ' + b : ''; } },
+    { key: 'gps', name: 'GPS', short: v => (v.fix == null ? '' : 'GPS ' + [FIX_SHORT[v.fix] || v.fix, v.sats != null ? v.sats + ' sats' : ''].filter(Boolean).join(' · ')) },
+    { key: 'link', name: 'Link', short: v => [v.rssi != null ? 'RC ' + v.rssi + '%' : '', v.radio && v.radio.rssi != null ? 'Tlm ' + v.radio.rssi + '%' : ''].filter(Boolean).join(' · ') },
+    { key: 'wp', name: 'Waypoint', short: v => (v.wpSeq == null ? '' : 'WP ' + v.wpSeq + (v.wpDist != null && v.wpDist > 0 ? ' · ' + MB.formatDistance(v.wpDist) : '')) },
+    { key: 'wind', name: 'Wind', short: v => (!v.wind || v.wind.speed < 0.1 ? '' : 'Wind ' + MB.mavlink.speed(v.wind.speed) + ' from ' + Math.round(v.wind.dir) + '°') },
+    { key: 'pos', name: 'Position', gcs: true, short: v => MB.formatLatLng({ lat: v.lat, lng: v.lon }) },
+    { key: 'home', name: 'Home', short: v => (v.home ? 'Home ' + MB.formatDistance(MB.map.distance([v.lat, v.lon], [v.home.lat, v.home.lon])) : '') },
+    { key: 'msg', name: 'Message', gcs: true, short: v => (v.text ? (v.text.msg.length > 40 ? v.text.msg.slice(0, 39) + '…' : v.text.msg) : '') }
+  ];
+  const FIELD = Object.fromEntries(FIELDS.map(f => [f.key, f]));
+  const FIX_SHORT = ['No GPS', 'No fix', '2D', '3D', 'DGPS', 'RTK float', 'RTK', 'Static', 'PPP'];
+  // offered under "Show by default" (every field can be pinned on a vehicle of its own)
+  const DEFAULT_CHOICES = ['id', 'mode', 'alt', 'gs', 'batt', 'state'];
+  const SHOW_NAMES = { id: 'ID', mode: 'Mode', alt: 'Altitude', gs: 'Speed', batt: 'Battery', state: 'Armed' };
+  const winged = v => v.type === 1 || (v.type >= 19 && v.type <= 25);
+  const PIN_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l-1 7 3.500 3.500h-11L10 10z"/><path d="M12 13.500V21"/></svg>';
 
   /* ---------- module ---------- */
   MB.mavlink = {
-    kinds: KINDS, Parser, target, crc16, modeName,
+    kinds: KINDS, Parser, target, crc16, modeName, frameAt, newState, apply, heartbeatKind, applyHeartbeat, fields: FIELDS, msgs: MSGS,
     rt: { on: false, gen: 0, token: 0, ws: null, link: null, open: false, error: null, fails: 0, timer: null, parser: null, bytes: 0, lastData: 0, systems: new Set() },
     vehicles: new Map(), // sysid -> vehicle state, its marker, trail and home marker
     selected: null, popup: null, dirty: false,
@@ -216,6 +377,9 @@ window.MB = window.MB || {};
       s.on = !!s.on;
       if (s.labels === undefined) s.labels = true;
       if (s.trails === undefined) s.trails = true;
+      if (!Array.isArray(s.show)) s.show = ['id']; // the labels every vehicle shows (with Labels on)
+      s.show = s.show.filter(k => FIELD[k]);
+      if (!s.pins || typeof s.pins !== 'object' || Array.isArray(s.pins)) s.pins = {}; // system id -> the fields pinned beside that vehicle
       return s;
     },
     save() { MB.saveSettings(); if (MB.autosave) MB.autosave(); }, // the project records the connection and options in use
@@ -374,89 +538,40 @@ window.MB = window.MB || {};
     vehicle(sysid) {
       let v = this.vehicles.get(sysid);
       if (!v) {
-        v = { sysid, compid: null, type: null, autopilot: null, baseMode: 0, customMode: null, sysStatus: null, seen: 0, hb: 0,
-          lat: null, lon: null, alt: null, relAlt: null, posTime: 0, gpiTime: 0, heading: null, yaw: null, hud: null, cog: null, gs: null, airspeed: null, climb: null, battPct: null, sysPct: null, bsPct: null, volt: null, amp: null, mah: null, battLeft: null, fix: null, sats: null, eph: null, landed: 0, home: null, text: null,
-          trail: [], marker: null, line: null, homeMarker: null };
+        v = Object.assign(newState(sysid), { trail: [], marker: null, line: null, homeMarker: null });
         this.vehicles.set(sysid, v);
       }
       return v;
     },
 
     handle(m) {
-      const d = m.v, now = Date.now(), rt = this.rt;
+      const now = Date.now(), rt = this.rt;
       rt.systems.add(m.sysid);
       if (m.msgid === 0) {
-        const type = u8(d, 4), ap = u8(d, 5);
-        if (ap === 8 || type === 6 || type === 18 || type === 26 || type === 27 || type === 30) return; // ground stations, companions, gimbals, cameras...: not a vehicle
+        const kind = heartbeatKind(m);
+        if (!kind) return; // companions, gimbals, cameras...: not a vehicle or ground station
         const v = this.vehicle(m.sysid);
         if (v.compid == null) v.compid = m.compid;
         if (m.compid !== v.compid) return;
-        v.type = type; v.autopilot = ap; v.baseMode = u8(d, 6); v.customMode = u32(d, 0); v.sysStatus = u8(d, 7);
-        v.hb = v.seen = now; this.dirty = true;
+        const was = v.gcs;
+        applyHeartbeat(v, m, now);
+        if (v.gcs && !was) { v.trail = []; v.home = null; } // a ground station has no trail
+        this.dirty = true;
         return;
       }
-      // the rest from the vehicle's autopilot only (its heartbeat named it; until then, the usual component id 1)
+      // the rest from the vehicle's autopilot (or the ground station) only: its heartbeat named it; until then, the
+      // usual component id 1
       const known = this.vehicles.get(m.sysid);
       if (known ? (known.compid != null ? m.compid !== known.compid : m.compid !== 1) : m.compid !== 1) return;
       const v = known || this.vehicle(m.sysid);
       v.seen = now; this.dirty = true;
-      switch (m.msgid) {
-        case 33: { // GLOBAL_POSITION_INT: the autopilot's own estimate, preferred
-          const lat = i32(d, 4) / 1e7, lon = i32(d, 8) / 1e7;
-          if (!(lat === 0 && lon === 0) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) { this.moveTo(v, lat, lon, now); v.gpiTime = now; }
-          v.alt = i32(d, 12) / 1000; v.relAlt = i32(d, 16) / 1000;
-          const hdg = u16(d, 26); if (hdg !== 65535) v.heading = hdg / 100;
-          const vx = i16(d, 20) / 100, vy = i16(d, 22) / 100;
-          v.gs = Math.hypot(vx, vy); v.climb = -i16(d, 24) / 100;
-          break;
-        }
-        case 24: { // GPS_RAW_INT: the receiver's fix; its position only when the estimate above is not coming
-          v.fix = u8(d, 28); v.sats = u8(d, 29); const eph = u16(d, 20); v.eph = eph === 65535 ? null : eph / 100;
-          const lat = i32(d, 8) / 1e7, lon = i32(d, 12) / 1e7;
-          if (v.fix >= 2 && !(lat === 0 && lon === 0) && now - v.gpiTime > 3000) {
-            this.moveTo(v, lat, lon, now); v.alt = i32(d, 16) / 1000;
-            const vel = u16(d, 24), cog = u16(d, 26);
-            if (vel !== 65535) v.gs = vel / 100;
-            v.cog = cog === 65535 ? null : cog / 100;
-          }
-          if (v.sats === 255) v.sats = null;
-          break;
-        }
-        case 30: v.yaw = fin(deg(f32(d, 12))); break; // ATTITUDE
-        case 74: v.airspeed = fin(f32(d, 0)); v.climb = fin(f32(d, 12)); v.hud = i16(d, 16); break; // VFR_HUD
-        case 1: { // SYS_STATUS
-          const mv = u16(d, 14), ca = i16(d, 16), pct = i8(d, 30);
-          v.volt = mv === 65535 ? null : mv / 1000; v.amp = ca === -1 ? null : ca / 100; v.sysPct = pct < 0 ? null : pct;
-          v.battPct = v.sysPct != null ? v.sysPct : v.bsPct;
-          break;
-        }
-        case 147: { // BATTERY_STATUS: the main battery's use and time left
-          if (u8(d, 32) !== 0) break;
-          const mah = i32(d, 0), left = i32(d, 36), pct = i8(d, 35);
-          v.mah = mah < 0 ? null : mah; v.battLeft = left > 0 ? left : null;
-          v.bsPct = pct < 0 ? null : pct;
-          v.battPct = v.sysPct != null ? v.sysPct : v.bsPct; // SYS_STATUS's figure when it has one, else this one
-          break;
-        }
-        case 242: { // HOME_POSITION
-          const lat = i32(d, 0) / 1e7, lon = i32(d, 4) / 1e7;
-          if (!(lat === 0 && lon === 0) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) v.home = { lat, lon, alt: i32(d, 8) / 1000 };
-          break;
-        }
-        case 245: v.landed = u8(d, 1); break; // EXTENDED_SYS_STATE
-        case 253: { // STATUSTEXT
-          const bytes = new Uint8Array(d.buffer, 1, 50), end = bytes.indexOf(0);
-          const msg = new TextDecoder().decode(end < 0 ? bytes : bytes.subarray(0, end)), id = u16(d, 51);
-          if (id && u8(d, 53) > 0 && v.text && v.text.id === id) { v.text.msg = (v.text.msg + msg).trim(); v.text.time = now; } // the next piece of a long message
-          else if (msg.trim()) v.text = { msg: msg.trim(), sev: u8(d, 0), id, time: now };
-          break;
-        }
-        default: break;
-      }
+      const pos = apply(v, m, now);
+      if (pos) this.moveTo(v, pos.lat, pos.lon, now);
     },
 
     moveTo(v, lat, lon, now) {
       v.lat = lat; v.lon = lon; v.posTime = now;
+      if (v.gcs) return; // no trail
       const last = v.trail[v.trail.length - 1];
       if (!last || MB.map.distance(last, [lat, lon]) >= TRAIL_STEP) {
         v.trail.push([lat, lon]);
@@ -479,12 +594,30 @@ window.MB = window.MB || {};
     heading(v) { return [v.heading, v.yaw, v.hud, v.cog].find(h => h != null) || 0; },
     armed(v) { return !!(v.baseMode & 128); },
     alt(m) { return MB.state.units === 'metric' ? `${Math.round(m)} m` : `${Math.round(m * 3.28084)} ft`; },
-    name(v) { return `${TYPE_NAMES[v.type] || 'Vehicle'} ${v.sysid}`; },
+    speed(ms) { const u = MB.state.units; return u === 'metric' ? `${ms.toFixed(1)} m/s` : (u === 'imperial' ? `${(ms * 2.23694).toFixed(1)} mph` : `${(ms * 1.94384).toFixed(1)} kn`); },
+    vspeed(ms) { return Math.abs(ms) < 0.1 ? 'level' : `${ms > 0 ? '▲' : '▼'} ${MB.state.units === 'metric' ? Math.abs(ms).toFixed(1) + ' m/s' : Math.round(Math.abs(ms) * 196.85) + ' ft/min'}`; },
+    name(v) { return v.gcs ? `Ground station ${v.sysid}` : `${TYPE_NAMES[v.type] || 'Vehicle'} ${v.sysid}`; },
+    color(v) { return v.gcs ? COLORS.gcs : (this.armed(v) ? COLORS.armed : COLORS.disarmed); },
+
+    // Pins: the fields shown beside one vehicle, whatever "Show by default" says (remembered on this device).
+    pins(sysid) { return this.conf().pins[sysid] || []; },
+    pinned(sysid, key) { return this.pins(sysid).includes(key); },
+    setPin(sysid, key, on) {
+      const cf = this.conf(), list = this.pins(sysid).filter(k => k !== key);
+      if (on && FIELD[key]) list.push(key);
+      if (list.length) cf.pins[sysid] = list; else delete cf.pins[sysid];
+      MB.saveSettings();
+      const v = this.vehicles.get(sysid); if (v) v.label = null;
+      this.render();
+    },
+    // The fields a vehicle's label shows: those shown by default (with Labels on), then those pinned on it.
+    labelKeys(v) {
+      const cf = this.conf(), pins = this.pins(v.sysid);
+      return FIELDS.filter(f => (v.gcs ? f.gcs : true) && ((cf.labels && cf.show.includes(f.key)) || pins.includes(f.key))).map(f => f.key);
+    },
+    // Its label: a line per field that has a value.
     label(v) {
-      const bits = ['#' + v.sysid];
-      const mode = modeName(v); if (mode) bits.push(mode);
-      if (v.relAlt != null) bits.push(this.alt(v.relAlt));
-      return bits.join(' · ');
+      return this.labelKeys(v).map(k => { try { return FIELD[k].short(v); } catch (e) { return ''; } }).filter(Boolean);
     },
 
     render() {
@@ -494,9 +627,9 @@ window.MB = window.MB || {};
     },
 
     draw(v, now) {
-      const cf = this.conf(), shape = shapeOf(v.type), armed = this.armed(v);
-      const color = armed ? COLORS.armed : COLORS.disarmed, dim = (now - v.seen) / 1000 > DIM_AGE;
-      const dir = Math.round(this.heading(v)), label = this.label(v), ll = [v.lat, v.lon];
+      const cf = this.conf(), shape = v.gcs ? 'gcs' : shapeOf(v.type);
+      const color = this.color(v), dim = (now - v.seen) / 1000 > DIM_AGE;
+      const dir = v.gcs ? 0 : Math.round(this.heading(v)), label = this.label(v).join('\n'), ll = [v.lat, v.lon];
       if (!v.marker || v.shape !== shape) {
         if (v.marker) { MB.map.removeLayer(v.marker); v.marker = null; }
         const size = SIZE[shape];
@@ -515,13 +648,13 @@ window.MB = window.MB || {};
         v.marker.addTo(MB.map);
         v.shape = shape; v.color = v.label = v.dir = v.dim = v.sel = null;
       } else v.marker.setLatLng(ll);
-      // the trail and home, in the vehicle's color
-      if (cf.trails && v.trail.length > 1) {
+      // the trail and home, in the vehicle's color (a ground station has neither)
+      if (cf.trails && !v.gcs && v.trail.length > 1) {
         if (!v.line) { v.line = L.polyline(v.trail, { pane: 'mb-uav-trail', interactive: false, weight: 2.5, opacity: 0.85, color }).addTo(MB.map); v.trailDirty = false; }
         else if (v.trailDirty) { v.line.setLatLngs(v.trail); v.trailDirty = false; }
         if (v.line.options.color !== color) v.line.setStyle({ color });
       } else if (v.line) { MB.map.removeLayer(v.line); v.line = null; }
-      if (cf.trails && v.home) {
+      if (cf.trails && !v.gcs && v.home) {
         if (!v.homeMarker) v.homeMarker = L.marker([v.home.lat, v.home.lon], { pane: 'mb-uav-trail', interactive: false, keyboard: false, pmIgnore: true,
           icon: L.divIcon({ className: 'mb-uav-home', iconSize: [16, 16], iconAnchor: [8, 8], html: 'H' }) }).addTo(MB.map);
         else v.homeMarker.setLatLng([v.home.lat, v.home.lon]);
@@ -531,7 +664,10 @@ window.MB = window.MB || {};
       const rot = el.firstChild;
       if (v.dir !== dir) { rot.style.transform = dir ? `rotate(${dir}deg)` : ''; v.dir = dir; }
       if (v.color !== color) { rot.style.color = color; v.color = color; }
-      if (v.label !== label) { el.lastChild.textContent = label; v.label = label; }
+      if (v.label !== label) {
+        el.lastChild.innerHTML = label ? label.split('\n').map(t => `<span>${esc(t)}</span>`).join('') : '';
+        el.classList.toggle('lbl', !!label); v.label = label;
+      }
       if (v.dim !== dim) { el.classList.toggle('stale', dim); v.dim = dim; }
       const sel = v.sysid === this.selected;
       if (v.sel !== sel) { el.classList.toggle('sel', sel); v.sel = sel; }
@@ -545,6 +681,7 @@ window.MB = window.MB || {};
     applyPaneState() {
       const pane = MB.map.getPane('mb-uav');
       if (pane) pane.classList.toggle('labels', !!this.conf().labels);
+      this.vehicles.forEach(v => { v.label = null; });
     },
 
     /* ----- selection and popup ----- */
@@ -555,8 +692,13 @@ window.MB = window.MB || {};
       if (this.popup) { const old = this.popup; this.popup = null; MB.map.closePopup(old); }
       const node = document.createElement('div');
       node.className = 'mb-popup mb-uav-info';
-      node.innerHTML = '<div class="mb-popup-title"></div><table class="mb-datatable"></table>';
-      const popup = L.popup({ className: 'mb-data-popup', maxWidth: 330, offset: [0, -8], autoPanPadding: [20, 20] }).setLatLng([v.lat, v.lon]).setContent(node);
+      node.innerHTML = '<div class="mb-popup-title"></div><table class="mb-datatable mav-rows"></table>';
+      node.addEventListener('click', e => { // a pin: that value beside the vehicle on the map, or not
+        const b = e.target.closest('[data-pin]');
+        if (!b || this.selected == null) return;
+        this.setPin(this.selected, b.dataset.pin, !this.pinned(this.selected, b.dataset.pin));
+      });
+      const popup = L.popup({ className: 'mb-data-popup', maxWidth: 340, offset: [0, -8], autoPanPadding: [20, 20] }).setLatLng([v.lat, v.lon]).setContent(node);
       popup.on('remove', () => {
         if (this.popup !== popup) return;
         this.popup = null; this.selected = null;
@@ -567,39 +709,82 @@ window.MB = window.MB || {};
       popup.openOn(MB.map);
     },
 
+    // The details of a vehicle (or ground station) as rows: { key, name, html, pin } (pin: the row can be pinned;
+    // dflt: it is shown on every vehicle already, by "Show by default").
+    rows(v, now) {
+      const units = MB.state.units, cf = this.conf();
+      const spd = ms => units === 'metric' ? `${ms.toFixed(1)} m/s (${Math.round(ms * 3.6)} km/h)` : this.speed(ms);
+      const ago = s => s < 2 ? 'now' : (s < 120 ? s + ' s ago' : Math.round(s / 60) + ' min ago');
+      const rows = [];
+      const row = (key, val) => {
+        if (val === '' || val == null) return;
+        const f = FIELD[key];
+        if (v.gcs && !f.gcs) return;
+        rows.push({ key, name: f.name, html: val, pin: true, dflt: !!cf.labels && cf.show.includes(key) });
+      };
+      const armed = this.armed(v), mode = modeName(v);
+      rows.push({ key: 'type', name: v.gcs ? 'Type' : 'Vehicle', html: esc(v.gcs ? 'Ground station' : [TYPE_NAMES[v.type] || 'Not reported yet', AUTOPILOTS[v.autopilot]].filter(Boolean).join(' · ')) });
+      row('id', esc(String(v.sysid)) + (v.compid != null ? ` <span class="dim">· component ${v.compid}</span>` : ''));
+      row('mode', esc(mode));
+      row('state', v.hb ? `<i class="swatch" style="background:${armed ? COLORS.armed : COLORS.disarmed}"></i>${armed ? '<b>Armed</b>' : 'Disarmed'}` +
+        esc([LANDED[v.landed], SYS_STATUS[v.sysStatus] && v.sysStatus !== 4 && v.sysStatus !== 3 ? SYS_STATUS[v.sysStatus] : ''].filter(Boolean).map(s => ' · ' + s).join('')) : '');
+      row('alt', v.relAlt != null && !v.gcs ? `${this.alt(v.relAlt)} above home` + (v.alt != null ? ` <span class="dim">· ${this.alt(v.alt)} MSL</span>` : '') : (v.alt != null ? this.alt(v.alt) + ' MSL' : ''));
+      row('gs', v.gs == null ? '' : spd(v.gs));
+      row('as', v.airspeed == null || !winged(v) ? '' : spd(v.airspeed));
+      row('climb', v.climb == null ? '' : this.vspeed(v.climb));
+      row('hdg', `${Math.round(this.heading(v))}°`);
+      row('att', v.roll == null ? '' : `Roll ${Math.round(v.roll)}° · Pitch ${Math.round(v.pitch)}°`);
+      row('thr', v.thr == null ? '' : v.thr + '%');
+      const batt = [v.battPct != null ? `<b>${v.battPct}%</b>` : '', v.volt != null ? v.volt.toFixed(1) + ' V' : '', v.amp != null ? v.amp.toFixed(1) + ' A' : '',
+        v.mah != null ? v.mah.toLocaleString() + ' mAh used' : '', v.battLeft ? Math.round(v.battLeft / 60) + ' min left' : ''].filter(Boolean);
+      row('batt', batt.length ? (v.battPct != null && v.battPct <= 20 ? '<span class="warn">' + batt.join(' · ') + '</span>' : batt.join(' · ')) : '');
+      row('gps', v.fix == null ? '' : esc([FIX[v.fix] || 'Fix ' + v.fix, v.sats != null ? v.sats + ' satellites' : '', v.eph != null ? 'HDOP ' + v.eph.toFixed(1) : ''].filter(Boolean).join(' · ')));
+      row('link', esc([v.rssi != null ? `RC ${v.rssi}%` : '', v.radio && v.radio.rssi != null ? `telemetry ${v.radio.rssi}%` + (v.radio.rem != null ? ` (remote ${v.radio.rem}%)` : '') : ''].filter(Boolean).join(' · ')));
+      row('wp', v.wpSeq == null ? '' : esc(`#${v.wpSeq}` + (v.wpDist != null && v.wpDist > 0 ? ` · ${MB.formatDistance(v.wpDist)} to go` : '')));
+      row('wind', !v.wind || v.wind.speed < 0.1 ? '' : esc(`${spd(v.wind.speed)} from ${Math.round(v.wind.dir)}°`));
+      row('pos', esc(MB.formatLatLng({ lat: v.lat, lng: v.lon })));
+      if (v.home) row('home', esc(MB.formatDistance(MB.map.distance([v.lat, v.lon], [v.home.lat, v.home.lon]))) + ' away');
+      if (v.text && now - v.text.time < 600000) row('msg', `<span class="${v.text.sev <= 4 ? 'warn' : ''}">${esc(v.text.msg)}</span> <span class="dim">· ${esc(SEVERITY[v.text.sev] || '')}, ${ago(Math.round((now - v.text.time) / 1000))}</span>`);
+      const seen = Math.max(0, Math.round((now - v.seen) / 1000)), pos = Math.max(0, Math.round((now - v.posTime) / 1000));
+      rows.push({ key: 'seen', name: 'Seen', html: ago(seen) + (pos - seen > 3 ? ` <span class="dim">· position ${ago(pos)}</span>` : '') + ` · MAVLink` });
+      return rows;
+    },
+
     updatePopup() {
       const popup = this.popup;
       if (!popup) return;
       const v = this.vehicles.get(this.selected), node = popup.getContent();
       if (!v) return;
-      const now = Date.now(), units = MB.state.units;
-      const spd = ms => units === 'metric' ? `${ms.toFixed(1)} m/s (${Math.round(ms * 3.6)} km/h)` : (units === 'imperial' ? `${(ms * 2.23694).toFixed(1)} mph` : `${(ms * 1.94384).toFixed(1)} kn`);
-      const vs = ms => Math.abs(ms) < 0.1 ? 'level' : `${ms > 0 ? '▲' : '▼'} ${units === 'metric' ? Math.abs(ms).toFixed(1) + ' m/s' : Math.round(Math.abs(ms) * 196.85) + ' ft/min'}`;
-      const ago = s => s < 2 ? 'now' : (s < 120 ? s + ' s ago' : Math.round(s / 60) + ' min ago');
-      const rows = [];
-      const row = (k, val) => { if (val !== '' && val != null) rows.push(`<tr><td>${esc(k)}</td><td>${val}</td></tr>`); };
-      const armed = this.armed(v), mode = modeName(v);
-      row('Vehicle', esc([TYPE_NAMES[v.type] || 'Not reported yet', AUTOPILOTS[v.autopilot]].filter(Boolean).join(' · ')));
-      row('System ID', esc(String(v.sysid)) + (v.compid != null ? ` <span class="dim">· component ${v.compid}</span>` : ''));
-      row('Mode', esc(mode));
-      row('State', v.hb ? `<i class="swatch" style="background:${armed ? COLORS.armed : COLORS.disarmed}"></i>${armed ? '<b>Armed</b>' : 'Disarmed'}` +
-        esc([LANDED[v.landed], SYS_STATUS[v.sysStatus] && v.sysStatus !== 4 && v.sysStatus !== 3 ? SYS_STATUS[v.sysStatus] : ''].filter(Boolean).map(s => ' · ' + s).join('')) : '');
-      row('Altitude', v.relAlt != null ? `${this.alt(v.relAlt)} above home` + (v.alt != null ? ` <span class="dim">· ${this.alt(v.alt)} MSL</span>` : '') : (v.alt != null ? this.alt(v.alt) + ' MSL' : ''));
-      row('Ground speed', v.gs == null ? '' : spd(v.gs));
-      row('Airspeed', v.airspeed == null || !(v.type === 1 || (v.type >= 19 && v.type <= 25)) ? '' : spd(v.airspeed));
-      row('Climb', v.climb == null ? '' : vs(v.climb));
-      row('Heading', `${Math.round(this.heading(v))}°`);
-      const batt = [v.battPct != null ? `<b>${v.battPct}%</b>` : '', v.volt != null ? v.volt.toFixed(1) + ' V' : '', v.amp != null ? v.amp.toFixed(1) + ' A' : '',
-        v.mah != null ? v.mah.toLocaleString() + ' mAh used' : '', v.battLeft ? Math.round(v.battLeft / 60) + ' min left' : ''].filter(Boolean);
-      row('Battery', batt.length ? (v.battPct != null && v.battPct <= 20 ? '<span class="warn">' + batt.join(' · ') + '</span>' : batt.join(' · ')) : '');
-      row('GPS', v.fix == null ? '' : esc([FIX[v.fix] || 'Fix ' + v.fix, v.sats != null ? v.sats + ' satellites' : '', v.eph != null ? 'HDOP ' + v.eph.toFixed(1) : ''].filter(Boolean).join(' · ')));
-      row('Position', esc(MB.formatLatLng({ lat: v.lat, lng: v.lon })));
-      if (v.home) row('Home', esc(MB.formatDistance(MB.map.distance([v.lat, v.lon], [v.home.lat, v.home.lon]))) + ' away');
-      if (v.text && now - v.text.time < 600000) row('Message', `<span class="${v.text.sev <= 4 ? 'warn' : ''}">${esc(v.text.msg)}</span> <span class="dim">· ${esc(SEVERITY[v.text.sev] || '')}, ${ago(Math.round((now - v.text.time) / 1000))}</span>`);
-      const seen = Math.max(0, Math.round((now - v.seen) / 1000)), pos = Math.max(0, Math.round((now - v.posTime) / 1000));
-      row('Seen', ago(seen) + (pos - seen > 3 ? ` <span class="dim">· position ${ago(pos)}</span>` : '') + ` · MAVLink`);
-      node.querySelector('.mb-popup-title').innerHTML = `${esc(this.name(v))}${mode ? ` <span class="dim">· ${esc(mode)}</span>` : ''}${seen > DIM_AGE ? ' <span class="gone dim">· signal lost</span>' : ''}`;
-      node.querySelector('.mb-datatable').innerHTML = rows.join('');
+      const now = Date.now(), mode = modeName(v), seen = (now - v.seen) / 1000;
+      const title = `${esc(this.name(v))}${mode && !v.gcs ? ` <span class="dim">· ${esc(mode)}</span>` : ''}${seen > DIM_AGE ? ' <span class="gone dim">· signal lost</span>' : ''}`;
+      const head = node.querySelector('.mb-popup-title');
+      if (head._h !== title) { head.innerHTML = title; head._h = title; }
+      // rows patched in place: a pin under the pointer stays the same button while the values change
+      const tbl = node.querySelector('.mb-datatable'), have = new Map(Array.from(tbl.querySelectorAll('tr')).map(r => [r.dataset.f, r]));
+      let prev = null;
+      this.rows(v, now).forEach(r => {
+        let tr = have.get(r.key);
+        if (tr) have.delete(r.key);
+        else { tr = document.createElement('tr'); tr.dataset.f = r.key; tr.innerHTML = '<td></td><td></td><td class="mav-pin-cell"></td>'; }
+        if (tr._n !== r.name) { tr.cells[0].textContent = r.name; tr._n = r.name; }
+        if (tr._h !== r.html) { tr.cells[1].innerHTML = r.html; tr._h = r.html; }
+        const on = !!r.pin && this.pinned(v.sysid, r.key), pin = r.pin ? (on ? 'on' : '') + (r.dflt ? ' dflt' : '') : 'none';
+        if (tr._p !== pin) { // (the button kept, not drawn again: one taken out of the page while clicked lets the click reach the map, which closes the popup)
+          let b = tr.cells[2].firstElementChild;
+          if (!r.pin) { if (b) b.remove(); }
+          else {
+            if (!b) { tr.cells[2].innerHTML = `<button type="button" class="mav-pin" data-pin="${r.key}" aria-label="Pin ${esc(r.name)}">${PIN_ICON}</button>`; b = tr.cells[2].firstElementChild; }
+            b.className = 'mav-pin' + (on ? ' on' : '') + (r.dflt ? ' dflt' : '');
+            b.setAttribute('aria-pressed', String(on));
+            b.title = on ? 'Unpin from the map' : (r.dflt ? 'Shown on every vehicle (Show by default). Pin to keep it on this one' : 'Pin beside this vehicle on the map');
+          }
+          tr._p = pin;
+        }
+        const want = prev ? prev.nextElementSibling : tbl.firstElementChild;
+        if (tr !== want) tbl.insertBefore(tr, want);
+        prev = tr;
+      });
+      have.forEach(tr => tr.remove());
       popup.setLatLng([v.lat, v.lon]);
     },
 
@@ -613,11 +798,11 @@ window.MB = window.MB || {};
       const v = rt.parser ? rt.parser.valid : 0;
       if (!rt.bytes) return cf.kind === 'listen' ? `Listening on port ${t.port}. Waiting for MAVLink…` : `${cf.kind === 'udp' ? 'Sending to' : 'Connected to'} ${where(t)}. Waiting for MAVLink…`;
       if (!v) return rt.bytes > NOT_MAVLINK ? 'Data is arriving, but it is not MAVLink. Check the port.' : 'Receiving data…';
-      let n = 0; this.vehicles.forEach(x => { if (x.lat != null) n++; });
+      let n = 0, g = 0; this.vehicles.forEach(x => { if (x.lat != null) { if (x.gcs) g++; else n++; } });
       const age = Math.round((Date.now() - rt.lastData) / 1000);
       const live = age <= 3 ? 'live' : 'no data for ' + age + ' s';
-      if (!n) return `Receiving MAVLink (${rt.systems.size} system${rt.systems.size === 1 ? '' : 's'}), no vehicle position yet · ${live}`;
-      return `${n} vehicle${n === 1 ? '' : 's'} · ${live}`;
+      if (!n && !g) return `Receiving MAVLink (${rt.systems.size} system${rt.systems.size === 1 ? '' : 's'}), no vehicle position yet · ${live}`;
+      return [n ? `${n} vehicle${n === 1 ? '' : 's'}` : '', g ? `${g} ground station${g === 1 ? '' : 's'}` : '', live].filter(Boolean).join(' · ');
     },
 
     countText() {
@@ -629,9 +814,8 @@ window.MB = window.MB || {};
     listHtml() {
       const list = [...this.vehicles.values()].filter(v => v.lat != null).sort((a, b) => a.sysid - b.sysid);
       return list.map(v => {
-        const mode = modeName(v), armed = this.armed(v);
-        const bits = [mode, v.relAlt != null ? this.alt(v.relAlt) : '', v.battPct != null ? v.battPct + '%' : ''].filter(Boolean);
-        return `<button type="button" class="mav-veh${v.sysid === this.selected ? ' sel' : ''}" data-sys="${v.sysid}"><svg viewBox="0 0 32 32" aria-hidden="true" style="color:${armed ? COLORS.armed : COLORS.disarmed}">${SHAPES[shapeOf(v.type)]}</svg><span class="nm">${esc(this.name(v))}</span><span class="dim">${esc(bits.join(' · '))}</span></button>`;
+        const bits = v.gcs ? [] : [modeName(v), v.relAlt != null ? this.alt(v.relAlt) : '', v.battPct != null ? v.battPct + '%' : ''].filter(Boolean);
+        return `<button type="button" class="mav-veh${v.sysid === this.selected ? ' sel' : ''}" data-sys="${v.sysid}"><svg viewBox="0 0 32 32" aria-hidden="true" style="color:${this.color(v)}">${SHAPES[v.gcs ? 'gcs' : shapeOf(v.type)]}</svg><span class="nm">${esc(this.name(v))}</span><span class="dim">${esc(bits.join(' · '))}</span></button>`;
       }).join('');
     },
 
@@ -649,18 +833,18 @@ window.MB = window.MB || {};
     },
 
     matches(q, filter) {
-      const on = this.rt.on;
+      const on = this.rt.on || !!(MB.trackLogs && MB.trackLogs.list('mavlink').length);
       if (filter === 'on' && !on) return false;
       if (filter === 'off' && on) return false;
       if (!q) return true;
-      return 'mavlink live drones uav uas vehicles mavp2p ardupilot px4 telemetry websockify'.includes(q);
+      return 'mavlink live drones uav uas vehicles mavp2p ardupilot px4 telemetry websockify flight logs tlog dataflash ulog'.includes(q);
     },
 
     panelHtml(q, filter) {
       if (!this.matches(q, filter)) return '';
       const cf = this.conf(), rt = this.rt, k = KINDS[cf.kind], desk = !!window.gengisDesktop;
-      return `<details class="ds-source" id="mavSource" data-src="mavlink"${MB.data.sourceOpen('mavlink') ? ' open' : ''}><summary class="ds-source-head"><h3>MAVLink live drones</h3><span class="badge" id="mavCount">${this.countText()}</span></summary>
-        <p class="note">Drones and other MAVLink vehicles from a mavp2p server, as their telemetry arrives. GenGIS only reads: it never sends a vehicle a command. Informational only.</p>
+      return `<details class="ds-source" id="mavSource" data-src="mavlink"${MB.data.sourceOpen('mavlink') ? ' open' : ''}><summary class="ds-source-head"><h3>MAVLink</h3><span class="badge" id="mavCount">${this.countText()}</span></summary>
+        <p class="note">Live drones and ground stations from a mavp2p server, and flight logs. GenGIS only reads: it never sends a vehicle a command. Informational only.</p>
         <div class="section"><div class="data-item${rt.on ? ' on' : ''}" id="mavItem">
           <div class="ds-head"><label class="check"><input type="checkbox" data-act="mav-toggle"${rt.on ? ' checked' : ''}> <span class="dname"><a href="https://github.com/bluenviron/mavp2p" target="_blank" rel="noopener">mavp2p</a> / MAVLink server</span></label>${MB.data.infoIcon('Connects to a mavp2p (or mavlink-router) server and shows every vehicle it relays. mavp2p asks ArduPilot vehicles for their telemetry itself (unless started with --streamreq-disable).')}</div>
           <div class="row adsb-row"><label>Connect</label><select class="mav-kind">${KIND_KEYS.map(id => `<option value="${id}"${cf.kind === id ? ' selected' : ''}${KINDS[id].desktop && !desk ? ' disabled' : ''}>${esc(KINDS[id].name)}${KINDS[id].desktop && !desk ? ' (desktop app)' : ''}</option>`).join('')}</select></div>
@@ -671,8 +855,9 @@ window.MB = window.MB || {};
         <div class="section"><h3>Vehicles</h3><div class="data-item adsb-display">
           <div id="mavList" class="mav-list"></div>
           <div class="subsets"><label class="sub"><input type="checkbox" id="mavLabels"${cf.labels ? ' checked' : ''}>Labels</label><label class="sub"><input type="checkbox" id="mavTrails"${cf.trails ? ' checked' : ''}>Trails and home</label></div>
-          <div class="note">Cyan: disarmed; orange: armed. Faded: no telemetry for ${DIM_AGE} s. Click a vehicle for its details.</div>
-        </div></div></details>`;
+          <div class="subsets mav-show" id="mavShow"${cf.labels ? '' : ' hidden'}><span class="mav-show-lead">Show by default</span>${DEFAULT_CHOICES.map(k => `<label class="sub"><input type="checkbox" data-show="${k}"${cf.show.includes(k) ? ' checked' : ''}>${esc(SHOW_NAMES[k])}</label>`).join('')}</div>
+          <div class="note">Cyan: disarmed; orange: armed; violet: ground station. Faded: no telemetry for ${DIM_AGE} s. Click a vehicle for its details, and pin values to show them beside it.</div>
+        </div></div>${MB.mavLogs ? MB.mavLogs.panelHtml() : ''}</details>`;
     },
 
     bindPanel(panel) {
@@ -705,8 +890,17 @@ window.MB = window.MB || {};
         this.select(v.sysid);
       });
       const l = panel.querySelector('#mavLabels'), t = panel.querySelector('#mavTrails');
-      l.addEventListener('change', () => { this.conf().labels = l.checked; this.save(); this.applyPaneState(); });
+      const show = panel.querySelector('#mavShow');
+      l.addEventListener('change', () => { this.conf().labels = l.checked; show.hidden = !l.checked; this.save(); this.applyPaneState(); this.render(); });
       t.addEventListener('change', () => { this.conf().trails = t.checked; this.save(); this.render(); });
+      show.addEventListener('change', e => {
+        const k = e.target.dataset.show;
+        if (!k) return;
+        const cf = this.conf();
+        cf.show = DEFAULT_CHOICES.filter(x => x === k ? e.target.checked : cf.show.includes(x));
+        MB.saveSettings(); this.applyPaneState(); this.render();
+      });
+      if (MB.mavLogs) MB.mavLogs.bindPanel(panel);
       this.tickStatus();
     }
   };
