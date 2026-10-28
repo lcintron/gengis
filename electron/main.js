@@ -4,6 +4,7 @@
  *        npm start -- --lat=48.858 --lon=2.294 --zoom=16
  *        npm start -- --center=48.858,2.294 --poi=cafe
  *        npm start -- "gengis://open?q=Eiffel%20Tower"   (gengis:// links: electron/links.js)
+ *        npm start -- "C:\Maps\Trip.gengis"              (a project file, as double-clicking one does)
  */
 const { app, BrowserWindow, ipcMain, session, shell } = require('electron');
 const path = require('path');
@@ -12,14 +13,28 @@ const mavlink = require('./mavlink');
 const cloudauth = require('./cloudauth');
 const links = require('./links');
 
-// What a command line asks for: --name=value arguments, or a gengis:// link (electron/links.js).
-function parseArgs(argv) {
+// What a gengis:// link asks the page for: a place's parameters, or a project file or web address to open once the
+// user says yes (from: 'link'), or why it cannot (refused). Null when it is not a link.
+function linkQuery(link) {
+  const t = links.target(link);
+  if (!t) return null;
+  if (t.params) return t.params.file ? Object.assign({}, t.params, { from: 'link' }) : t.params;
+  if (t.file) return { file: t.file, from: 'link' };
+  if (t.url) return { url: t.url, from: 'link' };
+  return { refused: t.refused };
+}
+
+// What a command line asks for: --name=value arguments, a gengis:// link, or a project file the system opens with
+// GenGIS (double-clicked: no question asked).
+function parseArgs(argv, cwd) {
   const q = {};
   argv.slice(1).forEach(a => {
     const m = a.match(/^--?([a-zA-Z]+)=(.*)$/);
     if (m) q[m[1]] = m[2];
   });
-  return Object.assign(q, links.params(links.inArgs(argv.slice(1))) || {});
+  const file = links.fileInArgs(argv.slice(1));
+  if (file) Object.assign(q, { file: path.resolve(cwd || process.cwd(), file), from: 'os' });
+  return Object.assign(q, linkQuery(links.inArgs(argv.slice(1))) || {});
 }
 
 // One GenGIS at a time: a link (or a second start) goes to the window already open.
@@ -36,8 +51,9 @@ function sendLink(q) {
   if (wc.isLoading()) wc.once('did-finish-load', () => wc.send('app:link', q));
   else wc.send('app:link', q);
 }
-app.on('second-instance', (e, argv) => { bringForward(); sendLink(parseArgs(argv)); });
-app.on('open-url', (e, url) => { e.preventDefault(); sendLink(links.params(url)); }); // macOS
+app.on('second-instance', (e, argv, cwd) => { bringForward(); sendLink(parseArgs(argv, cwd)); });
+app.on('open-url', (e, url) => { e.preventDefault(); sendLink(linkQuery(url)); }); // macOS: a link
+app.on('open-file', (e, file) => { e.preventDefault(); sendLink({ file, from: 'os' }); }); // macOS: a project file opened with GenGIS
 
 // No system frame: the app's top bar is the window's title bar (css: html[data-titlebar]). On Windows and Linux the
 // system's own window buttons are drawn over the bar's right end, in the bar's colors (as VS Code does); macOS keeps

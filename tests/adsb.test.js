@@ -21,7 +21,7 @@ function makeAdsb() {
     const s = new Set();
     return { toggle: (c, on) => { if (on === undefined ? !s.has(c) : on) s.add(c); else s.delete(c); }, add: c => s.add(c), remove: c => s.delete(c), contains: c => s.has(c) };
   };
-  const node = () => ({ style: {}, classList: classes(), setAttribute() {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, innerHTML: '', textContent: '' });
+  const node = () => ({ style: { setProperty() {} }, classList: classes(), setAttribute() {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, innerHTML: '', textContent: '' });
   const layers = new Set();
   const map = {
     createPane: () => node(), getPane: () => node(), on() {}, getZoom: () => 9,
@@ -145,7 +145,10 @@ test('ADS-B: the position shown is the freshest by the data\'s own age, not the 
   app.rx([ac('a00001', 40.2, -73, { seen_pos: 6, seen: 0.2 })]); // the receiver last heard a position 6 s ago
   await app.poll('adsbfi'); await app.poll('adsblol'); await app.poll('dump1090');
   assert.equal(app.one('a00001').info.lat, 40.3);
-  assert.deepEqual(app.markersAt(), [[40.3, -73]]);
+  const [[lat, lon], ...more] = app.markersAt();
+  assert.equal(more.length, 0);
+  assert.equal(lat, 40.3, 'at the freshest report (heading east: carried on along its track, js/adsb.js place)');
+  assert.ok(Math.abs(lon + 73) < 0.01);
 });
 
 test('ADS-B: a receiver that gives no position age (the original dump1090) does not pass an old position off as new', async () => {

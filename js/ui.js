@@ -1401,7 +1401,7 @@ window.MB = window.MB || {};
       e.preventDefault();
       const files = Array.from(e.dataTransfer.files || []);
       const svgs = files.filter(f => MB.isSvgFile(f) || MB.isRasterFile(f));
-      const others = files.filter(f => /\.(geo)?json$/i.test(f.name));
+      const others = files.filter(f => /\.(geo)?json$/i.test(f.name) || MB.isProjectFileName(f.name));
       const maps = files.filter(f => MB.mapSources && MB.mapSources.isMapSourceFile(f)); // MOBAC / ATAK map sources
       if (maps.length) MB.mapSources.importFiles(maps);
       const mavLogs = files.filter(f => MB.mavLogs && MB.mavLogs.isLogFile(f)); // MAVLink flight logs (.bin, .tlog, .ulg)

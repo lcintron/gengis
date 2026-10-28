@@ -1,7 +1,8 @@
 /* GenGIS desktop app - project files on disk (main process).
  *
  * The page saves projects in its own database (IndexedDB); the desktop app also keeps each named project as a real
- * file: <projects folder>/<name>.gengis.json by default, or the file it was opened from or saved as. The folder is
+ * file: <projects folder>/<name>.gengis by default, or the file it was opened from or saved as (older projects keep
+ * their .gengis.json files: both are project files, read and written alike). The folder is
  * Documents/GenGIS unless the user picks another one; the choice and which file belongs to which project are kept in
  * desktop-files.json in the app's user-data folder.
  *
@@ -10,12 +11,16 @@
  * links resolved): a project file is written inside the projects folder, or to a file the user picked in a dialog
  * (Save as, Open) or that a project already had. Writes go to a temporary file that then replaces the real one, so
  * a crash never leaves half a project. */
-const { app, dialog, ipcMain, shell, BrowserWindow } = require('electron');
+const { app, dialog, ipcMain, shell, net, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const dns = require('dns').promises;
 const { pathToFileURL } = require('url');
 
-const EXT = '.gengis.json';
+const EXT = '.gengis'; // new project files; the system opens these with GenGIS (package.json: build.fileAssociations)
+const PROJECT = /\.gengis(\.json)?$/i; // a project file: .gengis, or the older .gengis.json
+const MAX_READ = 64 * 1024 * 1024; // bytes: a larger "project" is not one anybody made here (real ones: KB to a few MB)
+const FETCH_TIMEOUT = 30 * 1000;
 const RECENT_MAX = 12;
 const APP_PAGE = pathToFileURL(path.join(__dirname, '..', 'index.html')).href;
 let state = null; // { folder, projects: { id: file }, approved: [real path], recent: [file] }
@@ -76,7 +81,7 @@ function allowed(file) {
   if (typeof file !== 'string' || !path.isAbsolute(file)) return false;
   const r = real(file);
   if (isApproved(r)) return true; // picked by the user: whatever became of the projects folder
-  try { return insideFolder(r) && r.toLowerCase().endsWith(EXT); } catch (e) { return false; }
+  try { return insideFolder(r) && PROJECT.test(r); } catch (e) { return false; }
 }
 
 function approve(file) {
@@ -108,6 +113,48 @@ function newFileFor(id, name) {
     if (!fs.existsSync(file) || idIn(file) === id) return file;
   }
   throw new Error('no free file name');
+}
+
+const { isLocalHost } = require('./links');
+
+// A project's text from the web (no cookies sent). Redirects are checked one at a time: the user agreed to open from
+// one host, so none may lead to this computer or its network (unless the link itself named such an address).
+function fetchProject(start) {
+  return new Promise((resolve, reject) => {
+    const local = isLocalHost(start.hostname);
+    let u = start, hops = 0, done = false;
+    const fail = msg => { if (done) return; done = true; clearTimeout(timer); try { req.abort(); } catch (x) { /* gone */ } reject(new Error(msg)); };
+    const req = net.request({ url: start.toString(), redirect: 'manual', useSessionCookies: false, credentials: 'omit' });
+    const timer = setTimeout(() => fail('the server took too long'), FETCH_TIMEOUT);
+    const elsewhere = () => fail('the server sent GenGIS elsewhere (' + (u.host || u.protocol) + ')');
+    req.on('redirect', async (status, method, to) => {
+      try { u = new URL(to, u); } catch (err) { fail('the server sent a bad address'); return; }
+      if (++hops > 5) { fail('too many redirects'); return; }
+      if (!/^https?:$/.test(u.protocol) || (!local && isLocalHost(u.hostname))) { elsewhere(); return; }
+      // a name is judged by the addresses it stands for
+      if (!local) {
+        let addrs = [];
+        try { addrs = await dns.lookup(u.hostname.replace(/^\[|\]$/g, ''), { all: true }); } catch (err) { fail('the server sent GenGIS to an unknown host (' + u.host + ')'); return; }
+        if (addrs.some(a => isLocalHost(a.address))) { elsewhere(); return; }
+      }
+      if (!done) req.followRedirect();
+    });
+    req.on('response', res => {
+      if (res.statusCode < 200 || res.statusCode >= 300) { fail('the server answered ' + res.statusCode); return; }
+      if (+res.headers['content-length'] > MAX_READ) { fail('the file is too large'); return; }
+      const parts = [];
+      let size = 0;
+      res.on('data', chunk => { size += chunk.length; if (size > MAX_READ) fail('the file is too large'); else parts.push(chunk); });
+      res.on('end', () => {
+        if (done) return;
+        done = true; clearTimeout(timer);
+        resolve({ name: decodeURIComponent(path.posix.basename(u.pathname)) || u.hostname, text: Buffer.concat(parts).toString('utf8'), url: u.toString() });
+      });
+      res.on('error', err => fail(err.message));
+    });
+    req.on('error', err => fail(err.message));
+    req.end();
+  });
 }
 
 const projectJson = text => { const p = JSON.parse(text); if (!p || p.format !== 'gengis-project' || typeof p.id !== 'string') throw new Error('not a GenGIS project'); return p; };
@@ -177,7 +224,7 @@ function register() {
     const p = projectJson(json);
     if (p.id !== id) throw new Error('project id mismatch');
     const st = load();
-    const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Save project as', defaultPath: path.join(st.folder, fileNameFor(name)), filters: [{ name: 'GenGIS project', extensions: ['gengis.json', 'json'] }] });
+    const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Save project as', defaultPath: path.join(st.folder, fileNameFor(name)), filters: [{ name: 'GenGIS project', extensions: ['gengis'] }, { name: 'GenGIS project (older .gengis.json)', extensions: ['json'] }] });
     if (r.canceled || !r.filePath) return null;
     writeAtomic(r.filePath, json);
     approve(r.filePath);
@@ -189,10 +236,31 @@ function register() {
 
   // Open: the user picks a project or GeoJSON file (which makes it one the page may read and, once adopted, write).
   handle('files:open', async e => {
-    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Open project or GeoJSON', defaultPath: load().folder, properties: ['openFile'], filters: [{ name: 'Projects and GeoJSON', extensions: ['json', 'geojson'] }] });
+    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Open project or GeoJSON', defaultPath: load().folder, properties: ['openFile'], filters: [{ name: 'Projects and GeoJSON', extensions: ['gengis', 'json', 'geojson'] }] });
     if (r.canceled || !r.filePaths[0]) return null;
     approve(r.filePaths[0]);
     return readFile(r.filePaths[0]);
+  });
+
+  // A project file by its path: one the system opened with GenGIS (double-clicked), or one a gengis:// link named and
+  // the user agreed to open (the page asks first). Project files only (.gengis, .gengis.json), never through a link.
+  handle('files:open-path', (e, file) => {
+    if (typeof file !== 'string' || !path.isAbsolute(file) || !PROJECT.test(file)) throw new Error('not a GenGIS project file');
+    let st;
+    try { st = fs.statSync(file); } catch (err) { throw new Error('the file is not there'); }
+    if (!st.isFile() || isLink(file)) throw new Error('not a GenGIS project file');
+    if (st.size > MAX_READ) throw new Error('the file is too large');
+    approve(file);
+    return readFile(file);
+  });
+
+  // A project on the web (a gengis:// link the user agreed to open): its text. Read here, not by the page, so any web
+  // server's file can be opened, whatever it says about other sites reading it (CORS).
+  handle('files:fetch-url', (e, url) => {
+    let u;
+    try { u = new URL(String(url)); } catch (err) { throw new Error('not a web address'); }
+    if (!/^https?:$/.test(u.protocol)) throw new Error('not a web address');
+    return fetchProject(u);
   });
 
   // Open recent: a file opened or saved before.
