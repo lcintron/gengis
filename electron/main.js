@@ -3,21 +3,41 @@
  *        npm start -- --q="Eiffel Tower"
  *        npm start -- --lat=48.858 --lon=2.294 --zoom=16
  *        npm start -- --center=48.858,2.294 --poi=cafe
+ *        npm start -- "gengis://open?q=Eiffel%20Tower"   (gengis:// links: electron/links.js)
  */
 const { app, BrowserWindow, ipcMain, session, shell } = require('electron');
 const path = require('path');
 const files = require('./files');
 const mavlink = require('./mavlink');
 const cloudauth = require('./cloudauth');
+const links = require('./links');
 
-function parseArgs() {
+// What a command line asks for: --name=value arguments, or a gengis:// link (electron/links.js).
+function parseArgs(argv) {
   const q = {};
-  process.argv.slice(1).forEach(a => {
+  argv.slice(1).forEach(a => {
     const m = a.match(/^--?([a-zA-Z]+)=(.*)$/);
     if (m) q[m[1]] = m[2];
   });
-  return q;
+  return Object.assign(q, links.params(links.inArgs(argv.slice(1))) || {});
 }
+
+// One GenGIS at a time: a link (or a second start) goes to the window already open.
+const firstInstance = app.requestSingleInstanceLock();
+if (!firstInstance) app.quit();
+let mainWin = null, pendingLink = null; // (macOS can hand over a link before the window exists)
+const open = () => mainWin && !mainWin.isDestroyed();
+function bringForward() { if (!open()) return; if (mainWin.isMinimized()) mainWin.restore(); mainWin.focus(); }
+function sendLink(q) {
+  if (!q || !Object.keys(q).length) return;
+  if (!open()) { pendingLink = Object.assign(pendingLink || {}, q); return; }
+  bringForward();
+  const wc = mainWin.webContents;
+  if (wc.isLoading()) wc.once('did-finish-load', () => wc.send('app:link', q));
+  else wc.send('app:link', q);
+}
+app.on('second-instance', (e, argv) => { bringForward(); sendLink(parseArgs(argv)); });
+app.on('open-url', (e, url) => { e.preventDefault(); sendLink(links.params(url)); }); // macOS
 
 // No system frame: the app's top bar is the window's title bar (css: html[data-titlebar]). On Windows and Linux the
 // system's own window buttons are drawn over the bar's right end, in the bar's colors (as VS Code does); macOS keeps
@@ -33,7 +53,9 @@ function createWindow() {
     icon: path.join(__dirname, '..', 'icons', process.platform === 'win32' ? 'icon.ico' : 'icon-512.png'),
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js') }
   }, TITLE_BAR));
-  win.loadFile(path.join(__dirname, '..', 'index.html'), { query: parseArgs() });
+  win.loadFile(path.join(__dirname, '..', 'index.html'), { query: Object.assign(parseArgs(process.argv), pendingLink || {}) });
+  pendingLink = null;
+  mainWin = win;
   // The window's own full screen (F11, the View menu) is not the page's (no :fullscreen, no fullscreenchange): the
   // page is told, so presenter mode follows it, and may ask to leave it.
   // (by the event, not isFullScreen(): on Windows that still says the old state while these fire)
@@ -68,6 +90,7 @@ const offFeatures = app.commandLine.getSwitchValue('disable-features'); // one l
 app.commandLine.appendSwitch('disable-features', (offFeatures ? offFeatures + ',' : '') + 'CalculateNativeWinOcclusion');
 
 app.whenReady().then(() => {
+  if (!firstInstance) return;
   files.register(); // project files on disk: electron/files.js
   mavlink.register(); // live drones: receive-only MAVLink links, electron/mavlink.js
   cloudauth.register(); // cloud sync: sign-in and the cloud's requests (OneDrive, Google Drive), electron/cloudauth.js

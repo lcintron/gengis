@@ -20,6 +20,8 @@ if (location.protocol === 'file:' && /\/index\.html$/i.test(location.pathname)) 
   // the window's own full screen (F11, the View menu), which the page cannot see otherwise
   onFullScreen: fn => ipcRenderer.on('app:fullscreen', (e, on) => fn(!!on)),
   leaveFullScreen: () => ipcRenderer.send('app:leave-fullscreen'),
+  // a gengis:// link opened while the app runs (electron/links.js): its parameters, as the address would carry them
+  onLink: fn => ipcRenderer.on('app:link', (e, q) => fn(q && typeof q === 'object' ? q : {})),
   // cloud sync: sign-in runs in the user's browser and the refresh tokens stay in the main process (cloudauth.js),
   // which also makes the cloud requests (to the cloud's own hosts only)
   cloud: {
