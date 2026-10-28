@@ -442,7 +442,8 @@ window.MB = window.MB || {};
 
     async next() {
       const file = this.queue.shift();
-      if (!file) { this.job = null; this.tick(); return; }
+      if (!file) { this.job = null; if (MB.busy) MB.busy.clear('mavlogs'); this.tick(); return; }
+      if (MB.busy) MB.busy.set('mavlogs', 'Flight log');
       const job = this.job = { name: file.name, frac: 0, cancelled: false };
       this.tick();
       try {

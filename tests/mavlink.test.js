@@ -466,9 +466,11 @@ test('tracks: points without a position are dropped, speed and climb worked out,
 
 test('tracks: the same kind of flight mode has the same color in MAVLink and Betaflight logs', () => {
   const MB = load(['js/tracklogs.js']), c = MB.trackLogs.modeColor;
-  [['RTL', 'GPS Rescue'], ['Return', 'Smart RTL'], ['Land', 'Failsafe'], ['Loiter', 'Position hold'], ['Hold', 'Altitude hold'],
+  [['RTL', 'GPS Rescue'], ['Return', 'Smart RTL'], ['Land', 'Failsafe'], ['Loiter', 'Position hold'], ['PosHold', 'Hold'],
+    ['AltHold', 'Altitude hold'], ['ALTCTL', 'Altitude hold'],
     ['Stabilize', 'Angle'], ['Acro', 'Horizon'], ['Auto', 'Autopilot'], ['Mission', 'Auto']].forEach(([a, b]) => assert.equal(c(a), c(b), a + ' / ' + b));
   assert.notEqual(c('RTL'), c('Land'));
   assert.notEqual(c('Auto'), c('Loiter'));
+  assert.notEqual(c('AltHold'), c('PosHold'), 'holding height is not holding position');
   assert.equal(c('Some new mode'), c('Some new mode'), 'others: a color of their own, kept');
 });

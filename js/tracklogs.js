@@ -60,8 +60,9 @@ window.MB = window.MB || {};
   // flight modes by what they do, the same color in every log; others take the next free color
   const MODE_KIND = [
     [/rtl|return|rth|home|rescue/i, '#e8443a'], [/land|failsafe/i, '#ff8a3d'], [/auto|mission|takeoff|waypoint/i, '#8fd14f'],
+    [/alt|depth|cruise|fbwb/i, '#2fd6a0'], // (before hold: AltHold and "Altitude hold" hold height, not position)
     [/loiter|hold|poshold|position|circle|orbit|brake/i, '#4f8cff'], [/guided|offboard|follow/i, '#c792ff'],
-    [/alt|depth|cruise|fbwb/i, '#2fd6a0'], [/stabil|manual|acro|horizon|angle|fbwa|training|sport/i, '#d9dee5']
+    [/stabil|manual|acro|horizon|angle|fbwa|training|sport/i, '#d9dee5']
   ];
   const MODE_SPARE = ['#f7c12b', '#ff5c8a', '#3fd0f0', '#c9a26b', '#a8b4ff', '#9be15d', '#ff9ecf'];
   const KNOWN = {
