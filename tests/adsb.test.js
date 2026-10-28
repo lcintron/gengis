@@ -56,7 +56,8 @@ function makeAdsb() {
     ICON: { search: '' }, data: { sourceOpen: () => false, infoIcon: () => '' }
   };
   const ctx = {
-    window: { MB }, MB, L, Date: FakeDate, fetch, AbortController, URL, console,
+    window: { MB, gengisDesktop: {} }, MB, // (the desktop app: the community networks are offered there only)
+    L, Date: FakeDate, fetch, AbortController, URL, console,
     setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {}, requestAnimationFrame: () => 0,
     document: { hidden: false, addEventListener() {}, createElement: node, getElementById: () => null, querySelector: () => null },
     navigator: { onLine: true }, location: { protocol: 'http:' }
