@@ -292,8 +292,8 @@ window.MB = window.MB || {};
       SOURCES.forEach(s => { this.rt[s.id] = { on: false, timer: null, gen: 0, busy: false, error: null, fails: 0, total: 0, withPos: 0, lastOk: 0, resolved: null, note: '', clock: { now: null, at: 0 } }; });
       this.buildLegend();
       // A zoom re-places every icon at once, from where it is now: no glide until the zoom is over
-      MB.map.on('zoomstart', () => { this.zooming = true; pane.classList.remove('smooth'); this.place(Date.now()); });
-      MB.map.on('zoomend', () => { this.zooming = false; this.applyPaneState(); this.netZoom(); this.place(Date.now()); });
+      MB.map.on('zoomstart', () => { this.zooming = true; pane.classList.remove('smooth'); this.place(Date.now(), true); });
+      MB.map.on('zoomend', () => { this.zooming = false; this.applyPaneState(); this.netZoom(); this.place(Date.now(), true); });
       MB.map.on('moveend', () => { if (this.anyOn()) this.render(); }); // aircraft are only drawn in and near the view
       MB.on('units', () => this.updatePopup());
       document.addEventListener('visibilitychange', () => { if (!document.hidden) SOURCES.forEach(s => { if (this.rt[s.id].on) this.schedule(s, 0); }); });
@@ -555,7 +555,7 @@ window.MB = window.MB || {};
           this.select(e.id);
         });
         e.marker.addTo(MB.map);
-        e.kind = a.kind; e.color = e.label = e.track = e.dim = e.sel = null;
+        e.kind = a.kind; e.color = e.label = e.track = e.dim = e.sel = e.placed = null;
       }
       const el = e.marker.getElement();
       if (!el) return;
@@ -571,22 +571,25 @@ window.MB = window.MB || {};
     // Where an aircraft's icon goes at time t: carried on from its report, never past when its next report is due.
     at(e, t) { const a = e.info || e.cur; return ahead(a, Math.min(t, e.until || 0)) || [a.lat, a.lon]; },
 
-    // Every icon where its aircraft is now, then gliding on to where it will be when its next report is due. The first
-    // move is made with the pane's glide off and applied (a style read) before the glide is switched on for the second.
-    // The glide's length is a variable the pane's "smooth" rule reads, not the icon's own transition: that would glide
-    // on every move, a zoom's re-placing included.
-    place(now) {
-      const pane = MB.map.getPane('mb-adsb'), drawn = [];
-      this.aircraft.forEach(e => { if (e.marker && e.info) drawn.push(e); });
-      pane.classList.remove('smooth');
-      drawn.forEach(e => e.marker.setLatLng(this.at(e, now)));
-      if (this.zooming || !drawn.length) return;
+    // Each icon with a new report (all of them after a zoom) where its aircraft is now, then gliding on to where it will
+    // be when its next report is due; the others glide on undisturbed. The first move is made with the icon's glide off
+    // and applied (a style read) before its glide is switched on for the second. The glide is the pane's "smooth" rule
+    // for icons marked "glide", its length a variable: not the icon's own transition, which would glide on every move,
+    // a zoom's re-placing included.
+    place(now, all) {
+      const pane = MB.map.getPane('mb-adsb'), todo = [];
+      this.aircraft.forEach(e => { if (e.marker && e.info && (all || e.placed !== e.until)) todo.push(e); });
+      if (!todo.length) return;
+      todo.forEach(e => { const el = e.marker.getElement(); if (el) el.classList.remove('glide'); e.marker.setLatLng(this.at(e, now)); });
+      if (this.zooming) return;
       void pane.offsetWidth;
       pane.classList.add('smooth');
-      drawn.forEach(e => {
+      todo.forEach(e => {
+        e.placed = e.until;
         const el = e.marker.getElement();
         if (!el || e.until <= now || !ahead(e.info, now)) return;
         el.style.setProperty('--glide', ((e.until - now) / 1000).toFixed(2) + 's');
+        el.classList.add('glide');
         e.marker.setLatLng(this.at(e, e.until));
       });
     },
