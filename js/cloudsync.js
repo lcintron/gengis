@@ -585,6 +585,7 @@ window.MB = window.MB || {};
           t = { source: 'web', access: r.access, expiresIn: +r.expiresIn || 3600 };
         }
       } catch (e) {
+        if (e.code === 'superseded') return; // another sign-in took its place (the last one started speaks)
         C.lastError = prov.explain(e.code, e.message);
         MB.toast(C.lastError, 9000);
         MB.emit('cloud-return', C);

@@ -153,7 +153,7 @@ Each provider stays hidden until GenGIS has its app registration. The consent sc
 1. [entra.microsoft.com](https://entra.microsoft.com) → App registrations → New registration: name **GenGIS**, supported accounts **any Entra ID tenant and personal Microsoft accounts**.
 2. Authentication → Add a platform:
    - **Single-page application**, redirect URIs `https://g2.luiscintron.com/` and `http://localhost:8080/`. No client secret.
-   - **Mobile and desktop applications**, redirect URI `http://localhost`, for the desktop app. Microsoft accepts any port with it.
+   - **Mobile and desktop applications**, redirect URI `http://127.0.0.1`, for the desktop app. Microsoft accepts any port with it. Not `http://localhost`: Microsoft ignores the port of a localhost address, so the single-page `http://localhost:8080/` entry would claim the desktop app's sign-in. (`http://localhost` can stay registered too, for desktop versions before 0.17.4.)
 3. API permissions → Microsoft Graph, delegated: `Files.ReadWrite.AppFolder`, `offline_access`, `openid`, `profile`, `email`. Users consent for themselves.
 4. Branding & properties:
    - logo `branding/store/gengis-logo-215.png`;

@@ -7,7 +7,8 @@
  *   cloud-accounts.json; where encryption is not available it is kept in memory only (sign in again next time)
  * - the page only ever receives short-lived access tokens, and only the app's own page may ask (files.trusted)
  * Microsoft: GenGIS's one Entra registration (the web app's), with the "Mobile and desktop applications" platform and
- * the redirect URI http://localhost. Google: a "Desktop app" OAuth client (its id and secret are not confidential
+ * the redirect URI http://127.0.0.1 (not localhost: Microsoft ignores a localhost address's port, so the web app's
+ * http://localhost:<port> single-page entries would claim the sign-in, and its code could not be redeemed here). Google: a "Desktop app" OAuth client (its id and secret are not confidential
  * for installed apps; Google's guidance). A provider without its client id is not offered. */
 const { app, ipcMain, shell, safeStorage } = require('electron');
 const crypto = require('crypto');
@@ -27,7 +28,7 @@ const PROVIDERS = {
     authorize: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
     token: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
     scopes: ['openid', 'profile', 'email', 'offline_access', 'Files.ReadWrite.AppFolder'],
-    redirect: port => 'http://localhost:' + port,
+    redirect: port => 'http://127.0.0.1:' + port,
     extra: hint => Object.assign({ prompt: 'select_account' }, hint ? { login_hint: hint } : {})
   },
   gdrive: {
@@ -40,7 +41,7 @@ const PROVIDERS = {
     revoke: 'https://oauth2.googleapis.com/revoke',
     scopes: ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/drive.file'],
     redirect: port => 'http://127.0.0.1:' + port,
-    extra: hint => Object.assign({ access_type: 'offline', prompt: 'consent' }, hint ? { login_hint: hint } : {})
+    extra: hint => Object.assign({ access_type: 'offline', prompt: 'select_account consent' }, hint ? { login_hint: hint } : {})
   }
 };
 const SIGN_IN_TIMEOUT = 5 * 60 * 1000;
@@ -104,24 +105,29 @@ function accountOf(provider, tok) {
 }
 
 /* ---------- signing in: the browser and a one-shot loopback listener ---------- */
-let signingIn = null; // a sign-in under way (one at a time)
+let signingIn = null; // the sign-in under way: { cancel } (one at a time; a new one replaces it)
 function listen(server, host) {
   return new Promise((res, rej) => { server.once('error', rej); server.listen(0, host, () => res(server.address().port)); });
 }
 async function signIn(provider, hint) {
   const p = PROVIDERS[provider];
   if (!p || !p.clientId) throw Object.assign(new Error('This provider is not set up in this app'), { code: 'unavailable' });
-  if (signingIn) throw Object.assign(new Error('A sign-in is already in progress in your browser'), { code: 'busy' });
-  signingIn = true; // (at once: a second click must not start another)
-  try { return await browserSignIn(p, provider, hint); } finally { signingIn = null; }
+  // A sign-in left behind (its browser tab closed, the wrong account picked) would hold the next one off until it
+  // timed out: the new one replaces it, and the old one ends as 'superseded' (the page shows nothing for that).
+  if (signingIn) signingIn.cancel();
+  const run = {};
+  signingIn = run;
+  try { return await browserSignIn(p, provider, hint, run); } finally { if (signingIn === run) signingIn = null; }
 }
-async function browserSignIn(p, provider, hint) {
+async function browserSignIn(p, provider, hint, run) {
   const verifier = b64url(crypto.randomBytes(48)), state = b64url(crypto.randomBytes(24));
   const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
   const server = http.createServer();
   let finish;
   const answered = new Promise((res, rej) => { finish = { res, rej }; });
   answered.catch(() => {}); // (awaited below; a timeout may come first)
+  const superseded = () => Object.assign(new Error('Replaced by a new sign-in'), { code: 'superseded' });
+  run.cancel = () => { run.dead = true; finish.rej(superseded()); }; // (once its code is in, the token call ends it below)
   server.on('request', (req, resp) => {
     const u = new URL(req.url, 'http://127.0.0.1');
     if (u.pathname !== '/' || u.searchParams.get('state') !== state) { resp.writeHead(404); resp.end(); return; } // not the answer: ignored
@@ -132,9 +138,6 @@ async function browserSignIn(p, provider, hint) {
     else finish.res(code);
   });
   const port = await listen(server, '127.0.0.1');
-  const v6 = http.createServer((req, resp) => server.emit('request', req, resp)); // "localhost" may be ::1 in the browser
-  v6.on('error', () => {});
-  try { v6.listen(port, '::1'); } catch (e) { /* no IPv6 */ }
   const redirect = p.redirect(port);
   const q = new URLSearchParams(Object.assign({
     client_id: p.clientId, response_type: 'code', redirect_uri: redirect, scope: p.scopes.join(' '),
@@ -145,12 +148,13 @@ async function browserSignIn(p, provider, hint) {
     await env.open(p.authorize + '?' + q.toString());
     const code = await answered;
     const tok = await tokenRequest(p, { grant_type: 'authorization_code', code, redirect_uri: redirect, code_verifier: verifier, client_id: p.clientId, scope: p.scopes.join(' ') });
+    if (run.dead) throw superseded(); // the last sign-in started is the one that counts
     const account = accountOf(provider, tok);
     const kept = tok.refresh_token ? saveRefresh(account.id, provider, tok.refresh_token) : false;
     return { account, accessToken: tok.access_token, expiresIn: +tok.expires_in || 3600, kept };
   } finally {
     clearTimeout(timer);
-    server.close(); try { v6.close(); } catch (e) { /* closed */ }
+    server.close();
   }
 }
 
