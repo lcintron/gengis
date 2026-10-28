@@ -291,7 +291,7 @@ function makeApp(o) {
     list_: null
   };
   const MB = {
-    PROJECT_EXT: '.gengis.json',
+    PROJECT_EXT: '.gengis', CLOUD_EXT: '.gengis.json', // (as js/project.js: cloud files keep the older name)
     state, projects: P,
     uid: () => 'p' + crypto.randomBytes(5).toString('hex'),
     isProject: p => !!p && typeof p === 'object' && p.format === 'gengis' && Array.isArray(p.features),

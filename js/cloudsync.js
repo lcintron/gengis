@@ -124,7 +124,7 @@ window.MB = window.MB || {};
     let base = String(name || 'map').replace(/[\\/:*?"<>|#%\u0000-\u001f]+/g, '_').replace(/[. ]+$/, '').trim() || 'map';
     if (base.length > 120) base = base.slice(0, 120).trim();
     if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(base)) base = '_' + base; // names Windows (and so OneDrive) reserve
-    return base + (n > 1 ? ' (' + n + ')' : '') + MB.PROJECT_EXT;
+    return base + (n > 1 ? ' (' + n + ')' : '') + MB.CLOUD_EXT;
   }
   C.fileName = fileName;
   const isDraftRec = rec => /^\s*untitled( map)?\s*$/i.test(rec.name || (rec.data && rec.data.name) || '') && !rec.fileBacked;

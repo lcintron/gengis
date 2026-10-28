@@ -16,7 +16,9 @@ window.MB = window.MB || {};
   const SCHEMA = 2;
   MB.PROJECT_FORMAT = FORMAT;
   MB.PROJECT_SCHEMA = SCHEMA;
-  MB.PROJECT_EXT = '.gengis.json';
+  MB.PROJECT_EXT = '.gengis';      // a project saved on the computer (the desktop app opens these when double-clicked)
+  MB.CLOUD_EXT = '.gengis.json';   // a project's file in OneDrive or Google Drive (as it always was)
+  MB.isProjectFileName = name => /\.gengis(\.json)?$/i.test(String(name || '')); // .gengis, or the older .gengis.json
 
   const clone = v => MB.deepClone(v);
 
