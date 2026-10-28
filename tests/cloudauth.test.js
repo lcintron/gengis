@@ -87,7 +87,7 @@ test('OneDrive: the browser sign-in comes back to the loopback address; PKCE and
   assert.equal(q.get('client_id'), '7beaabe0-cfb2-406e-b687-7eace44b2edb', 'the one registration');
   assert.equal(q.get('code_challenge_method'), 'S256');
   assert.ok(q.get('state').length >= 24);
-  assert.match(q.get('redirect_uri'), /^http:\/\/localhost:\d+$/);
+  assert.match(q.get('redirect_uri'), /^http:\/\/127\.0\.0\.1:\d+$/, 'not localhost: the web app\'s localhost entries would claim it');
   assert.equal(q.get('login_hint'), 'pat@example.com');
   assert.match(q.get('scope'), /offline_access/);
   assert.match(q.get('scope'), /Files\.ReadWrite\.AppFolder/);

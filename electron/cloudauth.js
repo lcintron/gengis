@@ -7,7 +7,8 @@
  *   cloud-accounts.json; where encryption is not available it is kept in memory only (sign in again next time)
  * - the page only ever receives short-lived access tokens, and only the app's own page may ask (files.trusted)
  * Microsoft: GenGIS's one Entra registration (the web app's), with the "Mobile and desktop applications" platform and
- * the redirect URI http://localhost. Google: a "Desktop app" OAuth client (its id and secret are not confidential
+ * the redirect URI http://127.0.0.1 (not localhost: Microsoft ignores a localhost address's port, so the web app's
+ * http://localhost:<port> single-page entries would claim the sign-in, and its code could not be redeemed here). Google: a "Desktop app" OAuth client (its id and secret are not confidential
  * for installed apps; Google's guidance). A provider without its client id is not offered. */
 const { app, ipcMain, shell, safeStorage } = require('electron');
 const crypto = require('crypto');
@@ -27,7 +28,7 @@ const PROVIDERS = {
     authorize: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
     token: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
     scopes: ['openid', 'profile', 'email', 'offline_access', 'Files.ReadWrite.AppFolder'],
-    redirect: port => 'http://localhost:' + port,
+    redirect: port => 'http://127.0.0.1:' + port,
     extra: hint => Object.assign({ prompt: 'select_account' }, hint ? { login_hint: hint } : {})
   },
   gdrive: {
