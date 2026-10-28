@@ -87,3 +87,10 @@ test('a data-act a menu or button uses has a handler, and a handler has a button
   const unhandled = [...acts].filter(a => !handled.has(a) && !own.has(a));
   assert.deepEqual(unhandled, [], 'buttons whose action nothing handles');
 });
+
+test('the community ADS-B networks are offered in the desktop app only (they answer no web page)', () => {
+  assert.match(js['adsb.js'], /const usable = src => src\.kind !== 'area' \|\| !!window\.gengisDesktop;/);
+  assert.match(js['adsb.js'], /if \(!usable\(src\)\) \{[^}]*return; \}/, 'a web page does not start one');
+  assert.match(js['adsb.js'], /data-act="adsb-toggle"\$\{rt\.on \? ' checked' : ''\}\$\{off\}/, 'its switch is disabled there');
+  assert.match(css, /\.data-item\.unavailable /);
+});

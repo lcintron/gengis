@@ -790,6 +790,7 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 /* ---------- FAA / data layers panel ---------- */
 .data-item { position: relative; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
 .data-item.on { border-color: rgba(29,179,169,.6); }
+.data-item.unavailable :is(.check, .adsb-row) { opacity: .5; } /* a source this app cannot use (its status says why) */
 .data-item .dname { font-weight: 500; }
 .data-item .icon-btn.mini { position: absolute; top: 6px; right: 6px; }
 .data-item .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 4px 0 2px 23px; font-size: 11px; color: var(--text-dim); }
