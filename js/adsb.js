@@ -41,10 +41,11 @@ window.MB = window.MB || {};
       desc: 'Open data for personal use. Sustains a refresh every 2 s.' }
   ];
 
-  // The community networks answer no web page (no CORS headers): offered in the desktop app only. A project that has one
-  // on keeps it on (a desktop app opening it shows it); a web page just does not start it.
-  const usable = src => src.kind !== 'area' || !!window.gengisDesktop;
-  const ONLY_DESKTOP = src => src.name + ' works in the GenGIS desktop app only: it does not accept requests from web pages.';
+  // The community networks answer no web page (no CORS headers): offered in the desktop and Android apps only (the
+  // Android app reads them with Android's own HTTP: MB.getText). A project that has one on keeps it on (an app opening
+  // it shows it); a web page just does not start it.
+  const usable = src => src.kind !== 'area' || !!window.gengisDesktop || !!(MB.native && MB.native.app);
+  const ONLY_DESKTOP = src => src.name + ' works in the GenGIS desktop and Android apps only: it does not accept requests from web pages.';
 
   /* ---------- aircraft types: one silhouette each, drawn pointing north in a 32 x 32 box ---------- */
   const TYPES = {
