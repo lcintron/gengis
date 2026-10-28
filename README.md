@@ -49,7 +49,7 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 
 **Projects and sharing**
 - Projects save automatically as you work, with recent projects and earlier copies to restore.
-- Save and open `.gengis.json` files; import and export GeoJSON.
+- Save and open `.gengis` project files (older `.gengis.json` files open too); import and export GeoJSON. In the desktop app, double-click a `.gengis` file to open it.
 - Export the map as PNG, JPEG or PDF, at up to 4× resolution.
 - **Cloud sync** to your own OneDrive (personal or Microsoft 365) or Google Drive. Files go straight between your device and your account, with no GenGIS server in between. A project edited in two places is never overwritten: you choose which version to keep. See the [privacy policy](https://g2.luiscintron.com/privacy.html).
 - Presenter mode, and casting to a TV.
@@ -97,7 +97,15 @@ For example: `mavp2p serial:/dev/ttyUSB0:57600 tcps:0.0.0.0:5760`.
 
 Open the web app at a place: `?q=Eiffel+Tower`, `?lat=48.858&lon=2.294&zoom=16`, `?center=48.858,2.294` or `?poi=cafe`.
 
-The installed desktop app opens `gengis://open?…` links with the same parameters, in the window already open. `gengis://open?file=<path>` opens a project file the app has opened or saved before.
+The installed desktop app opens `gengis://` links in the window already open:
+
+| Link | Opens |
+| --- | --- |
+| `gengis://open?q=Eiffel%20Tower`, `gengis://open?center=48.858,2.294&zoom=16` | A place (the same parameters as the web app) |
+| `gengis://C:/Maps/Trip.gengis`, `gengis:///home/me/Trip.gengis` | A project file on your computer (`.gengis` or `.gengis.json`) |
+| `gengis://https://example.com/Trip.gengis` | A project on the web |
+
+GenGIS asks before opening a file or web project from a link. A project opened from the web is kept in your projects folder, like any other. Links can't name network shares (`\\server\…`).
 
 ## Data sources and fair use
 

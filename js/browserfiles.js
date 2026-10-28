@@ -19,7 +19,7 @@ window.MB = window.MB || {};
 
   const DELAY = 2000;
   const RW = { mode: 'readwrite' };
-  const TYPES = [{ description: 'GenGIS project', accept: { 'application/json': ['.json'] } }];
+  const TYPES = [{ description: 'GenGIS project', accept: { 'application/json': ['.gengis', '.json'] } }]; // (.json: older .gengis.json files)
   let entry = null;          // { id, handle, name, lastWritten } of the open project
   let timer = null, lastText = null, lastId = null, failed = false;
   let gen = 0;               // bumped when the open project's link changes: an older lookup then gives way

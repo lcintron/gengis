@@ -95,6 +95,28 @@ window.MB = window.MB || {};
   F.open = () => openFrom(() => D.open());
   F.openRecent = file => openFrom(() => D.read(file));
 
+  // A project file the system handed over (double-clicked, "Open with": opened at once), or that a gengis:// link
+  // named (asked first: any web page can open a link).
+  F.openPath = async function (file, fromLink) {
+    const name = String(file).split(/[\\/]/).pop();
+    if (fromLink && !(await MB.ask('A link asks GenGIS to open the project "' + name + '":\n\n' + file, 'Open', 'Cancel'))) return;
+    return openFrom(() => D.openPath(file));
+  };
+
+  // A project on the web, from a gengis:// link (asked first). It opens as a project of its own here and, like any
+  // named project, is kept as a file in the projects folder (the web copy is never written to).
+  F.openUrl = async function (url) {
+    let host = url;
+    try { host = new URL(url).host; } catch (e) { /* shown whole */ }
+    if (!(await MB.ask('A link asks GenGIS to open a project from ' + host + ':\n\n' + url, 'Open', 'Cancel'))) return;
+    try {
+      if (!(await P().confirmReplace('Open the project'))) return;
+      MB.toast('Opening the project from ' + host + '…', 3000);
+      const r = await D.fetchUrl(url);
+      await MB.openText(r.text, r.name);
+    } catch (e) { MB.toast('Could not open the project from ' + host + ': ' + why(e), 6000); }
+  };
+
   F.recent = () => D.recent().catch(() => []);
   F.reveal = file => D.reveal(file || F.file || null);
 

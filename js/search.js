@@ -157,11 +157,15 @@ window.MB = window.MB || {};
     }
   };
 
-  /* ----- URL parameters: ?q=..., ?lat=..&lon=..&zoom=.., ?center=lat,lon, ?poi=cafe; in the desktop app also
-   * ?file=<a project file it knows>. The address's, or a gengis:// link's ({ key: value }, electron/links.js). ----- */
+  /* ----- URL parameters: ?q=..., ?lat=..&lon=..&zoom=.., ?center=lat,lon, ?poi=cafe; in the desktop app also a
+   * project to open: ?file=<path> (from=os: the system opened it with GenGIS; else a link, asked first) or ?url=<a
+   * project on the web> (a link, asked first). The address's, or a gengis:// link's (electron/links.js). ----- */
   MB.applyUrlParams = async function (params) {
     const p = new URLSearchParams(params || location.search);
-    if (p.get('file') && MB.desktopFiles && MB.desktopFiles.available) await MB.desktopFiles.openRecent(p.get('file'));
+    const desk = MB.desktopFiles && MB.desktopFiles.available;
+    if (desk && p.get('refused')) MB.toast('GenGIS can only open a link to a .gengis project file or a web address (' + p.get('refused') + ').', 6000);
+    if (desk && p.get('file')) await MB.desktopFiles.openPath(p.get('file'), p.get('from') !== 'os');
+    else if (desk && p.get('url')) await MB.desktopFiles.openUrl(p.get('url'));
     const zoom = p.get('zoom') || p.get('z');
     let centered = false;
     if (p.get('center')) {

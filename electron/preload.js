@@ -13,6 +13,8 @@ if (location.protocol === 'file:' && /\/index\.html$/i.test(location.pathname)) 
   saveAs: (id, name, json) => ipcRenderer.invoke('files:save-as', { id, name, json }),
   open: () => ipcRenderer.invoke('files:open'),
   read: file => ipcRenderer.invoke('files:read', file),
+  openPath: file => ipcRenderer.invoke('files:open-path', file), // a project file the system or a link (agreed to) named
+  fetchUrl: url => ipcRenderer.invoke('files:fetch-url', url),   // a project on the web, from a link (agreed to)
   adopt: (id, file) => ipcRenderer.invoke('files:adopt', { id, file }),
   recent: () => ipcRenderer.invoke('files:recent'),
   fileOf: id => ipcRenderer.invoke('files:file-of', id),
