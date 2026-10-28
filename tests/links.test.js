@@ -59,7 +59,9 @@ test('a link to a project file: Windows and POSIX paths, encoded or not; .gengis
   assert.deepEqual(links.target('gengis:///C:/Maps/Trip.gengis'), { file: 'C:/Maps/Trip.gengis' });
   assert.deepEqual(links.target('gengis:///home/me/Trip.gengis'), { file: '/home/me/Trip.gengis' });
   assert.deepEqual(links.target('gengis://' + encodeURIComponent('C:\\Mis mapas\\Viaje ñ.gengis')), { file: 'C:\\Mis mapas\\Viaje ñ.gengis' });
-  assert.deepEqual(links.target('gengis://\\\\server\\share\\Trip.gengis'), { file: '\\\\server\\share\\Trip.gengis' });
+  assert.equal(links.target('gengis://\\\\server\\share\\Trip.gengis').refused, 'a network path', 'Windows would sign in to that server');
+  assert.equal(links.target('gengis:////server/share/Trip.gengis').refused, 'a network path');
+  assert.equal(links.target('gengis://' + encodeURIComponent('\\\\evil.example\\x\\Trip.gengis')).refused, 'a network path');
   assert.deepEqual(links.target('GENGIS://C:/Maps/Trip.GENGIS'), { file: 'C:/Maps/Trip.GENGIS' });
 });
 
@@ -87,6 +89,15 @@ test('a project file on the command line (double-clicked, or "Open with" GenGIS)
   assert.equal(links.fileInArgs(['--allow-file-access-from-files', '/home/me/Old.gengis.json']), '/home/me/Old.gengis.json');
   assert.equal(links.fileInArgs(['gengis://C:/Maps/Trip.gengis']), null, 'a link is not a file argument');
   assert.equal(links.fileInArgs(['--file=C:\\x.gengis', 'notes.txt', 'data.json']), null);
+  assert.equal(links.fileInArgs(['gengis:C:/Maps/Trip.gengis']), null, 'nor one without slashes');
+  assert.equal(links.fileInArgs(['\\\\server\\share\\Trip.gengis']), '\\\\server\\share\\Trip.gengis', 'a share the user double-clicked is theirs to open');
+});
+
+test('where a redirect from a project\'s web address may not lead: this computer or its network', () => {
+  ['localhost', 'app.localhost', 'printer.local', '127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.5', '169.254.169.254', '100.64.0.1', '0.0.0.0', '[::1]', '::1', 'fe80::1', 'fd12:3456::1', '::ffff:127.0.0.1']
+    .forEach(h => assert.equal(links.isLocalHost(h), true, h));
+  ['example.com', 'fdroid.org', 'fcc.gov', 'raw.githubusercontent.com', '8.8.8.8', '172.32.0.1', '192.169.0.1', '2606:4700::1111']
+    .forEach(h => assert.equal(links.isLocalHost(h), false, h));
 });
 
 test('.gengis is registered as GenGIS\'s file type, and project files open from the system and from links', () => {

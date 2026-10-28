@@ -105,7 +105,7 @@ The installed desktop app opens `gengis://` links in the window already open:
 | `gengis://C:/Maps/Trip.gengis`, `gengis:///home/me/Trip.gengis` | A project file on your computer (`.gengis` or `.gengis.json`) |
 | `gengis://https://example.com/Trip.gengis` | A project on the web |
 
-GenGIS asks before opening a file or web project from a link.
+GenGIS asks before opening a file or web project from a link. A project opened from the web is kept in your projects folder, like any other. Links can't name network shares (`\\server\…`).
 
 ## Data sources and fair use
 

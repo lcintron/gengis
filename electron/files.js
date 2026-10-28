@@ -18,7 +18,7 @@ const { pathToFileURL } = require('url');
 
 const EXT = '.gengis'; // new project files; the system opens these with GenGIS (package.json: build.fileAssociations)
 const PROJECT = /\.gengis(\.json)?$/i; // a project file: .gengis, or the older .gengis.json
-const MAX_READ = 300 * 1024 * 1024; // bytes: a larger "project" is not one anybody made here
+const MAX_READ = 64 * 1024 * 1024; // bytes: a larger "project" is not one anybody made here (real ones: KB to a few MB)
 const FETCH_TIMEOUT = 30 * 1000;
 const RECENT_MAX = 12;
 const APP_PAGE = pathToFileURL(path.join(__dirname, '..', 'index.html')).href;
@@ -112,6 +112,41 @@ function newFileFor(id, name) {
     if (!fs.existsSync(file) || idIn(file) === id) return file;
   }
   throw new Error('no free file name');
+}
+
+const { isLocalHost } = require('./links');
+
+// A project's text from the web (no cookies sent). Redirects are checked one at a time: the user agreed to open from
+// one host, so none may lead to this computer or its network (unless the link itself named such an address).
+function fetchProject(start) {
+  return new Promise((resolve, reject) => {
+    const local = isLocalHost(start.hostname);
+    let u = start, hops = 0, done = false;
+    const fail = msg => { if (done) return; done = true; clearTimeout(timer); try { req.abort(); } catch (x) { /* gone */ } reject(new Error(msg)); };
+    const req = net.request({ url: start.toString(), redirect: 'manual', useSessionCookies: false });
+    const timer = setTimeout(() => fail('the server took too long'), FETCH_TIMEOUT);
+    req.on('redirect', (status, method, to) => {
+      try { u = new URL(to, u); } catch (err) { fail('the server sent a bad address'); return; }
+      if (++hops > 5) { fail('too many redirects'); return; }
+      if (!/^https?:$/.test(u.protocol) || (!local && isLocalHost(u.hostname))) { fail('the server sent GenGIS elsewhere (' + (u.host || u.protocol) + ')'); return; }
+      req.followRedirect();
+    });
+    req.on('response', res => {
+      if (res.statusCode < 200 || res.statusCode >= 300) { fail('the server answered ' + res.statusCode); return; }
+      if (+res.headers['content-length'] > MAX_READ) { fail('the file is too large'); return; }
+      const parts = [];
+      let size = 0;
+      res.on('data', chunk => { size += chunk.length; if (size > MAX_READ) fail('the file is too large'); else parts.push(chunk); });
+      res.on('end', () => {
+        if (done) return;
+        done = true; clearTimeout(timer);
+        resolve({ name: decodeURIComponent(path.posix.basename(u.pathname)) || u.hostname, text: Buffer.concat(parts).toString('utf8'), url: u.toString() });
+      });
+      res.on('error', err => fail(err.message));
+    });
+    req.on('error', err => fail(err.message));
+    req.end();
+  });
 }
 
 const projectJson = text => { const p = JSON.parse(text); if (!p || p.format !== 'gengis-project' || typeof p.id !== 'string') throw new Error('not a GenGIS project'); return p; };
@@ -213,21 +248,11 @@ function register() {
 
   // A project on the web (a gengis:// link the user agreed to open): its text. Read here, not by the page, so any web
   // server's file can be opened, whatever it says about other sites reading it (CORS).
-  handle('files:fetch-url', async (e, url) => {
+  handle('files:fetch-url', (e, url) => {
     let u;
     try { u = new URL(String(url)); } catch (err) { throw new Error('not a web address'); }
     if (!/^https?:$/.test(u.protocol)) throw new Error('not a web address');
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT);
-    try {
-      const res = await net.fetch(u.toString(), { signal: ctl.signal, redirect: 'follow' });
-      if (!res.ok) throw new Error('the server answered ' + res.status);
-      if (+res.headers.get('content-length') > MAX_READ) throw new Error('the file is too large');
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length > MAX_READ) throw new Error('the file is too large');
-      return { name: decodeURIComponent(path.posix.basename(u.pathname)) || u.hostname, text: buf.toString('utf8'), url: u.toString() };
-    } catch (err) {
-      throw new Error(err.name === 'AbortError' ? 'the server took too long' : err.message);
-    } finally { clearTimeout(timer); }
+    return fetchProject(u);
   });
 
   // Open recent: a file opened or saved before.

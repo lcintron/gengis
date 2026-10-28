@@ -103,8 +103,8 @@ window.MB = window.MB || {};
     return openFrom(() => D.openPath(file));
   };
 
-  // A project on the web, from a gengis:// link (asked first). It opens as a project of its own here, tied to no file
-  // (Save as keeps it on this computer).
+  // A project on the web, from a gengis:// link (asked first). It opens as a project of its own here and, like any
+  // named project, is kept as a file in the projects folder (the web copy is never written to).
   F.openUrl = async function (url) {
     let host = url;
     try { host = new URL(url).host; } catch (e) { /* shown whole */ }
