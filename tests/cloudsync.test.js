@@ -516,3 +516,22 @@ test('the folder deleted while GenGIS runs: the next check finds the new one, an
   assert.ok(!app.toasts.some(t => /deleted from the cloud/.test(t)));
   assert.equal(app.C.accounts[0].pullError, '');
 });
+
+test('a new file the folder keeps refusing (an organization\'s policy, not a gone folder) becomes an error, not a retry forever', async () => {
+  const { server, app } = await connected({ projects: [project('p1', 'Alpha', 2)] });
+  app.C.env.backoffBase = 50;
+  let refusals = 0;
+  server.fail = r => (r.method === 'PUT' && /\/content/.test(r.url) && /Gamma/.test(decodeURIComponent(r.url)) ? (refusals++, { status: 403, ok: false, headers: { get: () => null }, json: async () => ({ error: { code: 'accessDenied', message: 'Blocked by policy' } }) }) : null);
+  app.device.projects.put(project('p3', 'Gamma', 1));
+  app.C.schedule('p3', 0);
+  await new Promise(r => setTimeout(r, 600)); await app.settle();
+  assert.equal(linkOf(app, 'p3').state, 'error');
+  assert.match(linkOf(app, 'p3').error, /Blocked by policy/);
+  assert.equal(refusals, 2, 'tried once more after looking for the folder, then stopped');
+  assert.equal(server.folders.length, 1, 'the folder was found the same: no new one');
+  assert.ok(app.toasts.some(t => /Could not sync "Gamma"/.test(t)));
+  // a later upload that goes through clears it
+  server.fail = null;
+  app.save(project('p3', 'Gamma', 2)); await app.settle();
+  assert.equal(linkOf(app, 'p3').state, 'synced');
+});

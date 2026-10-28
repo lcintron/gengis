@@ -230,6 +230,7 @@ window.MB = window.MB || {};
 
   /* ---------- the queue ---------- */
   const queue = new Set(), timers = new Map(), retries = new Map();
+  const refused = new Set(); // projects whose last upload the folder refused (see failed)
   let pumping = null;
 
   // A project to upload soon (after a background save, or when something it waited for comes back).
@@ -265,10 +266,11 @@ window.MB = window.MB || {};
     let l = await store().get('links', projectId) || { projectId, accountId: acc.id, state: 'pending' };
     if (l.excluded) return;
     l.accountId = acc.id;
+    if (!l.fileId) l.nameFor = rec.name; // (no file yet: messages name the project, not "A project")
     if (l.state === 'conflict' && !force) { C.links[projectId] = l; emit(); return; } // the user decides
     const hash = await hashOf(rec.data);
     const renamed = l.fileId && l.nameFor !== rec.name;
-    if (!force && l.fileId && hash === l.hash && !renamed) { retries.delete(projectId); if (l.state !== 'synced') { setState(l, 'synced'); await saveLink(l); } return; }
+    if (!force && l.fileId && hash === l.hash && !renamed) { retries.delete(projectId); refused.delete(projectId); if (l.state !== 'synced') { setState(l, 'synced'); await saveLink(l); } return; }
     if (!env.online()) { setState(l, 'offline'); await saveLink(l); return; }
     if (acc.state === 'signin') { setState(l, 'signin', acc.error); await saveLink(l); return; }
     setState(l, 'syncing');
@@ -296,11 +298,11 @@ window.MB = window.MB || {};
       delete C.progress[projectId];
       if (out.adopted) { // this project's own file was already there (another device, or before a reconnect)
         Object.assign(l, { fileId: out.fileId, name: out.name, nameFor: rec.name, etag: out.etag, remoteEtag: null });
-        if (out.hash === hash) { Object.assign(l, { hash, syncedAt: env.now() }); retries.delete(projectId); setState(l, 'synced'); await saveLink(l); return; }
+        if (out.hash === hash) { Object.assign(l, { hash, syncedAt: env.now() }); retries.delete(projectId); refused.delete(projectId); setState(l, 'synced'); await saveLink(l); return; }
         l.hash = null; l.state = 'conflict'; l.error = ''; await saveLink(l); notify(l, 'conflict'); emit(); return;
       }
       Object.assign(l, { fileId: out.fileId, name: out.name, nameFor: rec.name, etag: out.etag, hash, syncedAt: env.now(), remoteEtag: null });
-      retries.delete(projectId);
+      retries.delete(projectId); refused.delete(projectId);
       setState(l, 'synced');
       await saveLink(l);
     } catch (e) {
@@ -346,8 +348,15 @@ window.MB = window.MB || {};
     if (e.status === 412) { l.state = 'conflict'; l.error = ''; await saveLink(l); notify(l, 'conflict'); emit(); return; }
     if (e.code === 'signin') { setState(l, 'signin', e.message); await saveLink(l); return; }
     if (!env.online()) { setState(l, 'offline'); await saveLink(l); return; } // resumes when the network returns
-    if (e.code === 'rootGone') rootSeen.delete(l.accountId); // the folder is gone: looked for again (a new one) before the next try
-    const transient = e.status === 429 || e.status >= 500 || e.status === 423 || e.code === 'network' || e.code === 'rootGone';
+    // the folder refused the request: looked for again (a new one) before the next try; refused again after that, it
+    // is not about the folder (an organization's policy, say), and it is an error the user sees, not a retry forever
+    let gone = false;
+    if (e.code === 'rootGone') {
+      gone = !refused.has(l.projectId);
+      refused.add(l.projectId);
+      if (gone) rootSeen.delete(l.accountId);
+    }
+    const transient = e.status === 429 || e.status >= 500 || e.status === 423 || e.code === 'network' || gone;
     if (e.status === 507 || e.code === 'quotaLimitReached' || e.code === 'insufficientStorage') { setState(l, 'error', 'The cloud storage is full'); await saveLink(l); notify(l, 'error'); return; }
     setState(l, transient ? 'pending' : 'error', e.message);
     await saveLink(l);
