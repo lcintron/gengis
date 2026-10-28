@@ -18,6 +18,9 @@
   --sidebar-w: 330px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
+/* the hidden attribute always hides: no rule's own display (flex, grid, inline-flex…) may show a hidden element
+   (tests/ui.test.js keeps this rule here) */
+[hidden] { display: none !important; }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -58,7 +61,6 @@ kbd { background: var(--bg-3); border: 1px solid var(--border); border-bottom-wi
 /* clear the search (a plain text box has none of its own): over the box's right end, shown once there is text */
 .search-clear { flex: 0 0 auto; z-index: 1; width: 28px; height: 28px; margin: 0 3px 0 -31px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
   border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; }
-.search-clear[hidden] { display: none; }
 .search-clear:hover { background: var(--bg-3); color: var(--text); }
 .search-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
@@ -168,7 +170,6 @@ svg.mi { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentC
 .more-label svg.mi { width: 13px; height: 13px; }
 /* a small button with an icon before its words (Settings → Project) */
 .btn.with-icon { display: inline-flex; align-items: center; gap: 6px; }
-.btn.with-icon[hidden] { display: none; } /* (Keep on this device: only when the browser has not agreed yet) */
 .btn.with-icon svg.mi { width: 14px; height: 14px; color: currentColor; }
 /* the search, in the panel below 800 px wide (ui.js) */
 .more-menu .more-search { display: none; }
@@ -1216,7 +1217,6 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 .cloud-h-row .cloud-h { margin: 0; flex: 1 1 auto; }
 .cloud-h-row .search-wrap { flex: 0 1 220px; min-width: 0; max-width: 220px; margin: 0; }
 .cloud-scroll { max-height: min(330px, 42vh); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-width: thin; }
-.cloud-row[hidden], .cloud-sec[hidden], .cloud-nomatch[hidden] { display: none; }
 .cloud-nomatch { margin: 6px 2px 0; }
 .cloud-list { display: flex; flex-direction: column; gap: 6px; }
 .cloud-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }

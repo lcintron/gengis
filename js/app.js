@@ -186,8 +186,9 @@
     // name tooltips for named features
     Object.keys(MB.featureLayers).forEach(id => { const f = MB.featureLayers[id]; if (f.mb.name) MB.ui.bindNameTip(f); });
 
-    // URL parameters (?q=, ?lat=&lon=, ?center=, ?poi=)
+    // URL parameters (?q=, ?lat=&lon=, ?center=, ?poi=), and in the desktop app gengis:// links opened while it runs
     MB.applyUrlParams();
+    if (window.gengisDesktop && window.gengisDesktop.onLink) window.gengisDesktop.onLink(q => MB.applyUrlParams(q));
 
     // PWA
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

@@ -199,10 +199,11 @@ window.MB = window.MB || {};
     if (acc && acc.accessToken) { delete acc.accessToken; delete acc.accessExp; await store().put('accounts', acc); }
   }
 
-  // A provider call for an account; an expired token (401) is renewed and the call made once more.
+  // A provider call for an account; an expired token (401) is renewed and the call made once more. The account's
+  // folder goes along by id (checkRoot found it) so that no request has to name it by its path.
   async function call(acc, fn) {
     const prov = providerOf(acc);
-    const ctx = { fetch: env.fetch, token: () => accessToken(acc.id), account: acc.id };
+    const ctx = { fetch: env.fetch, token: () => accessToken(acc.id), account: acc.id, root: acc.rootId || null };
     try { return await fn(prov, ctx); }
     catch (e) {
       if (e.status !== 401) throw e;
@@ -229,6 +230,7 @@ window.MB = window.MB || {};
 
   /* ---------- the queue ---------- */
   const queue = new Set(), timers = new Map(), retries = new Map();
+  const refused = new Set(); // projects whose last upload the folder refused (see failed)
   let pumping = null;
 
   // A project to upload soon (after a background save, or when something it waited for comes back).
@@ -264,15 +266,19 @@ window.MB = window.MB || {};
     let l = await store().get('links', projectId) || { projectId, accountId: acc.id, state: 'pending' };
     if (l.excluded) return;
     l.accountId = acc.id;
+    if (!l.fileId) l.nameFor = rec.name; // (no file yet: messages name the project, not "A project")
     if (l.state === 'conflict' && !force) { C.links[projectId] = l; emit(); return; } // the user decides
     const hash = await hashOf(rec.data);
     const renamed = l.fileId && l.nameFor !== rec.name;
-    if (!force && l.fileId && hash === l.hash && !renamed) { retries.delete(projectId); if (l.state !== 'synced') { setState(l, 'synced'); await saveLink(l); } return; }
+    if (!force && l.fileId && hash === l.hash && !renamed) { retries.delete(projectId); refused.delete(projectId); if (l.state !== 'synced') { setState(l, 'synced'); await saveLink(l); } return; }
     if (!env.online()) { setState(l, 'offline'); await saveLink(l); return; }
     if (acc.state === 'signin') { setState(l, 'signin', acc.error); await saveLink(l); return; }
     setState(l, 'syncing');
     const text = JSON.stringify(rec.data, null, 1);
     try {
+      // the account's folder, found first when this session has not yet (a new one: checkRoot has every project
+      // uploaded to it again, and this one goes with them)
+      if (!acc.rootId || !rootSeen.has(acc.id)) { if (await checkRoot(acc)) { C.schedule(projectId, 0); return; } }
       let out;
       await call(acc, async (prov, ctx) => {
         const onProgress = (d, t) => { C.progress[projectId] = { done: d, total: t }; emit(); };
@@ -292,11 +298,11 @@ window.MB = window.MB || {};
       delete C.progress[projectId];
       if (out.adopted) { // this project's own file was already there (another device, or before a reconnect)
         Object.assign(l, { fileId: out.fileId, name: out.name, nameFor: rec.name, etag: out.etag, remoteEtag: null });
-        if (out.hash === hash) { Object.assign(l, { hash, syncedAt: env.now() }); retries.delete(projectId); setState(l, 'synced'); await saveLink(l); return; }
+        if (out.hash === hash) { Object.assign(l, { hash, syncedAt: env.now() }); retries.delete(projectId); refused.delete(projectId); setState(l, 'synced'); await saveLink(l); return; }
         l.hash = null; l.state = 'conflict'; l.error = ''; await saveLink(l); notify(l, 'conflict'); emit(); return;
       }
       Object.assign(l, { fileId: out.fileId, name: out.name, nameFor: rec.name, etag: out.etag, hash, syncedAt: env.now(), remoteEtag: null });
-      retries.delete(projectId);
+      retries.delete(projectId); refused.delete(projectId);
       setState(l, 'synced');
       await saveLink(l);
     } catch (e) {
@@ -342,7 +348,15 @@ window.MB = window.MB || {};
     if (e.status === 412) { l.state = 'conflict'; l.error = ''; await saveLink(l); notify(l, 'conflict'); emit(); return; }
     if (e.code === 'signin') { setState(l, 'signin', e.message); await saveLink(l); return; }
     if (!env.online()) { setState(l, 'offline'); await saveLink(l); return; } // resumes when the network returns
-    const transient = e.status === 429 || e.status >= 500 || e.status === 423 || e.code === 'network';
+    // the folder refused the request: looked for again (a new one) before the next try; refused again after that, it
+    // is not about the folder (an organization's policy, say), and it is an error the user sees, not a retry forever
+    let gone = false;
+    if (e.code === 'rootGone') {
+      gone = !refused.has(l.projectId);
+      refused.add(l.projectId);
+      if (gone) rootSeen.delete(l.accountId);
+    }
+    const transient = e.status === 429 || e.status >= 500 || e.status === 423 || e.code === 'network' || gone;
     if (e.status === 507 || e.code === 'quotaLimitReached' || e.code === 'insufficientStorage') { setState(l, 'error', 'The cloud storage is full'); await saveLink(l); notify(l, 'error'); return; }
     setState(l, transient ? 'pending' : 'error', e.message);
     await saveLink(l);
@@ -389,16 +403,21 @@ window.MB = window.MB || {};
 
   // GenGIS's folder, checked once a session and on every full re-check: when Microsoft has given GenGIS a new one
   // (the old one was renamed, moved or deleted), every project is uploaded to it again rather than taken for deleted.
+  // Resolves whether the folder is a new one.
+  // The check is the one request that names the folder by its path rather than its id (OneDrive makes the folder
+  // when a request first names it, and a second request naming it at that same moment makes a second folder,
+  // "GenGIS 1"), so it is made under the lock, before anything else is asked of the folder, and the id it gives is
+  // kept with the account for every request after (call).
   const rootSeen = new Set();
   async function checkRoot(acc) {
     const root = await call(acc, (prov, ctx) => prov.root(ctx));
     rootSeen.add(acc.id);
-    if (acc.rootId === root.fileId) return;
+    if (acc.rootId === root.fileId) return false;
     const changed = !!acc.rootId;
     const fresh = await store().get('accounts', acc.id);
     if (fresh) { fresh.rootId = root.fileId; if (changed) fresh.cursor = null; await store().put('accounts', fresh); }
     acc.rootId = root.fileId;
-    if (!changed) return;
+    if (!changed) return false;
     acc.cursor = null;
     for (const l of await store().all('links')) {
       if (l.accountId !== acc.id || !l.fileId) continue;
@@ -407,11 +426,18 @@ window.MB = window.MB || {};
       C.schedule(l.projectId, 500);
     }
     MB.toast(providerOf(acc).name + ' has a new folder for GenGIS (' + root.name + '): the old one was renamed, moved or deleted. Your projects are being uploaded to it.', 9000);
+    return true;
   }
 
   async function pullAccount(acc) {
-    if (!rootSeen.has(acc.id) || !acc.cursor) await checkRoot(acc);
-    let res = await call(acc, (prov, ctx) => prov.changes(ctx, acc.cursor || null));
+    if (!rootSeen.has(acc.id) || !acc.rootId || !acc.cursor) await checkRoot(acc);
+    let res;
+    try { res = await call(acc, (prov, ctx) => prov.changes(ctx, acc.cursor || null)); }
+    catch (e) { // the folder is gone (deleted meanwhile): Microsoft gives a new one, and every project goes to it again
+      if (e.code !== 'rootGone') throw e;
+      await checkRoot(acc);
+      res = await call(acc, (prov, ctx) => prov.changes(ctx, acc.cursor || null));
+    }
     let full = !acc.cursor || res.reset || res.full; // everything in the folder, not just what changed
     if (res.reset) { acc.cursor = null; res = await call(acc, (prov, ctx) => prov.changes(ctx, null)); full = true; }
     const links = (await store().all('links')).filter(l => l.accountId === acc.id && l.fileId);
@@ -466,15 +492,19 @@ window.MB = window.MB || {};
     const localChanged = !rec || (await hashOf(rec.data)) !== l.hash || (open && MB.projects.dirty());
     if (localChanged) { l.state = 'conflict'; l.remoteEtag = remote.etag; await saveLink(l); notify(l, 'conflict'); emit(); return; }
     C.activity(); // someone is working on it elsewhere: check more often for a while
-    await takeRemote(l, data, remote, remoteHash);
-    MB.toast('"' + (data.name || l.nameFor) + '" updated from ' + providerOf(acc).name, 3500);
+    const cleared = await takeRemote(l, data, remote, remoteHash);
+    MB.toast('"' + (data.name || l.nameFor) + '" updated from ' + providerOf(acc).name + (cleared ? HISTORY_CLEARED : ''), cleared ? 6000 : 3500);
   }
 
+  // Taking a cloud copy into the open project starts its undo history again (the steps were of the version replaced).
+  const HISTORY_CLEARED = '. Undo history was cleared.';
+  // The cloud copy becomes the project here. Resolves true when the open project's undo history was cleared.
   async function takeRemote(l, data, remote, remoteHash) {
     data = Object.assign({}, data, { id: l.projectId }); // the file belongs to this project, whatever id it carries
     if (!(await MB.projects.putSaved(data, 'before a cloud copy replaced it'))) throw new Error('Could not save the cloud copy on this device');
-    let hash = remoteHash || await hashOf(data);
+    let hash = remoteHash || await hashOf(data), cleared = false;
     if (MB.state.projectId === l.projectId && MB.projects.owns()) {
+      cleared = !!((MB.canUndo && MB.canUndo()) || (MB.canRedo && MB.canRedo()));
       MB.loadProject(data, { keepView: true, keepHistory: false });
       // what this device will save of it from now on (its own normalization included): not a change to upload
       if (MB.serializeProject) hash = await hashOf(MB.serializeProject());
@@ -483,6 +513,7 @@ window.MB = window.MB || {};
     told[l.projectId] = null;
     setState(l, 'synced');
     await saveLink(l);
+    return cleared;
   }
 
   /* ---------- conflicts ---------- */
@@ -506,8 +537,8 @@ window.MB = window.MB || {};
           const remote = await call(acc, (p, ctx) => p.get(ctx, l.fileId));
           const data = JSON.parse(remote.text);
           if (!MB.isProject(data)) throw new Error('The cloud file is not a GenGIS project');
-          await takeRemote(l, data, remote);
-          MB.toast('Using the ' + prov.name + ' version. Yours is in earlier copies.', 5000);
+          const cleared = await takeRemote(l, data, remote);
+          MB.toast('Using the ' + prov.name + ' version. Yours is in earlier copies' + (cleared ? HISTORY_CLEARED : '.'), cleared ? 7000 : 5000);
           return;
         }
         const meta = await call(acc, (p, ctx) => p.meta(ctx, l.fileId));
@@ -646,11 +677,19 @@ window.MB = window.MB || {};
     if (on) (await MB.projects.list()).forEach(r => { if (!isDraftRec(r)) C.schedule(r.id, 300); });
   };
 
+  // An account with its folder known, for a request made outside the lock: found under the lock first when it is
+  // not yet (a pull or push may be finding it at this very moment; this waits for that).
+  async function rooted(accId) {
+    let acc = await store().get('accounts', accId);
+    if (acc && !acc.rootId) await env.lock(async () => { acc = await store().get('accounts', accId); if (acc && !acc.rootId) await checkRoot(acc); });
+    return acc;
+  }
+
   // The cloud's project files that are not linked to a project here (for "Open from the cloud").
   C.listRemote = async function (accId) {
-    const acc = await store().get('accounts', accId);
+    const acc = await rooted(accId);
     if (!acc) return [];
-    const files = await call(acc, (p, ctx) => p.list(ctx));
+    const files = await call(acc, (p, ctx) => p.list(ctx)).catch(e => { if (e.code === 'rootGone') rootSeen.delete(accId); throw e; });
     const linked = new Set((await store().all('links')).filter(l => l.accountId === accId).map(l => l.fileId));
     return files.filter(f => !linked.has(f.fileId)).sort((a, b) => b.modified - a.modified);
   };

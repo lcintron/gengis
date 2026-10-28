@@ -221,8 +221,10 @@ test('one folder only: every request stays in the app folder or targets a file b
   await app.C.disconnect(app.C.accounts[0].id); await app.connect(); await app.settle(); // a reconnect
   const graph = server.calls.filter(c => c.url.startsWith('https://graph.microsoft.com/'));
   assert.ok(graph.length > 10);
-  const allowed = /^https:\/\/graph\.microsoft\.com\/v1\.0\/me\/drive\/(special\/approot(\?|\/children\?|\/delta\?|:\/[^/]+:(\?|\/content|\/createUploadSession))|items\/[^/?]+(\?|\/content$|\/createUploadSession$|$))/;
+  const allowed = /^https:\/\/graph\.microsoft\.com\/v1\.0\/me\/drive\/(special\/approot\?|items\/[^/?:]+(\?|\/content$|\/createUploadSession$|\/children\?|\/delta\?|:\/[^/]+:(\?|\/content|\/createUploadSession)|$))/;
   graph.forEach(c => assert.match(c.url, allowed, c.method + ' ' + c.url));
+  // the folder is named by its path (which has Microsoft make it when there is none) only to ask which it is; all else goes by its id
+  graph.filter(c => /special\/approot/.test(c.url)).forEach(c => assert.match(c.method + ' ' + c.url, /^GET https:\/\/graph\.microsoft\.com\/v1\.0\/me\/drive\/special\/approot\?/));
   assert.ok(!graph.some(c => c.method === 'POST' && /\/children/.test(c.url)), 'never creates an item under a folder');
   server.live().forEach(f => assert.ok(!/[\\/]/.test(f.name), 'no file name makes a subfolder: ' + f.name));
 });
