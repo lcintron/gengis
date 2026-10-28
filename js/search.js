@@ -157,9 +157,11 @@ window.MB = window.MB || {};
     }
   };
 
-  /* ----- URL parameters: ?q=..., ?lat=..&lon=..&zoom=.., ?center=lat,lon, ?poi=cafe ----- */
-  MB.applyUrlParams = async function () {
-    const p = new URLSearchParams(location.search);
+  /* ----- URL parameters: ?q=..., ?lat=..&lon=..&zoom=.., ?center=lat,lon, ?poi=cafe; in the desktop app also
+   * ?file=<a project file it knows>. The address's, or a gengis:// link's ({ key: value }, electron/links.js). ----- */
+  MB.applyUrlParams = async function (params) {
+    const p = new URLSearchParams(params || location.search);
+    if (p.get('file') && MB.desktopFiles && MB.desktopFiles.available) await MB.desktopFiles.openRecent(p.get('file'));
     const zoom = p.get('zoom') || p.get('z');
     let centered = false;
     if (p.get('center')) {

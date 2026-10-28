@@ -18,6 +18,8 @@ window.MB = window.MB || {};
   const P = () => MB.projects;
   const isDraft = () => /^\s*untitled( map)?\s*$/i.test(MB.state.projectName || '') && !P().fileBacked;
   const emit = () => MB.emit('desktopfiles', F);
+  // The desktop app's own words for a failure, without Electron's wrapping ("Error invoking remote method …").
+  const why = e => String((e && e.message) || e).replace(/^Error invoking remote method '[^']*': (\w*Error: )?/, '');
 
   F.schedule = function () { clearTimeout(timer); timer = setTimeout(() => F.write(), DELAY); };
   // Before another project replaces the open one: its file gets the last changes first.
@@ -47,7 +49,7 @@ window.MB = window.MB || {};
       emit();
       return r.file;
     } catch (e) {
-      F.error = e && e.message ? e.message : String(e);
+      F.error = why(e);
       if (!failed) MB.toast('Could not save the project file (' + F.error + '). It is still saved in the app.', 6000);
       failed = true;
       emit();
@@ -73,7 +75,7 @@ window.MB = window.MB || {};
       P().markFileBacked();
       emit();
       MB.toast('Saved to ' + r.file, 3500);
-    } catch (e) { MB.toast('Could not save: ' + (e.message || e), 5000); }
+    } catch (e) { MB.toast('Could not save: ' + why(e), 5000); }
   };
 
   // Opening a file: the open project is saved first (database and file), then the file is read, so reopening the
@@ -88,7 +90,7 @@ window.MB = window.MB || {};
       await D.adopt(MB.state.projectId, r.file);
       F.file = r.file;
       emit();
-    } catch (e) { MB.toast('Could not open the file: ' + (e.message || e), 5000); }
+    } catch (e) { MB.toast('Could not open the file: ' + why(e), 5000); }
   }
   F.open = () => openFrom(() => D.open());
   F.openRecent = file => openFrom(() => D.read(file));
