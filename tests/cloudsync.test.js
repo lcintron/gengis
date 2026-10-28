@@ -473,3 +473,46 @@ test('with no client id configured, nothing starts (the app is unchanged)', asyn
   await new Promise(r => setTimeout(r, 50));
   assert.equal(server.calls.length, 0);
 });
+
+// The folder OneDrive makes for GenGIS: made by the first request that names it, and once only.
+test('a first sign-in with the cloud dialog open (its listing beside the first check): one folder, every file in it', async () => {
+  const server = makeServer({ fresh: true }), app = makeApp({ server });
+  [project('p1', 'Alpha', 3), project('p2', 'Beta', 1)].forEach(p => app.device.projects.put(p, true));
+  // what the dialog does when a sign-in comes back: a check for changes, and the account's cloud files listed beside it
+  app.MB.on('cloud-return', () => { app.C.pull(false); app.C.accounts.filter(a => a.state !== 'signin').forEach(a => app.C.listRemote(a.id).catch(() => {})); });
+  await app.connect(); await app.settle();
+  assert.equal(server.folders.length, 1, 'one folder: ' + server.folders.map(f => f.name).join(', '));
+  assert.equal(server.root.name, 'GenGIS');
+  assert.deepEqual(server.inFolder(server.root).map(f => f.name).sort(), ['Alpha.gengis.json', 'Beta.gengis.json']);
+  assert.equal(server.calls.filter(c => /special\/approot/.test(c.url)).length, 1, 'the folder is asked for by its path once, before anything else');
+  assert.equal(app.C.accounts[0].state, 'ok');
+  assert.equal(linkOf(app, 'p1').state, 'synced');
+  assert.equal((await app.C.listRemote(app.C.accounts[0].id)).length, 0);
+});
+
+test('the folder deleted while GenGIS runs: the next upload finds the new one, and every project goes to it', async () => {
+  const { server, app } = await connected({ projects: [project('p1', 'Alpha', 2), project('p2', 'Beta', 3)] });
+  app.C.env.backoffBase = 50;
+  server.deleteRoot();
+  app.save(project('p1', 'Alpha', 5)); await app.settle();
+  assert.equal(server.folders.length, 2);
+  assert.deepEqual(server.inFolder(server.root).map(f => f.name).sort(), ['Alpha.gengis.json', 'Beta.gengis.json']);
+  assert.equal(content(server, 'Alpha.gengis.json').features.length, 5);
+  assert.equal(linkOf(app, 'p1').state, 'synced');
+  assert.equal(linkOf(app, 'p2').state, 'synced');
+  assert.ok(app.toasts.some(t => /new folder/.test(t)));
+  assert.ok(!app.toasts.some(t => /deleted from the cloud|Could not sync/.test(t)));
+});
+
+test('the folder deleted while GenGIS runs: the next check finds the new one, and nothing is taken for deleted', async () => {
+  const { server, app } = await connected({ projects: [project('p1', 'Alpha', 2), project('p2', 'Beta', 3)] });
+  server.deleteRoot();
+  await app.C.pull(true); await app.settle();
+  assert.deepEqual(server.inFolder(server.root).map(f => f.name).sort(), ['Alpha.gengis.json', 'Beta.gengis.json']);
+  assert.equal(content(server, 'Beta.gengis.json').features.length, 3);
+  assert.equal(linkOf(app, 'p1').state, 'synced');
+  assert.notEqual(linkOf(app, 'p2').excluded, true);
+  assert.ok(app.toasts.some(t => /new folder/.test(t)));
+  assert.ok(!app.toasts.some(t => /deleted from the cloud/.test(t)));
+  assert.equal(app.C.accounts[0].pullError, '');
+});

@@ -50,15 +50,32 @@ function makeServer(opts) {
   const etag = f => `"{${f.id}},${f.version}"`;
   const item = f => ({ id: f.id, name: f.name, eTag: etag(f), size: S.sizeOf.get(f.id) || f.content.length, lastModifiedDateTime: new Date(f.modified).toISOString(), file: { mimeType: 'application/json' } });
   const touch = f => { f.version++; f.modified = S.now(); S.log.push({ seq: ++S.seq, id: f.id }); };
-  // GenGIS's app folder: Microsoft may hand out a new one (the old renamed, moved or deleted); files elsewhere are out of reach
-  S.root = { id: 'root', name: 'GenGIS' };
-  S.newRoot = name => { S.root = { id: 'root' + (++S.ids), name: name || 'GenGIS 1' }; S.log.push({ seq: ++S.seq, id: null }); };
-  const here = f => f && !f.deleted && f.root === S.root.id;
-  const byName = name => [...S.files.values()].find(f => here(f) && f.name.toLowerCase() === name.toLowerCase());
-  S.create = (name, content) => {
-    const f = { id: 'F' + (++S.ids), name, content: Buffer.from(content), version: 0, modified: S.now(), deleted: false, root: S.root.id };
+  // GenGIS's app folder. Microsoft makes it the first time a request names approot, and makes one for each request
+  // that names approot while there is none yet: two in flight together give "GenGIS" and "GenGIS 1", and approot
+  // names the last one made from then on (what the user found on OneDrive). A server starts with the folder made
+  // unless opts.fresh (an account's first sign-in); making one takes S.provisionMs. Files elsewhere are out of reach.
+  S.folders = [];            // every folder made: { id, name, deleted }
+  S.provisionMs = opts.provisionMs == null ? 20 : opts.provisionMs;
+  S.root = null;             // the folder approot names
+  const makeFolder = () => { const n = S.folders.filter(f => !f.deleted).length, f = { id: 'D' + (++S.ids), name: n ? 'GenGIS ' + n : 'GenGIS', deleted: false }; S.folders.push(f); S.root = f; return f; };
+  if (!opts.fresh) makeFolder();
+  async function approot() {
+    if (S.root) return S.root;
+    await new Promise(r => setTimeout(r, S.provisionMs));
+    return makeFolder();
+  }
+  // the user deleted GenGIS's folder (its files with it): Microsoft makes a new one the next time approot is named
+  S.deleteRoot = () => { if (S.root) { S.root.deleted = true; S.files.forEach(f => { if (f.root === S.root.id) f.deleted = true; }); } S.root = null; S.log.push({ seq: ++S.seq, id: null }); };
+  // the user renamed or moved it: Microsoft hands out a new one, and the old one (its files kept) is out of reach
+  S.newRoot = () => { S.root = null; makeFolder(); S.log.push({ seq: ++S.seq, id: null }); };
+  const inFolder = (f, folder) => f && !f.deleted && folder && !folder.deleted && f.root === folder.id;
+  const here = f => inFolder(f, S.root);
+  const byName = (name, folder) => [...S.files.values()].find(f => inFolder(f, folder || S.root) && f.name.toLowerCase() === name.toLowerCase());
+  S.create = (name, content, folder) => {
+    const f = { id: 'F' + (++S.ids), name, content: Buffer.from(content), version: 0, modified: S.now(), deleted: false, root: (folder || S.root).id };
     S.files.set(f.id, f); touch(f); return f;
   };
+  S.inFolder = folder => S.live().filter(f => inFolder(f, folder));
   // another device (or the user in OneDrive) changes a file
   S.writeRemote = (id, content) => { const f = S.files.get(id); f.content = Buffer.from(content); touch(f); return f; };
   S.deleteRemote = id => { const f = S.files.get(id); f.deleted = true; touch(f); };
@@ -117,7 +134,12 @@ function makeServer(opts) {
       S.sessions.delete(url.slice(UPLOAD.length));
       let f;
       if (s.fileId) { f = S.files.get(s.fileId); if (!f || f.deleted) return gerr(404, 'itemNotFound'); f.content = content; touch(f); }
-      else { if (byName(s.name)) return gerr(409, 'nameAlreadyExists'); f = S.create(s.name, content); }
+      else {
+        const folder = S.folders.find(x => x.id === s.folder);
+        if (!folder || folder.deleted) return gerr(404, 'itemNotFound');
+        if (byName(s.name, folder)) return gerr(409, 'nameAlreadyExists');
+        f = S.create(s.name, content, folder);
+      }
       return json(s.fileId ? 200 : 201, item(f));
     }
     if (!url.startsWith(GRAPH)) return json(404, 'not here');
@@ -129,41 +151,52 @@ function makeServer(opts) {
     const live = id => { const f = S.files.get(id); return here(f) ? f : null; };
     const gone = id => { const f = S.files.get(id); return f && !f.deleted ? gerr(403, 'accessDenied', 'outside the app folder') : gerr(404, 'itemNotFound'); };
     let m;
-    if (p === '/me/drive/special/approot' && method === 'GET') return json(200, { id: S.root.id, name: S.root.name });
-    if (p === '/me/drive/special/approot/children' && method === 'GET') {
-      const page = +(u.searchParams.get('page') || 0), all = S.inRoot().filter(f => !S.hidden.has(f.id)).sort((a, b) => a.id.localeCompare(b.id));
-      const slice = all.slice(page * S.pageSize, (page + 1) * S.pageSize);
-      const out = { value: slice.map(item) };
-      if ((page + 1) * S.pageSize < all.length) out['@odata.nextLink'] = GRAPH + '/me/drive/special/approot/children?page=' + (page + 1);
-      return json(200, out);
+    // ---- GenGIS's folder, named by its constant path (approot: made now when there is none) or by its id
+    let folder = null, rest = null, base = null;
+    if (p.startsWith('/me/drive/special/approot')) { folder = await approot(); rest = p.slice('/me/drive/special/approot'.length); base = GRAPH + '/me/drive/special/approot'; }
+    else if ((m = /^\/me\/drive\/items\/([^/:]+)(.*)$/.exec(p)) && S.folders.some(x => x.id === m[1])) {
+      folder = S.folders.find(x => x.id === m[1]); rest = m[2]; base = GRAPH + '/me/drive/items/' + folder.id;
+      if (folder.deleted) return gerr(404, 'itemNotFound');
+      if (folder !== S.root) return gerr(403, 'accessDenied', 'outside the app folder');
     }
-    if (p === '/me/drive/special/approot/delta' && method === 'GET') {
-      const token = u.searchParams.get('token'), from = token == null ? 0 : +token, page = +(u.searchParams.get('page') || 0);
-      if (S.noDelta) return gerr(403, 'accessDenied', 'delta is not supported on this folder');
-      if (token != null && S.tooOld.has(token)) return gerr(410, 'resyncRequired');
-      const upTo = u.searchParams.has('upto') ? +u.searchParams.get('upto') : S.seq;
-      const ids = [...new Set(S.log.filter(e => e.id && e.seq > from && e.seq <= upTo).map(e => e.id))];
-      const items = ids.map(id => S.files.get(id)).filter(f => f.root === S.root.id && !S.hidden.has(f.id) && (token != null || !f.deleted))
-        .map(f => f.deleted ? { id: f.id, deleted: { state: 'deleted' } } : item(f));
-      const slice = items.slice(page * S.pageSize, (page + 1) * S.pageSize), out = { value: slice };
-      if ((page + 1) * S.pageSize < items.length) out['@odata.nextLink'] = GRAPH + '/me/drive/special/approot/delta?' + (token != null ? 'token=' + token + '&' : '') + 'upto=' + upTo + '&page=' + (page + 1);
-      else out['@odata.deltaLink'] = GRAPH + '/me/drive/special/approot/delta?token=' + upTo;
-      return json(200, out);
-    }
-    if ((m = /^\/me\/drive\/special\/approot:\/(.+):$/.exec(p)) && method === 'GET') {
-      const f = byName(m[1]);
-      return f ? json(200, item(f)) : gerr(404, 'itemNotFound');
-    }
-    if ((m = /^\/me\/drive\/special\/approot:\/(.+):\/content$/.exec(p)) && method === 'PUT') {
-      if (byName(m[1])) return gerr(409, 'nameAlreadyExists');
-      const made = item(S.create(m[1], Buffer.from(o.body)));
-      if (S.omitEtag) delete made.eTag;
-      return json(201, made);
-    }
-    if ((m = /^\/me\/drive\/special\/approot:\/(.+):\/createUploadSession$/.exec(p)) && method === 'POST') {
-      if (byName(m[1])) return gerr(409, 'nameAlreadyExists');
-      const sid = 'S' + (++S.ids); S.sessions.set(sid, { fileId: null, name: m[1], parts: [], received: 0 });
-      return json(200, { uploadUrl: UPLOAD + sid });
+    if (folder) {
+      if (rest === '' && method === 'GET') return json(200, { id: folder.id, name: folder.name });
+      if (rest === '/children' && method === 'GET') {
+        const page = +(u.searchParams.get('page') || 0), all = S.inFolder(folder).filter(f => !S.hidden.has(f.id)).sort((a, b) => a.id.localeCompare(b.id));
+        const slice = all.slice(page * S.pageSize, (page + 1) * S.pageSize);
+        const out = { value: slice.map(item) };
+        if ((page + 1) * S.pageSize < all.length) out['@odata.nextLink'] = base + '/children?page=' + (page + 1);
+        return json(200, out);
+      }
+      if (rest === '/delta' && method === 'GET') {
+        const token = u.searchParams.get('token'), from = token == null ? 0 : +token, page = +(u.searchParams.get('page') || 0);
+        if (S.noDelta) return gerr(403, 'accessDenied', 'delta is not supported on this folder');
+        if (token != null && S.tooOld.has(token)) return gerr(410, 'resyncRequired');
+        const upTo = u.searchParams.has('upto') ? +u.searchParams.get('upto') : S.seq;
+        const ids = [...new Set(S.log.filter(e => e.id && e.seq > from && e.seq <= upTo).map(e => e.id))];
+        const items = ids.map(id => S.files.get(id)).filter(f => f.root === folder.id && !S.hidden.has(f.id) && (token != null || !f.deleted))
+          .map(f => f.deleted ? { id: f.id, deleted: { state: 'deleted' } } : item(f));
+        const slice = items.slice(page * S.pageSize, (page + 1) * S.pageSize), out = { value: slice };
+        if ((page + 1) * S.pageSize < items.length) out['@odata.nextLink'] = base + '/delta?' + (token != null ? 'token=' + token + '&' : '') + 'upto=' + upTo + '&page=' + (page + 1);
+        else out['@odata.deltaLink'] = base + '/delta?token=' + upTo;
+        return json(200, out);
+      }
+      if ((m = /^:\/(.+):$/.exec(rest)) && method === 'GET') {
+        const f = byName(m[1], folder);
+        return f ? json(200, item(f)) : gerr(404, 'itemNotFound');
+      }
+      if ((m = /^:\/(.+):\/content$/.exec(rest)) && method === 'PUT') {
+        if (byName(m[1], folder)) return gerr(409, 'nameAlreadyExists');
+        const made = item(S.create(m[1], Buffer.from(o.body), folder));
+        if (S.omitEtag) delete made.eTag;
+        return json(201, made);
+      }
+      if ((m = /^:\/(.+):\/createUploadSession$/.exec(rest)) && method === 'POST') {
+        if (byName(m[1], folder)) return gerr(409, 'nameAlreadyExists');
+        const sid = 'S' + (++S.ids); S.sessions.set(sid, { fileId: null, name: m[1], folder: folder.id, parts: [], received: 0 });
+        return json(200, { uploadUrl: UPLOAD + sid });
+      }
+      return gerr(400, 'invalidRequest', method + ' ' + p);
     }
     if ((m = /^\/me\/drive\/items\/([^/]+)$/.exec(p))) {
       const f = live(m[1]);

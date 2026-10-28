@@ -236,3 +236,26 @@ test('a network failure is reported as code network', async () => {
   server.fail = () => 'network';
   await assert.rejects(od.put(ctx, { name: 'X.gengis.json', text: 'x' }), e => e.code === 'network');
 });
+
+test('the folder is named by its path once: requests made together before it exists share that one request, and go by its id', async () => {
+  const { od, ctx, server } = await setup({ fresh: true });
+  const [files, a, ch] = await Promise.all([od.list(ctx), od.put(ctx, { name: 'First.gengis.json', text: '{"a":1}' }), od.changes(ctx, null)]);
+  assert.equal(server.folders.length, 1, 'one folder');
+  assert.equal(server.root.name, 'GenGIS');
+  assert.equal(server.calls.filter(c => /special\/approot/.test(c.url)).length, 1, 'approot named once');
+  server.calls.filter(c => /special\/approot/.test(c.url)).forEach(c => assert.match(c.url, /special\/approot\?/, 'by path only to ask which folder it is'));
+  assert.equal(server.files.get(a.fileId).root, server.root.id);
+  assert.ok(Array.isArray(files) && ch.items.length <= 1);
+  assert.deepEqual(Array.from(await od.list(ctx), f => f.name), ['First.gengis.json']);
+});
+
+test('a guarded update cut short, the file grown too large to read meanwhile: a conflict (412), not an error', async () => {
+  const { od, ctx, server } = await setup();
+  const big = JSON.stringify({ blob: 'h'.repeat(13 * 1024 * 1024) });
+  const a = await od.put(ctx, { name: 'H.gengis.json', text: 'small' });
+  await assert.rejects(od.put(flaky(ctx, server, 2), { fileId: a.fileId, text: big, ifMatch: a.etag }), e => e.code === 'network');
+  server.writeRemote(a.fileId, 'changed elsewhere');
+  server.sizeOf.set(a.fileId, 900 * 1024 * 1024);
+  await assert.rejects(od.put(ctx, { fileId: a.fileId, text: big, ifMatch: a.etag }), e => e.status === 412 && e.code !== 'tooLarge');
+  assert.equal(server.files.get(a.fileId).content.toString(), 'changed elsewhere');
+});

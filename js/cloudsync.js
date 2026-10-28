@@ -199,10 +199,11 @@ window.MB = window.MB || {};
     if (acc && acc.accessToken) { delete acc.accessToken; delete acc.accessExp; await store().put('accounts', acc); }
   }
 
-  // A provider call for an account; an expired token (401) is renewed and the call made once more.
+  // A provider call for an account; an expired token (401) is renewed and the call made once more. The account's
+  // folder goes along by id (checkRoot found it) so that no request has to name it by its path.
   async function call(acc, fn) {
     const prov = providerOf(acc);
-    const ctx = { fetch: env.fetch, token: () => accessToken(acc.id), account: acc.id };
+    const ctx = { fetch: env.fetch, token: () => accessToken(acc.id), account: acc.id, root: acc.rootId || null };
     try { return await fn(prov, ctx); }
     catch (e) {
       if (e.status !== 401) throw e;
@@ -273,6 +274,9 @@ window.MB = window.MB || {};
     setState(l, 'syncing');
     const text = JSON.stringify(rec.data, null, 1);
     try {
+      // the account's folder, found first when this session has not yet (a new one: checkRoot has every project
+      // uploaded to it again, and this one goes with them)
+      if (!acc.rootId || !rootSeen.has(acc.id)) { if (await checkRoot(acc)) { C.schedule(projectId, 0); return; } }
       let out;
       await call(acc, async (prov, ctx) => {
         const onProgress = (d, t) => { C.progress[projectId] = { done: d, total: t }; emit(); };
@@ -342,7 +346,8 @@ window.MB = window.MB || {};
     if (e.status === 412) { l.state = 'conflict'; l.error = ''; await saveLink(l); notify(l, 'conflict'); emit(); return; }
     if (e.code === 'signin') { setState(l, 'signin', e.message); await saveLink(l); return; }
     if (!env.online()) { setState(l, 'offline'); await saveLink(l); return; } // resumes when the network returns
-    const transient = e.status === 429 || e.status >= 500 || e.status === 423 || e.code === 'network';
+    if (e.code === 'rootGone') rootSeen.delete(l.accountId); // the folder is gone: looked for again (a new one) before the next try
+    const transient = e.status === 429 || e.status >= 500 || e.status === 423 || e.code === 'network' || e.code === 'rootGone';
     if (e.status === 507 || e.code === 'quotaLimitReached' || e.code === 'insufficientStorage') { setState(l, 'error', 'The cloud storage is full'); await saveLink(l); notify(l, 'error'); return; }
     setState(l, transient ? 'pending' : 'error', e.message);
     await saveLink(l);
@@ -389,16 +394,21 @@ window.MB = window.MB || {};
 
   // GenGIS's folder, checked once a session and on every full re-check: when Microsoft has given GenGIS a new one
   // (the old one was renamed, moved or deleted), every project is uploaded to it again rather than taken for deleted.
+  // Resolves whether the folder is a new one.
+  // The check is the one request that names the folder by its path rather than its id (OneDrive makes the folder
+  // when a request first names it, and a second request naming it at that same moment makes a second folder,
+  // "GenGIS 1"), so it is made under the lock, before anything else is asked of the folder, and the id it gives is
+  // kept with the account for every request after (call).
   const rootSeen = new Set();
   async function checkRoot(acc) {
     const root = await call(acc, (prov, ctx) => prov.root(ctx));
     rootSeen.add(acc.id);
-    if (acc.rootId === root.fileId) return;
+    if (acc.rootId === root.fileId) return false;
     const changed = !!acc.rootId;
     const fresh = await store().get('accounts', acc.id);
     if (fresh) { fresh.rootId = root.fileId; if (changed) fresh.cursor = null; await store().put('accounts', fresh); }
     acc.rootId = root.fileId;
-    if (!changed) return;
+    if (!changed) return false;
     acc.cursor = null;
     for (const l of await store().all('links')) {
       if (l.accountId !== acc.id || !l.fileId) continue;
@@ -407,11 +417,18 @@ window.MB = window.MB || {};
       C.schedule(l.projectId, 500);
     }
     MB.toast(providerOf(acc).name + ' has a new folder for GenGIS (' + root.name + '): the old one was renamed, moved or deleted. Your projects are being uploaded to it.', 9000);
+    return true;
   }
 
   async function pullAccount(acc) {
-    if (!rootSeen.has(acc.id) || !acc.cursor) await checkRoot(acc);
-    let res = await call(acc, (prov, ctx) => prov.changes(ctx, acc.cursor || null));
+    if (!rootSeen.has(acc.id) || !acc.rootId || !acc.cursor) await checkRoot(acc);
+    let res;
+    try { res = await call(acc, (prov, ctx) => prov.changes(ctx, acc.cursor || null)); }
+    catch (e) { // the folder is gone (deleted meanwhile): Microsoft gives a new one, and every project goes to it again
+      if (e.code !== 'rootGone') throw e;
+      await checkRoot(acc);
+      res = await call(acc, (prov, ctx) => prov.changes(ctx, acc.cursor || null));
+    }
     let full = !acc.cursor || res.reset || res.full; // everything in the folder, not just what changed
     if (res.reset) { acc.cursor = null; res = await call(acc, (prov, ctx) => prov.changes(ctx, null)); full = true; }
     const links = (await store().all('links')).filter(l => l.accountId === acc.id && l.fileId);
@@ -651,11 +668,19 @@ window.MB = window.MB || {};
     if (on) (await MB.projects.list()).forEach(r => { if (!isDraftRec(r)) C.schedule(r.id, 300); });
   };
 
+  // An account with its folder known, for a request made outside the lock: found under the lock first when it is
+  // not yet (a pull or push may be finding it at this very moment; this waits for that).
+  async function rooted(accId) {
+    let acc = await store().get('accounts', accId);
+    if (acc && !acc.rootId) await env.lock(async () => { acc = await store().get('accounts', accId); if (acc && !acc.rootId) await checkRoot(acc); });
+    return acc;
+  }
+
   // The cloud's project files that are not linked to a project here (for "Open from the cloud").
   C.listRemote = async function (accId) {
-    const acc = await store().get('accounts', accId);
+    const acc = await rooted(accId);
     if (!acc) return [];
-    const files = await call(acc, (p, ctx) => p.list(ctx));
+    const files = await call(acc, (p, ctx) => p.list(ctx)).catch(e => { if (e.code === 'rootGone') rootSeen.delete(accId); throw e; });
     const linked = new Set((await store().all('links')).filter(l => l.accountId === accId).map(l => l.fileId));
     return files.filter(f => !linked.has(f.fileId)).sort((a, b) => b.modified - a.modified);
   };
