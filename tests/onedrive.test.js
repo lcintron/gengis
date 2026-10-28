@@ -54,6 +54,85 @@ test('large files go up in an upload session: 320 KiB-multiple chunks, byte-exac
   assert.equal(server.files.get(b.fileId).content.length, Buffer.byteLength(big) + 1);
 });
 
+// A context whose chunk uploads fail on the nth one: 'network' before it is sent, 'lost' after it arrived (its answer lost).
+function flaky(ctx, server, n, how) {
+  let count = 0;
+  return Object.assign({}, ctx, { fetch: async (url, o) => {
+    const chunk = /^https:\/\/upload\.test\//.test(url) && o && o.method === 'PUT';
+    if (chunk && ++count === n) {
+      if (how === 'lost') await server.fetch(url, o);
+      throw new TypeError('Failed to fetch');
+    }
+    return server.fetch(url, o);
+  } });
+}
+const sessionsMade = server => server.calls.filter(c => /createUploadSession/.test(c.url)).length;
+
+test('an interrupted large upload goes on from what OneDrive has when the same content is written again', async () => {
+  const { od, ctx, server } = await setup();
+  const big = JSON.stringify({ blob: 'r'.repeat(18 * 1024 * 1024) });
+  await assert.rejects(od.put(flaky(ctx, server, 3), { name: 'R.gengis.json', text: big }), e => e.code === 'network');
+  const sent = server.chunkSizes.reduce((a, b) => a + b, 0);
+  assert.ok(sent > 0 && sent < Buffer.byteLength(big));
+  server.chunkSizes.length = 0;
+  const progress = [];
+  const a = await od.put(ctx, { name: 'R.gengis.json', text: big, onProgress: d => progress.push(d) });
+  assert.equal(sessionsMade(server), 1, 'the same session');
+  assert.equal(server.chunkSizes.reduce((x, y) => x + y, 0), Buffer.byteLength(big) - sent, 'only the rest was sent');
+  assert.equal(progress[0], sent, 'progress starts where it left off');
+  assert.equal(server.files.get(a.fileId).content.toString(), big);
+  assert.equal(od._sessions.size, 0);
+});
+
+test('a chunk that arrived though its answer was lost is not sent again', async () => {
+  const { od, ctx, server } = await setup();
+  const big = JSON.stringify({ blob: 'l'.repeat(13 * 1024 * 1024) });
+  await assert.rejects(od.put(flaky(ctx, server, 2, 'lost'), { name: 'L.gengis.json', text: big }), e => e.code === 'network');
+  const a = await od.put(ctx, { name: 'L.gengis.json', text: big });
+  assert.equal(sessionsMade(server), 1);
+  assert.equal(server.chunkSizes.reduce((x, y) => x + y, 0), Buffer.byteLength(big), 'every byte sent once');
+  assert.equal(server.files.get(a.fileId).content.toString(), big);
+});
+
+test('different content after an interruption starts a new session (the old one is cancelled)', async () => {
+  const { od, ctx, server } = await setup();
+  const big = JSON.stringify({ blob: 'd'.repeat(13 * 1024 * 1024) });
+  await assert.rejects(od.put(flaky(ctx, server, 2), { name: 'N.gengis.json', text: big }), e => e.code === 'network');
+  const a = await od.put(ctx, { name: 'N.gengis.json', text: big + ' ' });
+  assert.equal(sessionsMade(server), 2);
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(server.sessions.size, 0, 'the cut-short session was cancelled');
+  assert.equal(server.files.get(a.fileId).content.toString(), big + ' ');
+});
+
+test('a session that ended over there (expired) starts again from the start, never answering 404', async () => {
+  const { od, ctx, server } = await setup();
+  const big = JSON.stringify({ blob: 'e'.repeat(13 * 1024 * 1024) });
+  await assert.rejects(od.put(flaky(ctx, server, 2), { name: 'E.gengis.json', text: big }), e => e.code === 'network');
+  server.sessions.clear(); // expired
+  const a = await od.put(ctx, { name: 'E.gengis.json', text: big });
+  assert.equal(sessionsMade(server), 2);
+  assert.equal(server.files.get(a.fileId).content.toString(), big);
+  // ...and one that ends between chunks: a new session at once
+  let n = 0;
+  const cut = Object.assign({}, ctx, { fetch: async (url, o) => {
+    if (/^https:\/\/upload\.test\//.test(url) && o.method === 'PUT' && ++n === 2) server.sessions.clear();
+    return server.fetch(url, o);
+  } });
+  const b = await od.put(cut, { fileId: a.fileId, text: big + '!', ifMatch: a.etag });
+  assert.equal(server.files.get(b.fileId).content.toString(), big + '!');
+});
+
+test('a guarded update cut short is not resumed over a change made elsewhere meanwhile (412)', async () => {
+  const { od, ctx, server } = await setup();
+  const big = JSON.stringify({ blob: 'g'.repeat(13 * 1024 * 1024) });
+  const a = await od.put(ctx, { name: 'G.gengis.json', text: 'small' });
+  await assert.rejects(od.put(flaky(ctx, server, 2), { fileId: a.fileId, text: big, ifMatch: a.etag }), e => e.code === 'network');
+  server.writeRemote(a.fileId, 'changed elsewhere');
+  await assert.rejects(od.put(ctx, { fileId: a.fileId, text: big, ifMatch: a.etag }), e => e.status === 412);
+  assert.equal(server.files.get(a.fileId).content.toString(), 'changed elsewhere');
+});
+
 test('the 4 MiB boundary: just under goes in one request, just over in a session', async () => {
   const { od, ctx, server } = await setup();
   const under = 'a'.repeat(4 * 1024 * 1024), over = under + 'b';

@@ -55,19 +55,67 @@ window.MB = window.MB || {};
 
   const item = it => ({ fileId: it.id, name: it.name, etag: it.eTag, size: it.size || 0, modified: Date.parse(it.lastModifiedDateTime) || 0 });
 
-  // A large file in an upload session: chunks to the session's own address (which carries its own authorization).
-  async function uploadSession(ctx, path, bytes, headers, conflict, onProgress) {
-    const s = await graph(ctx, 'POST', path, { headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': conflict } }) });
-    let res, at = 0;
-    while (at < bytes.length) {
+  // Upload sessions cut short (offline, a timeout, a passing server error), kept so that the same content written
+  // again goes on from what OneDrive already has instead of from the start: account + path -> { url, expires, text }.
+  const sessions = new Map();
+  const network = () => Object.assign(new Error('offline'), { code: 'network' });
+  function forget(key) {
+    const s = sessions.get(key);
+    sessions.delete(key);
+    if (s) Promise.resolve().then(() => s.fetch(s.url, { method: 'DELETE' })).catch(() => {}); // (OneDrive drops it anyway when it expires)
+  }
+
+  // How many bytes an upload session has (from the start), or null when it is gone.
+  async function received(ctx, url) {
+    let res;
+    try { res = await ctx.fetch(url, { method: 'GET' }); } catch (e) { throw network(); }
+    if (res.status === 404 || res.status === 410) return null;
+    if (!res.ok) throw await httpError(res, 'upload status');
+    const m = /^(\d+)-/.exec(((await res.json()).nextExpectedRanges || [])[0] || '');
+    return m ? +m[1] : null;
+  }
+
+  // The chunks from byte at on, to the session's own address (which carries its own authorization). Resolves the
+  // file's item, or null when the session is gone on OneDrive's side (expired or cancelled).
+  async function chunks(ctx, s, bytes, at, onProgress) {
+    for (let resync = 0; ;) {
+      if (at >= bytes.length) return null; // (all sent and still not a file: not a session to go on with)
       const end = Math.min(at + CHUNK, bytes.length);
-      try { res = await ctx.fetch(s.uploadUrl, { method: 'PUT', headers: { 'Content-Range': `bytes ${at}-${end - 1}/${bytes.length}` }, body: bytes.subarray(at, end) }); }
-      catch (e) { const err = new Error('offline'); err.code = 'network'; throw err; }
-      if (!res.ok && res.status !== 202) throw await httpError(res, 'upload');
-      at = end;
+      let res;
+      try { res = await ctx.fetch(s.url, { method: 'PUT', headers: { 'Content-Range': `bytes ${at}-${end - 1}/${bytes.length}` }, body: bytes.subarray(at, end) }); }
+      catch (e) { throw network(); }
+      if (res.status === 404 || res.status === 410) return null;
+      // OneDrive has a different part than this one assumed (a chunk that arrived though its answer did not): from what it has
+      if (res.status === 416 && resync++ < 3) { at = await received(ctx, s.url); if (at == null) return null; continue; }
+      if (!res.ok) throw await httpError(res, 'upload');
+      if (res.status !== 202) { if (onProgress) onProgress(bytes.length, bytes.length); return res.json(); }
+      const m = /^(\d+)-/.exec(((await res.json().catch(() => ({}))).nextExpectedRanges || [])[0] || '');
+      at = m ? +m[1] : end;
       if (onProgress) onProgress(at, bytes.length);
     }
-    return res.json();
+  }
+
+  // A large file in an upload session. Content an earlier try partly uploaded goes on from where OneDrive got to; a
+  // write guarded by an eTag checks the file first (changed elsewhere since: a new session, which is refused with 412).
+  async function uploadSession(ctx, o, path, bytes, headers, conflict) {
+    const key = (ctx.account || '') + ' ' + path;
+    let s = sessions.get(key), at = 0;
+    if (s && (s.text !== o.text || s.expires - Date.now() < 60 * 1000)) { forget(key); s = null; }
+    if (s && o.ifMatch && (await OD.meta(ctx, o.fileId)).etag !== o.ifMatch) { forget(key); s = null; }
+    if (s && (at = await received(ctx, s.url)) == null) { sessions.delete(key); s = null; at = 0; }
+    for (let fresh = 0; ; fresh++) {
+      if (!s) {
+        const r = await graph(ctx, 'POST', path, { headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': conflict } }) });
+        s = { url: r.uploadUrl, expires: Date.parse(r.expirationDateTime) || Date.now() + 3600 * 1000, text: o.text, fetch: ctx.fetch };
+        sessions.set(key, s); at = 0;
+      }
+      if (at && o.onProgress) o.onProgress(at, bytes.length);
+      const done = await chunks(ctx, s, bytes, at, o.onProgress);
+      sessions.delete(key);
+      if (done) return done;
+      s = null; // the session ended over there: once more, from the start (a second time: a passing failure, tried again later)
+      if (fresh) throw Object.assign(new Error('The upload session ended'), { status: 503 });
+    }
   }
 
   // Microsoft's sign-in errors, in words (AADSTS codes in the error description).
@@ -155,7 +203,7 @@ window.MB = window.MB || {};
         it = await graph(ctx, 'PUT', path, { headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: bytes });
       } else {
         const path = o.fileId ? '/me/drive/items/' + enc(o.fileId) + '/createUploadSession' : ROOT + ':/' + enc(o.name) + ':/createUploadSession';
-        it = await uploadSession(ctx, path, bytes, headers, o.fileId ? 'replace' : 'fail', o.onProgress);
+        it = await uploadSession(ctx, o, path, bytes, headers, o.fileId ? 'replace' : 'fail');
       }
       return item(it);
     },
@@ -163,6 +211,7 @@ window.MB = window.MB || {};
     rename: (ctx, fileId, name) => graph(ctx, 'PATCH', '/me/drive/items/' + enc(fileId), { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).then(item),
 
     remove: (ctx, fileId) => graph(ctx, 'DELETE', '/me/drive/items/' + enc(fileId)),
+    _sessions: sessions, // (tests)
 
     // What changed in GenGIS's folder since cursor (none: everything there now). Resolves { items, cursor, reset }:
     // reset when the cursor is too old (the caller starts again without one).

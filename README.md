@@ -54,6 +54,8 @@ npm install && npm start  # desktop app (Electron)
 
 Any static web server works for the web app. Open it with a location: `?q=Eiffel+Tower`, `?lat=48.858&lon=2.294&zoom=16` or `?poi=cafe`.
 
+The installed desktop app opens `gengis://` links with the same parameters, in the window already open: `gengis://open?q=Eiffel%20Tower`, `gengis://open?center=48.858,2.294&zoom=16`. `gengis://open?file=<path>` opens a project file the app has opened or saved before (any other file is refused).
+
 ### Live air and vessel traffic: where it works
 
 Browsers only read another server's data when it allows them to (CORS), and block plain-HTTP requests from an HTTPS page. The desktop app has neither limit.

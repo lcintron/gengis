@@ -103,6 +103,8 @@ function makeServer(opts) {
     if (url.startsWith(UPLOAD)) {
       const s = S.sessions.get(url.slice(UPLOAD.length));
       if (!s) return gerr(404, 'itemNotFound');
+      if (method === 'GET') return json(200, { nextExpectedRanges: [s.received + '-'], expirationDateTime: new Date(S.now() + 86400000).toISOString() });
+      if (method === 'DELETE') { S.sessions.delete(url.slice(UPLOAD.length)); return json(204, null); }
       const m = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(h['Content-Range'] || '');
       if (!m) return gerr(400, 'invalidRange');
       const [a, b, total] = [+m[1], +m[2], +m[3]], body = Buffer.from(o.body);

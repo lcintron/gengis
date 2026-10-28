@@ -95,6 +95,28 @@ test('the open project is reloaded with the cloud change (this tab edits it, not
   assert.equal(app.loaded[0].features.length, 6);
 });
 
+test('a cloud change taken into the open project says when it cleared undo history (and only then)', async () => {
+  const { server, app } = await connected();
+  app.open('p1');
+  let steps = false;
+  app.MB.canUndo = () => steps; app.MB.canRedo = () => false;
+  const change = n => server.writeRemote(fileOf(server, 'Alpha.gengis.json').id, JSON.stringify(project('p1', 'Alpha', n)));
+  change(6); await app.C.pull(true); await app.settle();
+  assert.equal(app.loaded.length, 1);
+  assert.ok(app.toasts.some(t => /updated from OneDrive$/.test(t)), 'no history: no word about it');
+  steps = true;
+  change(7); await app.C.pull(true); await app.settle();
+  assert.equal(app.loaded.length, 2);
+  assert.ok(app.toasts.some(t => /updated from OneDrive\. Undo history was cleared\.$/.test(t)));
+  // a project not open here keeps no history to clear
+  app.toasts.length = 0;
+  app.device.projects.put(project('p2', 'Beta', 1));
+  await app.C.syncNow(); app.C.schedule('p2', 0); await app.settle();
+  server.writeRemote(fileOf(server, 'Beta.gengis.json').id, JSON.stringify(project('p2', 'Beta', 4)));
+  await app.C.pull(true); await app.settle();
+  assert.ok(app.toasts.some(t => /^"Beta" updated from OneDrive$/.test(t)));
+});
+
 test('unsaved changes in the open project are never replaced: it is a conflict instead', async () => {
   const { server, app } = await connected();
   app.open('p1'); app.P.dirtyFlag = true;
@@ -144,6 +166,16 @@ test('conflict → use the cloud copy: this version is kept as a recovery copy',
   assert.equal(app.device.projects.recs.get('p1').data.features.length, 7);
   assert.ok(app.device.projects.copies.some(c => c.data.features.length === 5));
   assert.equal(linkOf(app, 'p1').state, 'synced');
+  assert.ok(app.toasts.some(t => /^Using the OneDrive version\. Yours is in earlier copies\.$/.test(t)));
+});
+
+test('conflict → use the cloud copy in the open project with undo steps: says the history was cleared', async () => {
+  const { app } = await inConflict();
+  app.device.locksHeld.set('p1', app.tabId); app.open('p1');
+  app.MB.canUndo = () => true;
+  await app.C.resolve('p1', 'cloud'); await app.settle();
+  assert.equal(app.loaded[app.loaded.length - 1].features.length, 7);
+  assert.ok(app.toasts.some(t => /^Using the OneDrive version\. Yours is in earlier copies\. Undo history was cleared\.$/.test(t)));
 });
 
 test('conflict → keep both: the cloud version becomes its own project and file, this one replaces the file', async () => {
@@ -246,6 +278,20 @@ test('a large project (12 MB, pictures) syncs through an upload session', async 
   const big = project('p9', 'Pictures', 3, { svgLibrary: { img1: { dataUrl: pic } } });
   const { server, app } = await connected({ projects: [big] });
   assert.ok(server.calls.some(c => /createUploadSession/.test(c.url)));
+  assert.equal(content(server, 'Pictures.gengis.json').svgLibrary.img1.dataUrl.length, pic.length);
+  assert.equal(linkOf(app, 'p9').state, 'synced');
+});
+
+test('a large upload cut off part way goes on from there when the engine tries again', async () => {
+  const pic = 'data:image/png;base64,' + 'B'.repeat(14 * 1024 * 1024);
+  const { server, app } = await connected({ projects: [project('p9', 'Pictures', 3)] });
+  let n = 0;
+  server.fail = r => (/^https:\/\/upload\.test\//.test(r.url) && r.method === 'PUT' && ++n === 2 ? { status: 503, ok: false, headers: { get: () => null }, json: async () => ({ error: { code: 'serviceNotAvailable' } }) } : null);
+  server.chunkSizes.length = 0;
+  app.save(project('p9', 'Pictures', 3, { svgLibrary: { img1: { dataUrl: pic } } }));
+  await new Promise(r => setTimeout(r, 1500)); await app.settle();
+  assert.equal(server.calls.filter(c => /createUploadSession/.test(c.url)).length, 1, 'one session, resumed');
+  assert.equal(server.chunkSizes.reduce((a, b) => a + b, 0), Buffer.byteLength(JSON.stringify(app.device.projects.recs.get('p9').data, null, 1)), 'no chunk sent twice');
   assert.equal(content(server, 'Pictures.gengis.json').svgLibrary.img1.dataUrl.length, pic.length);
   assert.equal(linkOf(app, 'p9').state, 'synced');
 });

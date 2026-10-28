@@ -466,15 +466,19 @@ window.MB = window.MB || {};
     const localChanged = !rec || (await hashOf(rec.data)) !== l.hash || (open && MB.projects.dirty());
     if (localChanged) { l.state = 'conflict'; l.remoteEtag = remote.etag; await saveLink(l); notify(l, 'conflict'); emit(); return; }
     C.activity(); // someone is working on it elsewhere: check more often for a while
-    await takeRemote(l, data, remote, remoteHash);
-    MB.toast('"' + (data.name || l.nameFor) + '" updated from ' + providerOf(acc).name, 3500);
+    const cleared = await takeRemote(l, data, remote, remoteHash);
+    MB.toast('"' + (data.name || l.nameFor) + '" updated from ' + providerOf(acc).name + (cleared ? HISTORY_CLEARED : ''), cleared ? 6000 : 3500);
   }
 
+  // Taking a cloud copy into the open project starts its undo history again (the steps were of the version replaced).
+  const HISTORY_CLEARED = '. Undo history was cleared.';
+  // The cloud copy becomes the project here. Resolves true when the open project's undo history was cleared.
   async function takeRemote(l, data, remote, remoteHash) {
     data = Object.assign({}, data, { id: l.projectId }); // the file belongs to this project, whatever id it carries
     if (!(await MB.projects.putSaved(data, 'before a cloud copy replaced it'))) throw new Error('Could not save the cloud copy on this device');
-    let hash = remoteHash || await hashOf(data);
+    let hash = remoteHash || await hashOf(data), cleared = false;
     if (MB.state.projectId === l.projectId && MB.projects.owns()) {
+      cleared = !!((MB.canUndo && MB.canUndo()) || (MB.canRedo && MB.canRedo()));
       MB.loadProject(data, { keepView: true, keepHistory: false });
       // what this device will save of it from now on (its own normalization included): not a change to upload
       if (MB.serializeProject) hash = await hashOf(MB.serializeProject());
@@ -483,6 +487,7 @@ window.MB = window.MB || {};
     told[l.projectId] = null;
     setState(l, 'synced');
     await saveLink(l);
+    return cleared;
   }
 
   /* ---------- conflicts ---------- */
@@ -506,8 +511,8 @@ window.MB = window.MB || {};
           const remote = await call(acc, (p, ctx) => p.get(ctx, l.fileId));
           const data = JSON.parse(remote.text);
           if (!MB.isProject(data)) throw new Error('The cloud file is not a GenGIS project');
-          await takeRemote(l, data, remote);
-          MB.toast('Using the ' + prov.name + ' version. Yours is in earlier copies.', 5000);
+          const cleared = await takeRemote(l, data, remote);
+          MB.toast('Using the ' + prov.name + ' version. Yours is in earlier copies' + (cleared ? HISTORY_CLEARED : '.'), cleared ? 7000 : 5000);
           return;
         }
         const meta = await call(acc, (p, ctx) => p.meta(ctx, l.fileId));

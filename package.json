@@ -24,8 +24,9 @@
     "directories": { "output": "dist" },
     "artifactName": "GenGIS-${version}-${os}-${arch}.${ext}",
     "icon": "icons/icon-512.png",
+    "protocols": [{ "name": "GenGIS link", "schemes": ["gengis"] }],
     "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "icons/icon.ico" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "include": "installer/protocol.nsh" },
     "mac": { "target": ["dmg", "zip"], "category": "public.app-category.productivity" },
     "linux": { "target": ["AppImage", "deb"], "category": "Science", "maintainer": "Luis Cintron" }
   },
