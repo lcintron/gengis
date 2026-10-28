@@ -14,6 +14,7 @@
 const { app, dialog, ipcMain, shell, net, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const dns = require('dns').promises;
 const { pathToFileURL } = require('url');
 
 const EXT = '.gengis'; // new project files; the system opens these with GenGIS (package.json: build.fileAssociations)
@@ -123,13 +124,20 @@ function fetchProject(start) {
     const local = isLocalHost(start.hostname);
     let u = start, hops = 0, done = false;
     const fail = msg => { if (done) return; done = true; clearTimeout(timer); try { req.abort(); } catch (x) { /* gone */ } reject(new Error(msg)); };
-    const req = net.request({ url: start.toString(), redirect: 'manual', useSessionCookies: false });
+    const req = net.request({ url: start.toString(), redirect: 'manual', useSessionCookies: false, credentials: 'omit' });
     const timer = setTimeout(() => fail('the server took too long'), FETCH_TIMEOUT);
-    req.on('redirect', (status, method, to) => {
+    const elsewhere = () => fail('the server sent GenGIS elsewhere (' + (u.host || u.protocol) + ')');
+    req.on('redirect', async (status, method, to) => {
       try { u = new URL(to, u); } catch (err) { fail('the server sent a bad address'); return; }
       if (++hops > 5) { fail('too many redirects'); return; }
-      if (!/^https?:$/.test(u.protocol) || (!local && isLocalHost(u.hostname))) { fail('the server sent GenGIS elsewhere (' + (u.host || u.protocol) + ')'); return; }
-      req.followRedirect();
+      if (!/^https?:$/.test(u.protocol) || (!local && isLocalHost(u.hostname))) { elsewhere(); return; }
+      // a name is judged by the addresses it stands for
+      if (!local) {
+        let addrs = [];
+        try { addrs = await dns.lookup(u.hostname.replace(/^\[|\]$/g, ''), { all: true }); } catch (err) { fail('the server sent GenGIS to an unknown host (' + u.host + ')'); return; }
+        if (addrs.some(a => isLocalHost(a.address))) { elsewhere(); return; }
+      }
+      if (!done) req.followRedirect();
     });
     req.on('response', res => {
       if (res.statusCode < 200 || res.statusCode >= 300) { fail('the server answered ' + res.statusCode); return; }
