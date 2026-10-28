@@ -36,7 +36,8 @@ A free map builder that runs in the browser (installable, works offline) or as a
 - **FAA data**, live for the area in view: Class B–E airspace with floors and ceilings, special use airspace, LAANC ceilings, security flight restrictions, TFRs, airports (with radio frequencies) and more. Click anywhere to see everything under that point; the feature's source, geometry and attributes show in Properties. Country and state borders at every zoom. Any public ArcGIS layer can be added.
 - **Live air traffic (ADS-B)** from your own receiver (dump1090-fa / SkyAware, dump1090-mutability, readsb, tar1090, or the original dump1090's built-in server; GenGIS finds the data path and remembers it for that address) or the adsb.fi and adsb.lol networks, with type icons colored by altitude and aircraft look-up.
 - **Live vessel traffic (AIS)** from your own AIS-catcher receiver or the aisstream.io network, colored by ship type, with vessel details.
-- **Live drones (MAVLink)** from a [mavp2p](https://github.com/bluenviron/mavp2p) server: every vehicle it relays, by type, orange when armed, with its trail and home. Click one for its flight mode (ArduPilot and PX4), altitude, speed, battery, GPS and latest message. Read only: GenGIS never sends a vehicle a command. Live traffic always draws above your own objects, so a click on it opens its details.
+- **Live drones (MAVLink)** from a [mavp2p](https://github.com/bluenviron/mavp2p) server: every vehicle it relays, by type, orange when armed, with its trail and home, and ground stations that report their position (their own icon, no trail). Click one for its telemetry, a row each: flight mode (ArduPilot and PX4), altitudes, speeds, attitude, throttle, battery, GPS, RC and telemetry links, waypoint, wind and latest message; pin a row to show that value beside the vehicle as it moves. "Show by default" picks the labels every vehicle carries (its system id to start with). Systems that send no position are not shown. Read only: GenGIS never sends a vehicle a command. Live traffic always draws above your own objects, so a click on it opens its details.
+- **Flight logs (MAVLink)**: ArduPilot DataFlash `.bin`, telemetry `.tlog` (Mission Planner, QGroundControl, MAVProxy) and PX4 `.ulg` logs, opened from Data → MAVLink or dropped on the map. Each is a track layer, colored in its own color or by speed, altitude, flight mode or vertical speed; several overlay, and a time bar plays them together (on their UTC clock when the log has GPS time, else from their start). Click a track for the values logged there. Logs are read on the device and kept for the session only.
 - **Grids and coordinates**: optional latitude/longitude and MGRS grids (Settings → Grid systems) that get finer as you zoom in, labelled along the edges or the center lines; coordinates shown in decimal degrees, degrees and minutes, or degrees, minutes and seconds. Search any MGRS reference (a grid zone down to 1 m) to center on its square.
 - **Magnetic declination** from the World Magnetic Model (WMM2025), computed on the device: isogonic lines on the map, and a click anywhere gives the declination and heading correction there.
 - **Place names**: countries, major cities, and oceans and seas, each toggled in Settings next to the borders.
@@ -68,7 +69,7 @@ Browsers only read another server's data when it allows them to (CORS), and bloc
 
 ### Live drones (MAVLink): connecting to mavp2p
 
-Data → MAVLink live drones: choose how to connect and enter the address of the computer running mavp2p. A web page cannot open TCP or UDP connections, so the web app connects through a WebSocket bridge; the desktop app connects directly.
+Data → MAVLink: choose how to connect and enter the address of the computer running mavp2p. A web page cannot open TCP or UDP connections, so the web app connects through a WebSocket bridge; the desktop app connects directly.
 
 | Connect | mavp2p endpoint | Address in GenGIS | Works in |
 | --- | --- | --- | --- |
@@ -78,6 +79,16 @@ Data → MAVLink live drones: choose how to connect and enter the address of the
 | WebSocket | `tcps:0.0.0.0:5760`, plus `websockify 5761 localhost:5760` | `192.168.1.20:5761` | desktop app, and the web app over `http://` (over HTTPS: `wss://`, or on `localhost`) |
 
 For example `mavp2p serial:/dev/ttyUSB0:57600 tcps:0.0.0.0:5760`. Over UDP to a server, GenGIS sends a keepalive once a second so the server keeps sending (not a ground station's heartbeat). mavp2p asks ArduPilot vehicles for their telemetry itself, unless started with `--streamreq-disable`.
+
+### MAVLink flight logs
+
+| Log | Track from | Mode from | Time |
+| --- | --- | --- | --- |
+| ArduPilot DataFlash `.bin` | `GPS` (3D fix or better), with `POS` height above home, `BAT`, `ATT` | `MODE`, named for the firmware (`VER` or its version message) | UTC from GPS week and time |
+| MAVLink `.tlog` | `GLOBAL_POSITION_INT` (`GPS_RAW_INT` with a 3D fix when it is missing), one track per system id; ground stations have none | `HEARTBEAT` | UTC (the time each message was saved) |
+| PX4 `.ulg` | `vehicle_global_position` (`vehicle_gps_position` / `sensor_gps` with a 3D fix when it is missing), with `vehicle_local_position` height | `vehicle_status` `nav_state` | UTC from the GPS clock, else from the log's start |
+
+Points without a fix are left out (never 0,0), and a log without any position is not added. Logs are read in slices, so a log of a hundred MB or more opens without freezing the page.
 
 ### Cloud sync: setting up OneDrive and Google Drive (once, for whoever hosts GenGIS)
 
