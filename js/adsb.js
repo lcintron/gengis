@@ -37,6 +37,11 @@ window.MB = window.MB || {};
       desc: 'Open data for personal use. Sustains a refresh every 2 s.' }
   ];
 
+  // The community networks answer no web page (no CORS headers): offered in the desktop app only. A project that has one
+  // on keeps it on (a desktop app opening it shows it); a web page just does not start it.
+  const usable = src => src.kind !== 'area' || !!window.gengisDesktop;
+  const ONLY_DESKTOP = src => src.name + ' works in the GenGIS desktop app only: it does not accept requests from web pages.';
+
   /* ---------- aircraft types: one silhouette each, drawn pointing north in a 32 x 32 box ---------- */
   const TYPES = {
     heli: { name: 'Helicopters', one: 'Helicopter', size: 26,
@@ -293,6 +298,7 @@ window.MB = window.MB || {};
     enable(id, quiet) {
       const src = SOURCES.find(s => s.id === id), rt = this.rt[id], cf = this.srcConf(id);
       if (!src || rt.on) return;
+      if (!usable(src)) { if (!quiet) MB.toast(ONLY_DESKTOP(src), 5000); return; } // (its setting kept, for the desktop app)
       if (src.kind === 'receiver' && !receiverCandidates(cf.url).length) {
         if (!quiet) { MB.toast('Enter the address of your dump1090 server first'); const el = document.querySelector('.adsb-url'); if (el) el.focus(); }
         cf.on = false;
@@ -738,6 +744,7 @@ window.MB = window.MB || {};
     /* ----- panel (rendered inside the Data tab by MB.data.renderPanel) ----- */
     statusText(id) {
       const rt = this.rt[id];
+      if (!usable(SOURCES.find(s => s.id === id))) return ONLY_DESKTOP(SOURCES.find(s => s.id === id));
       if (!rt.on) return 'Off';
       if (rt.waiting) return `Zoom in to see aircraft (zoom ${NET_ZOOM} or closer)`;
       if (rt.error) return rt.error;
@@ -789,11 +796,11 @@ window.MB = window.MB || {};
       Object.keys(sections).forEach(sec => {
         html += `<div class="section"><h3>${esc(sec)}</h3>`;
         sections[sec].forEach(s => {
-          const rt = this.rt[s.id], sc = this.srcConf(s.id);
-          html += `<div class="data-item${rt.on ? ' on' : ''}" data-adsb="${s.id}">
-            <div class="ds-head"><label class="check"><input type="checkbox" data-act="adsb-toggle"${rt.on ? ' checked' : ''}> <span class="dname">${s.site ? `<a href="${s.site}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}</span></label>${MB.data.infoIcon(s.desc)}</div>
+          const rt = this.rt[s.id], sc = this.srcConf(s.id), off = usable(s) ? '' : ' disabled';
+          html += `<div class="data-item${rt.on ? ' on' : ''}${off ? ' unavailable' : ''}" data-adsb="${s.id}">
+            <div class="ds-head"><label class="check"><input type="checkbox" data-act="adsb-toggle"${rt.on ? ' checked' : ''}${off}> <span class="dname">${s.site ? `<a href="${s.site}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}</span></label>${MB.data.infoIcon(s.desc)}</div>
             ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="adsb-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8080" inputmode="url" spellcheck="false"></div>` : ''}
-            <div class="row adsb-row"><label>Refresh</label><select class="adsb-interval">${s.intervals.map(n => `<option value="${n}"${+sc.interval === n ? ' selected' : ''}>every ${n} s</option>`).join('')}</select></div>
+            <div class="row adsb-row"><label>Refresh</label><select class="adsb-interval"${off}>${s.intervals.map(n => `<option value="${n}"${+sc.interval === n ? ' selected' : ''}>every ${n} s</option>`).join('')}</select></div>
             <div class="dstatus${rt.on && rt.error ? ' err' : ''}" id="adsbStatus-${s.id}">${esc(this.statusText(s.id))}</div>
           </div>`;
         });
