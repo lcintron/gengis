@@ -450,7 +450,9 @@ window.MB = window.MB || {};
       const el = e.marker.getElement();
       if (!el) return;
       const rot = el.firstChild;
-      const step = this.srcConf(a.src).interval; // glide across one refresh of the source this position came from
+      // glide across one refresh of the fastest source reporting the aircraft: a new position is due by then, whichever
+      // source it comes from (gliding over a slower one's refresh would trail behind the faster one's reports)
+      const step = Math.min(...(e.srcs && e.srcs.length ? e.srcs : [a.src]).map(id => this.srcConf(id).interval));
       // (a variable the pane's "smooth" rule reads, not the icon's own transition: that would glide on every move,
       // a zoom's re-placing included)
       if (e.step !== step) { el.style.setProperty('--glide', step + 's'); e.step = step; }
