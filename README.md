@@ -7,7 +7,7 @@
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900?style=for-the-badge&logo=leaflet&logoColor=white)](https://leafletjs.com/)
 [![PWA and Electron](https://img.shields.io/badge/PWA%20%2B%20Electron-Web%20%26%20Desktop-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://github.com/lcintron/gengis/releases/latest)
 
-An offline-first geospatial intelligence app: map, measure and annotate, overlay live or static data, and export your maps. Use built-in map services or bring your own, including ATAK/MOBAC map sources. Runs in the browser and on the desktop, with OneDrive and Google Drive sync.
+Offline-first geospatial intelligence app: map, measure and annotate, overlay live or static data, and export your maps. Use built-in map services or bring your own, including ATAK/MOBAC map sources. Browser and desktop, with OneDrive and Google Drive sync.
 
 **Use it now** at [g2.luiscintron.com](https://g2.luiscintron.com) (installable, works offline), or get the desktop app for [Windows, macOS or Linux](https://github.com/lcintron/gengis/releases/latest). No account or API key needed.
 
@@ -24,7 +24,7 @@ An offline-first geospatial intelligence app: map, measure and annotate, overlay
 **Map and annotate**
 - Draw markers, text, lines, polygons, circles and preset shapes, with snapping, labels, colors, fill patterns and fonts.
 - Place pictures, SVGs and 1,600+ [Lucide](https://lucide.dev) icons.
-- Draw freehand with a stylus, or Shift + drag with a mouse.
+- Draw freehand with a stylus (its eraser end erases), or Shift + drag with a mouse.
 - Move, resize, join and duplicate objects; copy a style onto others.
 - Organize your work in layers and groups, with show/hide, lock and undo/redo.
 
@@ -43,7 +43,7 @@ An offline-first geospatial intelligence app: map, measure and annotate, overlay
 - **Live drones (MAVLink)** from a [mavp2p](https://github.com/bluenviron/mavp2p) server. Read only: GenGIS never sends a vehicle a command.
 
 **Base maps**
-- Esri World Imagery, OpenStreetMap, OpenTopoMap, CyclOSM and CARTO built in.
+- Esri World Imagery, OpenStreetMap, OpenTopoMap and CyclOSM built in, and CARTO with a free key.
 - Add your own XYZ or WMS sources, or import MOBAC map sources (as used by ATAK, such as the [ATAK-Maps](https://github.com/joshuafuller/ATAK-Maps) set).
 - Download tiles and data for an area to use offline.
 
@@ -61,13 +61,13 @@ Informational only: not for navigation or flight authorization.
 | Key | Action |
 | --- | --- |
 | V / G / K | Select / Move / Scale |
-| M / T / L / P / R / C / S | Marker / Text / Line / Polygon / Shape / Circle / SVG |
+| M / T / L / P / R / C / S | Marker / Text / Line / Polygon / Shape / Circle / Image |
 | N | Freehand annotation |
 | I | Icons |
 | D / A | Measure distance / area (Enter finishes) |
 | F | Presenter mode |
 | / | Search (also Ctrl/Cmd + F in the desktop app) |
-| Esc / Delete | Cancel or deselect / delete |
+| Esc / Delete or Backspace | Cancel or deselect / delete |
 | Ctrl/Cmd + Z / Y / D / S | Undo / redo / duplicate / save |
 
 ## Connecting live data
