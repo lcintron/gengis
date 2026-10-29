@@ -52,6 +52,16 @@ test('the community networks and aisstream.io wait for zoom 8; your own receiver
   assert.match(css, /\.mb-zoom-hint \{/, 'the map says to zoom in');
 });
 
+test('my location lets the map be moved off it, with a button back (no spring back, no tug of war)', () => {
+  const loc = js['locate.js'];
+  assert.doesNotMatch(loc, /'dragend boxzoomend'/, 'a pan by hand no longer springs back');
+  assert.match(loc, /map\.on\('dragstart', \(\) => this\.unfollow\(\)\)/, 'a drag stops the following');
+  assert.match(loc, /if \(this\.own\) \{ this\.own = false; return; \}/, 'its own pans do not stop it');
+  assert.match(loc, /this\.back\.hidden = !\(on && this\.fix && !this\.follow\)/, 'the button back shows only while off the position');
+  // a live popup re-placed with every report would pan the map each time (Leaflet's autoPan on setLatLng)
+  for (const f of ['adsb.js', 'ais.js', 'mavlink.js']) assert.match(js[f], /popup\.openOn\(MB\.map\);\r?\n\s*popup\.options\.autoPan = false;/, f + ': its popup pans only as it opens');
+});
+
 test('every element a script looks up by id exists', () => {
   const missing = [];
   for (const [f, src] of Object.entries(js)) {
