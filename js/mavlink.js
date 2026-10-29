@@ -806,6 +806,11 @@ window.MB = window.MB || {};
       return [n ? `${n} vehicle${n === 1 ? '' : 's'}` : '', g ? `${g} ground station${g === 1 ? '' : 's'}` : '', live].filter(Boolean).join(' · ');
     },
 
+    // The section's dot (MB.data.dotHtml): green while the link is on or a flight log is open.
+    dot() {
+      if (this.rt.on) return ['on', 'On · ' + this.countText()];
+      return MB.trackLogs && MB.trackLogs.list('mavlink').length ? ['on', 'Flight logs open'] : ['off', 'Off'];
+    },
     countText() {
       if (!this.rt.on) return 'off';
       let n = 0; this.vehicles.forEach(v => { if (v.lat != null) n++; });
@@ -827,8 +832,7 @@ window.MB = window.MB || {};
         if (el.textContent !== t) el.textContent = t;
         el.classList.toggle('err', err);
       }
-      const n = document.getElementById('mavCount');
-      if (n) { const t = this.countText(); if (n.textContent !== t) n.textContent = t; }
+      MB.data.setDot(document.getElementById('mavCount'), ...this.dot());
       const l = document.getElementById('mavList');
       if (l) { const h = this.listHtml(); if (l._html !== h) { l.innerHTML = h; l._html = h; } }
     },
@@ -844,7 +848,7 @@ window.MB = window.MB || {};
     panelHtml(q, filter) {
       if (!this.matches(q, filter)) return '';
       const cf = this.conf(), rt = this.rt, k = KINDS[cf.kind], desk = !!window.gengisDesktop;
-      return `<details class="ds-source" id="mavSource" data-src="mavlink"${MB.data.sourceOpen('mavlink') ? ' open' : ''}><summary class="ds-source-head"><h3>MAVLink</h3><span class="badge" id="mavCount">${this.countText()}</span></summary>
+      return `<details class="ds-source" id="mavSource" data-src="mavlink"${MB.data.sourceOpen('mavlink') ? ' open' : ''}><summary class="ds-source-head"><h3>MAVLink</h3>${MB.data.dotHtml('mavCount', ...this.dot())}</summary>
         <p class="note">Live drones and ground stations from a mavp2p server, and flight logs. GenGIS only reads: it never sends a vehicle a command. Informational only.</p>
         <div class="section"><div class="data-item${rt.on ? ' on' : ''}" id="mavItem">
           <div class="ds-head"><label class="check"><input type="checkbox" data-act="mav-toggle"${rt.on ? ' checked' : ''}> <span class="dname"><a href="https://github.com/bluenviron/mavp2p" target="_blank" rel="noopener">mavp2p</a> / MAVLink server</span></label>${MB.data.infoIcon('Connects to a mavp2p (or mavlink-router) server and shows every vehicle it relays. mavp2p asks ArduPilot vehicles for their telemetry itself (unless started with --streamreq-disable).')}</div>

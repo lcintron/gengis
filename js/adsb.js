@@ -821,12 +821,13 @@ window.MB = window.MB || {};
         if (el.textContent !== t) el.textContent = t;
         el.classList.toggle('err', err);
       });
-      const n = document.getElementById('adsbCount');
-      if (n) { const t = this.countText(); if (n.textContent !== t) n.textContent = t; }
+      MB.data.setDot(document.getElementById('adsbCount'), ...this.dot());
     },
 
     // The section's badge: aircraft on the map while a source is on, else how many sources are on. The panel and the
     // once-a-second status use the same text, so a redraw of the panel does not flip it back and forth.
+    // The section's dot (MB.data.dotHtml): green while a source is on, its tooltip what is shown.
+    dot() { return this.anyOn() ? ['on', 'On · ' + this.countText()] : ['off', 'Off']; },
     countText() {
       if (!this.anyOn()) return this.enabledCount() + '/' + SOURCES.length + ' on';
       let shown = 0;
@@ -848,7 +849,7 @@ window.MB = window.MB || {};
       const cf = this.conf();
       const sections = {};
       list.forEach(s => { (sections[s.section] = sections[s.section] || []).push(s); });
-      let html = `<details class="ds-source" id="adsbSource" data-src="adsb"${MB.data.sourceOpen('adsb') ? ' open' : ''}><summary class="ds-source-head"><h3>ADS-B live air traffic</h3><span class="badge" id="adsbCount">${this.countText()}</span></summary>
+      let html = `<details class="ds-source" id="adsbSource" data-src="adsb"${MB.data.sourceOpen('adsb') ? ' open' : ''}><summary class="ds-source-head"><h3>ADS-B live air traffic</h3>${MB.data.dotHtml('adsbCount', ...this.dot())}</summary>
         <p class="note">Aircraft positions as they are received. Informational only, not for navigation.</p>`;
       Object.keys(sections).forEach(sec => {
         html += `<div class="section"><h3>${esc(sec)}</h3>`;

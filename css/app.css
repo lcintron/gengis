@@ -961,15 +961,21 @@ button.link:hover { text-decoration: underline; }
 .ds-tools #dsSearch { flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px; }
 .ds-tools #dsSearch:focus { outline: none; border-color: var(--accent); }
 .ds-tools select { flex: 0 0 auto; height: 32px; }
+.ds-tools .icon-btn { flex: 0 0 auto; width: 32px; height: 32px; } /* Refresh, Clear cache */
 .ds-source { margin-bottom: 14px; }
 .ds-source-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
-details.ds-source > summary { list-style: none; cursor: pointer; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+/* a section's heading: a shaded bar, so where one section ends and the next begins shows at a glance */
+details.ds-source > summary { list-style: none; cursor: pointer; gap: 8px; justify-content: flex-start; padding: 8px 10px; background: var(--bg-3); border: 1px solid var(--border); border-radius: 6px; }
+details.ds-source > summary:hover { background: #1e2834; }
 details.ds-source > summary::-webkit-details-marker { display: none; }
-details.ds-source > summary h3 { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; }
-details.ds-source > summary h3::before { content: '\25BE'; color: var(--text-dim); font-size: 11px; transition: transform .15s; }
-details.ds-source:not([open]) > summary h3::before { transform: rotate(-90deg); }
+details.ds-source > summary::before { content: '\25BE'; flex: 0 0 auto; color: var(--text-dim); font-size: 11px; transition: transform .15s; }
+details.ds-source:not([open]) > summary::before { transform: rotate(-90deg); }
+details.ds-source > summary h3 { flex: 1 1 auto; order: 1; }
 details.ds-source[open] > summary { margin-bottom: 8px; }
-details.ds-source > summary .badge { flex: 0 0 auto; white-space: nowrap; }
+/* on or off (MB.data.dotHtml), left of the heading; an empty place where there is nothing to switch */
+.ds-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; }
+.ds-dot.on { background: #2ecc71; box-shadow: 0 0 0 2px rgba(46, 204, 113, .2); }
+.ds-dot.off { background: var(--danger); box-shadow: 0 0 0 2px rgba(255, 92, 92, .18); }
 .ds-head { position: relative; display: flex; align-items: center; gap: 6px; padding-right: 26px; }
 .ds-head .check { margin: 0; }
 .ds-info { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%;

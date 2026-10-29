@@ -18,7 +18,7 @@ function load() {
     toast: msg => toasts.push(msg),
     ICON: { open: '<svg viewBox="0 0 24 24"></svg>' },
     iconBtn: (icon, title, attrs) => `<button type="button" class="icon-btn mini" ${attrs}>${icon}</button>`,
-    data: { sourceOpen: () => true, infoIcon: t => `<span class="ds-info">${t}</span>` },
+    data: { sourceOpen: () => true, infoIcon: t => `<span class="ds-info">${t}</span>`, dotHtml: id => `<span id="${id}"></span>`, setDot: () => {} },
     trackLogs: {
       add(log) {
         const pts = log.vehicles.flatMap(v => v.points).filter(p => isFinite(p.lat) && isFinite(p.lon) && !(p.lat === 0 && p.lon === 0));

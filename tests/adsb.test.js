@@ -53,7 +53,7 @@ function makeAdsb() {
   const MB = {
     escapeHtml: s => String(s), settings: {}, saveSettings() {}, autosave: null, toast() {}, on() {}, emit() {},
     map, tools: { current: 'select' }, state: { units: 'nautical' }, formatLatLng: p => p.lat + ', ' + p.lng,
-    ICON: { search: '' }, data: { sourceOpen: () => false, infoIcon: () => '' }
+    ICON: { search: '' }, data: { sourceOpen: () => false, infoIcon: () => '', dotHtml: id => '<span id="' + id + '"></span>', setDot: () => {} }
   };
   const ctx = {
     window: { MB, gengisDesktop: {} }, MB, // (the desktop app: the community networks are offered there only)

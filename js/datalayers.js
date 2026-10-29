@@ -1378,6 +1378,19 @@ window.MB = window.MB || {};
     patchKids(a, b);
   }
 
+  // A section's state beside its heading: a green dot while something in it is on, a red one while all is off, nothing
+  // where there is nothing to switch (no flight log open). The words are its tooltip and accessible name.
+  MB.data.dotHtml = function (id, state, title) {
+    return `<span class="ds-dot${state ? ' ' + state : ''}"${id ? ` id="${id}"` : ''}${state ? ` role="img" title="${esc(title)}" aria-label="${esc(title)}"` : ''}></span>`;
+  };
+  MB.data.setDot = function (el, state, title) {
+    if (!el) return;
+    el.classList.toggle('on', state === 'on');
+    el.classList.toggle('off', state === 'off');
+    if (state) { if (el.title !== title) { el.title = title; el.setAttribute('aria-label', title); el.setAttribute('role', 'img'); } }
+    else { el.removeAttribute('title'); el.removeAttribute('aria-label'); el.removeAttribute('role'); }
+  };
+
   MB.data.renderPanel = async function () {
     const panel = document.getElementById('tab-data');
     if (!panel) return;
@@ -1400,11 +1413,9 @@ window.MB = window.MB || {};
       (bySource[src] = bySource[src] || []).push(ds);
     });
     const zoom = MB.map.getZoom();
-    const s = this.settings;
     const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.mavlink ? MB.mavlink.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0);
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
-      <div class="row ds-tools"><input type="text" inputmode="search" enterkeyhint="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" spellcheck="false"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
-      <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
+      <div class="row ds-tools"><input type="text" inputmode="search" enterkeyhint="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" spellcheck="false"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select>${MB.iconBtn('refresh', 'Refresh', 'data-act="check"', '', 'Refresh: check the data services for updates')}${MB.iconBtn('sweep', 'Clear cache', 'data-act="clear"')}</div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px">${esc(this._cacheText || ' ')}</div>`; // the last count, until a new one is read (an empty line, or a plain space, would collapse and shift the panel)
     const adsbHtml = MB.adsb ? MB.adsb.panelHtml(q, ui.filter) : ''; // live air traffic: its own block, same search and filter
     html += adsbHtml;
@@ -1424,7 +1435,7 @@ window.MB = window.MB || {};
       shownTotal += list.length;
       const groups = {};
       list.forEach(ds => { (groups[ds.def.group] = groups[ds.def.group] || []).push(ds); });
-      html += `<details class="ds-source" data-src="${esc(srcKey)}"${this.sourceOpen(srcKey) ? ' open' : ''}><summary class="ds-source-head"><h3>${esc(src.name)}</h3><span class="badge">${bySource[srcKey].filter(d => d.enabled).length}/${bySource[srcKey].length} on</span></summary>${src.note || src.url ? `<p class="note ds-note">${src.note ? esc(src.note) : ''}${this.sourceLink(src)}</p>` : ''}`;
+      html += `<details class="ds-source" data-src="${esc(srcKey)}"${this.sourceOpen(srcKey) ? ' open' : ''}><summary class="ds-source-head"><h3>${esc(src.name)}</h3>${(n => this.dotHtml('', n ? 'on' : 'off', n ? n + ' of ' + bySource[srcKey].length + ' on' : 'Off'))(bySource[srcKey].filter(d => d.enabled).length)}</summary>${src.note || src.url ? `<p class="note ds-note">${src.note ? esc(src.note) : ''}${this.sourceLink(src)}</p>` : ''}`;
     Object.keys(groups).forEach(g => {
       html += `<div class="section"><h3>${esc(g)}</h3>`;
       groups[g].forEach(ds => {
@@ -1457,12 +1468,7 @@ window.MB = window.MB || {};
       html += '</details>';
     });
     if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
-    html += `<div class="section"><h3>Options</h3>
-      <div class="row"><label>Data opacity</label><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div>
-      <div class="row" title="How often each service's last-edit stamp is compared; changed datasets are re-downloaded"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
-      <div class="row" title="Cached areas older than this are refreshed"><label>Keep cache</label><select id="dataMaxAge">${[1, 3, 7, 14, 30].map(dd => `<option value="${dd}"${+s.maxAgeDays === dd ? ' selected' : ''}>${dd} day${dd > 1 ? 's' : ''}</option>`).join('')}</select></div>
-    </div>
-    <div class="section"><h3>Add ArcGIS layer</h3><p class="note">Any public ArcGIS Feature Service layer becomes a dataset under "Custom ArcGIS layers".</p>
+    html += `<div class="section"><h3>Add ArcGIS layer</h3><p class="note">Any public ArcGIS Feature Service layer becomes a dataset under "Custom ArcGIS layers".</p>
       <form id="dataCustomForm">
         <div class="row"><label>Name</label><input type="text" name="name" required placeholder="Layer name"></div>
         <div class="row"><label>URL</label><input type="text" name="url" required placeholder="https://…/FeatureServer/0" title="Any public ArcGIS Feature Service layer"></div>
@@ -1519,10 +1525,6 @@ window.MB = window.MB || {};
         MB.saveSettings();
       });
     });
-    panel.querySelector('#dataOpacity').addEventListener('input', e => { s.opacity = +e.target.value; panel.querySelector('#dataOpacityVal').textContent = Math.round(s.opacity * 100) + '%'; this.applyOpacity(); });
-    panel.querySelector('#dataOpacity').addEventListener('change', () => this.saveSettings());
-    panel.querySelector('#dataCheck').addEventListener('change', e => { s.checkHours = +e.target.value; this.saveSettings(); });
-    panel.querySelector('#dataMaxAge').addEventListener('change', e => { s.maxAgeDays = +e.target.value; this.saveSettings(); });
     panel.querySelector('#dataCustomForm').addEventListener('submit', e => {
       e.preventDefault();
       const f = e.target.elements;
@@ -1566,6 +1568,23 @@ window.MB = window.MB || {};
     if (MB.places) MB.places.bindOverlays(box);
   };
   MB.data.renderOverlaysSoon = MB.debounce(() => MB.data.renderOverlays(), 250);
+
+  // Settings → Data sources: how the data layers look and how long their downloads are kept.
+  MB.data.renderSettingsSection = function () {
+    const box = document.getElementById('dataSettingsSection');
+    if (!box) return;
+    const s = this.settings;
+    box.innerHTML = `<div class="field"><label class="field-label" for="dataOpacity">Data opacity</label>
+        <div class="row"><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div></div>
+      <div class="field"><label class="field-label" for="dataCheck">Check for updates</label><select id="dataCheck" aria-describedby="dataCheckHint">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>Every ${h} h</option>`).join('')}</select>
+        <p class="field-hint" id="dataCheckHint">Each service's last-edit stamp is compared; changed datasets are downloaded again.</p></div>
+      <div class="field"><label class="field-label" for="dataMaxAge">Keep cache</label><select id="dataMaxAge" aria-describedby="dataMaxAgeHint">${[1, 3, 7, 14, 30].map(dd => `<option value="${dd}"${+s.maxAgeDays === dd ? ' selected' : ''}>${dd} day${dd > 1 ? 's' : ''}</option>`).join('')}</select>
+        <p class="field-hint" id="dataMaxAgeHint">Cached areas older than this are refreshed.</p></div>`;
+    box.querySelector('#dataOpacity').addEventListener('input', e => { s.opacity = +e.target.value; box.querySelector('#dataOpacityVal').textContent = Math.round(s.opacity * 100) + '%'; this.applyOpacity(); });
+    box.querySelector('#dataOpacity').addEventListener('change', () => this.saveSettings());
+    box.querySelector('#dataCheck').addEventListener('change', e => { s.checkHours = +e.target.value; this.saveSettings(); });
+    box.querySelector('#dataMaxAge').addEventListener('change', e => { s.maxAgeDays = +e.target.value; this.saveSettings(); });
+  };
 
   function ago(ts) {
     const m = Math.round((Date.now() - ts) / 60000);

@@ -20,6 +20,7 @@ for (const m of html.matchAll(/\bid="([^"]+)"/g)) ids.add(m[1]);
 for (const m of allJs.matchAll(/\.id\s*=\s*'([\w-]+)'/g)) ids.add(m[1]);
 for (const m of allJs.matchAll(/\bid=\\?"([\w-]+)\\?"/g)) ids.add(m[1]);
 for (const m of allJs.matchAll(/\bid="([\w-]+)"/g)) ids.add(m[1]);
+for (const m of allJs.matchAll(/dotHtml\('([\w-]+)'/g)) ids.add(m[1]); // a section's on/off dot (MB.data.dotHtml)
 
 test('the hidden attribute always hides (no display rule of its own may show a hidden element)', () => {
   assert.match(css, /^\[hidden\]\s*\{\s*display:\s*none\s*!important;\s*\}/m, 'css/app.css keeps [hidden] { display: none !important; }');

@@ -1549,6 +1549,7 @@ window.MB = window.MB || {};
           <p class="field-hint">Map center: ${esc(MB.formatLatLng(MB.map.getCenter()))}</p></div>
       </div>
       <div class="section"><h3>Map overlays</h3><div id="overlaySection"></div></div>
+      <div class="section"><h3>Data sources</h3><div id="dataSettingsSection"></div></div>
       <div class="section"><h3>Grid systems</h3><div id="gridSection"></div></div>
       <div class="section"><h3>Offline areas</h3><div id="offlineSection"></div></div>
       <div class="section" id="interfaceSection"><h3>Interface</h3>
@@ -1572,6 +1573,7 @@ window.MB = window.MB || {};
       </div>
 `;
     if (MB.data && MB.data.renderOverlays) MB.data.renderOverlays();
+    if (MB.data && MB.data.renderSettingsSection) MB.data.renderSettingsSection();
     if (MB.grids) MB.grids.renderSection();
     if (MB.offline && MB.offline.renderSection) MB.offline.renderSection();
     $$('#unitsSeg2 button', panel).forEach(b => b.addEventListener('click', () => MB.setUnits(b.dataset.units)));
