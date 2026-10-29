@@ -88,8 +88,14 @@
       map.on('dragstart', () => this.unfollow());
       map.on('moveend', () => {
         if (this.own) { this.own = false; return; }
-        if (this.follow && this.fix && map.latLngToContainerPoint(this.fix.latlng).distanceTo(map.getSize().divideBy(2)) > 3) this.unfollow();
+        if (this.follow && this.fix && map.latLngToContainerPoint(this.near(this.fix.latlng)).distanceTo(map.getSize().divideBy(2)) > 3) this.unfollow();
       });
+    },
+
+    // The copy of a position nearest the map's center (the map wraps round the world: worldCopyJump).
+    near(latlng) {
+      const c = MB.map.getCenter();
+      return L.latLng(latlng.lat, latlng.lng + Math.round((c.lng - latlng.lng) / 360) * 360);
     },
 
     unfollow() {
@@ -108,7 +114,7 @@
       this.render();
     },
 
-    pan(latlng) { this.own = true; MB.map.panTo(latlng, { animate: true }); },
+    pan(latlng) { this.own = true; MB.map.panTo(this.near(latlng), { animate: true }); },
 
     press() {
       if (this.watchId == null) return this.start();
