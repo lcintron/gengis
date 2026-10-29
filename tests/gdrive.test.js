@@ -467,3 +467,10 @@ test('Drive: a browser not shown the Range header (CORS) still uploads a large p
   const out = await GD.put(ctx(), { name: 'Big.gengis.json', text: JSON.stringify(big) });
   assert.equal(google.files.get(out.fileId).content.toString(), JSON.stringify(big));
 });
+
+test('the Android app does not offer cloud sync (its sign-in is not set up there yet)', () => {
+  const app = makeApp({ server: makeServer(), google: makeGoogle() });
+  assert.deepEqual([...app.C.offered()].sort(), ['gdrive', 'onedrive']);
+  app.MB.native = { app: true, platform: 'android' };
+  assert.deepEqual([...app.C.offered()], []);
+});

@@ -1,0 +1,12 @@
+{
+  "appId": "com.luiscintron.gengis",
+  "appName": "GenGIS",
+  "webDir": "www",
+  "backgroundColor": "#0b1118",
+  "android": {
+    "buildOptions": { "releaseType": "AAB" }
+  },
+  "plugins": {
+    "SystemBars": { "insetsHandling": "css" }
+  }
+}

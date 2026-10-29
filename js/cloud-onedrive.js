@@ -188,6 +188,7 @@ window.MB = window.MB || {};
     // Offered in the web app once the app is registered; in the desktop app when its main process signs in to it
     // (electron/cloudauth.js, the same registration as a desktop platform).
     available() {
+      if (MB.native && MB.native.app) return false; // (the Android app: its own sign-in is not set up yet)
       const d = window.gengisDesktop && window.gengisDesktop.cloud;
       if (window.gengisDesktop) return !!d && (d.providers || []).includes('onedrive');
       return !!OD.clientId && /^https?:$/.test(location.protocol);

@@ -192,7 +192,7 @@
 
     // PWA
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      watchForUpdate();
+      if (!MB.native.app) watchForUpdate(); // (the Android app updates through Google Play: no "reload to update" there)
       navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service worker not registered', e));
     }
     window.addEventListener('beforeinstallprompt', e => {

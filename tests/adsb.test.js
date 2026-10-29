@@ -51,6 +51,8 @@ function makeAdsb() {
     return { ok: true, status: 200, text: async () => JSON.stringify(body) };
   };
   const MB = {
+    native: { app: false, platform: 'web' }, // (js/native.js, outside the Android app: MB.getText is fetch)
+    getText: async (url, timeout) => { const r = await fetch(url, { cache: 'no-store' }); return { ok: r.ok, status: r.status, text: await r.text() }; },
     escapeHtml: s => String(s), settings: {}, saveSettings() {}, autosave: null, toast() {}, on() {}, emit() {},
     map, tools: { current: 'select' }, state: { units: 'nautical' }, formatLatLng: p => p.lat + ', ' + p.lng,
     ICON: { search: '' }, data: { sourceOpen: () => false, infoIcon: () => '' }

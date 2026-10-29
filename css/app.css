@@ -1224,6 +1224,17 @@ select.trk-rate { flex: 0 0 auto; height: 30px; padding: 0 4px; font-size: 12px;
 }
 .mb-place-capital::before { left: -3.5px; top: -3.5px; width: 7px; height: 7px; background: #ffd166; }
 
+/* ---------- the Android app (js/native.js) ---------- */
+/* Android 15+ draws the app edge to edge: room for the status bar, the gesture bar and (landscape) the camera cutout.
+   env() is 0 where the system keeps the app out of the bars itself, so this is right either way. */
+html.native-app { --topbar-h: calc(52px + env(safe-area-inset-top, 0px)); }
+html.native-app #topbar { padding-top: env(safe-area-inset-top, 0px); padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(12px + env(safe-area-inset-right, 0px)); }
+html.native-app #toolbar { margin-left: env(safe-area-inset-left, 0px); }
+html.native-app #mapwrap.tb-right #toolbar { margin-left: 0; margin-right: env(safe-area-inset-right, 0px); }
+html.native-app .leaflet-bottom { margin-bottom: env(safe-area-inset-bottom, 0px); }
+html.native-app .leaflet-left { margin-left: env(safe-area-inset-left, 0px); }
+html.native-app .leaflet-right { margin-right: env(safe-area-inset-right, 0px); }
+
 /* ---------- cloud sync (cloudui.js) ---------- */
 /* an on/off switch (a checkbox underneath: keyboard, screen readers and forms as usual) */
 .mb-switch { position: relative; flex: 0 0 auto; display: inline-flex; width: 36px; height: 20px; cursor: pointer; }

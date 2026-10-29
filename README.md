@@ -108,6 +108,12 @@ The installed desktop app opens `gengis://` links in the window already open:
 
 GenGIS asks before opening a file or web project from a link. A project opened from the web is kept in your projects folder, like any other. Links can't name network shares (`\\server\…`).
 
+## Android app
+
+GenGIS is also a native Android app (package `com.luiscintron.gengis`). It reads what a web page can't: the adsb.fi and adsb.lol networks, aircraft look-ups, and receivers on your network over plain HTTP. Saving a project or exporting a map opens Android's share sheet, and the back button closes dialogs and panels first.
+
+Not in the Android app yet: the aisstream.io stream, MAVLink over TCP or UDP (the WebSocket bridge works), and cloud sync.
+
 ## Data sources and fair use
 
 | Data | Source |
@@ -143,6 +149,14 @@ npm test                  # automated tests, no installs needed
 
 - **Tests** cover cloud sign-in and sync against a fake Microsoft and a fake Google, the desktop app's sign-in, load and stress runs, and checks of the page itself. They run on every pull request.
 - **Releases** run in CI: Actions → Release → Run workflow on `main`, or `gh workflow run release.yml -f bump=auto`. The version bump follows conventional commits. The workflow tags the release, builds the Windows, macOS and Linux installers, publishes a GitHub Release and deploys the site. A dry run only reports the version.
+- **Android** builds in CI: Actions → Android → Run workflow, or any pull request that touches the app.
+  - It makes a debug APK for testing.
+  - Once the signing secrets are set, it also makes a signed `.aab` for Google Play and a signed `.apk`.
+  - Locally: `npm install`, `npx cap add android` (once), `npm run android:sync`, then open `android/` in Android Studio.
+- **Android signing** (once):
+  - Create an upload key: `keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000`.
+  - Add the repository secrets `ANDROID_KEYSTORE_BASE64` (the file, base64-encoded), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
+  - Keep the key safe: Google Play only accepts updates signed with it.
 
 <details>
 <summary><b>Setting up cloud sync</b> (once, for whoever hosts GenGIS)</summary>
