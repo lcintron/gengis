@@ -320,6 +320,7 @@ body.presenting .mb-scale-box { display: none !important; }
 .mb-locate.locating a svg { animation: mb-pulse 1.1s ease-in-out infinite; }
 .mb-locate.active a { color: var(--accent); }
 .mb-locate.following a, .mb-locate.following a:hover { background: var(--accent); color: #06201e; }
+.mb-locate a.mb-locate-back { color: var(--accent); } /* under the location button while the map is off the position */
 /* the heading beam under the location dot (locate.js) */
 .mb-heading { background: transparent; border: 0; }
 .mb-heading-rot { width: 100%; height: 100%; transition: transform .12s linear; }

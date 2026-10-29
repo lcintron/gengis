@@ -633,6 +633,7 @@ window.MB = window.MB || {};
       this.popup = popup;
       this.render(); // draws the selection and fills the popup
       popup.openOn(MB.map);
+      popup.options.autoPan = false; // brought into view as it opens, not again with every report (that pan fought a pan by hand, and following my location)
     },
 
     updatePopup() {
