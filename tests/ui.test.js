@@ -69,6 +69,10 @@ test("a phone's panel never grows under the top bar (its grip and tabs stay reac
   assert.match(js['ui.js'], /setProperty\('--sheet-user', [^;]*'dvh'\); else bar\.style\.removeProperty\('--sheet-user'\);/, 'its size is a share of the screen as shown; the default clears it');
 });
 
+test('LAANC ceilings show from zoom 8, in 1° cells there so a view fits the cell limit', () => {
+  assert.match(js['datalayers.js'], /id: 'uasfm', [^\n]*minZoom: 8,\r?\n[^\n]*\r?\n\s*levels: \[\{ maxZoom: 9, cellSize: 1 \}, \{ cellSize: CELL \}\], maxCells: 64,\r?\n\s*rev: 1,/);
+});
+
 test('every element a script looks up by id exists', () => {
   const missing = [];
   for (const [f, src] of Object.entries(js)) {
