@@ -133,7 +133,10 @@ window.MB = window.MB || {};
       source: 'faa', url: FAA + 'FAA_Recognized_Identification_Areas/FeatureServer/0', style: solid('#2ecc71', .25),
       label: p => p.title || p.orgName || 'FRIA', fields: ['title', 'orgName', 'address1', 'city', 'state', 'zipcode', 'startDate', 'endDate', 'refNumber'],
       legend: [['FRIA', '#2ecc71']], desc: 'Fly without Remote ID (VLOS).' },
-    { id: 'uasfm', group: 'LAANC', name: 'UAS Facility Map (LAANC ceilings)', minZoom: 10,
+    { id: 'uasfm', group: 'LAANC', name: 'UAS Facility Map (LAANC ceilings)', minZoom: 8,
+      // 1° cells at zoom 8-9 (a phone's view is some 3 by 4 of them, a desktop's up to 60), half a degree closer in
+      levels: [{ maxZoom: 9, cellSize: 1 }, { cellSize: CELL }], maxCells: 64,
+      rev: 1, // cells stored when every zoom used half-degree cells under the same keys are fetched again
       source: 'faa', url: FAA + 'FAA_UAS_FacilityMap_Data/FeatureServer/0', style: ceilingStyle,
       tiled: true, // grid squares that cover the area edge to edge: a point is in one of them
       label: p => `Ceiling ${p.CEILING} ${p.UNIT || 'ft'} AGL${p.APT1_NAME ? ' · ' + p.APT1_NAME : ''}`,
