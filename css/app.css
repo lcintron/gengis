@@ -968,7 +968,7 @@ button.link:hover { text-decoration: underline; }
 details.ds-source > summary { list-style: none; cursor: pointer; gap: 8px; justify-content: flex-start; padding: 8px 10px; background: var(--bg-3); border: 1px solid var(--border); border-radius: 6px; }
 details.ds-source > summary:hover { background: #1e2834; }
 details.ds-source > summary::-webkit-details-marker { display: none; }
-details.ds-source > summary::before { content: '\25BE'; flex: 0 0 auto; color: var(--text-dim); font-size: 11px; transition: transform .15s; }
+details.ds-source > summary::before { content: '\25BE'; content: '\25BE' / ''; flex: 0 0 auto; /* (no alt text: not read out) */ color: var(--text-dim); font-size: 11px; transition: transform .15s; }
 details.ds-source:not([open]) > summary::before { transform: rotate(-90deg); }
 details.ds-source > summary h3 { flex: 1 1 auto; order: 1; }
 details.ds-source[open] > summary { margin-bottom: 8px; }
