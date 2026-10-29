@@ -32,7 +32,7 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 - Distances and areas in metric, imperial or nautical units.
 - Latitude/longitude and MGRS grids; coordinates in decimal degrees, DM or DMS.
 - Search addresses, places, coordinates and MGRS references, or find points of interest.
-- Your location, with the direction the device points.
+- Your location, with the direction the device points. The map follows it until you move the map; a button brings it back.
 - Magnetic declination from the World Magnetic Model.
 
 **Overlay data**

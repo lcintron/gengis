@@ -473,14 +473,18 @@ window.MB = window.MB || {};
     if (!bar || !grip) return;
     const sheet = () => matchMedia('(max-width: 640px)').matches;
     const W = { min: () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 330, max: () => Math.max(W.min(), Math.min(720, Math.round(innerWidth * 0.6))) };
-    const H = { min: () => document.getElementById('main').clientHeight * 0.56 / innerHeight * 100, max: () => 88 }; // % of the screen's height (the default: 56% of the area under the top bar)
+    // % of the screen's height: the default 56% of the area under the top bar, the most 88% of it (app.css), so the
+    // grip and the tabs never slide under the top bar
+    const under = f => document.getElementById('main').clientHeight * f / innerHeight * 100;
+    const H = { min: () => under(0.56), max: () => under(0.88) };
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     let frame = 0;
     const refit = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => MB.map && MB.map.invalidateSize()); };
     function apply() {
       const w = MB.settings.sidebarW, h = MB.settings.sheetH;
       if (w) bar.style.setProperty('--sidebar-user', Math.min(w, W.max()) + 'px'); else bar.style.removeProperty('--sidebar-user');
-      if (h) bar.style.setProperty('--sheet-user', Math.min(h, H.max()) + 'vh'); else bar.style.removeProperty('--sheet-user');
+      // (dvh: the screen as shown; a phone's vh is taller while its address bar shows)
+      if (h) bar.style.setProperty('--sheet-user', Math.min(h, H.max()) + 'dvh'); else bar.style.removeProperty('--sheet-user');
       const now = sheet() ? Math.round(bar.getBoundingClientRect().height / innerHeight * 100) : Math.round(bar.getBoundingClientRect().width);
       grip.setAttribute('aria-orientation', sheet() ? 'horizontal' : 'vertical');
       grip.setAttribute('aria-valuenow', String(now));
