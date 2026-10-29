@@ -62,6 +62,13 @@ test('my location lets the map be moved off it, with a button back (no spring ba
   for (const f of ['adsb.js', 'ais.js', 'mavlink.js']) assert.match(js[f], /popup\.openOn\(MB\.map\);\r?\n\s*popup\.options\.autoPan = false;/, f + ': its popup pans only as it opens');
 });
 
+test("a phone's panel never grows under the top bar (its grip and tabs stay reachable)", () => {
+  // vh on a phone counts the address bar as hidden: 88vh could be taller than the map area under the top bar
+  assert.match(css, /#sidebar \{ position: absolute;[^}]*max-height: 88%;/, 'the sheet is at most 88% of the area under the top bar');
+  assert.match(js['ui.js'], /max: \(\) => under\(0\.88\)/, 'the grip stops there too');
+  assert.match(js['ui.js'], /setProperty\('--sheet-user', [^;]*'dvh'\); else bar\.style\.removeProperty\('--sheet-user'\);/, 'its size is a share of the screen as shown; the default clears it');
+});
+
 test('every element a script looks up by id exists', () => {
   const missing = [];
   for (const [f, src] of Object.entries(js)) {

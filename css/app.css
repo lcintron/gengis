@@ -576,7 +576,7 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   #sidebarToggle svg { transform: rotate(90deg); } /* the panel is a sheet at the bottom here: its bar too */
   #main { position: relative; }
   /* side panel becomes a bottom sheet */
-  #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: max(56%, var(--sheet-user, 0px)); max-height: 88vh; border-left: 0; border-top: 1px solid var(--border);
+  #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: max(56%, var(--sheet-user, 0px)); max-height: 88%; border-left: 0; border-top: 1px solid var(--border);
     border-radius: 14px 14px 0 0; z-index: 30; box-shadow: 0 -8px 24px rgba(0,0,0,.5); padding-top: 14px; padding-bottom: env(safe-area-inset-bottom); }
   .sidebar-grip { left: 0; right: 0; top: 0; bottom: auto; width: auto; height: 14px; cursor: row-resize; } /* (the sheet's top padding: the tabs below stay tappable) */
   .sidebar-grip::after { left: 50%; top: 5px; bottom: auto; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
@@ -870,13 +870,15 @@ button.link:hover { text-decoration: underline; }
   background: var(--bg-2); color: var(--text); border: 1px solid var(--accent); border-radius: 10px; padding: 8px 8px 8px 14px;
   box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px);
 }
+#mb-update span { flex: 1 1 auto; }
+@media (max-width: 640px) { #mb-update { width: calc(100vw - 24px); } } /* the phone's full width, not a narrow column of text */
 .about-head { text-align: center; margin-bottom: 14px; }
 .about-head .about-logo { width: 72px; height: auto; display: block; margin: 4px auto 10px; }
 .about-head h2 { margin: 0 0 2px; }
 .about-head p { margin: 0; }
 .about-update { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 10px; }
 .about-update .note:empty { display: none; }
-.about-update .note .btn { margin-left: 6px; }
+.about-update .note .btn { display: block; margin: 8px auto 0; } /* "Reload to update" on its own row, under the version */
 
 /* ---------- saving: status, recent projects, a map open in another tab ---------- */
 /* the save status is a dot in .topbar-right, before undo: its words are in its tooltip and read by screen readers */
