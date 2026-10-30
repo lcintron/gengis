@@ -312,6 +312,11 @@ window.MB = window.MB || {};
   // An icon-only button. attrs: its other attributes as HTML (data-…, disabled); cls: more classes; label: what a
   // screen reader says when the short tooltip is not enough (in a list: which row, as 'Delete Alpha').
   MB.iconBtn = (icon, title, attrs, cls, label) => `<button type="button" class="icon-btn mini${cls ? ' ' + cls : ''}" title="${MB.escapeHtml(title)}" aria-label="${MB.escapeHtml(label || title)}"${attrs ? ' ' + attrs : ''}>${MB.ICON[icon]}</button>`;
+  // A zoom level as the app writes it: the magnifying glass and the number, as in the status bar. zoomText: a text with
+  // its "zoom 8" that way, the rest escaped; setZoomText: the same into an element, when it changed.
+  MB.zoomIcon = MB.ICON.search.replace('<svg ', '<svg class="zi" ') + '<span class="sr-only">Zoom </span>';
+  MB.zoomText = t => MB.escapeHtml(t).replace(/\bzoom (?=\d)/gi, MB.zoomIcon);
+  MB.setZoomText = (el, t) => { if (el.textContent.toLowerCase() !== String(t).toLowerCase()) el.innerHTML = MB.zoomText(t); };
 
   MB.ask = function (message, yes, no) {
     return new Promise(resolve => {

@@ -977,6 +977,10 @@ details.ds-source[open] > summary { margin-bottom: 8px; }
 .ds-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; }
 .ds-dot.on { background: #2ecc71; box-shadow: 0 0 0 2px rgba(46, 204, 113, .2); }
 .ds-dot.off { background: var(--danger); box-shadow: 0 0 0 2px rgba(255, 92, 92, .18); }
+.zi { width: 1.1em; height: 1.1em; vertical-align: -.2em; margin-right: 2px; } /* the magnifying glass in front of a zoom level (MB.zoomIcon) */
+.ds-minzoom { gap: 8px; align-items: center; margin-top: 6px; }
+.ds-minzoom label { flex: 0 0 auto; white-space: nowrap; }
+.ds-minzoom .note { flex: 0 0 auto; margin: 0; }
 .ds-head { position: relative; display: flex; align-items: center; gap: 6px; padding-right: 26px; }
 .ds-head .check { margin: 0; }
 .ds-info { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%;

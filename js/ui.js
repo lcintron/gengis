@@ -1277,8 +1277,8 @@ window.MB = window.MB || {};
     const zoomNow = () => MB.snapZoom(MB.map.getZoom()); // the map settles on quarter levels
     const level = z.level != null ? z.level : zoomNow();
     wrap.innerHTML = `<label class="check" title="Show this object only above or below a zoom level"><input type="checkbox" id="propZoomOn"${z.on ? ' checked' : ''}> <b>Zoom display</b></label>
-      <div class="row"><label>Show when zoom is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
-      <div class="row"><label>Zoom level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
+      <div class="row"><label>Show when ${MB.zoomIcon} is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
+      <div class="row"><label>${MB.zoomIcon} level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
       <p class="note" id="propZoomNote"></p>`;
     const on = $('#propZoomOn', wrap), op = $('#propZoomOp', wrap), lv = $('#propZoomLevel', wrap);
     const apply = e => {
@@ -1304,10 +1304,10 @@ window.MB = window.MB || {};
     const note = $('#propZoomNote'), f = MB.selected;
     if (!note || !f) return;
     const z = f.mb.zoom, now = MB.formatZoom(MB.map.getZoom());
-    if (!z || !z.on) { note.textContent = `Always shown (the zoom is now ${now}).`; return; }
-    note.textContent = MB.zoomAllows(f)
-      ? `Shown at the zoom now (${now}).`
-      : `Hidden at the zoom now (${now}); shown while selected.`;
+    if (!z || !z.on) { note.innerHTML = `Always shown (now ${MB.zoomIcon}${now}).`; return; }
+    note.innerHTML = MB.zoomAllows(f)
+      ? `Shown now (${MB.zoomIcon}${now}).`
+      : `Hidden now (${MB.zoomIcon}${now}); shown while selected.`;
   };
 
   function svgProps(f) {
@@ -1556,7 +1556,7 @@ window.MB = window.MB || {};
         <div class="field"><span class="field-label">Toolbar</span>
           <div class="seg" role="radiogroup" aria-label="Toolbar position">${[['left', 'Left side'], ['right', 'Right side']].map(([v, t]) => `<button type="button" role="radio" aria-checked="${MB.ui.toolbarSide() === v}" data-tb-side="${v}"${MB.ui.toolbarSide() === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div></div>
         <div class="field"><label class="field-label" for="setTipDelay">Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'Immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
-        <div class="field"><label class="field-label" for="setPrefetch">Preload the next zoom level</label><select id="setPrefetch" aria-describedby="setPrefetchHint">${[['off', 'Off (fastest map)'], ['on', 'On, after the map is still']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) === 'on' ? 'on' : 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
+        <div class="field"><label class="field-label" for="setPrefetch">Preload the next ${MB.zoomIcon} level</label><select id="setPrefetch" aria-describedby="setPrefetchHint">${[['off', 'Off (fastest map)'], ['on', 'On, after the map is still']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) === 'on' ? 'on' : 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
           <p class="field-hint" id="setPrefetchHint">Never on volunteer-run map servers.</p></div>
         <label class="check"><input type="checkbox" id="setTileFade"${MB.settings && MB.settings.tileFade === false ? '' : ' checked'}> Fade in map tiles</label>
       </div>

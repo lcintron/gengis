@@ -47,9 +47,9 @@ test('aircraft icons show where the aircraft is now: carried on from each report
 
 test('the community networks and aisstream.io wait for zoom 8; your own receivers show at any zoom', () => {
   assert.match(js['adsb.js'], /const NET_ZOOM = 8;/);
-  assert.match(js['adsb.js'], /if \(src\.kind !== 'receiver' && this\.zoomedOut\(\)\) \{ this\.wait\(src\); return; \}/, 'no request below it');
+  assert.match(js['adsb.js'], /if \(src\.kind !== 'receiver' && this\.zoomedOut\(src\)\) \{ this\.wait\(src\); return; \}/, 'no request below it');
   assert.match(js['ais.js'], /if \(!rt\.on \|\| s\.kind !== 'stream'\) return;/, 'only the stream waits');
-  assert.match(js['ais.js'], /if \(this\.zoomedOut\(\)\) this\.wait\(src\); else this\.connect\(src\);/, 'the stream does not connect below it');
+  assert.match(js['ais.js'], /if \(this\.zoomedOut\(src\)\) this\.wait\(src\); else this\.connect\(src\);/, 'the stream does not connect below it');
   assert.match(css, /\.mb-zoom-hint \{/, 'the map says to zoom in');
 });
 
@@ -76,6 +76,22 @@ test('LAANC ceilings show from zoom 8, in 1° cells there so a view fits the cel
 
 test('adding an ArcGIS layer is in the ArcGIS section, with the layers added', () => {
   assert.match(js['datalayers.js'], /<details class="ds-source" data-src="custom"[\s\S]*?id="dataCustomForm"[\s\S]*?<\/form>\s*<\/div><\/details>/);
+});
+
+test('a zoom level is written with the magnifying glass, not the word', () => {
+  assert.match(js['util.js'], /MB\.zoomIcon = MB\.ICON\.search/);
+  assert.match(js['datalayers.js'], /on · \$\{MB\.zoomIcon\}\$\{MB\.formatZoom\(zoom\)\}/, 'the Data tab heading');
+  // labels and readouts: a "Min/Max zoom" label, or "zoom" and a number, is gone from what a page shows
+  for (const f of ['datalayers.js', 'offline.js', 'settings.js', 'ui.js']) assert.doesNotMatch(js[f], /<label[^>]*>(Min|Max|Zoom) (zoom|level)/, f);
+  assert.doesNotMatch(js['offline.js'], />zoom \$\{/);
+});
+
+test('every source that waits for a zoom level can have it overridden, its default shown', () => {
+  assert.match(js['datalayers.js'], /this\.minZoomHtml\(this\.minZoomOf\(d\), d\.minZoom\)/, 'data layers');
+  assert.match(js['adsb.js'], /s\.kind === 'receiver' \? '' : MB\.data\.minZoomHtml\(this\.minZoomFor\(s\.id\), NET_ZOOM/, 'the ADS-B networks');
+  assert.match(js['ais.js'], /s\.kind === 'stream' \? MB\.data\.minZoomHtml\(this\.minZoomFor\(s\.id\), NET_ZOOM\)/, 'aisstream.io');
+  assert.doesNotMatch(js['datalayers.js'], /zoom < ds\.def\.minZoom/, 'what loads follows the override');
+  assert.match(js['offline.js'], /MB\.data\.minZoomOf\(ds\.def\)/, 'offline areas too');
 });
 
 test('every element a script looks up by id exists', () => {

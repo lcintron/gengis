@@ -455,8 +455,9 @@ window.MB = window.MB || {};
       const zoom = MB.map.getZoom(), bounds = MB.map.getBounds();
       this.catalog().forEach(ds => {
         if (!ds.enabled || ds.checking) return; // wait until the update stamp is known before caching anything
-        if (zoom < ds.def.minZoom || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) {
-          ds.status = zoom < ds.def.minZoom ? 'Zoom in to level ' + ds.def.minZoom + ' or closer to load' : 'Shown up to zoom ' + ds.def.maxZoom;
+        const from = this.minZoomOf(ds.def);
+        if (zoom < from || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) {
+          ds.status = zoom < from ? 'Zoom in to zoom ' + from + ' or closer to load' : 'Shown up to zoom ' + ds.def.maxZoom;
           ds.cells.forEach(c => hideCell(ds, c));
           return;
         }
@@ -487,7 +488,7 @@ window.MB = window.MB || {};
     settle(ds) {
       if (!ds.enabled || !ds.group) return;
       const zoom = MB.map.getZoom(), view = MB.map.getBounds();
-      if (zoom < ds.def.minZoom || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) { ds.cells.forEach(c => hideCell(ds, c)); return; }
+      if (zoom < this.minZoomOf(ds.def) || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) { ds.cells.forEach(c => hideCell(ds, c)); return; }
       const level = this.levelFor(ds.def, zoom), prefix = 'L' + level.idx + ':';
       const max = ds.def.maxCells || MAX_CELLS;
       const cells = level.whole ? [{ key: 'all' }] : cellsFor(view, level.cellSize, max);
@@ -1391,6 +1392,28 @@ window.MB = window.MB || {};
     else { el.removeAttribute('title'); el.removeAttribute('aria-label'); el.removeAttribute('role'); }
   };
 
+  /* ---------- the zoom a source shows from ----------
+   * Each source has a default; a number box beside it overrides it on this device (MB.settings.data.minZoom by id; the
+   * live sources keep theirs with their other options). Back at the default, nothing is kept. */
+  const MIN_Z = 3, MAX_Z = 18;
+  MB.data.minZoomOf = function (def) { const m = this.settings.minZoom; return m && m[def.id] != null ? m[def.id] : def.minZoom; };
+  MB.data.setMinZoom = function (id, zoom) {
+    const ds = this.sets[id], m = this.settings.minZoom = this.settings.minZoom || {};
+    if (zoom == null || !ds || zoom === ds.def.minZoom) delete m[id]; else m[id] = zoom;
+    this.saveSettings();
+    if (ds) this.refresh();
+    return ds ? this.minZoomOf(ds.def) : zoom;
+  };
+  MB.data.minZoomHtml = function (now, dflt, off) {
+    return `<div class="row ds-minzoom"><label title="Show this source from this zoom level">Show from ${MB.zoomIcon}</label><input type="number" class="narrow" min="${MIN_Z}" max="${MAX_Z}" step="1" value="${now}" data-act="minzoom" data-keep-focus aria-label="Show from zoom level"${off ? ' disabled' : ''}><span class="note">Default ${dflt}</span>${now !== dflt && !off ? '<button type="button" class="link" data-act="minzoom-reset">Reset</button>' : ''}</div>`;
+  };
+  // set(zoom, or null for the default) answers the zoom now in use, for the box.
+  MB.data.bindMinZoom = function (item, set) {
+    const box = item.querySelector('[data-act="minzoom"]'), reset = item.querySelector('[data-act="minzoom-reset"]');
+    if (box) box.addEventListener('change', () => { box.value = set(box.value === '' ? null : Math.max(MIN_Z, Math.min(MAX_Z, Math.round(+box.value)))); });
+    if (reset) reset.addEventListener('click', () => set(null));
+  };
+
   MB.data.renderPanel = async function () {
     const panel = document.getElementById('tab-data');
     if (!panel) return;
@@ -1414,7 +1437,7 @@ window.MB = window.MB || {};
     });
     const zoom = MB.map.getZoom();
     const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.mavlink ? MB.mavlink.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0);
-    let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
+    let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · ${MB.zoomIcon}${MB.formatZoom(zoom)}</span></div>
       <div class="row ds-tools"><input type="text" inputmode="search" enterkeyhint="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" spellcheck="false"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select>${MB.iconBtn('refresh', 'Refresh', 'data-act="check"', '', 'Refresh: check the data services for updates')}${MB.iconBtn('sweep', 'Clear cache', 'data-act="clear"')}</div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px">${esc(this._cacheText || ' ')}</div>`; // the last count, until a new one is read (an empty line, or a plain space, would collapse and shift the panel)
     const adsbHtml = MB.adsb ? MB.adsb.panelHtml(q, ui.filter) : ''; // live air traffic: its own block, same search and filter
@@ -1441,9 +1464,9 @@ window.MB = window.MB || {};
         if (!ds.loading.size && !ds.status) bits.push(shown + ' features in view');
         if (ds.meta && ds.meta.lastEdit && ds.meta.lastEdit !== 'offline') bits.push('source updated ' + new Date(ds.meta.lastEdit).toLocaleDateString());
         if (ds.meta && ds.meta.checkedAt) bits.push('checked ' + ago(ds.meta.checkedAt));
-        statusLine = esc(bits.join(' · '));
+        statusLine = MB.zoomText(bits.join(' · '));
         if (d.extraStatus) { try { statusLine += '<br>' + esc(d.extraStatus()); } catch (e) { /* ignore */ } }
-      } else statusLine = esc(d.minZoom ? 'zoom ' + d.minZoom + '+' : 'any zoom');
+      } else statusLine = MB.zoomText(this.minZoomOf(d) ? 'zoom ' + this.minZoomOf(d) + '+' : 'any zoom');
       return `<div class="data-item${ds.enabled ? ' on' : ''}" data-id="${d.id}">
         <div class="ds-head"><label class="check"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>${this.infoIcon(d.desc)}</div>
         ${d.custom ? `<button class="icon-btn mini danger" data-act="remove" title="Remove this service">${trashIcon}</button>` : ''}
@@ -1451,6 +1474,7 @@ window.MB = window.MB || {};
           ? `<div class="subsets">${d.subsets.items.concat(d.subsets.other ? [['__other', d.subsets.other, '#888']] : []).map(([k, t, c, sym]) => `<label class="sub${ds.off.has(k) ? ' off' : ''}"><input type="checkbox" data-sub="${esc(k)}"${ds.off.has(k) ? '' : ' checked'}${ds.enabled ? '' : ' disabled'}>${swatch(c, sym)}${esc(t)}</label>`).join('')}
              <span class="sub-actions"><button type="button" class="link" data-act="sub-all">all</button> · <button type="button" class="link" data-act="sub-none">none</button></span></div>`
           : `<div class="legend">${(d.legend || []).map(([t, c, sym]) => `<span>${swatch(c, sym)}${esc(t)}</span>`).join('')}</div>`}
+        ${this.minZoomHtml(this.minZoomOf(d), d.minZoom)}
         <div class="dstatus${ds.error ? ' err' : ''}">${ds.error ? esc(ds.error) : statusLine}</div>
       </div>`;
     };
@@ -1483,7 +1507,7 @@ window.MB = window.MB || {};
       <form id="dataCustomForm">
         <div class="row"><label>Name</label><input type="text" name="name" required placeholder="Layer name"></div>
         <div class="row"><label>URL</label><input type="text" name="url" required placeholder="https://…/FeatureServer/0" title="Any public ArcGIS Feature Service layer"></div>
-        <div class="row"><label>Color</label><input type="color" name="color" value="#4f8cff"><label style="flex:0 0 auto">Min zoom</label><input type="number" name="minZoom" class="narrow" min="3" max="16" value="8"></div>
+        <div class="row"><label>Color</label><input type="color" name="color" value="#4f8cff"><label style="flex:0 0 auto">Min ${MB.zoomIcon}</label><input type="number" name="minZoom" class="narrow" min="3" max="16" value="8"></div>
         <label class="check"><input type="checkbox" name="point"> Points</label>
         <div class="btn-row"><button class="btn small primary" type="submit">Add layer</button></div>
       </form>
@@ -1524,6 +1548,7 @@ window.MB = window.MB || {};
     panel.querySelectorAll('.data-item[data-id]').forEach(item => {
       const id = item.dataset.id;
       item.querySelector('[data-act="toggle"]').addEventListener('change', () => this.toggle(id));
+      this.bindMinZoom(item, v => this.setMinZoom(id, v));
       item.querySelectorAll('input[data-sub]').forEach(cb => cb.addEventListener('change', () => this.setSubset(id, cb.dataset.sub, cb.checked)));
       const ds = this.sets[id];
       const allKeys = () => ds.def.subsets ? ds.def.subsets.items.map(i => i[0]).concat(ds.def.subsets.other ? ['__other'] : []) : [];
@@ -1535,6 +1560,7 @@ window.MB = window.MB || {};
         const cid = id.replace(/^custom:/, '');
         this.disable(id);
         MB.settings.dataServices = (MB.settings.dataServices || []).filter(c => c.id !== cid);
+        this.setMinZoom(id, null);
         MB.saveSettings();
       });
     });

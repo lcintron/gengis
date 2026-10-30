@@ -51,7 +51,7 @@ function makeAdsb() {
     return { ok: true, status: 200, text: async () => JSON.stringify(body) };
   };
   const MB = {
-    escapeHtml: s => String(s), settings: {}, saveSettings() {}, autosave: null, toast() {}, on() {}, emit() {},
+    escapeHtml: s => String(s), zoomText: t => String(t), setZoomText() {}, settings: {}, saveSettings() {}, autosave: null, toast() {}, on() {}, emit() {},
     map, tools: { current: 'select' }, state: { units: 'nautical' }, formatLatLng: p => p.lat + ', ' + p.lng,
     ICON: { search: '' }, data: { sourceOpen: () => false, infoIcon: () => '', dotHtml: id => '<span id="' + id + '"></span>', setDot: () => {} }
   };

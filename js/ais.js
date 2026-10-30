@@ -313,7 +313,7 @@ window.MB = window.MB || {};
       cf.on = true; this.save();
       if (src.attribution && MB.map.attributionControl) MB.map.attributionControl.addAttribution(src.attribution);
       this.applyPaneState();
-      if (src.kind === 'stream') { if (this.zoomedOut()) this.wait(src); else this.connect(src); } else this.schedule(src, 0);
+      if (src.kind === 'stream') { if (this.zoomedOut(src)) this.wait(src); else this.connect(src); } else this.schedule(src, 0);
       MB.emit('data');
     },
 
@@ -436,7 +436,18 @@ window.MB = window.MB || {};
     },
 
     // Below NET_ZOOM the stream is closed and its vessels taken off the map, until the map is zoomed in again.
-    zoomedOut() { return MB.map.getZoom() < NET_ZOOM; },
+    // The zoom this source waits for: its default, or the one set beside it in the panel.
+    minZoomFor(id) { return +this.srcConf(id).minZoom || NET_ZOOM; },
+    setMinZoom(id, zoom) {
+      const cf = this.srcConf(id);
+      if (zoom == null || zoom === NET_ZOOM) delete cf.minZoom; else cf.minZoom = zoom;
+      this.save();
+      this.netZoom();
+      this.tickStatus();
+      MB.emit('data');
+      return this.minZoomFor(id);
+    },
+    zoomedOut(src) { return MB.map.getZoom() < this.minZoomFor(src.id); },
     wait(src) {
       const rt = this.rt[src.id];
       rt.gen++; clearTimeout(rt.timer); clearTimeout(rt.subTimer);
@@ -452,7 +463,7 @@ window.MB = window.MB || {};
       SOURCES.forEach(s => {
         const rt = this.rt[s.id];
         if (!rt.on || s.kind !== 'stream') return;
-        if (this.zoomedOut()) { if (!rt.waiting) this.wait(s); }
+        if (this.zoomedOut(s)) { if (!rt.waiting) this.wait(s); }
         else if (rt.waiting) { rt.waiting = false; rt.gen++; this.connect(s); }
       });
       this.hint();
@@ -693,7 +704,7 @@ window.MB = window.MB || {};
     statusText(id) {
       const rt = this.rt[id], src = SOURCES.find(s => s.id === id);
       if (!rt.on) return 'Off';
-      if (rt.waiting) return `Zoom in to see vessels (zoom ${NET_ZOOM} or closer)`;
+      if (rt.waiting) return `Zoom in to see vessels (zoom ${this.minZoomFor(id)} or closer)`;
       if (rt.error) return rt.error;
       if (!rt.lastOk) return rt.open ? 'Connected. Waiting for vessel reports in view (moored and anchored vessels report every 3 min).' : 'Connecting…';
       const bits = [`${rt.withPos} vessel${rt.withPos === 1 ? '' : 's'}` + (rt.total > rt.withPos ? ` (${rt.total - rt.withPos} more without a position)` : '')];
@@ -709,7 +720,7 @@ window.MB = window.MB || {};
         const el = document.getElementById('aisStatus-' + s.id);
         if (!el) return;
         const t = this.statusText(s.id), err = !!(this.rt[s.id].on && this.rt[s.id].error);
-        if (el.textContent !== t) el.textContent = t;
+        MB.setZoomText(el, t);
         el.classList.toggle('err', err);
       });
       MB.data.setDot(document.getElementById('aisCount'), ...this.dot());
@@ -749,7 +760,8 @@ window.MB = window.MB || {};
             ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="ais-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8100" inputmode="url" spellcheck="false"></div>
             <div class="row adsb-row"><label>Refresh</label><select class="ais-interval">${s.intervals.map(n => `<option value="${n}"${+sc.interval === n ? ' selected' : ''}>every ${n} s</option>`).join('')}</select></div>`
             : `<div class="row adsb-row"><label>API key</label><input type="password" class="ais-key" data-keep-focus value="${esc(sc.key)}" placeholder="Key from aisstream.io" autocomplete="off" spellcheck="false"></div>`}
-            <div class="dstatus${rt.on && rt.error ? ' err' : ''}" id="aisStatus-${s.id}">${esc(this.statusText(s.id))}</div>
+            ${s.kind === 'stream' ? MB.data.minZoomHtml(this.minZoomFor(s.id), NET_ZOOM) : ''}
+            <div class="dstatus${rt.on && rt.error ? ' err' : ''}" id="aisStatus-${s.id}">${MB.zoomText(this.statusText(s.id))}</div>
           </div>`;
         });
         html += '</div>';
@@ -770,6 +782,7 @@ window.MB = window.MB || {};
         const url = item.querySelector('.ais-url'), key = item.querySelector('.ais-key');
         const field = url ? ['url', url] : ['key', key];
         const cb = item.querySelector('[data-act="ais-toggle"]');
+        MB.data.bindMinZoom(item, v => this.setMinZoom(id, v));
         cb.addEventListener('change', () => {
           this.setField(id, field[0], field[1].value);
           this.toggle(id);
