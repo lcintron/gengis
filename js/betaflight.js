@@ -630,10 +630,10 @@ window.MB = window.MB || {};
 
     /* ---------- the panel (datalayers.js draws it under the MAVLink block) ---------- */
     count() { return MB.trackLogs ? MB.trackLogs.list('betaflight').length : 0; },
-    // The section's dot (MB.data.dotHtml): green while a log shows on the map, red with all of them hidden, none without a log.
+    // The section's dot (MB.data.dotHtml): green while a log shows on the map, red with none open or all of them hidden.
     dot() {
       const all = MB.trackLogs ? MB.trackLogs.list('betaflight') : [], shown = all.filter(l => l.visible).length;
-      if (!all.length) return ['', ''];
+      if (!all.length) return ['off', 'No logs open'];
       return shown ? ['on', shown + ' of ' + all.length + ' shown'] : ['off', 'All hidden'];
     },
     countText() { const n = this.count(); return n ? n + ' log' + (n > 1 ? 's' : '') : 'none open'; },

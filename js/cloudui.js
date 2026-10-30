@@ -258,7 +258,7 @@ window.MB = window.MB || {};
     const text = !c.accounts.length ? '<span class="dim">Cloud sync is off</span>'
       : esc(accLabel(a)) + (st ? ` <span class="cloud-chip ${esc(st)}">${esc(LABEL[st] || st)}</span>` : ' <span class="dim">· off for this project</span>');
     const html = `<div class="info-line cloud-line-set"><span class="file-ic cloud-ic">${ICON}</span><span class="file-name">${text}</span>
-      <button type="button" class="btn small" id="cloudOpenBtn">Manage</button></div>`;
+      ${MB.iconBtn('gear', 'Manage cloud sync', 'id="cloudOpenBtn"')}</div>`;
     if (box._html === html) return;
     box.innerHTML = html; box._html = html;
     box.querySelector('#cloudOpenBtn').addEventListener('click', U.open);

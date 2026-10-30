@@ -1364,7 +1364,7 @@ window.MB = window.MB || {};
     const lib = Object.values(MB.state.svgLibrary);
     const d = MB.svgDefaults;
     const isGround = d.mode === 'ground';
-    panel.innerHTML = `<div class="panel-head"><h3>Image library</h3><button class="btn small" data-act="upload">+ Upload</button></div>
+    panel.innerHTML = `<div class="panel-head"><h3>Image library</h3><button class="btn small with-icon" data-act="upload">${MB.ICON.upload}Upload</button></div>
       <div class="drop-zone" id="svgDrop">Drop SVG, PNG, JPEG, WebP or GIF files here, or click to upload</div>
       ${lib.length ? '<div class="svg-grid">' + lib.map(l => `<div class="svg-card${MB.svgPlace.svgId === l.id && MB.tools.current === 'svg' ? ' active' : ''}" data-id="${l.id}" title="Click to place on the map"><button class="del" title="Remove from library" aria-label="Remove from library">${MB.ICON.trash}</button><img src="${l.dataUrl}" alt=""><div class="name">${esc(l.name)}</div></div>`).join('') + '</div>'
         : '<p class="note">Upload an image, then click it to place it.</p>'}
@@ -1554,7 +1554,7 @@ window.MB = window.MB || {};
       <div class="section"><h3>Offline areas</h3><div id="offlineSection"></div></div>
       <div class="section" id="interfaceSection"><h3>Interface</h3>
         <div class="field"><span class="field-label">Toolbar</span>
-          <div class="seg" role="radiogroup" aria-label="Toolbar position">${[['left', 'Left side'], ['right', 'Right side']].map(([v, t]) => `<button type="button" role="radio" aria-checked="${MB.ui.toolbarSide() === v}" data-tb-side="${v}"${MB.ui.toolbarSide() === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div></div>
+          <div class="seg icons" role="radiogroup" aria-label="Toolbar position">${[['left', 'Left side', 'sideLeft'], ['right', 'Right side', 'sideRight']].map(([v, t, i]) => `<button type="button" role="radio" aria-checked="${MB.ui.toolbarSide() === v}" data-tb-side="${v}" title="${t}" aria-label="${t}"${MB.ui.toolbarSide() === v ? ' class="active"' : ''}>${MB.ICON[i]}</button>`).join('')}</div></div>
         <div class="field"><label class="field-label" for="setTipDelay">Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'Immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
         <div class="field"><label class="field-label" for="setPrefetch">Preload the next ${MB.zoomIcon} level</label><select id="setPrefetch" aria-describedby="setPrefetchHint">${[['off', 'Off (fastest map)'], ['on', 'On, after the map is still']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) === 'on' ? 'on' : 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
           <p class="field-hint" id="setPrefetchHint">Never on volunteer-run map servers.</p></div>

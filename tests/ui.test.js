@@ -94,6 +94,16 @@ test('every source that waits for a zoom level can have it overridden, its defau
   assert.match(js['offline.js'], /MB\.data\.minZoomOf\(ds\.def\)/, 'offline areas too');
 });
 
+test('every data source section has its dot, and the buttons their icons', () => {
+  for (const f of ['adsb.js', 'ais.js', 'mavlink.js', 'betaflight.js', 'declination.js', 'datalayers.js']) assert.match(js[f], /<summary class="ds-source-head">[^\n]*dotHtml\(/, f);
+  assert.doesNotMatch(js['betaflight.js'], /return \['', ''\]/, 'no section goes without one');
+  assert.match(js['cloudui.js'], /MB\.iconBtn\('gear', 'Manage cloud sync'/);
+  assert.match(js['offline.js'], /MB\.ICON\.download\}Download view/);
+  assert.match(js['ui.js'], /'Left side', 'sideLeft'/);
+  assert.match(js['datalayers.js'], /MB\.ICON\.plus\}Add layer/);
+  assert.match(html, /id="addLayerBtn" class="btn small with-icon"><svg/);
+});
+
 test('every element a script looks up by id exists', () => {
   const missing = [];
   for (const [f, src] of Object.entries(js)) {

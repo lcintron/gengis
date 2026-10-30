@@ -123,7 +123,7 @@ html.tb-right body.presenting #mapwrap .leaflet-top.leaflet-right { top: max(60p
 .field:last-child { margin-bottom: 0; }
 .field-label { display: block; margin: 0 0 6px 1px; font-size: 12px; color: var(--text-dim); }
 .field > .seg, .field > select { display: flex; width: 100%; }
-.field > .seg:not(.stack) button { flex: 1 1 0; padding: 8px 6px; white-space: nowrap; }
+.field > .seg:not(.stack) button { flex: 1 1 0; padding: 5px 6px; white-space: nowrap; }
 .field > select { height: 34px; padding: 0 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); }
 .field-hint { margin: 6px 0 0 1px; font-size: 11.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .field.disabled { opacity: .45; pointer-events: none; }
@@ -732,7 +732,7 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .section-toggle { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 9px 12px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; text-align: left;
   font-size: 12px; text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
 .section-toggle:hover { color: var(--text); }
-.section-toggle .chev { font-size: 12px; transition: transform .15s; }
+.section-toggle .chev { font-size: 16px; line-height: 1; transition: transform .15s; }
 .pane-section.closed .section-toggle .chev { transform: rotate(-90deg); }
 .section-sub { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .section-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px 12px; }
@@ -755,7 +755,7 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .layer-node.active { border-color: var(--accent); }
 .layer-node .layer-item { border: 0; border-radius: 0; background: var(--bg-3); padding: 4px 6px 4px 2px; gap: 2px; }
 .layer-node.active .layer-item { background: rgba(29,179,169,.16); }
-.layer-node .chev { width: 20px; height: 22px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; padding: 0; font-size: 12px; transition: transform .15s; }
+.layer-node .chev { width: 20px; height: 22px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; padding: 0; font-size: 16px; line-height: 1; transition: transform .15s; }
 .layer-node .chev.closed { transform: rotate(-90deg); }
 .layer-node .active-dot { margin: 0 4px 0 0; }
 .obj-list { padding: 3px 4px 3px 10px; display: flex; flex-direction: column; gap: 1px; }
@@ -969,11 +969,11 @@ details.ds-source > summary { list-style: none; cursor: pointer; gap: 8px; justi
 details.ds-source:not([open]) + details.ds-source > summary { border-top: 0; } /* closed sections in a row share one line */
 details.ds-source > summary:hover { background: #1e2834; }
 details.ds-source > summary::-webkit-details-marker { display: none; }
-details.ds-source > summary::before { content: '\25BE'; content: '\25BE' / ''; flex: 0 0 auto; /* (no alt text: not read out) */ color: var(--text-dim); font-size: 11px; transition: transform .15s; }
+details.ds-source > summary::before { content: '\25BE'; content: '\25BE' / ''; flex: 0 0 auto; /* (no alt text: not read out) */ color: var(--text-dim); font-size: 16px; line-height: 1; transition: transform .15s; }
 details.ds-source:not([open]) > summary::before { transform: rotate(-90deg); }
 details.ds-source > summary h3 { flex: 1 1 auto; order: 1; }
 details.ds-source[open] > summary { margin-bottom: 8px; }
-/* on or off (MB.data.dotHtml), left of the heading; an empty place where there is nothing to switch */
+/* active or not (MB.data.dotHtml), left of the heading */
 .ds-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; }
 .ds-dot.on { background: #2ecc71; box-shadow: 0 0 0 2px rgba(46, 204, 113, .2); }
 .ds-dot.off { background: var(--danger); box-shadow: 0 0 0 2px rgba(255, 92, 92, .18); }

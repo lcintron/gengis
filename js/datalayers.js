@@ -1379,17 +1379,16 @@ window.MB = window.MB || {};
     patchKids(a, b);
   }
 
-  // A section's state beside its heading: a green dot while something in it is on, a red one while all is off, nothing
-  // where there is nothing to switch (no flight log open). The words are its tooltip and accessible name.
+  // A section's state beside its heading: a green dot while something in it is active, a red one while nothing is.
+  // The words are its tooltip and accessible name.
   MB.data.dotHtml = function (id, state, title) {
-    return `<span class="ds-dot${state ? ' ' + state : ''}"${id ? ` id="${id}"` : ''}${state ? ` role="img" title="${esc(title)}" aria-label="${esc(title)}"` : ''}></span>`;
+    return `<span class="ds-dot ${state}"${id ? ` id="${id}"` : ''} role="img" title="${esc(title)}" aria-label="${esc(title)}"></span>`;
   };
   MB.data.setDot = function (el, state, title) {
     if (!el) return;
     el.classList.toggle('on', state === 'on');
     el.classList.toggle('off', state === 'off');
-    if (state) { if (el.title !== title) { el.title = title; el.setAttribute('aria-label', title); el.setAttribute('role', 'img'); } }
-    else { el.removeAttribute('title'); el.removeAttribute('aria-label'); el.removeAttribute('role'); }
+    if (el.title !== title) { el.title = title; el.setAttribute('aria-label', title); }
   };
 
   /* ---------- the zoom a source shows from ----------
@@ -1500,7 +1499,7 @@ window.MB = window.MB || {};
     const arc = custom.filter(matches);
     if (arc.length || (ui.filter === 'all' && (!q || 'arcgis custom feature service layer'.includes(q)))) {
       shownTotal++;
-      const on = custom.filter(d => d.enabled).length, dot = !custom.length ? ['', ''] : on ? ['on', on + ' of ' + custom.length + ' on'] : ['off', 'Off'];
+      const on = custom.filter(d => d.enabled).length, dot = !custom.length ? ['off', 'No layers added'] : on ? ['on', on + ' of ' + custom.length + ' on'] : ['off', 'Off'];
       html += `<details class="ds-source" data-src="custom"${this.sourceOpen('custom') ? ' open' : ''}><summary class="ds-source-head"><h3>${esc(MB.dataSources.custom.name)}</h3>${this.dotHtml('', dot[0], dot[1])}</summary>`;
       if (arc.length) html += `<div class="section">${arc.map(itemHtml).join('')}</div>`;
       html += `<div class="section"><h3>Add a layer</h3><p class="note">Any public ArcGIS Feature Service layer.</p>
@@ -1509,7 +1508,7 @@ window.MB = window.MB || {};
         <div class="row"><label>URL</label><input type="text" name="url" required placeholder="https://…/FeatureServer/0" title="Any public ArcGIS Feature Service layer"></div>
         <div class="row"><label>Color</label><input type="color" name="color" value="#4f8cff"><label style="flex:0 0 auto">Min ${MB.zoomIcon}</label><input type="number" name="minZoom" class="narrow" min="3" max="16" value="8"></div>
         <label class="check"><input type="checkbox" name="point"> Points</label>
-        <div class="btn-row"><button class="btn small primary" type="submit">Add layer</button></div>
+        <div class="btn-row"><button class="btn small primary with-icon" type="submit">${MB.ICON.plus}Add layer</button></div>
       </form>
     </div></details>`;
     }

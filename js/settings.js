@@ -134,7 +134,7 @@ window.MB = window.MB || {};
             <label>Tile size</label><select name="tileSize"><option value="256"${+p.tileSize !== 512 ? ' selected' : ''}>256 px</option><option value="512"${+p.tileSize === 512 ? ' selected' : ''}>512 px (MapTiler, Mapbox)</option></select>
             <label>WMS layers</label><input name="layers" type="text" value="${esc(p.layers || '')}" placeholder="comma-separated layer names (WMS only)">
             <label>WMS format</label><input name="format" type="text" value="${esc(p.format || 'image/png')}" placeholder="image/png">
-            <span></span><div class="btn-row"><button class="btn primary" type="submit">${editing ? 'Save changes' : 'Add provider'}</button>${editing ? '<button class="btn ghost" type="button" data-cancel="1">Cancel</button>' : ''}</div>
+            <span></span><div class="btn-row"><button class="btn primary with-icon" type="submit">${editing ? 'Save changes' : MB.ICON.plus + 'Add provider'}</button>${editing ? '<button class="btn ghost" type="button" data-cancel="1">Cancel</button>' : ''}</div>
           </form>
         </div>`;
       $$('form.builtin-key', panel).forEach(kf => kf.addEventListener('submit', e => {

@@ -206,12 +206,11 @@ window.MB = window.MB || {};
       if (!box) return;
       const sys = this.system, mode = this.labelMode, esc = MB.escapeHtml, off = sys === 'none' ? ' disabled' : '';
       const refocus = MB.ui && MB.ui.focusedRadioGroup ? MB.ui.focusedRadioGroup(box) : null; // a keyboard choice keeps the focus
-      const opt = (v, title, desc) => `<button type="button" role="radio" aria-checked="${sys === v}" data-grid="${v}"${sys === v ? ' class="active"' : ''}><span class="opt-title">${esc(title)}</span>${desc ? `<span class="opt-desc">${esc(desc)}</span>` : ''}</button>`;
-      box.innerHTML = `<div class="field"><div class="seg stack" role="radiogroup" aria-label="Grid">
-          ${opt('none', 'Off', 'No grid on the map')}
-          ${opt('latlon', 'Lat/Long Grid', 'Round values of the coordinate format')}
-          ${opt('mgrs', 'MGRS Grid', 'Grid zones, then 100 km down to 100 m squares')}
-        </div></div>
+      const DESC = { none: 'No grid on the map', latlon: 'Round values of the coordinate format', mgrs: 'Grid zones, then 100 km down to 100 m squares' };
+      const opt = (v, title) => `<button type="button" role="radio" aria-checked="${sys === v}" data-grid="${v}" title="${esc(DESC[v])}"${sys === v ? ' class="active"' : ''}>${esc(title)}</button>`;
+      box.innerHTML = `<div class="field"><div class="seg" role="radiogroup" aria-label="Grid">
+          ${opt('none', 'Off')}${opt('latlon', 'Lat/Long')}${opt('mgrs', 'MGRS')}
+        </div><p class="field-hint">${esc(DESC[sys] || '')}</p></div>
         <div class="field${sys === 'none' ? ' disabled' : ''}"><span class="field-label">Labels</span>
           <div class="seg" role="radiogroup" aria-label="Grid labels"><button type="button" role="radio" aria-checked="${mode === 'edges'}" data-labels="edges"${off}${mode === 'edges' ? ' class="active"' : ''}>Along the edges</button><button type="button" role="radio" aria-checked="${mode === 'center'}" data-labels="center"${off}${mode === 'center' ? ' class="active"' : ''}>Center lines</button></div></div>
         <p class="field-hint">MGRS references can be searched with any grid.</p>`;
