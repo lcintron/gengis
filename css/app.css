@@ -967,6 +967,7 @@ button.link:hover { text-decoration: underline; }
 /* a section's heading: a shaded bar across the whole panel, so where one section ends and the next begins shows at a glance */
 details.ds-source > summary { list-style: none; cursor: pointer; gap: 8px; justify-content: flex-start; margin: 0 calc(-1 * var(--panel-pad)); padding: 9px var(--panel-pad); background: var(--bg-3); border-block: 1px solid var(--border); }
 details.ds-source:not([open]) + details.ds-source > summary { border-top: 0; } /* closed sections in a row share one line */
+details.ds-source:not([open]) + :is(.section, .note) { margin-top: 14px; } /* what follows the last one (an open one has its own padding) */
 details.ds-source > summary:hover { background: #1e2834; }
 details.ds-source > summary::-webkit-details-marker { display: none; }
 details.ds-source > summary::before { content: '\25BE'; content: '\25BE' / ''; flex: 0 0 auto; /* (no alt text: not read out) */ color: var(--text-dim); font-size: 11px; transition: transform .15s; }
