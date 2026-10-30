@@ -799,6 +799,7 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .data-item .note { margin: 2px 0 0 23px; }
 .data-item .dstatus { margin: 4px 0 0 23px; font-size: 11px; color: var(--text-dim); }
 .data-item .dstatus.err { color: var(--warn); }
+.data-item .dstatus:empty { display: none; }
 .mb-datatable { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .mb-datatable td { padding: 2px 6px 2px 0; vertical-align: top; }
 .mb-datatable td:first-child { color: var(--text-dim); white-space: nowrap; }

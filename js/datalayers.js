@@ -1465,7 +1465,7 @@ window.MB = window.MB || {};
         if (ds.meta && ds.meta.checkedAt) bits.push('checked ' + ago(ds.meta.checkedAt));
         statusLine = MB.zoomText(bits.join(' · '));
         if (d.extraStatus) { try { statusLine += '<br>' + esc(d.extraStatus()); } catch (e) { /* ignore */ } }
-      } else statusLine = MB.zoomText(this.minZoomOf(d) ? 'zoom ' + this.minZoomOf(d) + '+' : 'any zoom');
+      }
       return `<div class="data-item${ds.enabled ? ' on' : ''}" data-id="${d.id}">
         <div class="ds-head"><label class="check"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>${this.infoIcon(d.desc)}</div>
         ${d.custom ? `<button class="icon-btn mini danger" data-act="remove" title="Remove this service">${trashIcon}</button>` : ''}
