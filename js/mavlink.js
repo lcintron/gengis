@@ -806,10 +806,10 @@ window.MB = window.MB || {};
       return [n ? `${n} vehicle${n === 1 ? '' : 's'}` : '', g ? `${g} ground station${g === 1 ? '' : 's'}` : '', live].filter(Boolean).join(' · ');
     },
 
-    // The section's dot (MB.data.dotHtml): green while the link is on or a flight log is open.
+    // The section's dot (MB.data.dotHtml): green while the link is on or a flight log shows on the map.
     dot() {
       if (this.rt.on) return ['on', 'On · ' + this.countText()];
-      return MB.trackLogs && MB.trackLogs.list('mavlink').length ? ['on', 'Flight logs open'] : ['off', 'Off'];
+      return MB.trackLogs && MB.trackLogs.list('mavlink').some(l => l.visible) ? ['on', 'Flight logs shown'] : ['off', 'Off'];
     },
     countText() {
       if (!this.rt.on) return 'off';

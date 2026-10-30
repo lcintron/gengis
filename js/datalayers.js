@@ -99,7 +99,7 @@ window.MB = window.MB || {};
 
   MB.dataSources = {
     faa: { name: 'FAA UAS Data Delivery System', url: 'https://udds-faa.opendata.arcgis.com/', note: 'Live FAA airspace and UAS data for the visible area, cached on this device. Informational only.' },
-    custom: { name: 'Custom ArcGIS layers', url: '', note: '' }
+    custom: { name: 'ArcGIS layers', url: '', note: '' }
   };
 
   // Subset rows: [key, label, color, chart symbol of its swatch]
@@ -1427,6 +1427,33 @@ window.MB = window.MB || {};
     html += bfHtml;
     const declHtml = MB.declination ? MB.declination.panelHtml(q, ui.filter) : ''; // magnetic declination, computed here
     html += declHtml;
+    const custom = bySource.custom || []; // the ArcGIS section, below
+    delete bySource.custom;
+    const itemHtml = ds => {
+      const d = ds.def;
+      const shown = ds.enabled ? this.featureCount(ds) : 0;
+      let statusLine = '';
+      if (ds.enabled) {
+        const bits = [];
+        if (ds.loading.size) bits.push('loading ' + ds.loading.size + '…');
+        if (ds.loading.size && this.pausedFor(ds)) bits.push('the service is over its shared request quota, retrying in ' + this.pausedFor(ds) + ' s');
+        if (ds.status) bits.push(ds.status);
+        if (!ds.loading.size && !ds.status) bits.push(shown + ' features in view');
+        if (ds.meta && ds.meta.lastEdit && ds.meta.lastEdit !== 'offline') bits.push('source updated ' + new Date(ds.meta.lastEdit).toLocaleDateString());
+        if (ds.meta && ds.meta.checkedAt) bits.push('checked ' + ago(ds.meta.checkedAt));
+        statusLine = esc(bits.join(' · '));
+        if (d.extraStatus) { try { statusLine += '<br>' + esc(d.extraStatus()); } catch (e) { /* ignore */ } }
+      } else statusLine = esc(d.minZoom ? 'zoom ' + d.minZoom + '+' : 'any zoom');
+      return `<div class="data-item${ds.enabled ? ' on' : ''}" data-id="${d.id}">
+        <div class="ds-head"><label class="check"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>${this.infoIcon(d.desc)}</div>
+        ${d.custom ? `<button class="icon-btn mini danger" data-act="remove" title="Remove this service">${trashIcon}</button>` : ''}
+        ${d.subsets
+          ? `<div class="subsets">${d.subsets.items.concat(d.subsets.other ? [['__other', d.subsets.other, '#888']] : []).map(([k, t, c, sym]) => `<label class="sub${ds.off.has(k) ? ' off' : ''}"><input type="checkbox" data-sub="${esc(k)}"${ds.off.has(k) ? '' : ' checked'}${ds.enabled ? '' : ' disabled'}>${swatch(c, sym)}${esc(t)}</label>`).join('')}
+             <span class="sub-actions"><button type="button" class="link" data-act="sub-all">all</button> · <button type="button" class="link" data-act="sub-none">none</button></span></div>`
+          : `<div class="legend">${(d.legend || []).map(([t, c, sym]) => `<span>${swatch(c, sym)}${esc(t)}</span>`).join('')}</div>`}
+        <div class="dstatus${ds.error ? ' err' : ''}">${ds.error ? esc(ds.error) : statusLine}</div>
+      </div>`;
+    };
     let shownTotal = 0;
     Object.keys(bySource).forEach(srcKey => {
       const src = MB.dataSources[srcKey] || { name: srcKey, url: '', note: '' };
@@ -1439,36 +1466,20 @@ window.MB = window.MB || {};
     Object.keys(groups).forEach(g => {
       html += `<div class="section"><h3>${esc(g)}</h3>`;
       groups[g].forEach(ds => {
-        const d = ds.def;
-        const shown = ds.enabled ? this.featureCount(ds) : 0;
-        let statusLine = '';
-        if (ds.enabled) {
-          const bits = [];
-          if (ds.loading.size) bits.push('loading ' + ds.loading.size + '…');
-          if (ds.loading.size && this.pausedFor(ds)) bits.push('the service is over its shared request quota, retrying in ' + this.pausedFor(ds) + ' s');
-          if (ds.status) bits.push(ds.status);
-          if (!ds.loading.size && !ds.status) bits.push(shown + ' features in view');
-          if (ds.meta && ds.meta.lastEdit && ds.meta.lastEdit !== 'offline') bits.push('source updated ' + new Date(ds.meta.lastEdit).toLocaleDateString());
-          if (ds.meta && ds.meta.checkedAt) bits.push('checked ' + ago(ds.meta.checkedAt));
-          statusLine = esc(bits.join(' · '));
-          if (d.extraStatus) { try { statusLine += '<br>' + esc(d.extraStatus()); } catch (e) { /* ignore */ } }
-        } else statusLine = esc(d.minZoom ? 'zoom ' + d.minZoom + '+' : 'any zoom');
-        html += `<div class="data-item${ds.enabled ? ' on' : ''}" data-id="${d.id}">
-          <div class="ds-head"><label class="check"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>${this.infoIcon(d.desc)}</div>
-          ${d.custom ? `<button class="icon-btn mini danger" data-act="remove" title="Remove this service">${trashIcon}</button>` : ''}
-          ${d.subsets
-            ? `<div class="subsets">${d.subsets.items.concat(d.subsets.other ? [['__other', d.subsets.other, '#888']] : []).map(([k, t, c, sym]) => `<label class="sub${ds.off.has(k) ? ' off' : ''}"><input type="checkbox" data-sub="${esc(k)}"${ds.off.has(k) ? '' : ' checked'}${ds.enabled ? '' : ' disabled'}>${swatch(c, sym)}${esc(t)}</label>`).join('')}
-               <span class="sub-actions"><button type="button" class="link" data-act="sub-all">all</button> · <button type="button" class="link" data-act="sub-none">none</button></span></div>`
-            : `<div class="legend">${(d.legend || []).map(([t, c, sym]) => `<span>${swatch(c, sym)}${esc(t)}</span>`).join('')}</div>`}
-          <div class="dstatus${ds.error ? ' err' : ''}">${ds.error ? esc(ds.error) : statusLine}</div>
-        </div>`;
+        html += itemHtml(ds);
       });
       html += '</div>';
     });
       html += '</details>';
     });
-    if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
-    html += `<div class="section"><h3>Add ArcGIS layer</h3><p class="note">Any public ArcGIS Feature Service layer becomes a dataset under "Custom ArcGIS layers".</p>
+    // ArcGIS layers: the ones added here and the form that adds one, unless a search or a filter asks for something else.
+    const arc = custom.filter(matches);
+    if (arc.length || (ui.filter === 'all' && (!q || 'arcgis custom feature service layer'.includes(q)))) {
+      shownTotal++;
+      const on = custom.filter(d => d.enabled).length, dot = !custom.length ? ['', ''] : on ? ['on', on + ' of ' + custom.length + ' on'] : ['off', 'Off'];
+      html += `<details class="ds-source" data-src="custom"${this.sourceOpen('custom') ? ' open' : ''}><summary class="ds-source-head"><h3>${esc(MB.dataSources.custom.name)}</h3>${this.dotHtml('', dot[0], dot[1])}</summary>`;
+      if (arc.length) html += `<div class="section">${arc.map(itemHtml).join('')}</div>`;
+      html += `<div class="section"><h3>Add a layer</h3><p class="note">Any public ArcGIS Feature Service layer.</p>
       <form id="dataCustomForm">
         <div class="row"><label>Name</label><input type="text" name="name" required placeholder="Layer name"></div>
         <div class="row"><label>URL</label><input type="text" name="url" required placeholder="https://…/FeatureServer/0" title="Any public ArcGIS Feature Service layer"></div>
@@ -1476,7 +1487,9 @@ window.MB = window.MB || {};
         <label class="check"><input type="checkbox" name="point"> Points</label>
         <div class="btn-row"><button class="btn small primary" type="submit">Add layer</button></div>
       </form>
-    </div>`;
+    </div></details>`;
+    }
+    if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
     // Most redraws only change a status line, a count or a box's state: those are patched in place, so the scroll,
     // an open dropdown and a hovered row stay as they are. A change of what is listed (a search, a filter, a dataset
     // added or removed) builds the panel again.
@@ -1525,7 +1538,8 @@ window.MB = window.MB || {};
         MB.saveSettings();
       });
     });
-    panel.querySelector('#dataCustomForm').addEventListener('submit', e => {
+    const customForm = panel.querySelector('#dataCustomForm'); // (not there while a search or a filter hides its section)
+    if (customForm) customForm.addEventListener('submit', e => {
       e.preventDefault();
       const f = e.target.elements;
       const url = f.url.value.trim();

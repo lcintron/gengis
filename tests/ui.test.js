@@ -74,6 +74,10 @@ test('LAANC ceilings show from zoom 8, in 1° cells there so a view fits the cel
   assert.match(js['datalayers.js'], /id: 'uasfm', [^\n]*minZoom: 8,\r?\n[^\n]*\r?\n\s*levels: \[\{ maxZoom: 9, cellSize: 1 \}, \{ cellSize: CELL \}\], maxCells: 64,\r?\n\s*rev: 1,/);
 });
 
+test('adding an ArcGIS layer is in the ArcGIS section, with the layers added', () => {
+  assert.match(js['datalayers.js'], /<details class="ds-source" data-src="custom"[\s\S]*?id="dataCustomForm"[\s\S]*?<\/form>\s*<\/div><\/details>/);
+});
+
 test('every element a script looks up by id exists', () => {
   const missing = [];
   for (const [f, src] of Object.entries(js)) {
