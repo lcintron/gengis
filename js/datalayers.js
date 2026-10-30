@@ -258,7 +258,7 @@ window.MB = window.MB || {};
 
     buildSets() {
       const custom = ((MB.settings && MB.settings.dataServices) || []).map(c => ({
-        id: 'custom:' + c.id, group: 'Custom ArcGIS layers', source: 'custom', name: c.name, url: c.url.replace(/\/query.*$/, '').replace(/\/$/, ''), minZoom: +c.minZoom || 8,
+        id: 'custom:' + c.id, group: 'ArcGIS layers', source: 'custom', name: c.name, url: c.url.replace(/\/query.*$/, '').replace(/\/$/, ''), minZoom: +c.minZoom || 8,
         point: !!c.point, custom: true, style: () => ({ color: c.color || '#4f8cff', weight: 2, opacity: .9, fillColor: c.color || '#4f8cff', fillOpacity: .15, radius: 6 }),
         label: p => firstText(p), fields: null, legend: [[c.name, c.color || '#4f8cff']]
       }));

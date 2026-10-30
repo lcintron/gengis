@@ -641,7 +641,7 @@ window.MB = window.MB || {};
       return this.notes.slice(-3).map(n => `<div class="dstatus${n.warn ? ' err' : ''}">${esc(n.text)}</div>`).join('');
     },
     matches(q, filter) {
-      const on = this.count() > 0;
+      const on = this.dot()[0] === 'on'; // (a hidden log is off, as its dot says)
       if (filter === 'on' && !on) return false;
       if (filter === 'off' && on) return false;
       return !q || 'betaflight blackbox flight logs bbl bfl fpv gps csv blackbox_decode'.includes(q);

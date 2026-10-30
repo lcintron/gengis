@@ -838,7 +838,7 @@ window.MB = window.MB || {};
     },
 
     matches(q, filter) {
-      const on = this.rt.on || !!(MB.trackLogs && MB.trackLogs.list('mavlink').length);
+      const on = this.dot()[0] === 'on'; // (a hidden log is off, as its dot says)
       if (filter === 'on' && !on) return false;
       if (filter === 'off' && on) return false;
       if (!q) return true;
