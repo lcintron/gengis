@@ -1413,7 +1413,8 @@ window.MB = window.MB || {};
   MB.data.bindMinZoom = function (item, set) {
     const box = item.querySelector('[data-act="minzoom"]'), reset = item.querySelector('[data-act="minzoom-reset"]');
     if (box) box.addEventListener('change', () => { box.value = set(box.value === '' ? null : Math.max(MIN_Z, Math.min(MAX_Z, Math.round(+box.value)))); });
-    if (reset) reset.addEventListener('click', () => { const z = set(null); if (box) box.value = z; }); // (a typed-in box no longer follows its value attribute)
+    // (a typed-in box no longer follows its value attribute; Reset hides itself, so focus goes to the box)
+    if (reset) reset.addEventListener('click', () => { const z = set(null); if (box) { box.value = z; box.focus(); } });
   };
 
   MB.data.renderPanel = async function () {
