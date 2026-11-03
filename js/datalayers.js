@@ -1407,13 +1407,13 @@ window.MB = window.MB || {};
     return ds ? this.minZoomOf(ds.def) : zoom;
   };
   MB.data.minZoomHtml = function (now, dflt, off) {
-    return `<div class="row ds-minzoom"><label title="Show this source from this zoom level">Show from ${MB.zoomIcon}</label><input type="number" class="narrow" min="${MIN_Z}" max="${MAX_Z}" step="1" value="${now}" data-act="minzoom" data-keep-focus aria-label="Show from zoom level"${off ? ' disabled' : ''}><span class="note">Default ${dflt}</span>${now !== dflt && !off ? '<button type="button" class="link" data-act="minzoom-reset">Reset</button>' : ''}</div>`;
+    return `<div class="row ds-minzoom"><label title="Show this source from this zoom level">Show from ${MB.zoomIcon}</label><input type="number" class="narrow" min="${MIN_Z}" max="${MAX_Z}" step="1" value="${now}" data-act="minzoom" data-keep-focus aria-label="Show from zoom level"${off ? ' disabled' : ''}><span class="note">Default ${dflt}</span><button type="button" class="link" data-act="minzoom-reset"${now !== dflt && !off ? '' : ' hidden'}>Reset</button></div>`; // (Reset hidden, not left out: the row keeps its shape and is patched, focus kept)
   };
   // set(zoom, or null for the default) answers the zoom now in use, for the box.
   MB.data.bindMinZoom = function (item, set) {
     const box = item.querySelector('[data-act="minzoom"]'), reset = item.querySelector('[data-act="minzoom-reset"]');
     if (box) box.addEventListener('change', () => { box.value = set(box.value === '' ? null : Math.max(MIN_Z, Math.min(MAX_Z, Math.round(+box.value)))); });
-    if (reset) reset.addEventListener('click', () => set(null));
+    if (reset) reset.addEventListener('click', () => { const z = set(null); if (box) box.value = z; }); // (a typed-in box no longer follows its value attribute)
   };
 
   MB.data.renderPanel = async function () {

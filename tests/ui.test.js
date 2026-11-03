@@ -109,6 +109,9 @@ test('a status line changing (empty, plain, with a zoom icon) patches the Data p
   assert.match(js['datalayers.js'], /const leaf = el => el\.nodeType === 1 && el\.classList\.contains\('dstatus'\);/);
   assert.match(js['datalayers.js'], /return leaf\(a\) \|\| sameKids\(a, b\);/, 'its content is not compared node by node');
   assert.match(js['datalayers.js'], /if \(leaf\(a\)\) \{ if \(a\.innerHTML !== b\.innerHTML\) a\.innerHTML = b\.innerHTML; return; \}/, 'it is taken over whole');
+  // the same for a min-zoom box: its Reset is hidden at the default, not left out
+  assert.match(js['datalayers.js'], /data-act="minzoom-reset"\$\{now !== dflt && !off \? '' : ' hidden'\}>Reset<\/button>/);
+  assert.match(js['datalayers.js'], /reset\.addEventListener\('click', \(\) => \{ const z = set\(null\); if \(box\) box\.value = z; \}\)/, 'Reset puts the default back in the kept box');
 });
 
 test('every element a script looks up by id exists', () => {
