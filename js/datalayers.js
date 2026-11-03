@@ -1358,15 +1358,17 @@ window.MB = window.MB || {};
    * The panel as drawn and as it would be drawn now have the same shape when the same elements, with the same ids
    * and the same datasets and actions behind them, sit in the same places: then only texts, classes and states
    * differ, and the drawn panel takes them over, its elements (and their listeners) kept. A slider's number box
-   * (ui.js) and what it changes on its slider and readout belong to the drawn panel alone. */
+   * (ui.js) and what it changes on its slider and readout belong to the drawn panel alone. A status line is one
+   * piece: its text and icons (empty, plain, or with a zoom icon) are taken over whole, the line itself kept. */
   const KEY_ATTRS = ['id', 'data-id', 'data-adsb', 'data-ais', 'data-decl', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'data-ais-type', 'type', 'name'];
   const kids = (n, drawn) => Array.from(n.childNodes).filter(c => !(drawn && c.nodeType === 1 && c.classList.contains('stepper')));
   const ownAttrs = el => (el.hasAttribute('data-stepper') ? ['step', 'max', 'data-stepper'] : el.classList.contains('val') ? ['hidden'] : []);
+  const leaf = el => el.nodeType === 1 && el.classList.contains('dstatus');
   const sameKids = (a, b) => { const ka = kids(a, true), kb = kids(b, false); return ka.length === kb.length && ka.every((c, i) => sameShape(c, kb[i])); };
   function sameShape(a, b) {
     if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) return false;
     if (a.nodeType === 1 && KEY_ATTRS.some(k => a.getAttribute(k) !== b.getAttribute(k))) return false;
-    return sameKids(a, b);
+    return leaf(a) || sameKids(a, b);
   }
   const patchKids = (a, b) => { const kb = kids(b, false); kids(a, true).forEach((c, i) => patchNode(c, kb[i])); };
   function patchNode(a, b) {
@@ -1376,6 +1378,7 @@ window.MB = window.MB || {};
     Array.from(a.attributes).forEach(at => { if (!own.includes(at.name) && !b.hasAttribute(at.name)) a.removeAttribute(at.name); });
     if (a.nodeName === 'INPUT' && (a.type === 'checkbox' || a.type === 'radio')) a.checked = b.hasAttribute('checked'); // the state, not only the attribute
     else if (a.nodeName === 'OPTION') a.selected = b.hasAttribute('selected');
+    if (leaf(a)) { if (a.innerHTML !== b.innerHTML) a.innerHTML = b.innerHTML; return; }
     patchKids(a, b);
   }
 

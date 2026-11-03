@@ -96,12 +96,19 @@ test('every source that waits for a zoom level can have it overridden, its defau
 
 test('every data source section has its dot, and the buttons their icons', () => {
   for (const f of ['adsb.js', 'ais.js', 'mavlink.js', 'betaflight.js', 'declination.js', 'datalayers.js']) assert.match(js[f], /<summary class="ds-source-head">[^\n]*dotHtml\(/, f);
-  assert.doesNotMatch(js['betaflight.js'], /return \['', ''\]/, 'no section goes without one');
+  for (const f of ['betaflight.js', 'datalayers.js']) assert.doesNotMatch(js[f], /\['', ''\]/, f + ': no section goes without one');
   assert.match(js['cloudui.js'], /MB\.iconBtn\('gear', 'Manage cloud sync'/);
   assert.match(js['offline.js'], /MB\.ICON\.download\}Download view/);
   assert.match(js['ui.js'], /'Left side', 'sideLeft'/);
   assert.match(js['datalayers.js'], /MB\.ICON\.plus\}Add layer/);
   assert.match(html, /id="addLayerBtn" class="btn small with-icon"><svg/);
+});
+
+test('a status line changing (empty, plain, with a zoom icon) patches the Data panel, not rebuilds it', () => {
+  // a rebuild would throw keyboard focus off a layer's switch as it is toggled
+  assert.match(js['datalayers.js'], /const leaf = el => el\.nodeType === 1 && el\.classList\.contains\('dstatus'\);/);
+  assert.match(js['datalayers.js'], /return leaf\(a\) \|\| sameKids\(a, b\);/, 'its content is not compared node by node');
+  assert.match(js['datalayers.js'], /if \(leaf\(a\)\) \{ if \(a\.innerHTML !== b\.innerHTML\) a\.innerHTML = b\.innerHTML; return; \}/, 'it is taken over whole');
 });
 
 test('every element a script looks up by id exists', () => {
