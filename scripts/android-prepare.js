@@ -6,7 +6,9 @@
  * - version: versionName from package.json, versionCode derived from it (0.16.3 -> 16003)
  * - release signing from environment variables, when they are set (CI: the upload key from GitHub secrets):
  *   GENGIS_KEYSTORE (path), GENGIS_KEYSTORE_PASSWORD, GENGIS_KEY_ALIAS, GENGIS_KEY_PASSWORD
- * - GenGIS's icons (launcher, round, adaptive) and splash screens instead of Capacitor's */
+ * - GenGIS's icons (launcher, round, adaptive) and splash screens instead of Capacitor's
+ * - cloud sync's sign-in (android-src/CloudPlugin.java): the plugin registered, the OneDrive sign-in's way back to
+ *   the app (com.luiscintron.gengis://oauth), and the libraries it uses (Custom Tabs, Google's sign-in) */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -15,6 +17,7 @@ const ROOT = path.join(__dirname, '..');
 const APP = path.join(ROOT, 'android', 'app');
 const RES = path.join(APP, 'src', 'main', 'res');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+const APP_ID = JSON.parse(fs.readFileSync(path.join(ROOT, 'capacitor.config.json'), 'utf8')).appId;
 
 function edit(file, fn) {
   const before = fs.readFileSync(file, 'utf8'), after = fn(before);
@@ -32,7 +35,48 @@ edit(path.join(APP, 'src', 'main', 'AndroidManifest.xml'), s => {
   // (a value a future template sets is replaced, not left in place)
   if (/android:usesCleartextTraffic="[^"]*"/.test(s)) s = s.replace(/android:usesCleartextTraffic="[^"]*"/, 'android:usesCleartextTraffic="true"');
   else s = s.replace('<application', '<application\n        android:usesCleartextTraffic="true"');
+  // the OneDrive sign-in comes back to the app's activity (singleTask: the browser tab above it closes)
+  if (!s.includes(`android:scheme="${APP_ID}"`)) {
+    const act = s.search(/<activity[^>]*android:name="[^"]*\.MainActivity"/);
+    const end = act < 0 ? -1 : s.indexOf('</activity>', act);
+    if (end < 0) fail('no MainActivity in AndroidManifest.xml');
+    s = s.slice(0, end) + `    <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${APP_ID}" android:host="oauth" />
+            </intent-filter>
+        ` + s.slice(end);
+  }
+  // (Android 11+: the browsers that can show a Custom Tab are visible to the app)
+  if (!s.includes('android.support.customtabs.action.CustomTabsService')) {
+    s = s.replace('</manifest>', `    <queries>
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+    </queries>
+</manifest>`);
+  }
   return s;
+});
+
+/* ---------- cloud sync: GenGIS's own plugin ---------- */
+const javaDir = path.join(APP, 'src', 'main', 'java', ...APP_ID.split('.'));
+const mainActivity = path.join(javaDir, 'MainActivity.java');
+if (!fs.existsSync(mainActivity)) fail('MainActivity.java not found (a Kotlin template?): update this script');
+fs.copyFileSync(path.join(ROOT, 'android-src', 'CloudPlugin.java'), path.join(javaDir, 'CloudPlugin.java'));
+edit(mainActivity, s => {
+  if (s.includes('registerPlugin(CloudPlugin.class)')) return s;
+  const empty = /public class MainActivity extends BridgeActivity\s*\{\s*\}/;
+  if (!empty.test(s)) fail('MainActivity.java is not the empty template: register CloudPlugin by hand in this script');
+  return s.replace('import com.getcapacitor.BridgeActivity;', 'import android.os.Bundle;\nimport com.getcapacitor.BridgeActivity;')
+    .replace(empty, `public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(CloudPlugin.class); // GenGIS's own (android-src/CloudPlugin.java): before the bridge starts
+        super.onCreate(savedInstanceState);
+    }
+}`);
 });
 
 /* ---------- version and signing ---------- */
@@ -60,10 +104,16 @@ edit(gradle, s => {
     const end = rel + 'release {'.length;
     s = s.slice(0, end) + '\n            if (System.getenv("GENGIS_KEYSTORE")) signingConfig signingConfigs.release' + s.slice(end);
   }
+  // cloud sync's sign-in: Custom Tabs (OneDrive in a browser tab) and Google's sign-in (Google Drive)
+  if (!s.includes('play-services-auth')) {
+    s = s.replace(/\ndependencies\s*\{/, `$&
+    implementation "androidx.browser:browser:1.8.0"
+    implementation "com.google.android.gms:play-services-auth:21.4.0"`);
+  }
   return s;
 });
 const g = fs.readFileSync(gradle, 'utf8');
-if (!/versionCode \d+/.test(g) || !g.includes('signingConfig signingConfigs.release')) fail('build.gradle was not patched as expected');
+if (!/versionCode \d+/.test(g) || !g.includes('signingConfig signingConfigs.release') || !g.includes('play-services-auth')) fail('build.gradle was not patched as expected');
 
 /* ---------- icons and splash ---------- */
 const copyTo = (src, name, test) => {
@@ -82,4 +132,4 @@ const bg = path.join(RES, 'values', 'ic_launcher_background.xml');
 if (fs.existsSync(bg)) edit(bg, s => s.replace(/(<color name="ic_launcher_background">)[^<]*(<\/color>)/, '$1#0B1118$2'));
 const splash = copyTo('branding/splash/splash-1080x1920.png', 'splash.png', d => d.startsWith('drawable') && !d.includes('land')) +
   copyTo('branding/splash/splash-1920x1080.png', 'splash.png', d => d.startsWith('drawable') && d.includes('land'));
-console.log(`android-prepare: version ${pkg.version} (${versionCode}), ${icons} icons, ${splash} splash images, permissions and signing set`);
+console.log(`android-prepare: version ${pkg.version} (${versionCode}), ${icons} icons, ${splash} splash images, permissions, signing and cloud sign-in set`);

@@ -310,6 +310,7 @@ function makeApp(o) {
     if (e) { if (e.type) cfg.error_callback(e); else cfg.callback(e); return; }
     cfg.callback({ access_token: o.google.issue(), expires_in: 3599 });
   }) }) } } };
+  if (o.native) MB.native = { app: true, platform: 'android', cloud: o.native }; // the Android app's bridge (js/native.js)
   const win = { MB, gengisDesktop: o.desktop, google: o.google ? google : undefined };
   // requests to Google go to the fake Google, the rest to the fake Microsoft
   const route = (url, opts) => (o.google && /^https:\/\/(www|oauth2)\.googleapis\.com\//.test(String(url)) ? o.google.fetch(url, opts) : server.fetch(url, opts));

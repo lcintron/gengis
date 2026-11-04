@@ -6,8 +6,9 @@
  *   share sheet (Save to Files, Drive, email...), since a download link does nothing in an app
  * - the back button: closes what is open (a dialog, the menu, the side panel, presenter mode, a selection) before
  *   leaving the app
+ * - cloud sync's sign-in, kept by the app (MB.native.cloud: android-src/CloudPlugin.java)
  * Elsewhere this module only defines MB.getText. Nothing here is bundled: Capacitor's own bridge provides
- * window.Capacitor and its plugins in the app. */
+ * window.Capacitor and its plugins in the app (GenGISCloud is GenGIS's own, added by scripts/android-prepare.js). */
 window.MB = window.MB || {};
 (function (MB) {
   'use strict';
@@ -61,6 +62,22 @@ window.MB = window.MB || {};
         const msg = String((e && e.message) || e);
         if (!/cancel/i.test(msg)) MB.toast('Could not save "' + filename + '": ' + msg, 6000);
       }
+    };
+  }
+
+  /* ---------- cloud sync: the app's own sign-in (android-src/CloudPlugin.java) ----------
+   * The desktop app's bridge (window.gengisDesktop.cloud), the same calls: OneDrive signs in in a browser tab that
+   * comes back to the app, its refresh token kept encrypted by Android's keystore; Google Drive signs in with
+   * Android's own account picker, and Google keeps the sign-in. The page only gets access tokens, for an hour. Its
+   * requests are the web app's (fetch: the cloud APIs answer CORS for the app's https://localhost). */
+  const cloud = plugin('GenGISCloud');
+  if (cloud) {
+    const ask = (method, o) => cloud[method](o).catch(e => ({ error: 'failed', message: String((e && e.message) || e) }));
+    MB.native.cloud = {
+      providers: ['onedrive', 'gdrive'],
+      signIn: (provider, hint) => ask('signIn', { provider, hint: hint || '' }),
+      token: accountId => ask('token', { accountId }),
+      signOut: accountId => ask('signOut', { accountId })
     };
   }
 
