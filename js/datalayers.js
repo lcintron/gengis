@@ -99,7 +99,7 @@ window.MB = window.MB || {};
 
   MB.dataSources = {
     faa: { name: 'FAA UAS Data Delivery System', url: 'https://udds-faa.opendata.arcgis.com/', note: 'Live FAA airspace and UAS data for the visible area, cached on this device. Informational only.' },
-    custom: { name: 'Custom ArcGIS layers', url: '', note: '' }
+    custom: { name: 'ArcGIS layers', url: '', note: '' }
   };
 
   // Subset rows: [key, label, color, chart symbol of its swatch]
@@ -133,7 +133,10 @@ window.MB = window.MB || {};
       source: 'faa', url: FAA + 'FAA_Recognized_Identification_Areas/FeatureServer/0', style: solid('#2ecc71', .25),
       label: p => p.title || p.orgName || 'FRIA', fields: ['title', 'orgName', 'address1', 'city', 'state', 'zipcode', 'startDate', 'endDate', 'refNumber'],
       legend: [['FRIA', '#2ecc71']], desc: 'Fly without Remote ID (VLOS).' },
-    { id: 'uasfm', group: 'LAANC', name: 'UAS Facility Map (LAANC ceilings)', minZoom: 10,
+    { id: 'uasfm', group: 'LAANC', name: 'UAS Facility Map (LAANC ceilings)', minZoom: 8,
+      // 1° cells at zoom 8-9 (a phone's view is some 3 by 4 of them, a desktop's up to 60), half a degree closer in
+      levels: [{ maxZoom: 9, cellSize: 1 }, { cellSize: CELL }], maxCells: 64,
+      rev: 1, // cells stored when every zoom used half-degree cells under the same keys are fetched again
       source: 'faa', url: FAA + 'FAA_UAS_FacilityMap_Data/FeatureServer/0', style: ceilingStyle,
       tiled: true, // grid squares that cover the area edge to edge: a point is in one of them
       label: p => `Ceiling ${p.CEILING} ${p.UNIT || 'ft'} AGL${p.APT1_NAME ? ' · ' + p.APT1_NAME : ''}`,
@@ -255,7 +258,7 @@ window.MB = window.MB || {};
 
     buildSets() {
       const custom = ((MB.settings && MB.settings.dataServices) || []).map(c => ({
-        id: 'custom:' + c.id, group: 'Custom ArcGIS layers', source: 'custom', name: c.name, url: c.url.replace(/\/query.*$/, '').replace(/\/$/, ''), minZoom: +c.minZoom || 8,
+        id: 'custom:' + c.id, group: 'ArcGIS layers', source: 'custom', name: c.name, url: c.url.replace(/\/query.*$/, '').replace(/\/$/, ''), minZoom: +c.minZoom || 8,
         point: !!c.point, custom: true, style: () => ({ color: c.color || '#4f8cff', weight: 2, opacity: .9, fillColor: c.color || '#4f8cff', fillOpacity: .15, radius: 6 }),
         label: p => firstText(p), fields: null, legend: [[c.name, c.color || '#4f8cff']]
       }));
@@ -452,8 +455,9 @@ window.MB = window.MB || {};
       const zoom = MB.map.getZoom(), bounds = MB.map.getBounds();
       this.catalog().forEach(ds => {
         if (!ds.enabled || ds.checking) return; // wait until the update stamp is known before caching anything
-        if (zoom < ds.def.minZoom || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) {
-          ds.status = zoom < ds.def.minZoom ? 'Zoom in to level ' + ds.def.minZoom + ' or closer to load' : 'Shown up to zoom ' + ds.def.maxZoom;
+        const from = this.minZoomOf(ds.def);
+        if (zoom < from || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) {
+          ds.status = zoom < from ? 'Zoom in to zoom ' + from + ' or closer to load' : 'Shown up to zoom ' + ds.def.maxZoom;
           ds.cells.forEach(c => hideCell(ds, c));
           return;
         }
@@ -484,7 +488,7 @@ window.MB = window.MB || {};
     settle(ds) {
       if (!ds.enabled || !ds.group) return;
       const zoom = MB.map.getZoom(), view = MB.map.getBounds();
-      if (zoom < ds.def.minZoom || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) { ds.cells.forEach(c => hideCell(ds, c)); return; }
+      if (zoom < this.minZoomOf(ds.def) || zoom > (ds.def.maxZoom == null ? Infinity : ds.def.maxZoom)) { ds.cells.forEach(c => hideCell(ds, c)); return; }
       const level = this.levelFor(ds.def, zoom), prefix = 'L' + level.idx + ':';
       const max = ds.def.maxCells || MAX_CELLS;
       const cells = level.whole ? [{ key: 'all' }] : cellsFor(view, level.cellSize, max);
@@ -1354,15 +1358,17 @@ window.MB = window.MB || {};
    * The panel as drawn and as it would be drawn now have the same shape when the same elements, with the same ids
    * and the same datasets and actions behind them, sit in the same places: then only texts, classes and states
    * differ, and the drawn panel takes them over, its elements (and their listeners) kept. A slider's number box
-   * (ui.js) and what it changes on its slider and readout belong to the drawn panel alone. */
+   * (ui.js) and what it changes on its slider and readout belong to the drawn panel alone. A status line is one
+   * piece: its text and icons (empty, plain, or with a zoom icon) are taken over whole, the line itself kept. */
   const KEY_ATTRS = ['id', 'data-id', 'data-adsb', 'data-ais', 'data-decl', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'data-ais-type', 'type', 'name'];
   const kids = (n, drawn) => Array.from(n.childNodes).filter(c => !(drawn && c.nodeType === 1 && c.classList.contains('stepper')));
   const ownAttrs = el => (el.hasAttribute('data-stepper') ? ['step', 'max', 'data-stepper'] : el.classList.contains('val') ? ['hidden'] : []);
+  const leaf = el => el.nodeType === 1 && el.classList.contains('dstatus');
   const sameKids = (a, b) => { const ka = kids(a, true), kb = kids(b, false); return ka.length === kb.length && ka.every((c, i) => sameShape(c, kb[i])); };
   function sameShape(a, b) {
     if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) return false;
     if (a.nodeType === 1 && KEY_ATTRS.some(k => a.getAttribute(k) !== b.getAttribute(k))) return false;
-    return sameKids(a, b);
+    return leaf(a) || sameKids(a, b);
   }
   const patchKids = (a, b) => { const kb = kids(b, false); kids(a, true).forEach((c, i) => patchNode(c, kb[i])); };
   function patchNode(a, b) {
@@ -1372,8 +1378,44 @@ window.MB = window.MB || {};
     Array.from(a.attributes).forEach(at => { if (!own.includes(at.name) && !b.hasAttribute(at.name)) a.removeAttribute(at.name); });
     if (a.nodeName === 'INPUT' && (a.type === 'checkbox' || a.type === 'radio')) a.checked = b.hasAttribute('checked'); // the state, not only the attribute
     else if (a.nodeName === 'OPTION') a.selected = b.hasAttribute('selected');
+    if (leaf(a)) { if (a.innerHTML !== b.innerHTML) a.innerHTML = b.innerHTML; return; }
     patchKids(a, b);
   }
+
+  // A section's state beside its heading: a green dot while something in it is active, a red one while nothing is.
+  // The words are its tooltip and accessible name.
+  MB.data.dotHtml = function (id, state, title) {
+    return `<span class="ds-dot ${state}"${id ? ` id="${id}"` : ''} role="img" title="${esc(title)}" aria-label="${esc(title)}"></span>`;
+  };
+  MB.data.setDot = function (el, state, title) {
+    if (!el) return;
+    el.classList.toggle('on', state === 'on');
+    el.classList.toggle('off', state === 'off');
+    if (el.title !== title) { el.title = title; el.setAttribute('aria-label', title); }
+  };
+
+  /* ---------- the zoom a source shows from ----------
+   * Each source has a default; a number box beside it overrides it on this device (MB.settings.data.minZoom by id; the
+   * live sources keep theirs with their other options). Back at the default, nothing is kept. */
+  const MIN_Z = 3, MAX_Z = 18;
+  MB.data.minZoomOf = function (def) { const m = this.settings.minZoom; return m && m[def.id] != null ? m[def.id] : def.minZoom; };
+  MB.data.setMinZoom = function (id, zoom) {
+    const ds = this.sets[id], m = this.settings.minZoom = this.settings.minZoom || {};
+    if (zoom == null || !ds || zoom === ds.def.minZoom) delete m[id]; else m[id] = zoom;
+    this.saveSettings();
+    if (ds) this.refresh();
+    return ds ? this.minZoomOf(ds.def) : zoom;
+  };
+  MB.data.minZoomHtml = function (now, dflt, off) {
+    return `<div class="row ds-minzoom"><label title="Show this source from this zoom level">Show from ${MB.zoomIcon}</label><input type="number" class="narrow" min="${MIN_Z}" max="${MAX_Z}" step="1" value="${now}" data-act="minzoom" data-keep-focus aria-label="Show from zoom level"${off ? ' disabled' : ''}><span class="note">Default ${dflt}</span><button type="button" class="link" data-act="minzoom-reset"${now !== dflt && !off ? '' : ' hidden'}>Reset</button></div>`; // (Reset hidden, not left out: the row keeps its shape and is patched, focus kept)
+  };
+  // set(zoom, or null for the default) answers the zoom now in use, for the box.
+  MB.data.bindMinZoom = function (item, set) {
+    const box = item.querySelector('[data-act="minzoom"]'), reset = item.querySelector('[data-act="minzoom-reset"]');
+    if (box) box.addEventListener('change', () => { box.value = set(box.value === '' ? null : Math.max(MIN_Z, Math.min(MAX_Z, Math.round(+box.value)))); });
+    // (a typed-in box no longer follows its value attribute; Reset hides itself, so focus goes to the box)
+    if (reset) reset.addEventListener('click', () => { const z = set(null); if (box) { box.value = z; box.focus(); } });
+  };
 
   MB.data.renderPanel = async function () {
     const panel = document.getElementById('tab-data');
@@ -1397,11 +1439,9 @@ window.MB = window.MB || {};
       (bySource[src] = bySource[src] || []).push(ds);
     });
     const zoom = MB.map.getZoom();
-    const s = this.settings;
     const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.mavlink ? MB.mavlink.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0);
-    let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · zoom ${MB.formatZoom(zoom)}</span></div>
-      <div class="row ds-tools"><input type="text" inputmode="search" enterkeyhint="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" spellcheck="false"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select></div>
-      <div class="btn-row" style="margin:0 0 8px"><button class="btn small" data-act="check">Check for updates</button><button class="btn small ghost" data-act="clear">Clear cache</button></div>
+    let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · ${MB.zoomIcon}${MB.formatZoom(zoom)}</span></div>
+      <div class="row ds-tools"><input type="text" inputmode="search" enterkeyhint="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" spellcheck="false"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select>${MB.iconBtn('refresh', 'Refresh', 'data-act="check"', '', 'Refresh: check the data services for updates')}${MB.iconBtn('sweep', 'Clear cache', 'data-act="clear"')}</div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px">${esc(this._cacheText || ' ')}</div>`; // the last count, until a new one is read (an empty line, or a plain space, would collapse and shift the panel)
     const adsbHtml = MB.adsb ? MB.adsb.panelHtml(q, ui.filter) : ''; // live air traffic: its own block, same search and filter
     html += adsbHtml;
@@ -1413,6 +1453,34 @@ window.MB = window.MB || {};
     html += bfHtml;
     const declHtml = MB.declination ? MB.declination.panelHtml(q, ui.filter) : ''; // magnetic declination, computed here
     html += declHtml;
+    const custom = bySource.custom || []; // the ArcGIS section, below
+    delete bySource.custom;
+    const itemHtml = ds => {
+      const d = ds.def;
+      const shown = ds.enabled ? this.featureCount(ds) : 0;
+      let statusLine = '';
+      if (ds.enabled) {
+        const bits = [];
+        if (ds.loading.size) bits.push('loading ' + ds.loading.size + '…');
+        if (ds.loading.size && this.pausedFor(ds)) bits.push('the service is over its shared request quota, retrying in ' + this.pausedFor(ds) + ' s');
+        if (ds.status) bits.push(ds.status);
+        if (!ds.loading.size && !ds.status) bits.push(shown + ' features in view');
+        if (ds.meta && ds.meta.lastEdit && ds.meta.lastEdit !== 'offline') bits.push('source updated ' + new Date(ds.meta.lastEdit).toLocaleDateString());
+        if (ds.meta && ds.meta.checkedAt) bits.push('checked ' + ago(ds.meta.checkedAt));
+        statusLine = MB.zoomText(bits.join(' · '));
+        if (d.extraStatus) { try { statusLine += '<br>' + esc(d.extraStatus()); } catch (e) { /* ignore */ } }
+      }
+      return `<div class="data-item${ds.enabled ? ' on' : ''}" data-id="${d.id}">
+        <div class="ds-head"><label class="check"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>${this.infoIcon(d.desc)}</div>
+        ${d.custom ? `<button class="icon-btn mini danger" data-act="remove" title="Remove this service">${trashIcon}</button>` : ''}
+        ${d.subsets
+          ? `<div class="subsets">${d.subsets.items.concat(d.subsets.other ? [['__other', d.subsets.other, '#888']] : []).map(([k, t, c, sym]) => `<label class="sub${ds.off.has(k) ? ' off' : ''}"><input type="checkbox" data-sub="${esc(k)}"${ds.off.has(k) ? '' : ' checked'}${ds.enabled ? '' : ' disabled'}>${swatch(c, sym)}${esc(t)}</label>`).join('')}
+             <span class="sub-actions"><button type="button" class="link" data-act="sub-all">all</button> · <button type="button" class="link" data-act="sub-none">none</button></span></div>`
+          : `<div class="legend">${(d.legend || []).map(([t, c, sym]) => `<span>${swatch(c, sym)}${esc(t)}</span>`).join('')}</div>`}
+        ${this.minZoomHtml(this.minZoomOf(d), d.minZoom)}
+        <div class="dstatus${ds.error ? ' err' : ''}">${ds.error ? esc(ds.error) : statusLine}</div>
+      </div>`;
+    };
     let shownTotal = 0;
     Object.keys(bySource).forEach(srcKey => {
       const src = MB.dataSources[srcKey] || { name: srcKey, url: '', note: '' };
@@ -1421,53 +1489,34 @@ window.MB = window.MB || {};
       shownTotal += list.length;
       const groups = {};
       list.forEach(ds => { (groups[ds.def.group] = groups[ds.def.group] || []).push(ds); });
-      html += `<details class="ds-source" data-src="${esc(srcKey)}"${this.sourceOpen(srcKey) ? ' open' : ''}><summary class="ds-source-head"><h3>${esc(src.name)}</h3><span class="badge">${bySource[srcKey].filter(d => d.enabled).length}/${bySource[srcKey].length} on</span></summary>${src.note || src.url ? `<p class="note ds-note">${src.note ? esc(src.note) : ''}${this.sourceLink(src)}</p>` : ''}`;
+      html += `<details class="ds-source" data-src="${esc(srcKey)}"${this.sourceOpen(srcKey) ? ' open' : ''}><summary class="ds-source-head"><h3>${esc(src.name)}</h3>${(n => this.dotHtml('', n ? 'on' : 'off', n ? n + ' of ' + bySource[srcKey].length + ' on' : 'Off'))(bySource[srcKey].filter(d => d.enabled).length)}</summary>${src.note || src.url ? `<p class="note ds-note">${src.note ? esc(src.note) : ''}${this.sourceLink(src)}</p>` : ''}`;
     Object.keys(groups).forEach(g => {
       html += `<div class="section"><h3>${esc(g)}</h3>`;
       groups[g].forEach(ds => {
-        const d = ds.def;
-        const shown = ds.enabled ? this.featureCount(ds) : 0;
-        let statusLine = '';
-        if (ds.enabled) {
-          const bits = [];
-          if (ds.loading.size) bits.push('loading ' + ds.loading.size + '…');
-          if (ds.loading.size && this.pausedFor(ds)) bits.push('the service is over its shared request quota, retrying in ' + this.pausedFor(ds) + ' s');
-          if (ds.status) bits.push(ds.status);
-          if (!ds.loading.size && !ds.status) bits.push(shown + ' features in view');
-          if (ds.meta && ds.meta.lastEdit && ds.meta.lastEdit !== 'offline') bits.push('source updated ' + new Date(ds.meta.lastEdit).toLocaleDateString());
-          if (ds.meta && ds.meta.checkedAt) bits.push('checked ' + ago(ds.meta.checkedAt));
-          statusLine = esc(bits.join(' · '));
-          if (d.extraStatus) { try { statusLine += '<br>' + esc(d.extraStatus()); } catch (e) { /* ignore */ } }
-        } else statusLine = esc(d.minZoom ? 'zoom ' + d.minZoom + '+' : 'any zoom');
-        html += `<div class="data-item${ds.enabled ? ' on' : ''}" data-id="${d.id}">
-          <div class="ds-head"><label class="check"><input type="checkbox" data-act="toggle"${ds.enabled ? ' checked' : ''}> <span class="dname">${esc(d.name)}</span></label>${this.infoIcon(d.desc)}</div>
-          ${d.custom ? `<button class="icon-btn mini danger" data-act="remove" title="Remove this service">${trashIcon}</button>` : ''}
-          ${d.subsets
-            ? `<div class="subsets">${d.subsets.items.concat(d.subsets.other ? [['__other', d.subsets.other, '#888']] : []).map(([k, t, c, sym]) => `<label class="sub${ds.off.has(k) ? ' off' : ''}"><input type="checkbox" data-sub="${esc(k)}"${ds.off.has(k) ? '' : ' checked'}${ds.enabled ? '' : ' disabled'}>${swatch(c, sym)}${esc(t)}</label>`).join('')}
-               <span class="sub-actions"><button type="button" class="link" data-act="sub-all">all</button> · <button type="button" class="link" data-act="sub-none">none</button></span></div>`
-            : `<div class="legend">${(d.legend || []).map(([t, c, sym]) => `<span>${swatch(c, sym)}${esc(t)}</span>`).join('')}</div>`}
-          <div class="dstatus${ds.error ? ' err' : ''}">${ds.error ? esc(ds.error) : statusLine}</div>
-        </div>`;
+        html += itemHtml(ds);
       });
       html += '</div>';
     });
       html += '</details>';
     });
-    if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
-    html += `<div class="section"><h3>Options</h3>
-      <div class="row"><label>Data opacity</label><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div>
-      <div class="row" title="How often each service's last-edit stamp is compared; changed datasets are re-downloaded"><label>Check updates</label><select id="dataCheck">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>every ${h} h</option>`).join('')}</select></div>
-      <div class="row" title="Cached areas older than this are refreshed"><label>Keep cache</label><select id="dataMaxAge">${[1, 3, 7, 14, 30].map(dd => `<option value="${dd}"${+s.maxAgeDays === dd ? ' selected' : ''}>${dd} day${dd > 1 ? 's' : ''}</option>`).join('')}</select></div>
-    </div>
-    <div class="section"><h3>Add ArcGIS layer</h3><p class="note">Any public ArcGIS Feature Service layer becomes a dataset under "Custom ArcGIS layers".</p>
+    // ArcGIS layers: the ones added here and the form that adds one, unless a search or a filter asks for something else.
+    const arc = custom.filter(matches);
+    if (arc.length || (ui.filter === 'all' && (!q || 'arcgis custom feature service layer'.includes(q)))) {
+      shownTotal++;
+      const on = custom.filter(d => d.enabled).length, dot = !custom.length ? ['off', 'No layers added'] : on ? ['on', on + ' of ' + custom.length + ' on'] : ['off', 'Off'];
+      html += `<details class="ds-source" data-src="custom"${this.sourceOpen('custom') ? ' open' : ''}><summary class="ds-source-head"><h3>${esc(MB.dataSources.custom.name)}</h3>${this.dotHtml('', dot[0], dot[1])}</summary>`;
+      if (arc.length) html += `<div class="section">${arc.map(itemHtml).join('')}</div>`;
+      html += `<div class="section"><h3>Add a layer</h3><p class="note">Any public ArcGIS Feature Service layer.</p>
       <form id="dataCustomForm">
         <div class="row"><label>Name</label><input type="text" name="name" required placeholder="Layer name"></div>
         <div class="row"><label>URL</label><input type="text" name="url" required placeholder="https://…/FeatureServer/0" title="Any public ArcGIS Feature Service layer"></div>
-        <div class="row"><label>Color</label><input type="color" name="color" value="#4f8cff"><label style="flex:0 0 auto">Min zoom</label><input type="number" name="minZoom" class="narrow" min="3" max="16" value="8"></div>
+        <div class="row"><label>Color</label><input type="color" name="color" value="#4f8cff"><label style="flex:0 0 auto">Min ${MB.zoomIcon}</label><input type="number" name="minZoom" class="narrow" min="3" max="16" value="8"></div>
         <label class="check"><input type="checkbox" name="point"> Points</label>
-        <div class="btn-row"><button class="btn small primary" type="submit">Add layer</button></div>
+        <div class="btn-row"><button class="btn small primary with-icon" type="submit">${MB.ICON.plus}Add layer</button></div>
       </form>
-    </div>`;
+    </div></details>`;
+    }
+    if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
     // Most redraws only change a status line, a count or a box's state: those are patched in place, so the scroll,
     // an open dropdown and a hovered row stay as they are. A change of what is listed (a search, a filter, a dataset
     // added or removed) builds the panel again.
@@ -1502,6 +1551,7 @@ window.MB = window.MB || {};
     panel.querySelectorAll('.data-item[data-id]').forEach(item => {
       const id = item.dataset.id;
       item.querySelector('[data-act="toggle"]').addEventListener('change', () => this.toggle(id));
+      this.bindMinZoom(item, v => this.setMinZoom(id, v));
       item.querySelectorAll('input[data-sub]').forEach(cb => cb.addEventListener('change', () => this.setSubset(id, cb.dataset.sub, cb.checked)));
       const ds = this.sets[id];
       const allKeys = () => ds.def.subsets ? ds.def.subsets.items.map(i => i[0]).concat(ds.def.subsets.other ? ['__other'] : []) : [];
@@ -1513,14 +1563,12 @@ window.MB = window.MB || {};
         const cid = id.replace(/^custom:/, '');
         this.disable(id);
         MB.settings.dataServices = (MB.settings.dataServices || []).filter(c => c.id !== cid);
+        this.setMinZoom(id, null);
         MB.saveSettings();
       });
     });
-    panel.querySelector('#dataOpacity').addEventListener('input', e => { s.opacity = +e.target.value; panel.querySelector('#dataOpacityVal').textContent = Math.round(s.opacity * 100) + '%'; this.applyOpacity(); });
-    panel.querySelector('#dataOpacity').addEventListener('change', () => this.saveSettings());
-    panel.querySelector('#dataCheck').addEventListener('change', e => { s.checkHours = +e.target.value; this.saveSettings(); });
-    panel.querySelector('#dataMaxAge').addEventListener('change', e => { s.maxAgeDays = +e.target.value; this.saveSettings(); });
-    panel.querySelector('#dataCustomForm').addEventListener('submit', e => {
+    const customForm = panel.querySelector('#dataCustomForm'); // (not there while a search or a filter hides its section)
+    if (customForm) customForm.addEventListener('submit', e => {
       e.preventDefault();
       const f = e.target.elements;
       const url = f.url.value.trim();
@@ -1563,6 +1611,23 @@ window.MB = window.MB || {};
     if (MB.places) MB.places.bindOverlays(box);
   };
   MB.data.renderOverlaysSoon = MB.debounce(() => MB.data.renderOverlays(), 250);
+
+  // Settings → Data sources: how the data layers look and how long their downloads are kept.
+  MB.data.renderSettingsSection = function () {
+    const box = document.getElementById('dataSettingsSection');
+    if (!box) return;
+    const s = this.settings;
+    box.innerHTML = `<div class="field"><label class="field-label" for="dataOpacity">Data opacity</label>
+        <div class="row"><input type="range" id="dataOpacity" min="0.1" max="1" step="0.05" value="${s.opacity}"><span class="val" id="dataOpacityVal">${Math.round(s.opacity * 100)}%</span></div></div>
+      <div class="field"><label class="field-label" for="dataCheck">Check for updates</label><select id="dataCheck" aria-describedby="dataCheckHint">${[1, 3, 6, 12, 24].map(h => `<option value="${h}"${+s.checkHours === h ? ' selected' : ''}>Every ${h} h</option>`).join('')}</select>
+        <p class="field-hint" id="dataCheckHint">Each service's last-edit stamp is compared; changed datasets are downloaded again.</p></div>
+      <div class="field"><label class="field-label" for="dataMaxAge">Keep cache</label><select id="dataMaxAge" aria-describedby="dataMaxAgeHint">${[1, 3, 7, 14, 30].map(dd => `<option value="${dd}"${+s.maxAgeDays === dd ? ' selected' : ''}>${dd} day${dd > 1 ? 's' : ''}</option>`).join('')}</select>
+        <p class="field-hint" id="dataMaxAgeHint">Cached areas older than this are refreshed.</p></div>`;
+    box.querySelector('#dataOpacity').addEventListener('input', e => { s.opacity = +e.target.value; box.querySelector('#dataOpacityVal').textContent = Math.round(s.opacity * 100) + '%'; this.applyOpacity(); });
+    box.querySelector('#dataOpacity').addEventListener('change', () => this.saveSettings());
+    box.querySelector('#dataCheck').addEventListener('change', e => { s.checkHours = +e.target.value; this.saveSettings(); });
+    box.querySelector('#dataMaxAge').addEventListener('change', e => { s.maxAgeDays = +e.target.value; this.saveSettings(); });
+  };
 
   function ago(ts) {
     const m = Math.round((Date.now() - ts) / 60000);

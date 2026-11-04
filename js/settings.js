@@ -129,12 +129,12 @@ window.MB = window.MB || {};
             <label>URL</label><input name="url" type="text" required value="${esc(p.url || '')}" placeholder="https://…/{z}/{x}/{y}.png?key={key}">
             <label>API key</label><input name="key" type="text" value="${esc(p.key || '')}" placeholder="replaces {key} in the URL" autocomplete="off" spellcheck="false">
             <label>Attribution</label><input name="attribution" type="text" value="${esc(p.attribution || '')}" placeholder="HTML allowed">
-            <label>Max zoom</label><input name="maxZoom" type="number" min="1" max="24" value="${p.maxZoom || 19}">
+            <label>Max ${MB.zoomIcon}</label><input name="maxZoom" type="number" min="1" max="24" value="${p.maxZoom || 19}">
             <label>Subdomains</label><input name="subdomains" type="text" value="${esc(p.subdomains || 'abc')}" placeholder="for {s}, e.g. abc">
             <label>Tile size</label><select name="tileSize"><option value="256"${+p.tileSize !== 512 ? ' selected' : ''}>256 px</option><option value="512"${+p.tileSize === 512 ? ' selected' : ''}>512 px (MapTiler, Mapbox)</option></select>
             <label>WMS layers</label><input name="layers" type="text" value="${esc(p.layers || '')}" placeholder="comma-separated layer names (WMS only)">
             <label>WMS format</label><input name="format" type="text" value="${esc(p.format || 'image/png')}" placeholder="image/png">
-            <span></span><div class="btn-row"><button class="btn primary" type="submit">${editing ? 'Save changes' : 'Add provider'}</button>${editing ? '<button class="btn ghost" type="button" data-cancel="1">Cancel</button>' : ''}</div>
+            <span></span><div class="btn-row"><button class="btn primary with-icon" type="submit">${editing ? 'Save changes' : MB.ICON.plus + 'Add provider'}</button>${editing ? '<button class="btn ghost" type="button" data-cancel="1">Cancel</button>' : ''}</div>
           </form>
         </div>`;
       $$('form.builtin-key', panel).forEach(kf => kf.addEventListener('submit', e => {

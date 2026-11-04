@@ -53,9 +53,9 @@ function makeAdsb() {
   const MB = {
     native: { app: false, platform: 'web' }, // (js/native.js, outside the Android app: MB.getText is fetch)
     getText: async (url, timeout) => { const r = await fetch(url, { cache: 'no-store' }); return { ok: r.ok, status: r.status, text: await r.text() }; },
-    escapeHtml: s => String(s), settings: {}, saveSettings() {}, autosave: null, toast() {}, on() {}, emit() {},
+    escapeHtml: s => String(s), zoomText: t => String(t), setZoomText() {}, settings: {}, saveSettings() {}, autosave: null, toast() {}, on() {}, emit() {},
     map, tools: { current: 'select' }, state: { units: 'nautical' }, formatLatLng: p => p.lat + ', ' + p.lng,
-    ICON: { search: '' }, data: { sourceOpen: () => false, infoIcon: () => '' }
+    ICON: { search: '' }, data: { sourceOpen: () => false, infoIcon: () => '', dotHtml: id => '<span id="' + id + '"></span>', setDot: () => {} }
   };
   const ctx = {
     window: { MB, gengisDesktop: {} }, MB, // (the desktop app: the community networks are offered there only)

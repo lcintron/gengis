@@ -251,7 +251,7 @@ window.MB = window.MB || {};
       const el = document.getElementById('declStatus');
       if (el) { const t = this.statusText(); if (el.textContent !== t) el.textContent = t; }
       const b = document.getElementById('declCount');
-      if (b) { const t = this.on ? '1/1 on' : '0/1 on'; if (b.textContent !== t) b.textContent = t; }
+      MB.data.setDot(b, this.on ? 'on' : 'off', this.on ? 'On' : 'Off');
     },
 
     matches(q, filter) {
@@ -263,7 +263,7 @@ window.MB = window.MB || {};
     panelHtml(q, filter) {
       if (!this.matches(q, filter)) return '';
       const on = this.on;
-      return `<details class="ds-source" id="declSource" data-src="declination"${MB.data.sourceOpen('declination') ? ' open' : ''}><summary class="ds-source-head"><h3>Magnetic declination</h3><span class="badge" id="declCount">${on ? '1/1 on' : '0/1 on'}</span></summary>
+      return `<details class="ds-source" id="declSource" data-src="declination"${MB.data.sourceOpen('declination') ? ' open' : ''}><summary class="ds-source-head"><h3>Magnetic declination</h3>${MB.data.dotHtml('declCount', on ? 'on' : 'off', on ? 'On' : 'Off')}</summary>
         <p class="note">World Magnetic Model (WMM2025, NOAA)</p>
         <div class="data-item${on ? ' on' : ''}" data-decl="wmm">
           <div class="ds-head"><label class="check"><input type="checkbox" data-act="decl-toggle"${on ? ' checked' : ''}> <span class="dname">Isogonic lines</span></label>${MB.data.infoIcon('Lines of equal magnetic declination, closer together as you zoom in. Click the map for the declination and heading correction at that point.')}</div>

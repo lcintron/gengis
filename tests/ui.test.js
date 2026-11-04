@@ -20,6 +20,7 @@ for (const m of html.matchAll(/\bid="([^"]+)"/g)) ids.add(m[1]);
 for (const m of allJs.matchAll(/\.id\s*=\s*'([\w-]+)'/g)) ids.add(m[1]);
 for (const m of allJs.matchAll(/\bid=\\?"([\w-]+)\\?"/g)) ids.add(m[1]);
 for (const m of allJs.matchAll(/\bid="([\w-]+)"/g)) ids.add(m[1]);
+for (const m of allJs.matchAll(/dotHtml\('([\w-]+)'/g)) ids.add(m[1]); // a section's on/off dot (MB.data.dotHtml)
 
 test('the hidden attribute always hides (no display rule of its own may show a hidden element)', () => {
   assert.match(css, /^\[hidden\]\s*\{\s*display:\s*none\s*!important;\s*\}/m, 'css/app.css keeps [hidden] { display: none !important; }');
@@ -46,9 +47,9 @@ test('aircraft icons show where the aircraft is now: carried on from each report
 
 test('the community networks and aisstream.io wait for zoom 8; your own receivers show at any zoom', () => {
   assert.match(js['adsb.js'], /const NET_ZOOM = 8;/);
-  assert.match(js['adsb.js'], /if \(src\.kind !== 'receiver' && this\.zoomedOut\(\)\) \{ this\.wait\(src\); return; \}/, 'no request below it');
+  assert.match(js['adsb.js'], /if \(src\.kind !== 'receiver' && this\.zoomedOut\(src\)\) \{ this\.wait\(src\); return; \}/, 'no request below it');
   assert.match(js['ais.js'], /if \(!rt\.on \|\| s\.kind !== 'stream'\) return;/, 'only the stream waits');
-  assert.match(js['ais.js'], /if \(this\.zoomedOut\(\)\) this\.wait\(src\); else this\.connect\(src\);/, 'the stream does not connect below it');
+  assert.match(js['ais.js'], /if \(this\.zoomedOut\(src\)\) this\.wait\(src\); else this\.connect\(src\);/, 'the stream does not connect below it');
   assert.match(css, /\.mb-zoom-hint \{/, 'the map says to zoom in');
 });
 
@@ -67,6 +68,50 @@ test("a phone's panel never grows under the top bar (its grip and tabs stay reac
   assert.match(css, /#sidebar \{ position: absolute;[^}]*max-height: 88%;/, 'the sheet is at most 88% of the area under the top bar');
   assert.match(js['ui.js'], /max: \(\) => under\(0\.88\)/, 'the grip stops there too');
   assert.match(js['ui.js'], /setProperty\('--sheet-user', [^;]*'dvh'\); else bar\.style\.removeProperty\('--sheet-user'\);/, 'its size is a share of the screen as shown; the default clears it');
+});
+
+test('LAANC ceilings show from zoom 8, in 1° cells there so a view fits the cell limit', () => {
+  assert.match(js['datalayers.js'], /id: 'uasfm', [^\n]*minZoom: 8,\r?\n[^\n]*\r?\n\s*levels: \[\{ maxZoom: 9, cellSize: 1 \}, \{ cellSize: CELL \}\], maxCells: 64,\r?\n\s*rev: 1,/);
+});
+
+test('adding an ArcGIS layer is in the ArcGIS section, with the layers added', () => {
+  assert.match(js['datalayers.js'], /<details class="ds-source" data-src="custom"[\s\S]*?id="dataCustomForm"[\s\S]*?<\/form>\s*<\/div><\/details>/);
+});
+
+test('a zoom level is written with the magnifying glass, not the word', () => {
+  assert.match(js['util.js'], /MB\.zoomIcon = MB\.ICON\.search/);
+  assert.match(js['datalayers.js'], /on · \$\{MB\.zoomIcon\}\$\{MB\.formatZoom\(zoom\)\}/, 'the Data tab heading');
+  // labels and readouts: a "Min/Max zoom" label, or "zoom" and a number, is gone from what a page shows
+  for (const f of ['datalayers.js', 'offline.js', 'settings.js', 'ui.js']) assert.doesNotMatch(js[f], /<label[^>]*>(Min|Max|Zoom) (zoom|level)/, f);
+  assert.doesNotMatch(js['offline.js'], />zoom \$\{/);
+});
+
+test('every source that waits for a zoom level can have it overridden, its default shown', () => {
+  assert.match(js['datalayers.js'], /this\.minZoomHtml\(this\.minZoomOf\(d\), d\.minZoom\)/, 'data layers');
+  assert.match(js['adsb.js'], /s\.kind === 'receiver' \? '' : MB\.data\.minZoomHtml\(this\.minZoomFor\(s\.id\), NET_ZOOM/, 'the ADS-B networks');
+  assert.match(js['ais.js'], /s\.kind === 'stream' \? MB\.data\.minZoomHtml\(this\.minZoomFor\(s\.id\), NET_ZOOM\)/, 'aisstream.io');
+  assert.doesNotMatch(js['datalayers.js'], /zoom < ds\.def\.minZoom/, 'what loads follows the override');
+  assert.match(js['offline.js'], /MB\.data\.minZoomOf\(ds\.def\)/, 'offline areas too');
+});
+
+test('every data source section has its dot, and the buttons their icons', () => {
+  for (const f of ['adsb.js', 'ais.js', 'mavlink.js', 'betaflight.js', 'declination.js', 'datalayers.js']) assert.match(js[f], /<summary class="ds-source-head">[^\n]*dotHtml\(/, f);
+  for (const f of ['betaflight.js', 'datalayers.js']) assert.doesNotMatch(js[f], /\['', ''\]/, f + ': no section goes without one');
+  assert.match(js['cloudui.js'], /MB\.iconBtn\('gear', 'Manage cloud sync'/);
+  assert.match(js['offline.js'], /MB\.ICON\.download\}Download view/);
+  assert.match(js['ui.js'], /'Left side', 'sideLeft'/);
+  assert.match(js['datalayers.js'], /MB\.ICON\.plus\}Add layer/);
+  assert.match(html, /id="addLayerBtn" class="btn small with-icon"><svg/);
+});
+
+test('a status line changing (empty, plain, with a zoom icon) patches the Data panel, not rebuilds it', () => {
+  // a rebuild would throw keyboard focus off a layer's switch as it is toggled
+  assert.match(js['datalayers.js'], /const leaf = el => el\.nodeType === 1 && el\.classList\.contains\('dstatus'\);/);
+  assert.match(js['datalayers.js'], /return leaf\(a\) \|\| sameKids\(a, b\);/, 'its content is not compared node by node');
+  assert.match(js['datalayers.js'], /if \(leaf\(a\)\) \{ if \(a\.innerHTML !== b\.innerHTML\) a\.innerHTML = b\.innerHTML; return; \}/, 'it is taken over whole');
+  // the same for a min-zoom box: its Reset is hidden at the default, not left out
+  assert.match(js['datalayers.js'], /data-act="minzoom-reset"\$\{now !== dflt && !off \? '' : ' hidden'\}>Reset<\/button>/);
+  assert.match(js['datalayers.js'], /reset\.addEventListener\('click', \(\) => \{ const z = set\(null\); if \(box\) \{ box\.value = z; box\.focus\(\); \} \}\)/, 'Reset puts the default back in the kept box, and focus there (it hides itself)');
 });
 
 test('every element a script looks up by id exists', () => {

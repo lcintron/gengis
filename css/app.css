@@ -123,7 +123,7 @@ html.tb-right body.presenting #mapwrap .leaflet-top.leaflet-right { top: max(60p
 .field:last-child { margin-bottom: 0; }
 .field-label { display: block; margin: 0 0 6px 1px; font-size: 12px; color: var(--text-dim); }
 .field > .seg, .field > select { display: flex; width: 100%; }
-.field > .seg:not(.stack) button { flex: 1 1 0; padding: 8px 6px; white-space: nowrap; }
+.field > .seg:not(.stack) button { flex: 1 1 0; padding: 5px 6px; white-space: nowrap; }
 .field > select { height: 34px; padding: 0 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); }
 .field-hint { margin: 6px 0 0 1px; font-size: 11.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .field.disabled { opacity: .45; pointer-events: none; }
@@ -412,7 +412,7 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
 .tabs button:hover { color: var(--text); }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 .tab-panels { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
-.tab-panel { display: none; padding: 12px; }
+.tab-panel { display: none; --panel-pad: 12px; padding: var(--panel-pad); }
 .tab-panel.active { display: block; flex: 0 0 auto; }
 
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -585,7 +585,7 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   .tabs::after { display: none; } /* the close button ends the row, at its right edge (kept in view if the tabs scroll) */
   .tabs .sheet-close { flex: 0 0 36px; padding: 0; position: sticky; right: 0; background: var(--bg-2); }
   .sheet-close { display: flex; align-items: center; justify-content: center; flex: 0 0 36px; height: 40px; border: 0; background: transparent; color: var(--text-dim); font-size: 14px; }
-  .tab-panel { padding: 10px; }
+  .tab-panel { --panel-pad: 10px; }
   /* toolbar: compact column that fits a phone's height */
   #toolbar { left: 8px; top: 8px; padding: 4px; gap: 2px; }
   #mapwrap.tb-right #toolbar { left: auto; right: 8px; }
@@ -732,7 +732,7 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .section-toggle { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 9px 12px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; text-align: left;
   font-size: 12px; text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
 .section-toggle:hover { color: var(--text); }
-.section-toggle .chev { font-size: 12px; transition: transform .15s; }
+.section-toggle .chev { font-size: 16px; line-height: 1; transition: transform .15s; }
 .pane-section.closed .section-toggle .chev { transform: rotate(-90deg); }
 .section-sub { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .section-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px 12px; }
@@ -755,7 +755,7 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .layer-node.active { border-color: var(--accent); }
 .layer-node .layer-item { border: 0; border-radius: 0; background: var(--bg-3); padding: 4px 6px 4px 2px; gap: 2px; }
 .layer-node.active .layer-item { background: rgba(29,179,169,.16); }
-.layer-node .chev { width: 20px; height: 22px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; padding: 0; font-size: 12px; transition: transform .15s; }
+.layer-node .chev { width: 20px; height: 22px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; padding: 0; font-size: 16px; line-height: 1; transition: transform .15s; }
 .layer-node .chev.closed { transform: rotate(-90deg); }
 .layer-node .active-dot { margin: 0 4px 0 0; }
 .obj-list { padding: 3px 4px 3px 10px; display: flex; flex-direction: column; gap: 1px; }
@@ -799,6 +799,7 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .data-item .note { margin: 2px 0 0 23px; }
 .data-item .dstatus { margin: 4px 0 0 23px; font-size: 11px; color: var(--text-dim); }
 .data-item .dstatus.err { color: var(--warn); }
+.data-item .dstatus:empty { display: none; }
 .mb-datatable { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .mb-datatable td { padding: 2px 6px 2px 0; vertical-align: top; }
 .mb-datatable td:first-child { color: var(--text-dim); white-space: nowrap; }
@@ -961,15 +962,26 @@ button.link:hover { text-decoration: underline; }
 .ds-tools #dsSearch { flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px; }
 .ds-tools #dsSearch:focus { outline: none; border-color: var(--accent); }
 .ds-tools select { flex: 0 0 auto; height: 32px; }
-.ds-source { margin-bottom: 14px; }
+.ds-tools .icon-btn { flex: 0 0 auto; width: 32px; height: 32px; } /* Refresh, Clear cache */
+.ds-source[open] { padding-bottom: 14px; }
 .ds-source-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
-details.ds-source > summary { list-style: none; cursor: pointer; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+/* a section's heading: a shaded bar across the whole panel, so where one section ends and the next begins shows at a glance */
+details.ds-source > summary { list-style: none; cursor: pointer; gap: 8px; justify-content: flex-start; margin: 0 calc(-1 * var(--panel-pad)); padding: 9px var(--panel-pad); background: var(--bg-3); border-block: 1px solid var(--border); }
+details.ds-source:not([open]) + details.ds-source > summary { border-top: 0; } /* closed sections in a row share one line */
+details.ds-source > summary:hover { background: #1e2834; }
 details.ds-source > summary::-webkit-details-marker { display: none; }
-details.ds-source > summary h3 { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; }
-details.ds-source > summary h3::before { content: '\25BE'; color: var(--text-dim); font-size: 11px; transition: transform .15s; }
-details.ds-source:not([open]) > summary h3::before { transform: rotate(-90deg); }
+details.ds-source > summary::before { content: '\25BE'; content: '\25BE' / ''; flex: 0 0 auto; /* (no alt text: not read out) */ color: var(--text-dim); font-size: 16px; line-height: 1; transition: transform .15s; }
+details.ds-source:not([open]) > summary::before { transform: rotate(-90deg); }
+details.ds-source > summary h3 { flex: 1 1 auto; order: 1; }
 details.ds-source[open] > summary { margin-bottom: 8px; }
-details.ds-source > summary .badge { flex: 0 0 auto; white-space: nowrap; }
+/* active or not (MB.data.dotHtml), left of the heading */
+.ds-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; }
+.ds-dot.on { background: #2ecc71; box-shadow: 0 0 0 2px rgba(46, 204, 113, .2); }
+.ds-dot.off { background: var(--danger); box-shadow: 0 0 0 2px rgba(255, 92, 92, .18); }
+.zi { width: 1.1em; height: 1.1em; vertical-align: -.2em; margin-right: 2px; } /* the magnifying glass in front of a zoom level (MB.zoomIcon) */
+.ds-minzoom { gap: 8px; align-items: center; margin-top: 6px; }
+.ds-minzoom label { flex: 0 0 auto; white-space: nowrap; }
+.ds-minzoom .note { flex: 0 0 auto; margin: 0; }
 .ds-head { position: relative; display: flex; align-items: center; gap: 6px; padding-right: 26px; }
 .ds-head .check { margin: 0; }
 .ds-info { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%;
