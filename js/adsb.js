@@ -41,11 +41,11 @@ window.MB = window.MB || {};
       desc: 'Open data for personal use. Sustains a refresh every 2 s.' }
   ];
 
-  // The community networks answer no web page (no CORS headers): offered in the desktop and Android apps only (the
+  // The community networks answer no web page (no CORS headers): offered in the native apps only, desktop and Android (the
   // Android app reads them with Android's own HTTP: MB.getText). A project that has one on keeps it on (an app opening
   // it shows it); a web page just does not start it.
   const usable = src => src.kind !== 'area' || !!window.gengisDesktop || !!(MB.native && MB.native.app);
-  const ONLY_DESKTOP = src => src.name + ' works in the GenGIS desktop and Android apps only: it does not accept requests from web pages.';
+  const ONLY_DESKTOP = src => src.name + ' works only in the native GenGIS app (desktop or Android): it does not accept requests from web pages.';
 
   /* ---------- aircraft types: one silhouette each, drawn pointing north in a 32 x 32 box ---------- */
   const TYPES = {
@@ -253,9 +253,9 @@ window.MB = window.MB || {};
     if (err instanceof TypeError) {
       if (!navigator.onLine) return 'Offline';
       if (MB.native.app) return 'Could not reach ' + (src.kind === 'area' ? src.name : 'the receiver') + '. Check the address and that this phone is on the same network.';
-      if (src.kind === 'area') return src.name + ' does not accept requests from web pages. This source works in the GenGIS desktop and Android apps.';
+      if (src.kind === 'area') return src.name + ' does not accept requests from web pages. This source works in the native GenGIS app (desktop or Android).';
       if (location.protocol === 'https:' && /^http:/i.test(url || '') && !isLocalHost(url)) {
-        return 'This page is served over HTTPS, so the browser blocks a plain-HTTP receiver. Use the desktop app, open GenGIS from http://localhost, or reach the receiver over HTTPS.';
+        return 'This page is served over HTTPS, so the browser blocks a plain-HTTP receiver. Use the native GenGIS app (desktop or Android), open GenGIS from http://localhost, or reach the receiver over HTTPS.';
       }
       return 'Could not read the receiver. Check the address; in a browser it must also allow cross-origin requests (dump1090-fa and tar1090 do by default).';
     }

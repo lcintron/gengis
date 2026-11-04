@@ -5,11 +5,11 @@
 [![GenGIS Live](https://img.shields.io/badge/Live-g2.luiscintron.com-success?style=for-the-badge&logo=githubpages&logoColor=white)](https://g2.luiscintron.com)
 [![Latest release](https://img.shields.io/github/v/release/lcintron/gengis?style=for-the-badge&logo=github&label=Release)](https://github.com/lcintron/gengis/releases/latest)
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900?style=for-the-badge&logo=leaflet&logoColor=white)](https://leafletjs.com/)
-[![PWA and Electron](https://img.shields.io/badge/PWA%20%2B%20Electron-Web%20%26%20Desktop-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://github.com/lcintron/gengis/releases/latest)
+[![PWA and Electron](https://img.shields.io/badge/PWA%20%2B%20Electron-Web%20%26%20Native-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://github.com/lcintron/gengis/releases/latest)
 
-Offline-first geospatial intelligence app: map, measure and annotate, overlay live or static data, and export your maps. Use built-in map services or bring your own, including ATAK/MOBAC map sources. Browser and desktop, with OneDrive and Google Drive sync.
+Offline-first geospatial intelligence app: map, measure and annotate, overlay live or static data, and export your maps. Use built-in map services or bring your own, including ATAK/MOBAC map sources. On the web or as a native app (desktop and Android), with OneDrive and Google Drive sync.
 
-**Use it now** at [g2.luiscintron.com](https://g2.luiscintron.com) (installable, works offline), or get the desktop app for [Windows, macOS or Linux](https://github.com/lcintron/gengis/releases/latest). No account or API key needed.
+**Use it now** at [g2.luiscintron.com](https://g2.luiscintron.com) (installable, works offline), or get the native app for [Windows, macOS or Linux](https://github.com/lcintron/gengis/releases/latest) or [Android](#android-app). No account or API key needed.
 
 ![GenGIS on the desktop: Tampa Bay with airspace and LAANC ceilings](docs/screenshots/desktop-map.jpg)
 
@@ -73,15 +73,15 @@ Informational only: not for navigation or flight authorization.
 
 ## Connecting live data
 
-Browsers only read another server's data when that server allows it (CORS), and an HTTPS page can't load plain `http://` data. The desktop app has neither limit.
+Browsers only read another server's data when that server allows it (CORS), and an HTTPS page can't load plain `http://` data. The native app (desktop or Android) has neither limit.
 
-| Source | Desktop app | Web app over `http://` | Web app over HTTPS |
+| Source | Native app | Web app over `http://` | Web app over HTTPS |
 | --- | --- | --- | --- |
 | dump1090-fa, tar1090 (send CORS headers) | yes | yes | only on `localhost` or over HTTPS |
 | Other dump1090 builds | yes | no | no |
 | adsb.fi, adsb.lol | yes | no | no |
 | AIS-catcher (web viewer on, `-N 8100`) | yes | yes | only on `localhost` or over HTTPS |
-| aisstream.io (free API key) | yes | no | no |
+| aisstream.io (free API key) | desktop only | no | no |
 
 **MAVLink:** the desktop app connects to mavp2p directly over TCP or UDP. A web page can't, so the web app connects through a WebSocket bridge.
 
