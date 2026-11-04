@@ -130,6 +130,7 @@ window.MB = window.MB || {};
     explain,
     // In the web app with a client id; in the desktop app when its main process has a Google client.
     available() {
+      if (MB.native && MB.native.app) return false; // (the Android app: its own sign-in is not set up yet)
       const d = desktop();
       if (window.gengisDesktop) return !!d && (d.providers || []).includes('gdrive');
       return !!GD.clientId && /^https?:$/.test(location.protocol);

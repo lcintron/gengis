@@ -477,7 +477,9 @@ window.MB = window.MB || {};
       if (!t) { rt.error = 'Enter the address of your MAVLink server.'; return; }
       if (cf.kind === 'ws') {
         if (location.protocol === 'https:' && /^ws:/i.test(t.url) && !isLocalHost(t.url)) {
-          rt.error = 'This page is served over HTTPS, so the browser blocks a plain ws:// bridge. Use the desktop app, open GenGIS from http://localhost, or serve the bridge over wss://.';
+          rt.error = MB.native && MB.native.app
+            ? 'The app blocks a plain ws:// bridge on another device. Serve the bridge over wss://, or use the desktop app (TCP or UDP).'
+            : 'This page is served over HTTPS, so the browser blocks a plain ws:// bridge. Use the desktop app, open GenGIS from http://localhost, or serve the bridge over wss://.';
           return; // retrying will not help
         }
         let ws;

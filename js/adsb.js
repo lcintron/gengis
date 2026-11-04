@@ -41,10 +41,11 @@ window.MB = window.MB || {};
       desc: 'Open data for personal use. Sustains a refresh every 2 s.' }
   ];
 
-  // The community networks answer no web page (no CORS headers): offered in the desktop app only. A project that has one
-  // on keeps it on (a desktop app opening it shows it); a web page just does not start it.
-  const usable = src => src.kind !== 'area' || !!window.gengisDesktop;
-  const ONLY_DESKTOP = src => src.name + ' works in the GenGIS desktop app only: it does not accept requests from web pages.';
+  // The community networks answer no web page (no CORS headers): offered in the native apps only, desktop and Android (the
+  // Android app reads them with Android's own HTTP: MB.getText). A project that has one on keeps it on (an app opening
+  // it shows it); a web page just does not start it.
+  const usable = src => src.kind !== 'area' || !!window.gengisDesktop || !!(MB.native && MB.native.app);
+  const ONLY_DESKTOP = src => src.name + ' works only in the native GenGIS app (desktop or Android): it does not accept requests from web pages.';
 
   /* ---------- aircraft types: one silhouette each, drawn pointing north in a 32 x 32 box ---------- */
   const TYPES = {
@@ -209,16 +210,12 @@ window.MB = window.MB || {};
     return list.map(a => normalize(a, at)).filter(Boolean);
   }
 
+  // (MB.getText: fetch, or in the Android app Android's own HTTP, which the ADS-B networks and plain-HTTP receivers allow)
   async function getJson(url) {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), TIMEOUT);
-    try {
-      const res = await fetch(url, { cache: 'no-store', signal: ctl.signal });
-      if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
-      const text = await res.text();
-      if (/^\s*</.test(text)) { const e = new Error('web page'); e.html = true; throw e; } // a map page, not data
-      return JSON.parse(text);
-    } finally { clearTimeout(timer); }
+    const res = await MB.getText(url, TIMEOUT);
+    if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+    if (/^\s*</.test(res.text)) { const e = new Error('web page'); e.html = true; throw e; } // a map page, not data
+    return JSON.parse(res.text);
   }
 
   // "192.168.1.50:8080", "pi.local/skyaware/" or a full .../aircraft.json -> the URLs worth trying, in order.
@@ -255,9 +252,10 @@ window.MB = window.MB || {};
     if (err instanceof SyntaxError) return 'That address did not answer with aircraft data.';
     if (err instanceof TypeError) {
       if (!navigator.onLine) return 'Offline';
-      if (src.kind === 'area') return src.name + ' does not accept requests from web pages. This source works in the GenGIS desktop app.';
+      if (MB.native.app) return 'Could not reach ' + (src.kind === 'area' ? src.name : 'the receiver') + '. Check the address and that this phone is on the same network.';
+      if (src.kind === 'area') return src.name + ' does not accept requests from web pages. This source works in the native GenGIS app (desktop or Android).';
       if (location.protocol === 'https:' && /^http:/i.test(url || '') && !isLocalHost(url)) {
-        return 'This page is served over HTTPS, so the browser blocks a plain-HTTP receiver. Use the desktop app, open GenGIS from http://localhost, or reach the receiver over HTTPS.';
+        return 'This page is served over HTTPS, so the browser blocks a plain-HTTP receiver. Use the native GenGIS app (desktop or Android), open GenGIS from http://localhost, or reach the receiver over HTTPS.';
       }
       return 'Could not read the receiver. Check the address; in a browser it must also allow cross-origin requests (dump1090-fa and tar1090 do by default).';
     }
@@ -321,7 +319,7 @@ window.MB = window.MB || {};
     enable(id, quiet) {
       const src = SOURCES.find(s => s.id === id), rt = this.rt[id], cf = this.srcConf(id);
       if (!src || rt.on) return;
-      if (!usable(src)) { if (!quiet) MB.toast(ONLY_DESKTOP(src), 5000); return; } // (its setting kept, for the desktop app)
+      if (!usable(src)) { if (!quiet) MB.toast(ONLY_DESKTOP(src), 5000); return; } // (its setting kept, for the native app)
       if (src.kind === 'receiver' && !receiverCandidates(cf.url).length) {
         if (!quiet) { MB.toast('Enter the address of your dump1090 server first'); const el = document.querySelector('.adsb-url'); if (el) el.focus(); }
         cf.on = false;
