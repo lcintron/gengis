@@ -39,7 +39,6 @@ import com.google.android.gms.auth.api.identity.AuthorizationResult;
 import com.google.android.gms.auth.api.identity.ClearTokenRequest;
 import com.google.android.gms.auth.api.identity.Identity;
 import com.google.android.gms.auth.api.identity.RevokeAccessRequest;
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.Scope;
@@ -83,6 +82,7 @@ public class CloudPlugin extends Plugin {
     // Google: drive.file (only the files GenGIS made), and who signed in
     private static final List<Scope> G_SCOPES = Arrays.asList(new Scope("openid"), new Scope("email"), new Scope("profile"),
         new Scope("https://www.googleapis.com/auth/drive.file"));
+    private static final String USERINFO = "https://www.googleapis.com/oauth2/v3/userinfo"; // (js/cloud-gdrive.js's)
     private static final int G_LIFETIME = 3000; // s: a token asked for again is a fresh one (the one handed out before is cleared)
     private static final String KEY_ALIAS = "gengis-cloud";
     private static final String PREFS = "gengis-cloud";
@@ -93,13 +93,17 @@ public class CloudPlugin extends Plugin {
     private final Map<String, JSONObject> memory = new HashMap<>(); // accountId -> record, where the keystore failed
     private final Map<String, String> handedOut = new HashMap<>();  // accountId -> the last Google access token given
 
-    // the Microsoft sign-in under way (one at a time: a new one replaces it); main thread only
+    // the Microsoft sign-in under way (one at a time: a new one replaces it; given up after 5 minutes, as the desktop
+    // app's); main thread only. (A tab closed without an answer is not taken for a cancel: the sign-in may go on in
+    // the browser it was opened in, and a new tap replaces it.)
+    private static final long SIGN_IN_TIMEOUT = 5 * 60 * 1000;
     private PluginCall msCall;
     private String msState, msVerifier;
-    private boolean msAnswered;
-    // the Google sign-in under way, and the screen it shows
+    // the Google sign-in under way, and the screen it shows (each launch its own key: a replaced one's answer is not
+    // taken for the next one's)
     private PluginCall gCall;
     private ActivityResultLauncher<IntentSenderRequest> gLauncher;
+    private int gLaunches;
 
     private interface Done { void ok(AuthorizationResult r); void no(String code, String message); }
 
@@ -166,7 +170,7 @@ public class CloudPlugin extends Plugin {
         msCall = call;
         msVerifier = b64url(bytes(48));
         msState = b64url(bytes(24));
-        msAnswered = false;
+        main.postDelayed(() -> { if (msCall == call) { msCall = null; fail(call, "timeout", "The sign-in took too long"); } }, SIGN_IN_TIMEOUT);
         String challenge;
         try { challenge = b64url(MessageDigest.getInstance("SHA-256").digest(msVerifier.getBytes(StandardCharsets.US_ASCII))); }
         catch (Exception e) { msCall = null; fail(call, "failed", e.getMessage()); return; }
@@ -191,7 +195,6 @@ public class CloudPlugin extends Plugin {
         Uri u = intent == null ? null : intent.getData();
         if (u == null || !SCHEME.equals(u.getScheme()) || !"oauth".equals(u.getHost())) return;
         if (msCall == null || msState == null || !msState.equals(u.getQueryParameter("state"))) return; // not the answer: ignored
-        msAnswered = true;
         PluginCall call = msCall;
         String verifier = msVerifier;
         msCall = null;
@@ -200,17 +203,6 @@ public class CloudPlugin extends Plugin {
         String code = u.getQueryParameter("code");
         if (code == null) { fail(call, "failed", "The sign-in did not come back with a code"); return; }
         io.execute(() -> msFinish(call, code, verifier));
-    }
-
-    // Back in the app without an answer: the tab was closed (an answer arrives before this, by handleOnNewIntent).
-    @Override
-    protected void handleOnResume() {
-        super.handleOnResume();
-        final PluginCall waiting = msCall;
-        if (waiting == null) return;
-        main.postDelayed(() -> {
-            if (msCall == waiting && !msAnswered) { msCall = null; fail(waiting, "cancelled", "The sign-in was closed"); }
-        }, 1500);
     }
 
     private void msFinish(PluginCall call, String code, String verifier) {
@@ -245,21 +237,30 @@ public class CloudPlugin extends Plugin {
             public void ok(AuthorizationResult r) {
                 if (gCall != call) return;
                 gCall = null;
-                GoogleSignInAccount g = r.toGoogleSignInAccount();
-                if (g == null || g.getId() == null || r.getAccessToken() == null) { fail(call, "failed", "Google did not say which account signed in"); return; }
-                String email = g.getEmail() == null ? "" : g.getEmail();
-                JSObject account = new JSObject();
-                account.put("id", "gdrive:" + g.getId());
-                account.put("provider", "gdrive");
-                account.put("name", g.getDisplayName() == null ? "" : g.getDisplayName());
-                account.put("email", email);
-                account.put("kind", email.matches("(?i).*@(gmail|googlemail)\\.com") ? "personal" : "work");
-                save(account.getString("id"), "gdrive", "", email);
-                handedOut.put(account.getString("id"), r.getAccessToken());
-                JSObject o = access(r.getAccessToken(), G_LIFETIME);
-                o.put("account", account);
-                o.put("kept", true);
-                call.resolve(o);
+                String token = r.getAccessToken();
+                if (token == null) { fail(call, "failed", "Google gave no access"); return; }
+                // who signed in: Google's userinfo, as the web app reads it (the same account id everywhere: gdrive:<sub>)
+                io.execute(() -> {
+                    JSONObject u;
+                    try { u = request("GET", USERINFO, null, token); }
+                    catch (TokenError e) { fail(call, e.code, e.getMessage()); return; }
+                    String sub = u.optString("sub"), email = u.optString("email");
+                    if (sub.isEmpty()) { fail(call, "failed", "Google did not say which account signed in"); return; }
+                    JSObject account = new JSObject();
+                    account.put("id", "gdrive:" + sub);
+                    account.put("provider", "gdrive");
+                    account.put("name", u.optString("name"));
+                    account.put("email", email);
+                    account.put("kind", u.optString("hd").isEmpty() ? "personal" : "work");
+                    save("gdrive:" + sub, "gdrive", "", email);
+                    main.post(() -> {
+                        handedOut.put("gdrive:" + sub, token);
+                        JSObject o = access(token, G_LIFETIME);
+                        o.put("account", account);
+                        o.put("kept", true);
+                        call.resolve(o);
+                    });
+                });
             }
             public void no(String code, String message) {
                 if (gCall != call) return;
@@ -308,7 +309,7 @@ public class CloudPlugin extends Plugin {
     private void prompt(IntentSender sender, Done done) {
         Activity activity = getActivity();
         if (gLauncher != null) gLauncher.unregister();
-        gLauncher = getActivity().getActivityResultRegistry().register("gengis-google-signin",
+        gLauncher = getActivity().getActivityResultRegistry().register("gengis-google-signin-" + (++gLaunches),
             new ActivityResultContracts.StartIntentSenderForResult(), res -> {
                 if (gLauncher != null) { gLauncher.unregister(); gLauncher = null; }
                 if (res.getResultCode() != Activity.RESULT_OK) { done.no("cancelled", "The sign-in was closed"); return; }
@@ -399,24 +400,35 @@ public class CloudPlugin extends Plugin {
         }
     }
 
-    /* ---------- the token endpoint ---------- */
+    /* ---------- the token endpoint (and Google's userinfo) ---------- */
 
+    // A token answer: one without an access token is an error too.
     private static JSONObject post(String url, String body) throws TokenError {
+        JSONObject json = request("POST", url, body, null);
+        if (!json.has("access_token")) throw new TokenError("failed", "No access token in the answer");
+        return json;
+    }
+
+    // A JSON answer (a form body, or a bearer token); an HTTP error is a TokenError with the server's own code.
+    private static JSONObject request(String method, String url, String body, String bearer) throws TokenError {
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url).openConnection();
-            c.setRequestMethod("POST");
-            c.setDoOutput(true);
+            c.setRequestMethod(method);
             c.setConnectTimeout(20000);
             c.setReadTimeout(30000);
-            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             c.setRequestProperty("Accept", "application/json");
-            try (OutputStream os = c.getOutputStream()) { os.write(body.getBytes(StandardCharsets.UTF_8)); }
+            if (bearer != null) c.setRequestProperty("Authorization", "Bearer " + bearer);
+            if (body != null) {
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                try (OutputStream os = c.getOutputStream()) { os.write(body.getBytes(StandardCharsets.UTF_8)); }
+            }
             int status = c.getResponseCode();
             String text = read(status < 400 ? c.getInputStream() : c.getErrorStream());
             JSONObject json;
             try { json = new JSONObject(text); } catch (JSONException e) { json = new JSONObject(); }
-            if (status >= 200 && status < 300 && json.has("access_token")) return json;
+            if (status >= 200 && status < 300) return json;
             throw new TokenError(json.optString("error", status >= 500 ? "server" : "http_" + status), json.optString("error_description", "HTTP " + status));
         } catch (IOException e) {
             throw new TokenError("network", "offline");
