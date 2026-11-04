@@ -113,9 +113,9 @@ GenGIS asks before opening a file or web project from a link. A project opened f
 
 ## Android app
 
-GenGIS is also a native Android app (package `com.luiscintron.gengis`). It reads what a web page can't: the adsb.fi and adsb.lol networks, aircraft look-ups, and receivers on your network over plain HTTP. Saving a project or exporting a map opens Android's share sheet, and the back button closes dialogs and panels first.
+GenGIS is also a native Android app (package `com.luiscintron.gengis`). It reads what a web page can't: the adsb.fi and adsb.lol networks, aircraft look-ups, and receivers on your network over plain HTTP. Saving a project or exporting a map opens Android's share sheet, and the back button closes dialogs and panels first. Cloud sync stays signed in: OneDrive signs in in a browser tab, Google Drive with the phone's own Google account.
 
-Not in the Android app yet: the aisstream.io stream, MAVLink over TCP or UDP (a WebSocket bridge works over `wss://`), and cloud sync.
+Not in the Android app yet: the aisstream.io stream, MAVLink over TCP or UDP (a WebSocket bridge works over `wss://`).
 
 ## Data sources and fair use
 
@@ -172,6 +172,7 @@ Each provider stays hidden until GenGIS has its app registration. The consent sc
 2. Authentication → Add a platform:
    - **Single-page application**, redirect URIs `https://g2.luiscintron.com/` and `http://localhost:8080/`. No client secret.
    - **Mobile and desktop applications**, redirect URI `http://127.0.0.1`, for the desktop app. Microsoft accepts any port with it. Not `http://localhost`: Microsoft ignores the port of a localhost address, so the single-page `http://localhost:8080/` entry would claim the desktop app's sign-in. (`http://localhost` can stay registered too, for desktop versions before 0.17.4.)
+   - On the same **Mobile and desktop applications** platform, the redirect URI `com.luiscintron.gengis://oauth`, for the Android app.
 3. API permissions → Microsoft Graph, delegated: `Files.ReadWrite.AppFolder`, `offline_access`, `openid`, `profile`, `email`. Users consent for themselves.
 4. Branding & properties:
    - logo `branding/store/gengis-logo-215.png`;
@@ -180,7 +181,7 @@ Each provider stays hidden until GenGIS has its app registration. The consent sc
    - then publisher verification, which lets more Microsoft 365 organizations allow the app.
 5. Put the Application (client) ID in `CLIENT_ID` in `js/cloud-onedrive.js`. Use this one registration everywhere (web, desktop, Android), adding platforms to it. A second registration would get a folder of its own.
 
-A web sign-in lasts 24 hours, and GenGIS renews it on start-up, usually without asking. The desktop app stays signed in, its sign-in kept encrypted by the operating system.
+A web sign-in lasts 24 hours, and GenGIS renews it on start-up, usually without asking. The desktop and Android apps stay signed in, the sign-in kept encrypted by the operating system.
 
 **Google Drive** (Google Cloud project)
 
@@ -193,9 +194,10 @@ A web sign-in lasts 24 hours, and GenGIS renews it on start-up, usually without 
 4. Clients → **Desktop app**. Put its ID in `PROVIDERS.gdrive` in `electron/cloudauth.js`. Keep its secret out of the repository:
    - add it as the repository secret `GOOGLE_DESKTOP_CLIENT_SECRET`;
    - for development, put `{"googleDesktopSecret": "…"}` in `electron/cloud-secrets.json` (ignored by git).
-5. Keep both clients in this one project, so each can see the files the other created.
-6. Publish the app (Audience → Publish) and submit the branding for verification.
+5. Clients → **Android**, package `com.luiscintron.gengis` and the SHA-1 fingerprint of the key the app is signed with. Nothing goes in the code: Google matches the app by its package and key. Add one client per key: the upload key (builds from CI) and, once on Google Play, Play's app signing key (Play Console → App integrity).
+6. Keep all the clients in this one project, so each can see the files the others created.
+7. Publish the app (Audience → Publish) and submit the branding for verification.
 
-A web sign-in lasts one hour; after that, a tap on **Sign in** reconnects, and nothing is lost meanwhile. The desktop app stays signed in.
+A web sign-in lasts one hour; after that, a tap on **Sign in** reconnects, and nothing is lost meanwhile. The desktop and Android apps stay signed in.
 
 </details>

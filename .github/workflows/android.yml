@@ -17,6 +17,7 @@ on:
       - 'scripts/build-web.js'
       - 'scripts/android-prepare.js'
       - 'js/native.js'
+      - 'android-src/**'
       - '.github/workflows/android.yml'
       - 'package.json'
 

@@ -75,9 +75,11 @@ window.MB = window.MB || {};
   const env = C.env;
   const providers = () => MB.cloudProviders || {};
   const providerOf = acc => providers()[acc && acc.provider];
-  const desktop = () => window.gengisDesktop && window.gengisDesktop.cloud;
+  // A native app's sign-in bridge: the desktop app's main process (electron/cloudauth.js), or the Android app's
+  // (android-src/CloudPlugin.java, through js/native.js). Same calls; only the desktop app's makes the requests too.
+  const desktop = () => (window.gengisDesktop && window.gengisDesktop.cloud) || (MB.native && MB.native.app && MB.native.cloud) || null;
   // Where an account's sign-in is kept: 'refresh' (a refresh token here: OneDrive on the web), 'web' (an access token
-  // only, for its hour: Google Drive on the web), 'desktop' (in the desktop app's main process).
+  // only, for its hour: Google Drive on the web), 'desktop' (in a native app, desktop or Android: its bridge above).
   const sourceOf = acc => acc.source || 'refresh';
   // In the desktop app the cloud's requests go through its main process (a file:// page has no origin for the APIs'
   // CORS): what comes back is made to look like fetch's answer. An address it refuses is an error, not a network blip.
@@ -574,7 +576,7 @@ window.MB = window.MB || {};
       let who, t, kept = true;
       try {
         if (desktop()) {
-          MB.toast('Continue in your browser to sign in to ' + prov.name + '.', 6000);
+          if (window.gengisDesktop || providerId === 'onedrive') MB.toast('Continue in your browser to sign in to ' + prov.name + '.', 6000); // (Android picks a Google account itself)
           const r = await desktop().signIn(providerId, (acc && acc.email) || '');
           if (!r || r.error) throw Object.assign(new Error((r && r.message) || ''), { code: (r && r.error) || 'failed' });
           who = r.account; kept = r.kept !== false;
@@ -586,6 +588,7 @@ window.MB = window.MB || {};
         }
       } catch (e) {
         if (e.code === 'superseded') return; // another sign-in took its place (the last one started speaks)
+        if (e.code === 'cancelled') { MB.emit('cloud-return', C); return; } // closed by the user: nothing to say
         C.lastError = prov.explain(e.code, e.message);
         MB.toast(C.lastError, 9000);
         MB.emit('cloud-return', C);
@@ -593,7 +596,7 @@ window.MB = window.MB || {};
       }
       await finishAccount(prov, who, t);
       C.pull(true); // (its folder and change feed noted now, as after a sign-in that comes back to the page)
-      if (!kept) MB.toast('This computer cannot keep the sign-in encrypted: you will sign in again when GenGIS restarts.', 8000);
+      if (!kept) MB.toast('This device cannot keep the sign-in encrypted: you will sign in again when GenGIS restarts.', 8000);
       MB.emit('cloud-return', C);
       return;
     }
@@ -652,7 +655,7 @@ window.MB = window.MB || {};
       await store().del('accounts', accId);
     });
     tokens.delete(accId);
-    // the sign-in given up where it is kept (the desktop app's forgotten; Google's revoked)
+    // the sign-in given up where it is kept (a native app's forgotten or revoked there; Google's on the web revoked)
     if (sourceOf(acc) === 'desktop' && desktop()) desktop().signOut(accId).catch(() => {});
     else if (prov && prov.signOut) prov.signOut(acc, env.fetch).catch(() => {});
     await readAccounts(); await readLinks(); emit();

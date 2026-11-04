@@ -468,7 +468,47 @@ test('Drive: a browser not shown the Range header (CORS) still uploads a large p
   assert.equal(google.files.get(out.fileId).content.toString(), JSON.stringify(big));
 });
 
-test('the Android app does not offer cloud sync (its sign-in is not set up there yet)', () => {
+/* ---------------------------------------------------------------- the engine, Android app */
+
+test('Android: both providers sign in through the app\'s bridge; the page keeps nothing long-lived and makes its own requests', async () => {
+  const google = makeGoogle(), server = makeServer();
+  const native = fakeDesktop(google, server); // (the same calls as the desktop app's, without fetch)
+  const app = makeApp({ server, google, native });
+  assert.deepEqual([...app.C.offered()].sort(), ['gdrive', 'onedrive']);
+  app.device.projects.put(project('p1', 'Alpha', 2));
+  await app.connectDirect('gdrive'); await app.settle();
+  assert.deepEqual(native.calls[0], ['signIn', 'gdrive', '']);
+  assert.equal(app.popups.length, 0, 'no Google pop-up: Android\'s own sign-in');
+  assert.ok(!app.toasts.some(t => /browser/.test(t)), 'no "continue in your browser" for Google');
+  const acc = await app.device.store.get('accounts', 'gdrive:g-user-1');
+  assert.equal(acc.source, 'desktop');
+  assert.ok(!acc.refreshToken && !acc.accessToken, 'nothing long-lived here');
+  assert.ok(fileOf(google, 'Alpha.gengis.json'), 'uploaded with the page\'s own fetch');
+  google.expireAccessTokens();
+  app.save(project('p1', 'Alpha', 3)); await app.settle();
+  assert.ok(native.calls.some(c => c[0] === 'token'), 'renewed through the app');
+  assert.equal(content(google, 'Alpha.gengis.json').features.length, 3);
+  await app.connectDirect('onedrive'); await app.settle();
+  assert.ok(app.toasts.some(t => /Continue in your browser to sign in to OneDrive/.test(t)));
+  assert.equal(app.wentTo, null, 'no redirect of the page');
+});
+
+test('Android: a sign-in closed by the user says nothing; one that fails says why', async () => {
+  const google = makeGoogle(), server = makeServer();
+  const app = makeApp({ server, google, native: fakeDesktop(google, server, { signInError: 'cancelled' }) });
+  const before = app.toasts.length;
+  let returned = 0; app.MB.on('cloud-return', () => { returned++; });
+  await app.connectDirect('onedrive');
+  assert.equal(app.C.accounts.length, 0);
+  assert.equal(app.C.lastError, '');
+  assert.ok(!app.toasts.slice(before).some(t => !/Continue in your browser/.test(t)), 'no error toast');
+  assert.equal(returned, 1, 'back to the dialog');
+  app.MB.native.cloud = fakeDesktop(google, server, { signInError: 'invalid_request' });
+  await app.connectDirect('gdrive');
+  assert.ok(app.C.lastError);
+});
+
+test('Android: without the app\'s sign-in plugin, cloud sync is not offered', () => {
   const app = makeApp({ server: makeServer(), google: makeGoogle() });
   assert.deepEqual([...app.C.offered()].sort(), ['gdrive', 'onedrive']);
   app.MB.native = { app: true, platform: 'android' };
