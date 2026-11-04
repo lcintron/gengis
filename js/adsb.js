@@ -366,7 +366,18 @@ window.MB = window.MB || {};
       if (this.rt[id].on) this.schedule(src, cf.interval * 1000);
     },
 
-    zoomedOut() { return MB.map.getZoom() < NET_ZOOM; },
+    // The zoom this source waits for: its default, or the one set beside it in the panel.
+    minZoomFor(id) { return +this.srcConf(id).minZoom || NET_ZOOM; },
+    setMinZoom(id, zoom) {
+      const cf = this.srcConf(id);
+      if (zoom == null || zoom === NET_ZOOM) delete cf.minZoom; else cf.minZoom = zoom;
+      this.save();
+      this.netZoom();
+      this.tickStatus();
+      MB.emit('data');
+      return this.minZoomFor(id);
+    },
+    zoomedOut(src) { return MB.map.getZoom() < this.minZoomFor(src.id); },
     // A network source below NET_ZOOM: no requests, its aircraft off the map, until the map is zoomed in again.
     wait(src) {
       const rt = this.rt[src.id];
@@ -381,7 +392,7 @@ window.MB = window.MB || {};
       SOURCES.forEach(s => {
         const rt = this.rt[s.id];
         if (!rt.on || s.kind === 'receiver') return;
-        if (this.zoomedOut()) { if (!rt.waiting) this.wait(s); }
+        if (this.zoomedOut(s)) { if (!rt.waiting) this.wait(s); }
         else if (rt.waiting) { rt.waiting = false; rt.lastOk = 0; this.schedule(s, 0); }
       });
       this.hint();
@@ -398,7 +409,7 @@ window.MB = window.MB || {};
       const rt = this.rt[src.id], cf = this.srcConf(src.id);
       if (!rt.on) return;
       if (document.hidden) return; // resumed by the visibilitychange handler
-      if (src.kind !== 'receiver' && this.zoomedOut()) { this.wait(src); return; } // resumed by netZoom
+      if (src.kind !== 'receiver' && this.zoomedOut(src)) { this.wait(src); return; } // resumed by netZoom
       if (rt.busy) { this.schedule(src, 250); return; }
       const gen = rt.gen, started = Date.now();
       rt.busy = true;
@@ -803,7 +814,7 @@ window.MB = window.MB || {};
       const rt = this.rt[id];
       if (!usable(SOURCES.find(s => s.id === id))) return ONLY_DESKTOP(SOURCES.find(s => s.id === id));
       if (!rt.on) return 'Off';
-      if (rt.waiting) return `Zoom in to see aircraft (zoom ${NET_ZOOM} or closer)`;
+      if (rt.waiting) return `Zoom in to see aircraft (zoom ${this.minZoomFor(id)} or closer)`;
       if (rt.error) return rt.error;
       if (!rt.lastOk) return 'Connecting…';
       const age = Math.round((Date.now() - (rt.clock.at || rt.lastOk)) / 1000); // age of the data, not of the last request
@@ -818,15 +829,16 @@ window.MB = window.MB || {};
         const el = document.getElementById('adsbStatus-' + s.id);
         if (!el) return;
         const t = this.statusText(s.id), err = !!(this.rt[s.id].on && this.rt[s.id].error);
-        if (el.textContent !== t) el.textContent = t;
+        MB.setZoomText(el, t);
         el.classList.toggle('err', err);
       });
-      const n = document.getElementById('adsbCount');
-      if (n) { const t = this.countText(); if (n.textContent !== t) n.textContent = t; }
+      MB.data.setDot(document.getElementById('adsbCount'), ...this.dot());
     },
 
     // The section's badge: aircraft on the map while a source is on, else how many sources are on. The panel and the
     // once-a-second status use the same text, so a redraw of the panel does not flip it back and forth.
+    // The section's dot (MB.data.dotHtml): green while a source is on, its tooltip what is shown.
+    dot() { return this.anyOn() ? ['on', 'On · ' + this.countText()] : ['off', 'Off']; },
     countText() {
       if (!this.anyOn()) return this.enabledCount() + '/' + SOURCES.length + ' on';
       let shown = 0;
@@ -848,7 +860,7 @@ window.MB = window.MB || {};
       const cf = this.conf();
       const sections = {};
       list.forEach(s => { (sections[s.section] = sections[s.section] || []).push(s); });
-      let html = `<details class="ds-source" id="adsbSource" data-src="adsb"${MB.data.sourceOpen('adsb') ? ' open' : ''}><summary class="ds-source-head"><h3>ADS-B live air traffic</h3><span class="badge" id="adsbCount">${this.countText()}</span></summary>
+      let html = `<details class="ds-source" id="adsbSource" data-src="adsb"${MB.data.sourceOpen('adsb') ? ' open' : ''}><summary class="ds-source-head"><h3>ADS-B live air traffic</h3>${MB.data.dotHtml('adsbCount', ...this.dot())}</summary>
         <p class="note">Aircraft positions as they are received. Informational only, not for navigation.</p>`;
       Object.keys(sections).forEach(sec => {
         html += `<div class="section"><h3>${esc(sec)}</h3>`;
@@ -858,7 +870,8 @@ window.MB = window.MB || {};
             <div class="ds-head"><label class="check"><input type="checkbox" data-act="adsb-toggle"${rt.on ? ' checked' : ''}${off}> <span class="dname">${s.site ? `<a href="${s.site}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}</span></label>${MB.data.infoIcon(s.desc)}</div>
             ${s.kind === 'receiver' ? `<div class="row adsb-row"><label>Server</label><input type="text" class="adsb-url" data-keep-focus value="${esc(sc.url)}" placeholder="http://192.168.1.50:8080" inputmode="url" spellcheck="false"></div>` : ''}
             <div class="row adsb-row"><label>Refresh</label><select class="adsb-interval"${off}>${s.intervals.map(n => `<option value="${n}"${+sc.interval === n ? ' selected' : ''}>every ${n} s</option>`).join('')}</select></div>
-            <div class="dstatus${rt.on && rt.error ? ' err' : ''}" id="adsbStatus-${s.id}">${esc(this.statusText(s.id))}</div>
+            ${s.kind === 'receiver' ? '' : MB.data.minZoomHtml(this.minZoomFor(s.id), NET_ZOOM, !!off)}
+            <div class="dstatus${rt.on && rt.error ? ' err' : ''}" id="adsbStatus-${s.id}">${MB.zoomText(this.statusText(s.id))}</div>
           </div>`;
         });
         html += '</div>';
@@ -888,6 +901,7 @@ window.MB = window.MB || {};
           url.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); this.setReceiverUrl(id, url.value, true); url.blur(); } });
         }
         item.querySelector('.adsb-interval').addEventListener('change', e => this.setIntervalFor(id, e.target.value));
+        MB.data.bindMinZoom(item, v => this.setMinZoom(id, v));
       });
       panel.querySelectorAll('input[data-adsb-type]').forEach(cb => cb.addEventListener('change', () => { cb.closest('label').classList.toggle('off', !cb.checked); this.setTypeShown(cb.dataset.adsbType, cb.checked); }));
       const g = panel.querySelector('#adsbGround'), l = panel.querySelector('#adsbLabels'), f = panel.querySelector('#adsbFind');

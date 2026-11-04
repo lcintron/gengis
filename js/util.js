@@ -302,6 +302,12 @@ window.MB = window.MB || {};
     trash: ic('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>'),
     goto: ic('<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>'),
     refresh: ic('<path d="M20 12a8 8 0 1 1-2.3-5.6L20 9"/><path d="M20 4v5h-5"/>'), // sync, check again
+    plus: ic('<path d="M12 5v14M5 12h14"/>'),
+    upload: ic('<path d="M12 16V5M7.5 9.5L12 5l4.5 4.5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/>'),
+    gear: ic('<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>'), // settings
+    sideLeft: ic('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="M4 5h4v14H4z" fill="currentColor" stroke="none"/>'), // on the left side
+    sideRight: ic('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/><path d="M16 5h4v14h-4z" fill="currentColor" stroke="none"/>'), // on the right side
+    sweep: ic('<path d="m16 22-1-4"/><path d="M19 14a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2h-3a1 1 0 0 1-1-1V4a2 2 0 0 0-4 0v5a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1"/><path d="M5 14h14l2 6.8a1 1 0 0 1-1 1.2H4a1 1 0 0 1-1-1.2z"/><path d="m8 22 1-4"/>'), // a broom: clear a cache
     download: ic('<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/>'), // fetch again to this device
     copy: ic('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>'),
     close: ic('<path d="M6 6l12 12M18 6L6 18"/>'),
@@ -311,6 +317,11 @@ window.MB = window.MB || {};
   // An icon-only button. attrs: its other attributes as HTML (data-…, disabled); cls: more classes; label: what a
   // screen reader says when the short tooltip is not enough (in a list: which row, as 'Delete Alpha').
   MB.iconBtn = (icon, title, attrs, cls, label) => `<button type="button" class="icon-btn mini${cls ? ' ' + cls : ''}" title="${MB.escapeHtml(title)}" aria-label="${MB.escapeHtml(label || title)}"${attrs ? ' ' + attrs : ''}>${MB.ICON[icon]}</button>`;
+  // A zoom level as the app writes it: the magnifying glass and the number, as in the status bar. zoomText: a text with
+  // its "zoom 8" that way, the rest escaped; setZoomText: the same into an element, when it changed.
+  MB.zoomIcon = MB.ICON.search.replace('<svg ', '<svg class="zi" ') + '<span class="sr-only">Zoom </span>';
+  MB.zoomText = t => MB.escapeHtml(t).replace(/\bzoom (?=\d)/gi, MB.zoomIcon);
+  MB.setZoomText = (el, t) => { if (el.textContent.toLowerCase() !== String(t).toLowerCase()) el.innerHTML = MB.zoomText(t); };
 
   MB.ask = function (message, yes, no) {
     return new Promise(resolve => {

@@ -111,7 +111,7 @@ window.MB = window.MB || {};
           if (!ds.enabled || job.cancelled) continue;
           const seen = new Set();
           for (let z = opts.zMin; z <= opts.zMax; z++) {
-            if (z < ds.def.minZoom) continue;
+            if (z < MB.data.minZoomOf(ds.def)) continue;
             const level = MB.data.levelFor(ds.def, z);
             if (seen.has(level.idx)) continue;
             seen.add(level.idx);
@@ -170,10 +170,10 @@ window.MB = window.MB || {};
       if (!box) return;
       if (!this.supported()) { box.innerHTML = '<p class="note">Offline areas need the app to be served over http(s) (not opened as a file).</p>'; return; }
       const list = this.areas.slice().sort((a, b) => b.created - a.created);
-      box.innerHTML = `<div class="btn-row" style="margin:0 0 8px"><button class="btn small primary" data-act="new">Download current view…</button></div>
+      box.innerHTML = `<div class="btn-row" style="margin:0 0 8px"><button class="btn small primary with-icon" data-act="new" title="Download the current view for offline use">${MB.ICON.download}Download view</button></div>
         ${list.length ? list.map(a => `<div class="area-item" data-id="${a.id}">
           <div class="area-head"><span class="aname">${esc(a.name)}</span><span class="badge">${esc(a.basemapName || a.basemap)}</span>${MB.iconBtn('goto', 'Go to', 'data-act="goto"', '', 'Go to ' + a.name)}${MB.iconBtn('download', 'Re-download', 'data-act="refresh"', '', 'Re-download ' + a.name)}${MB.iconBtn('trash', 'Delete', 'data-act="delete"', 'danger', 'Delete ' + a.name)}</div>
-          <div class="note">zoom ${a.zMin}–${a.zMax} · ${a.tiles.toLocaleString()} tiles · ${(a.bytes / 1048576).toFixed(1)} MB${a.dataCells ? ' · ' + a.dataCells + ' data cells' : ''}${a.failed ? ' · <span class="warn">' + a.failed + ' failed</span>' : ''} · ${new Date(a.created).toLocaleDateString()}</div>
+          <div class="note">${MB.zoomIcon}${a.zMin}–${a.zMax} · ${a.tiles.toLocaleString()} tiles · ${(a.bytes / 1048576).toFixed(1)} MB${a.dataCells ? ' · ' + a.dataCells + ' data cells' : ''}${a.failed ? ' · <span class="warn">' + a.failed + ' failed</span>' : ''} · ${new Date(a.created).toLocaleDateString()}</div>
         </div>`).join('') : '<p class="note">Map tiles for a region, usable offline.</p>'}
         <div id="offlineStats" class="note" style="margin-top:6px"></div>`;
       box.querySelector('[data-act="new"]').addEventListener('click', () => this.openDialog());
@@ -202,8 +202,8 @@ window.MB = window.MB || {};
         ${MB.modalCloseHtml}<h2 id="oaTitle">Download area for offline use</h2>
         <p class="note">Current view, <b>${esc(currentBasemapName())}</b>.${community ? ' Volunteer-run server: capped at ' + cap.toLocaleString() + ' tiles; use a keyed provider for large areas.' : ''}</p>
         <div class="row"><label>Name</label><input type="text" id="oaName" value="${esc(existing ? existing.name : 'Area ' + (this.areas.length + 1))}"></div>
-        <div class="row"><label>Min zoom</label><input type="range" id="oaMin" min="${Math.max(2, zNow - 6)}" max="${maxZ}" value="${existing ? existing.zMin : Math.max(2, zNow - 2)}"><span class="val" id="oaMinVal"></span></div>
-        <div class="row"><label>Max zoom</label><input type="range" id="oaMax" min="${Math.max(2, zNow - 6)}" max="${maxZ}" value="${existing ? existing.zMax : Math.min(maxZ, zNow + 3)}"><span class="val" id="oaMaxVal"></span></div>
+        <div class="row"><label>Min ${MB.zoomIcon}</label><input type="range" id="oaMin" min="${Math.max(2, zNow - 6)}" max="${maxZ}" value="${existing ? existing.zMin : Math.max(2, zNow - 2)}"><span class="val" id="oaMinVal"></span></div>
+        <div class="row"><label>Max ${MB.zoomIcon}</label><input type="range" id="oaMax" min="${Math.max(2, zNow - 6)}" max="${maxZ}" value="${existing ? existing.zMax : Math.min(maxZ, zNow + 3)}"><span class="val" id="oaMaxVal"></span></div>
         ${anyData ? '<label class="check"><input type="checkbox" id="oaData" checked> Include enabled data layers</label>' : ''}
         <div class="measure-box" id="oaEstimate"></div>
         <div id="oaProgress" class="hidden"><div class="progress"><div class="bar" id="oaBar"></div></div><div class="note" id="oaStatus"></div></div>

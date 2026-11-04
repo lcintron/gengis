@@ -1277,8 +1277,8 @@ window.MB = window.MB || {};
     const zoomNow = () => MB.snapZoom(MB.map.getZoom()); // the map settles on quarter levels
     const level = z.level != null ? z.level : zoomNow();
     wrap.innerHTML = `<label class="check" title="Show this object only above or below a zoom level"><input type="checkbox" id="propZoomOn"${z.on ? ' checked' : ''}> <b>Zoom display</b></label>
-      <div class="row"><label>Show when zoom is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
-      <div class="row"><label>Zoom level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
+      <div class="row"><label>Show when ${MB.zoomIcon} is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
+      <div class="row"><label>${MB.zoomIcon} level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
       <p class="note" id="propZoomNote"></p>`;
     const on = $('#propZoomOn', wrap), op = $('#propZoomOp', wrap), lv = $('#propZoomLevel', wrap);
     const apply = e => {
@@ -1304,10 +1304,10 @@ window.MB = window.MB || {};
     const note = $('#propZoomNote'), f = MB.selected;
     if (!note || !f) return;
     const z = f.mb.zoom, now = MB.formatZoom(MB.map.getZoom());
-    if (!z || !z.on) { note.textContent = `Always shown (the zoom is now ${now}).`; return; }
-    note.textContent = MB.zoomAllows(f)
-      ? `Shown at the zoom now (${now}).`
-      : `Hidden at the zoom now (${now}); shown while selected.`;
+    if (!z || !z.on) { note.innerHTML = `Always shown (now ${MB.zoomIcon}${now}).`; return; }
+    note.innerHTML = MB.zoomAllows(f)
+      ? `Shown now (${MB.zoomIcon}${now}).`
+      : `Hidden now (${MB.zoomIcon}${now}); shown while selected.`;
   };
 
   function svgProps(f) {
@@ -1364,7 +1364,7 @@ window.MB = window.MB || {};
     const lib = Object.values(MB.state.svgLibrary);
     const d = MB.svgDefaults;
     const isGround = d.mode === 'ground';
-    panel.innerHTML = `<div class="panel-head"><h3>Image library</h3><button class="btn small" data-act="upload">+ Upload</button></div>
+    panel.innerHTML = `<div class="panel-head"><h3>Image library</h3><button class="btn small with-icon" data-act="upload">${MB.ICON.upload}Upload</button></div>
       <div class="drop-zone" id="svgDrop">Drop SVG, PNG, JPEG, WebP or GIF files here, or click to upload</div>
       ${lib.length ? '<div class="svg-grid">' + lib.map(l => `<div class="svg-card${MB.svgPlace.svgId === l.id && MB.tools.current === 'svg' ? ' active' : ''}" data-id="${l.id}" title="Click to place on the map"><button class="del" title="Remove from library" aria-label="Remove from library">${MB.ICON.trash}</button><img src="${l.dataUrl}" alt=""><div class="name">${esc(l.name)}</div></div>`).join('') + '</div>'
         : '<p class="note">Upload an image, then click it to place it.</p>'}
@@ -1549,13 +1549,14 @@ window.MB = window.MB || {};
           <p class="field-hint">Map center: ${esc(MB.formatLatLng(MB.map.getCenter()))}</p></div>
       </div>
       <div class="section"><h3>Map overlays</h3><div id="overlaySection"></div></div>
+      <div class="section"><h3>Data sources</h3><div id="dataSettingsSection"></div></div>
       <div class="section"><h3>Grid systems</h3><div id="gridSection"></div></div>
       <div class="section"><h3>Offline areas</h3><div id="offlineSection"></div></div>
       <div class="section" id="interfaceSection"><h3>Interface</h3>
         <div class="field"><span class="field-label">Toolbar</span>
-          <div class="seg" role="radiogroup" aria-label="Toolbar position">${[['left', 'Left side'], ['right', 'Right side']].map(([v, t]) => `<button type="button" role="radio" aria-checked="${MB.ui.toolbarSide() === v}" data-tb-side="${v}"${MB.ui.toolbarSide() === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div></div>
+          <div class="seg icons" role="radiogroup" aria-label="Toolbar position">${[['left', 'Left side', 'sideLeft'], ['right', 'Right side', 'sideRight']].map(([v, t, i]) => `<button type="button" role="radio" aria-checked="${MB.ui.toolbarSide() === v}" data-tb-side="${v}" title="${t}" aria-label="${t}"${MB.ui.toolbarSide() === v ? ' class="active"' : ''}>${MB.ICON[i]}</button>`).join('')}</div></div>
         <div class="field"><label class="field-label" for="setTipDelay">Tooltip delay</label><select id="setTipDelay">${[0, 500, 1000, 2000, 3000, 5000].map(ms => `<option value="${ms}"${MB.tooltipDelay() === ms ? ' selected' : ''}>${ms === 0 ? 'Immediate' : (ms / 1000) + ' s'}</option>`).join('')}</select></div>
-        <div class="field"><label class="field-label" for="setPrefetch">Preload the next zoom level</label><select id="setPrefetch" aria-describedby="setPrefetchHint">${[['off', 'Off (fastest map)'], ['on', 'On, after the map is still']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) === 'on' ? 'on' : 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
+        <div class="field"><label class="field-label" for="setPrefetch">Preload the next ${MB.zoomIcon} level</label><select id="setPrefetch" aria-describedby="setPrefetchHint">${[['off', 'Off (fastest map)'], ['on', 'On, after the map is still']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) === 'on' ? 'on' : 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
           <p class="field-hint" id="setPrefetchHint">Never on volunteer-run map servers.</p></div>
         <label class="check"><input type="checkbox" id="setTileFade"${MB.settings && MB.settings.tileFade === false ? '' : ' checked'}> Fade in map tiles</label>
       </div>
@@ -1572,6 +1573,7 @@ window.MB = window.MB || {};
       </div>
 `;
     if (MB.data && MB.data.renderOverlays) MB.data.renderOverlays();
+    if (MB.data && MB.data.renderSettingsSection) MB.data.renderSettingsSection();
     if (MB.grids) MB.grids.renderSection();
     if (MB.offline && MB.offline.renderSection) MB.offline.renderSection();
     $$('#unitsSeg2 button', panel).forEach(b => b.addEventListener('click', () => MB.setUnits(b.dataset.units)));

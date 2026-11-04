@@ -630,12 +630,18 @@ window.MB = window.MB || {};
 
     /* ---------- the panel (datalayers.js draws it under the MAVLink block) ---------- */
     count() { return MB.trackLogs ? MB.trackLogs.list('betaflight').length : 0; },
+    // The section's dot (MB.data.dotHtml): green while a log shows on the map, red with none open or all of them hidden.
+    dot() {
+      const all = MB.trackLogs ? MB.trackLogs.list('betaflight') : [], shown = all.filter(l => l.visible).length;
+      if (!all.length) return ['off', 'No logs open'];
+      return shown ? ['on', shown + ' of ' + all.length + ' shown'] : ['off', 'All hidden'];
+    },
     countText() { const n = this.count(); return n ? n + ' log' + (n > 1 ? 's' : '') : 'none open'; },
     notesHtml() {
       return this.notes.slice(-3).map(n => `<div class="dstatus${n.warn ? ' err' : ''}">${esc(n.text)}</div>`).join('');
     },
     matches(q, filter) {
-      const on = this.count() > 0;
+      const on = this.dot()[0] === 'on'; // (a hidden log is off, as its dot says)
       if (filter === 'on' && !on) return false;
       if (filter === 'off' && on) return false;
       return !q || 'betaflight blackbox flight logs bbl bfl fpv gps csv blackbox_decode'.includes(q);
@@ -644,7 +650,7 @@ window.MB = window.MB || {};
     panelHtml(q, filter) {
       if (!this.matches(q, filter)) return '';
       const job = this.job;
-      return `<details class="ds-source" id="bfSource" data-src="betaflight"${MB.data.sourceOpen('betaflight') ? ' open' : ''}><summary class="ds-source-head"><h3>Betaflight logs</h3><span class="badge" id="bfCount">${esc(this.countText())}</span></summary>
+      return `<details class="ds-source" id="bfSource" data-src="betaflight"${MB.data.sourceOpen('betaflight') ? ' open' : ''}><summary class="ds-source-head"><h3>Betaflight logs</h3>${MB.data.dotHtml('bfCount', ...this.dot())}</summary>
         <div class="section"><div class="data-item adsb-display" id="bfItem">
           <div class="ds-head"><button type="button" class="btn small with-icon" data-act="bf-open">${MB.ICON.open.replace('<svg ', '<svg class="mi" ')}Open logs</button><span class="dim trk-kinds">.bbl · .bfl · .txt · .csv</span>${MB.data.infoIcon('Blackbox logs from a Betaflight flight controller with a GPS (.bbl, .bfl, or .txt on some boards; one file can hold several flights), or the .gps.csv that blackbox_decode writes. Each flight with GPS positions is a track; positions without a fix are left out. Read on this device only.')}</div>
           <div class="trk-progress" id="bfProgress"${job ? '' : ' hidden'}><div class="progress"><div class="bar" style="width:${job ? Math.round(job.frac * 100) : 0}%"></div></div><div class="trk-job"><span class="note" id="bfJob">${job ? esc(job.name) : ''}</span>${MB.iconBtn('close', 'Cancel', 'data-act="bf-cancel"', '', 'Cancel reading the log')}</div></div>
@@ -689,8 +695,7 @@ window.MB = window.MB || {};
       }
       const notes = document.getElementById('bfNotes');
       if (notes) { const h = this.notesHtml(); if (notes._html !== h) { notes.innerHTML = h; notes._html = h; } }
-      const n = document.getElementById('bfCount');
-      if (n) { const t = this.countText(); if (n.textContent !== t) n.textContent = t; }
+      MB.data.setDot(document.getElementById('bfCount'), ...this.dot());
     }
   };
   if (MB.on) MB.on('tracklogs', () => MB.betaflight.tick()); // a log added or removed: the count
