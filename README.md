@@ -90,7 +90,7 @@ Browsers only read another server's data when that server allows it (CORS), and 
 | TCP | `tcps:0.0.0.0:5760` | `192.168.1.20` | desktop app |
 | UDP | `udps:0.0.0.0:14550` | `192.168.1.20` | desktop app |
 | UDP, listen here | `udpc:<this computer>:14550` | `14550` | desktop app |
-| WebSocket | `tcps:0.0.0.0:5760` + `websockify 5761 localhost:5760` | `192.168.1.20:5761` | desktop app; web app over `http://`, on `localhost` or with `wss://` |
+| WebSocket | `tcps:0.0.0.0:5760` + `websockify 5761 localhost:5760` | `192.168.1.20:5761` | desktop app; Android app with `wss://`; web app over `http://`, on `localhost` or with `wss://` |
 
 For example: `mavp2p serial:/dev/ttyUSB0:57600 tcps:0.0.0.0:5760`.
 
@@ -112,7 +112,7 @@ GenGIS asks before opening a file or web project from a link. A project opened f
 
 GenGIS is also a native Android app (package `com.luiscintron.gengis`). It reads what a web page can't: the adsb.fi and adsb.lol networks, aircraft look-ups, and receivers on your network over plain HTTP. Saving a project or exporting a map opens Android's share sheet, and the back button closes dialogs and panels first.
 
-Not in the Android app yet: the aisstream.io stream, MAVLink over TCP or UDP (the WebSocket bridge works), and cloud sync.
+Not in the Android app yet: the aisstream.io stream, MAVLink over TCP or UDP (a WebSocket bridge works over `wss://`), and cloud sync.
 
 ## Data sources and fair use
 

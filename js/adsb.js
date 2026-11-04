@@ -319,7 +319,7 @@ window.MB = window.MB || {};
     enable(id, quiet) {
       const src = SOURCES.find(s => s.id === id), rt = this.rt[id], cf = this.srcConf(id);
       if (!src || rt.on) return;
-      if (!usable(src)) { if (!quiet) MB.toast(ONLY_DESKTOP(src), 5000); return; } // (its setting kept, for the desktop app)
+      if (!usable(src)) { if (!quiet) MB.toast(ONLY_DESKTOP(src), 5000); return; } // (its setting kept, for the native app)
       if (src.kind === 'receiver' && !receiverCandidates(cf.url).length) {
         if (!quiet) { MB.toast('Enter the address of your dump1090 server first'); const el = document.querySelector('.adsb-url'); if (el) el.focus(); }
         cf.on = false;

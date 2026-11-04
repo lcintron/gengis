@@ -219,7 +219,7 @@ window.MB = window.MB || {};
       if (!navigator.onLine) return 'Offline';
       if (MB.native.app) return 'Could not reach the receiver. Check the address, that this phone is on the same network, and that AIS-catcher\'s web viewer is on (-N).';
       if (location.protocol === 'https:' && /^http:/i.test(url || '') && !isLocalHost(url)) {
-        return 'This page is served over HTTPS, so the browser blocks a plain-HTTP receiver. Use the desktop or Android app, open GenGIS from http://localhost, or reach the receiver over HTTPS.';
+        return 'This page is served over HTTPS, so the browser blocks a plain-HTTP receiver. Use the native GenGIS app (desktop or Android), open GenGIS from http://localhost, or reach the receiver over HTTPS.';
       }
       return 'Could not read the receiver. Check the address, and that AIS-catcher\'s web viewer is on (-N).';
     }
