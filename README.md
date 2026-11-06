@@ -34,6 +34,7 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 - Search addresses, places, coordinates and MGRS references, or find points of interest.
 - Your location, with the direction the device points. The map follows it until you move the map; a button brings it back.
 - Magnetic declination from the World Magnetic Model.
+- A clock on the map (Settings → Interface, off by default): local time in your zone or one you choose, UTC, or both.
 
 **Overlay data**
 - **FAA data**, live for the area in view: airspace classes, special use airspace, LAANC ceilings, TFRs, airports and more. Click anywhere to see everything under that point.

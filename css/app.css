@@ -339,6 +339,15 @@ body.presenting .mb-scale-box { display: none !important; }
   margin: 0 0 12px 12px !important; border: 1px solid var(--border);
   display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; /* the coordinates and the zoom; the loading line (busy.js) below them */
 }
+/* the time on the map (clock.js): above the coordinates, in their style; local time and UTC side by side */
+.mb-clock {
+  background: rgba(27,31,39,.85); color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 11px; font-variant-numeric: tabular-nums;
+  margin: 0 0 6px 12px !important; border: 1px solid var(--border); white-space: nowrap;
+  display: flex; align-items: center; column-gap: 6px;
+}
+.mb-clock svg { width: 1.15em; height: 1.15em; color: var(--text-dim); flex: 0 0 auto; }
+.mb-clock-line .z { color: var(--text-dim); }
+.mb-clock-line + .mb-clock-line { padding-left: 6px; border-left: 1px solid var(--border); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; } /* read aloud, not shown */
 .mb-status .zoom { display: inline-flex; align-items: center; gap: 3px; color: var(--text); }
 .mb-status .zoom svg { width: 1.15em; height: 1.15em; fill: none; stroke: var(--text-dim); stroke-width: 2.4; stroke-linecap: round; flex: 0 0 auto; }
@@ -606,6 +615,7 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   .leaflet-touch .mb-locate a, .mb-locate a, .leaflet-touch .mb-present-ctl a, .mb-present-ctl a { width: 40px; height: 40px; line-height: 40px; } /* a finger-sized target: the zoom buttons are hidden here */
   .mb-locate a svg, .mb-present-ctl a svg { width: 22px; height: 22px; }
   .mb-status { font-size: 10px; margin: 0 0 8px 8px !important; }
+  .mb-clock { font-size: 10px; margin: 0 0 4px 8px !important; }
   .mb-scale { margin: 0 8px 8px 0 !important; }
   .leaflet-control-attribution { max-width: 60vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row label { flex: 0 0 80px; }

@@ -312,7 +312,8 @@ window.MB = window.MB || {};
     copy: ic('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>'),
     close: ic('<path d="M6 6l12 12M18 6L6 18"/>'),
     search: ic('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>'),
-    pinAdd: ic('<path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 1.3-.3 2.5-.8 3.6"/><circle cx="12" cy="10" r="2"/><path d="M18 16v6M15 19h6"/>')
+    pinAdd: ic('<path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 1.3-.3 2.5-.8 3.6"/><circle cx="12" cy="10" r="2"/><path d="M18 16v6M15 19h6"/>'),
+    clock: ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>') // the time on the map (clock.js)
   };
   // An icon-only button. attrs: its other attributes as HTML (data-…, disabled); cls: more classes; label: what a
   // screen reader says when the short tooltip is not enough (in a list: which row, as 'Delete Alpha').
