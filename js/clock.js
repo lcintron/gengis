@@ -7,12 +7,13 @@ window.MB = window.MB || {};
   'use strict';
 
   const MODES = ['local', 'utc', 'both'];
-  const fmts = new Map(); // one formatter per zone ('' = the device's, 'UTC'): made once, used every second
+  const UTC_LINE = '\0utc'; // the UTC line's own formatter (24-hour, no zone name), apart from a local zone of 'UTC'
+  const fmts = new Map(); // one formatter per zone ('' = the device's, UTC_LINE): made once, used every second
 
   function formatter(zone) {
     let f = fmts.get(zone);
     if (!f) {
-      f = zone === 'UTC'
+      f = zone === UTC_LINE
         ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: 'UTC' })
         : new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short', timeZone: zone || undefined });
       fmts.set(zone, f);
@@ -57,7 +58,7 @@ window.MB = window.MB || {};
         const zone = (tz ? tz.value : '').replace(/^GMT(?=[+\-−]\d)/, 'UTC').replace(/-/g, '−');
         out.push({ kind: 'local', time, zone, title: 'Local time: ' + zoneTitle(cfg.zone || C.deviceZone() || 'this device') });
       }
-      if (cfg.mode !== 'local') out.push({ kind: 'utc', time: formatter('UTC').format(date), zone: 'UTC', title: 'Coordinated Universal Time (UTC)' });
+      if (cfg.mode !== 'local') out.push({ kind: 'utc', time: formatter(UTC_LINE).format(date), zone: 'UTC', title: 'Coordinated Universal Time (UTC)' });
       return out;
     },
 
@@ -83,7 +84,10 @@ window.MB = window.MB || {};
     },
 
     init() {
-      document.addEventListener('visibilitychange', () => { if (C.control) C.tick(); }); // hidden: stops; back: on time at once
+      document.addEventListener('visibilitychange', () => {
+        fmts.delete(''); // the device's zone read again on the way back (it may have changed: travel)
+        if (C.control) C.tick(); // hidden: stops; back: on time at once
+      });
       C.apply();
     }
   };

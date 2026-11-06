@@ -668,7 +668,7 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
 
 /* ---------- presenter mode ---------- */
 body.presenting #topbar, body.presenting #toolbar, body.presenting #sidebar, body.presenting #toolHint, body.presenting .mb-status,
-body.presenting .mb-measure-tip { display: none !important; }
+body.presenting .mb-measure-tip { display: none !important; }   /* (the clock stays: the time is useful on a presented map) */
 /* its controls: exit and full screen, map buttons at the top of the map's top right corner (presenter.js), and the
    app's logo in the top left corner (in a window and in full screen) */
 .mb-present-ctl, #presentDrag, .present-logo { display: none; }

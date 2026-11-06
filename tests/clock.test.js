@@ -87,7 +87,7 @@ test('off, nothing is drawn and no timer runs, even when the page comes back int
 
 test('local time, UTC, or both', () => {
   const { C } = load();
-  const kinds = mode => C.lines(AT, { show: true, mode, zone: 'UTC' }).map(l => l.kind).join(',');
+  const kinds = mode => C.lines(AT, { show: true, mode, zone: 'Europe/London' }).map(l => l.kind).join(',');
   assert.equal(kinds('local'), 'local');
   assert.equal(kinds('utc'), 'utc');
   assert.equal(kinds('both'), 'local,utc');
@@ -106,6 +106,14 @@ test('the local time in a chosen zone, named beside it (its offset where the lan
   assert.match(sp.time, /\b0?3.32.05\b/);
   assert.match(sp.zone, /^(UTC−3|BRT)$/, 'a real minus sign, and UTC rather than GMT');
   assert.match(sp.title, /America \/ Sao Paulo/);
+});
+
+test('a local zone of UTC is still a local line, its zone named (not the UTC line\'s 24-hour, nameless format)', () => {
+  const { C } = load();
+  const [local, utc] = C.lines(AT, { show: true, mode: 'both', zone: 'UTC' });
+  assert.equal(local.kind, 'local');
+  assert.equal(local.zone, 'UTC');
+  assert.match(utc.time, /^18.32.05$/);
 });
 
 test('turned on it shows and ticks on each second; turned off it goes, its timer with it', () => {
