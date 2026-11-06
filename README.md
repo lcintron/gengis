@@ -155,7 +155,11 @@ npm test                  # automated tests, no installs needed
 - **Android** builds in CI: Actions → Android → Run workflow, or any pull request that touches the app.
   - It makes a debug APK for testing.
   - Once the signing secrets are set, it also makes a signed `.aab` for Google Play and a signed `.apk`.
-  - Locally: `npm install`, `npx cap add android` (once), `npm run android:sync`, then open `android/` in Android Studio.
+  - Locally (needs JDK 21+ and the Android SDK, both come with Android Studio):
+    - `make apk` builds the test APK into `out/gengis-debug.apk`.
+    - `make emulator` starts an emulator, then `make apk-run` builds, installs and opens the app on it (or on a phone with USB debugging on).
+    - Local builds are signed with your machine's debug key, which stays the same between builds. Its SHA-1 (`keytool -list -v -keystore ~/.android/debug.keystore -storepass android`) can go in a Google Android client for testing Google Drive.
+    - To work in Android Studio instead: `npm run android:sync`, then open `android/`.
 - **Android signing** (once):
   - Create an upload key: `keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000`.
   - Add the repository secrets `ANDROID_KEYSTORE_BASE64` (the file, base64-encoded), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
