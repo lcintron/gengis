@@ -1559,6 +1559,7 @@ window.MB = window.MB || {};
         <div class="field"><label class="field-label" for="setPrefetch">Preload the next ${MB.zoomIcon} level</label><select id="setPrefetch" aria-describedby="setPrefetchHint">${[['off', 'Off (fastest map)'], ['on', 'On, after the map is still']].map(([v, t]) => `<option value="${v}"${((MB.settings && MB.settings.prefetchTiles) === 'on' ? 'on' : 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
           <p class="field-hint" id="setPrefetchHint">Never on volunteer-run map servers.</p></div>
         <label class="check"><input type="checkbox" id="setTileFade"${MB.settings && MB.settings.tileFade === false ? '' : ' checked'}> Fade in map tiles</label>
+        ${clockSettingsHtml()}
       </div>
       <div class="section"><h3>Drawing</h3>
         <label class="check"><input type="checkbox" id="setMeasure"${s.showMeasurements ? ' checked' : ''}> Measurement labels on shapes</label>
@@ -1586,6 +1587,7 @@ window.MB = window.MB || {};
     $('#setTipDelay', panel).addEventListener('change', e => { MB.settings.tooltipDelayMs = +e.target.value; MB.saveSettings(); });
     $('#setPrefetch', panel).addEventListener('change', e => { MB.settings.prefetchTiles = e.target.value; MB.saveSettings(); MB.tilePrefetch.lastKey = ''; MB.tilePrefetch.schedule(); });
     $('#setTileFade', panel).addEventListener('change', e => { MB.settings.tileFade = e.target.checked; MB.saveSettings(); MB.applyTileFade(); });
+    bindClockSettings(panel);
     $('#setContinue', panel).addEventListener('change', e => { s.continueDrawing = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setSnap', panel).addEventListener('change', e => { s.snapping = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setReset', panel).addEventListener('click', async () => {
@@ -1600,6 +1602,47 @@ window.MB = window.MB || {};
     MB.ui.renderDesktopFiles();
     if (MB.cloudUI) MB.cloudUI.renderSettings();
   };
+
+  // Settings → Interface → the clock on the map (clock.js): on or off, which times, and the zone of the local time.
+  // Its choices show only while it is on, and the zone only with local time.
+  const CLOCK_MODES = [['local', 'Local', 'Local time'], ['utc', 'UTC', 'UTC only'], ['both', 'Both', 'Local time and UTC']];
+  function clockZoneOptions(cur) {
+    const dev = MB.clock.deviceZone(), groups = new Map();
+    MB.clock.zones().forEach(z => {
+      const i = z.indexOf('/'), region = i < 0 ? 'Other' : z.slice(0, i);
+      if (!groups.has(region)) groups.set(region, []);
+      groups.get(region).push(z);
+    });
+    if (cur && !MB.clock.zones().includes(cur)) groups.set('Other', (groups.get('Other') || []).concat(cur)); // (a zone this browser does not list)
+    const opt = z => `<option value="${esc(z)}"${z === cur ? ' selected' : ''}>${esc(MB.clock.zoneTitle(z.slice(z.indexOf('/') + 1)))}</option>`;
+    return `<option value=""${cur ? '' : ' selected'}>This device${dev ? ' (' + esc(MB.clock.zoneTitle(dev)) + ')' : ''}</option>`
+      + Array.from(groups, ([region, list]) => `<optgroup label="${esc(region)}">${list.map(opt).join('')}</optgroup>`).join('');
+  }
+  function clockSettingsHtml() {
+    if (!MB.clock) return '';
+    const c = MB.clock.config();
+    return `<label class="check"><input type="checkbox" id="setClock"${c.show ? ' checked' : ''}> Show the time on the map</label>
+        <div class="field" id="clockModeField"${c.show ? '' : ' hidden'}><span class="field-label">Clock</span>
+          <div class="seg" role="radiogroup" aria-label="Clock shows">${CLOCK_MODES.map(([v, t, tip]) => `<button type="button" role="radio" aria-checked="${c.mode === v}" data-clock-mode="${v}" title="${tip}"${c.mode === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div></div>
+        <div class="field" id="clockZoneField"${c.show && c.mode !== 'utc' ? '' : ' hidden'}><label class="field-label" for="setClockZone">Local time zone</label>
+          <select id="setClockZone">${clockZoneOptions(c.zone)}</select></div>`;
+  }
+  function bindClockSettings(panel) {
+    const box = $('#setClock', panel);
+    if (!box) return;
+    const sync = () => { // the choices as the settings now are (no redraw: the focus stays where it is)
+      const c = MB.clock.config();
+      $('#clockModeField', panel).hidden = !c.show;
+      $('#clockZoneField', panel).hidden = !c.show || c.mode === 'utc';
+      $$('[data-clock-mode]', panel).forEach(b => {
+        const on = b.dataset.clockMode === c.mode;
+        b.setAttribute('aria-checked', on); b.classList.toggle('active', on); b.tabIndex = on ? 0 : -1;
+      });
+    };
+    box.addEventListener('change', () => { MB.clock.set({ show: box.checked }); sync(); });
+    $$('[data-clock-mode]', panel).forEach(b => b.addEventListener('click', () => { MB.clock.set({ mode: b.dataset.clockMode }); sync(); }));
+    $('#setClockZone', panel).addEventListener('change', e => MB.clock.set({ zone: e.target.value }));
+  }
 
   /* ================= saving status ================= */
 
@@ -1815,6 +1858,7 @@ window.MB = window.MB || {};
     initSvgUpload();
     initKeys();
     initStatus();
+    if (MB.clock) MB.clock.init(); // (after the coordinates: it sits above them)
     MB.ui.setupScale();
     MB.ui.renderLayers();
     MB.ui.renderProps();
