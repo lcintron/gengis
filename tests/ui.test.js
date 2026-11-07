@@ -156,3 +156,13 @@ test('the community ADS-B networks are offered in the native apps only, desktop 
   assert.match(js['adsb.js'], /data-act="adsb-toggle"\$\{rt\.on \? ' checked' : ''\}\$\{off\}/, 'its switch is disabled there');
   assert.match(css, /\.data-item\.unavailable /);
 });
+
+test('the clock settings show only what applies: its choices while it is on, the zone only with local time', () => {
+  const ui = js['ui.js'];
+  assert.match(ui, /id="clockModeField"\$\{c\.show \? '' : ' hidden'\}/, 'Local / UTC / Both hidden while off');
+  assert.match(ui, /id="clockZoneField"\$\{c\.show && c\.mode !== 'utc' \? '' : ' hidden'\}/, 'the zone hidden while off and with UTC only');
+  assert.match(ui, /\$\('#clockModeField', panel\)\.hidden = !c\.show;/, 'kept so as it changes');
+  assert.match(ui, /\$\('#clockZoneField', panel\)\.hidden = !c\.show \|\| c\.mode === 'utc';/);
+  assert.match(html, /<script src="js\/clock\.js"><\/script>/);
+  assert.match(read('sw.js'), /'\.\/js\/clock\.js'/, 'offline too');
+});
