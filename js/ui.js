@@ -1406,8 +1406,15 @@ window.MB = window.MB || {};
       const files = Array.from(e.dataTransfer.files || []);
       const svgs = files.filter(f => MB.isSvgFile(f) || MB.isRasterFile(f));
       const others = files.filter(f => /\.(geo)?json$/i.test(f.name) || MB.isProjectFileName(f.name));
-      const maps = files.filter(f => MB.mapSources && MB.mapSources.isMapSourceFile(f)); // MOBAC / ATAK map sources
+      const imports = files.filter(f => MB.imports && MB.imports.isImportFile(f)); // KML, KMZ, shapefiles: layers (fileimports.js)
+      if (imports.length) MB.imports.openFiles(imports);
+      const zips = files.filter(f => /.zip$/i.test(f.name)); // a zipped shapefile, KML or GeoJSON, or a zip of map sources
+      const maps = files.filter(f => !/.zip$/i.test(f.name) && MB.mapSources && MB.mapSources.isMapSourceFile(f)); // MOBAC / ATAK map sources
       if (maps.length) MB.mapSources.importFiles(maps);
+      if (zips.length) (MB.imports ? MB.imports.sortZips(zips) : Promise.resolve({ geo: [], other: zips })).then(({ geo, other }) => {
+        if (geo.length) MB.imports.openFiles(geo);
+        if (other.length && MB.mapSources) MB.mapSources.importFiles(other);
+      });
       const mavLogs = files.filter(f => MB.mavLogs && MB.mavLogs.isLogFile(f)); // MAVLink flight logs (.bin, .tlog, .ulg)
       if (mavLogs.length) MB.mavLogs.openFiles(mavLogs);
       const bfLogs = files.filter(f => MB.betaflight && MB.betaflight.isLogFile(f)); // Betaflight blackbox logs (.bbl, .bfl, .gps.csv)

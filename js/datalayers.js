@@ -1084,7 +1084,12 @@ window.MB = window.MB || {};
         if (hitTest(ds, l, lp, cp)) hits.push({ ds, layer: l, props: l.feature.properties || {} });
       });
     });
-    return hits; // every feature is in the registry once: distinct features are never merged, duplicates never appear
+    // imported files (fileimports.js): drawn after the data, so on top
+    const imported = [];
+    if (MB.imports) MB.imports.sets().slice().reverse().forEach(ds => ds.group.eachLayer(l => {
+      if (l.feature && hitTest(ds, l, lp, cp)) imported.push({ ds, layer: l, props: l.feature.properties || {} });
+    }));
+    return imported.concat(hits); // every feature is in the registry once: distinct features are never merged, duplicates never appear
   };
 
   // The user's own objects at this point (shown ones only), top-most first: they draw above every dataset.
@@ -1292,7 +1297,7 @@ window.MB = window.MB || {};
     try { label = def.label ? String(def.label(p)) : firstText(p); } catch (e) { /* ignore */ }
 
     // the source
-    const publisher = def.custom ? 'Custom ArcGIS layer' : PUBLISHERS[def.source || (def.group === 'Boundaries' ? 'esri' : '')] || '';
+    const publisher = def.publisher || (def.custom ? 'Custom ArcGIS layer' : PUBLISHERS[def.source || (def.group === 'Boundaries' ? 'esri' : '')] || '');
     const service = (ds.meta && ds.meta.serviceName) || ((def.url || '').match(/services\/([^/]+)\/(?:Feature|Map)Server/) || [])[1] || '';
     let host = '';
     try { host = def.custom ? new URL(def.url).hostname : ''; } catch (e) { /* ignore */ }
@@ -1360,7 +1365,7 @@ window.MB = window.MB || {};
    * differ, and the drawn panel takes them over, its elements (and their listeners) kept. A slider's number box
    * (ui.js) and what it changes on its slider and readout belong to the drawn panel alone. A status line is one
    * piece: its text and icons (empty, plain, or with a zoom icon) are taken over whole, the line itself kept. */
-  const KEY_ATTRS = ['id', 'data-id', 'data-adsb', 'data-ais', 'data-decl', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'data-ais-type', 'type', 'name'];
+  const KEY_ATTRS = ['id', 'data-id', 'data-imp', 'data-adsb', 'data-ais', 'data-decl', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'data-ais-type', 'type', 'name'];
   const kids = (n, drawn) => Array.from(n.childNodes).filter(c => !(drawn && c.nodeType === 1 && c.classList.contains('stepper')));
   const ownAttrs = el => (el.hasAttribute('data-stepper') ? ['step', 'max', 'data-stepper'] : el.classList.contains('val') ? ['hidden'] : []);
   const leaf = el => el.nodeType === 1 && el.classList.contains('dstatus');
@@ -1439,10 +1444,12 @@ window.MB = window.MB || {};
       (bySource[src] = bySource[src] || []).push(ds);
     });
     const zoom = MB.map.getZoom();
-    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.mavlink ? MB.mavlink.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0);
+    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.mavlink ? MB.mavlink.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0) + (MB.imports ? MB.imports.enabledCount() : 0);
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · ${MB.zoomIcon}${MB.formatZoom(zoom)}</span></div>
       <div class="row ds-tools"><input type="text" inputmode="search" enterkeyhint="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" spellcheck="false"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select>${MB.iconBtn('refresh', 'Refresh', 'data-act="check"', '', 'Refresh: check the data services for updates')}${MB.iconBtn('sweep', 'Clear cache', 'data-act="clear"')}</div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px">${esc(this._cacheText || ' ')}</div>`; // the last count, until a new one is read (an empty line, or a plain space, would collapse and shift the panel)
+    const impHtml = MB.imports ? MB.imports.panelHtml(q, ui.filter) : ''; // the user's own files (KML, GeoJSON, shapefiles): first
+    html += impHtml;
     const adsbHtml = MB.adsb ? MB.adsb.panelHtml(q, ui.filter) : ''; // live air traffic: its own block, same search and filter
     html += adsbHtml;
     const aisHtml = MB.ais ? MB.ais.panelHtml(q, ui.filter) : ''; // live vessel traffic, the same way
@@ -1516,7 +1523,7 @@ window.MB = window.MB || {};
       </form>
     </div></details>`;
     }
-    if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
+    if (!shownTotal && !impHtml && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
     // Most redraws only change a status line, a count or a box's state: those are patched in place, so the scroll,
     // an open dropdown and a hovered row stay as they are. A change of what is listed (a search, a filter, a dataset
     // added or removed) builds the panel again.
@@ -1537,6 +1544,7 @@ window.MB = window.MB || {};
     panel.querySelector('#dsFilter').addEventListener('change', e => { ui.filter = e.target.value; this.renderPanel(); });
     panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!this.catalog().some(ds => ds.enabled)) { /* checked now: the panel may have been patched since it was built */ MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
     panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
+    if (MB.imports) MB.imports.bindPanel(panel);
     if (MB.adsb) MB.adsb.bindPanel(panel);
     if (MB.ais) MB.ais.bindPanel(panel);
     if (MB.mavlink) MB.mavlink.bindPanel(panel);

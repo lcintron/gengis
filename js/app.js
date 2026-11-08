@@ -160,6 +160,7 @@
       .then(() => MB.cloud && MB.cloud.init()).catch(e => console.warn('Cloud sync', e)); // then cloud sync (once the open project is settled)
     if (MB.cloudUI) MB.cloudUI.init();
     MB.data.init();
+    MB.imports.init(); // KML, GeoJSON and shapefiles kept on this device (after the data's panes)
     MB.places.init();
     MB.declination.init();
     MB.grids.init();
