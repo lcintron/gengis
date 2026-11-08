@@ -73,7 +73,7 @@ window.MB = window.MB || {};
   const GJ_OWN = new Set(['id', 'name', 'layer', 'type', 'style', 'text', 'svg', 'radius', 'attributes', 'stroke', 'stroke-width', 'stroke-opacity', 'fill', 'fill-opacity', 'marker-color', 'marker-size', 'marker-symbol']);
   function attrsOf(p) {
     const a = {};
-    Object.keys(p).forEach(k => { const v = p[k]; if (!GJ_OWN.has(k) && !(k === 'title' && !p.name) && v != null && v !== '' && typeof v !== 'object') a[k] = v; }); // (a title without a name is the name)
+    Object.keys(p).forEach(k => { const v = p[k]; if (!GJ_OWN.has(k) && !(k === 'title' && p.name == null) && v != null && v !== '' && typeof v !== 'object') a[k] = v; }); // (a title without a name is the name)
     if (p.attributes && typeof p.attributes === 'object') Object.keys(p.attributes).forEach(k => { const v = p.attributes[k]; if (v != null && v !== '' && typeof v !== 'object') a[k] = v; });
     return Object.keys(a).length ? a : undefined;
   }
@@ -93,7 +93,7 @@ window.MB = window.MB || {};
         targetId = byLayer[p.layer];
       }
       const style = p.style && typeof p.style === 'object' ? p.style : Object.assign({}, MB.currentStyle, styleFromSimpleStyle(p));
-      const base = { layerId: targetId, name: p.name || p.title || '', style, attrs: attrsOf(p) };
+      const base = { layerId: targetId, name: p.name != null ? String(p.name) : (p.title != null ? String(p.title) : ''), style, attrs: attrsOf(p) };
       const g = f.geometry, c = g.coordinates;
       try {
         switch (g.type) {

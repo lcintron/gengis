@@ -331,6 +331,7 @@ window.MB = window.MB || {};
 
   MB.ask = function (message, yes, no) {
     return new Promise(resolve => {
+      const back = document.activeElement;
       const dlg = document.createElement('div');
       dlg.className = 'modal mb-ask';
       dlg.innerHTML = '<div class="modal-box" role="alertdialog" aria-modal="true">' + MB.modalCloseHtml + '<p class="ask-text"></p><div class="row right"><button type="button" class="btn" data-no></button><button type="button" class="btn primary" data-yes></button></div></div>';
@@ -338,7 +339,13 @@ window.MB = window.MB || {};
       dlg.querySelector('[data-yes]').textContent = yes || 'OK';
       dlg.querySelector('[data-no]').textContent = no || 'Cancel';
       const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]'), xBtn = dlg.querySelector('.modal-x');
-      const finish = v => { window.removeEventListener('keydown', onKey, true); dlg.remove(); resolve(v); };
+      const finish = v => {
+        window.removeEventListener('keydown', onKey, true);
+        dlg.remove();
+        if (back && back !== document.body && back.isConnected && back.getClientRects().length && back.focus) back.focus(); // (the button that asked; not a menu's item, hidden by now)
+        else { const open = Array.from(document.querySelectorAll('.modal:not(.hidden) .modal-x')).pop(); if (open) open.focus(); }
+        resolve(v);
+      };
       // While it is open no key reaches the app (Delete must not delete the selection behind it). Enter and Space
       // still press the focused button; Tab stays on the dialog's buttons; Escape, like the ✕, answers no.
       const order = [xBtn, noBtn, yesBtn];

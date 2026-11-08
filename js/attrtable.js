@@ -179,7 +179,7 @@ window.MB = window.MB || {};
       { label: 'Sort ascending', action: () => { T.sort = key; T.dir = 1; build(); } },
       { label: 'Sort descending', action: () => { T.sort = key; T.dir = -1; build(); } },
       { sep: true },
-      { label: 'Rename field', disabled: f.fixed, action: () => { T.renaming = key; paintHead(); const inp = T.dlg.querySelector('input[data-rename]'); if (inp) { inp.focus(); inp.select(); } } },
+      { label: 'Rename field', disabled: f.fixed, action: () => { T.renaming = key; paint(); const inp = T.dlg.querySelector('input[data-rename]'); if (inp) { inp.focus(); inp.select(); } } },
       { label: 'Delete field', danger: true, disabled: f.fixed, action: async () => {
         if (!(await MB.ask(`Delete the field "${key}" and its values from every row?`, 'Delete field', 'Cancel'))) return;
         T.ad.deleteField(key); if (T.sort === key) T.sort = null; build();
@@ -220,9 +220,9 @@ window.MB = window.MB || {};
     paintHead();
     const fields = T.fields;
     const from = T.page * PAGE, rows = T.list.slice(from, from + PAGE);
-    d.querySelector('#attrBody').innerHTML = rows.map((r, i) => `<tr data-i="${from + i}"><td class="attr-n">${MB.iconBtn('goto', 'Zoom to', 'data-zoom', '', 'Zoom to ' + (ad.rowLabel ? ad.rowLabel(r) : 'row ' + (from + i + 1)))}</td>${fields.map(f => {
+    d.querySelector('#attrBody').innerHTML = rows.map((r, i) => `<tr data-i="${from + i}"><td class="attr-n">${MB.iconBtn('goto', 'Zoom to', 'data-zoom', '', 'Zoom to ' + (ad.rowLabel ? ad.rowLabel(r) : 'row ' + (from + i + 1)))}</td>${fields.map((f, c) => {
       const v = show(ad.get(r, f.key));
-      return `<td><input type="text" class="attr-cell" data-c="${fields.indexOf(f)}" value="${esc(v)}" title="${esc(v)}" aria-label="${esc(f.label)}, row ${from + i + 1}" spellcheck="false"></td>`;
+      return `<td><input type="text" class="attr-cell" data-c="${c}" value="${esc(v)}" title="${esc(v)}" aria-label="${esc(f.label)}, row ${from + i + 1}" spellcheck="false"></td>`;
     }).join('')}</tr>`).join('') || `<tr><td colspan="${fields.length + 1}" class="note">${T.q ? 'No row matches.' : 'No rows.'}</td></tr>`;
     const total = ad.rows().length, pages = Math.max(1, Math.ceil(T.list.length / PAGE));
     d.querySelector('#attrCount').textContent = (T.q ? `${T.list.length.toLocaleString()} of ${total.toLocaleString()}` : total.toLocaleString()) + ` row${total === 1 ? '' : 's'} · ${(fields.length - fields.filter(f => f.fixed).length)} field${fields.length === 1 ? '' : 's'}`;

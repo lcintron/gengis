@@ -352,9 +352,9 @@ window.MB = window.MB || {};
     if (!done && el.type !== 'range' && el.type !== 'color') return; // text: when it is done
     if (l === 'f.show' || l === 'f.alias') { const f = look.fields.find(x => x.key === row.dataset.k); if (f) f[l.slice(2)] = l === 'f.alias' ? String(v).trim() : v; apply(r, false, 'popup'); return; }
     if (l === 'cat.color') { const c = s.cats[+row.dataset.k]; if (c) c.color = v; apply(r, false, 'symbols', done); return; }
-    if (l === 'title') { look.title = v; apply(r, false, 'labels'); return; }
+    if (l === 'title') { look.title = v; apply(r, false, 'labels', done); return; }
     const [obj, key] = l.split('.');
-    if (obj === 'label') { look.label[key] = key === 'minZoom' ? Math.max(0, Math.min(22, Math.round(v) || 0)) : v; apply(r, false, 'labels'); return; }
+    if (obj === 'label') { look.label[key] = key === 'minZoom' ? Math.max(0, Math.min(22, Math.round(v) || 0)) : v; apply(r, false, 'labels', done); return; }
     if (obj === 'symbol') {
       s[key] = key === 'classes' ? +v : v;
       const features = r.fc ? r.fc.features : [];

@@ -131,7 +131,8 @@ test('the project\'s objects carry attributes: kept and saved, edited in Propert
   assert.match(ui, /\{ label: 'Attribute table', [^}]*MB\.attrTable\.open\(MB\.attrs\.tableFor\(id\)\)/);
   assert.match(ui, /if \(MB\.data\.picked\.ds\.imp && MB\.imports\) MB\.imports\.bindPicked\(panel, MB\.data\.picked\);/);
   assert.match(storage, /Object\.keys\(m\.attrs \|\| \{\}\)\.forEach\(k => \{ if \(k in props \|\| GJ_OWN\.has\(k\)\) \(props\.attributes = props\.attributes \|\| \{\}\)\[k\] = m\.attrs\[k\]; else props\[k\] = m\.attrs\[k\]; \}\);/);
-  assert.match(storage, /const base = \{ layerId: targetId, name: p\.name \|\| p\.title \|\| '', style, attrs: attrsOf\(p\) \};/);
+  assert.match(storage, /const base = \{ layerId: targetId, name: p\.name != null \? String\(p\.name\) : \(p\.title != null \? String\(p\.title\) : ''\), style, attrs: attrsOf\(p\) \};/);
+  assert.match(storage, /!\(k === 'title' && p\.name == null\)/, 'a title attribute of an unnamed object survives export and import');
   const dl = read('js/datalayers.js');
   assert.match(dl, /if \(ds\.def\.popupRows\) \{/, 'an imported layer\'s popup: its settings');
   assert.match(dl, /\$\{def\.attrsHtml \? def\.attrsHtml\(p\) :/, 'its attributes editable in Properties');
@@ -169,6 +170,6 @@ test('the attribute table names its columns by their index: no field name goes i
   const src = read('js/attrtable.js');
   assert.ok(!/data-(k|sort|col|rename)="\$\{esc\(f\.key\)\}"/.test(src), 'a field name (the Object name column\'s key has a NUL in it) would not survive an attribute');
   assert.match(src, /data-sort data-c="\$\{c\}"/);
-  assert.match(src, /class="attr-cell" data-c="\$\{fields\.indexOf\(f\)\}"/);
+  assert.match(src, /class="attr-cell" data-c="\$\{c\}"/);
   assert.match(src, /const keyAt = el => \{ const f = T\.fields\[\+el\.dataset\.c\]; return f \? f\.key : null; \};/);
 });

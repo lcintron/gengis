@@ -16,7 +16,7 @@
  *   icons for points); its attributes edited in Properties or its attribute table (attrtable.js); exported as GeoJSON
  *   or KML with them
  *
- * API: MB.imports.init(), openFiles(files), list(), record(id), setVisible(id, on), setLook(id, look), zoomTo(id),
+ * API: MB.imports.init(), openFiles(files), list(), record(id), setVisible(id, on), setLook(id, look, { what, done }), zoomTo(id),
  *   remove(id), toProject(id), exportFile(id, 'geojson' | 'kml'), openTable(id), openSettings(id),
  *   setValue(rec, feature, key, value), renameField(rec, from, to), deleteField(rec, key), tableAdapter(rec),
  *   enabledCount(), sets() (the shown layers, for datalayers.js's identify), drawn(), isImportFile(file),
@@ -1095,7 +1095,7 @@ window.MB = window.MB || {};
       this.saveSoon(rec);
       const used = key === s.field || key === look.title || key === look.label.field || (look.label.text || '').includes('{' + key + '}') || (!look.title && /^(name|title|label)$/i.test(key));
       if (used) await this.restyle(rec);
-      if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
+      this.refreshPicked(rec);
       if (used) this.changed(); // (the legend)
     },
     // Rename or delete a field in every feature, and wherever the look uses it.
@@ -1113,7 +1113,7 @@ window.MB = window.MB || {};
       rec.fcDirty = true;
       this.saveSoon(rec);
       this.restyle(rec);
-      if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
+      this.refreshPicked(rec);
       return '';
     },
     deleteField(rec, key) {
@@ -1126,7 +1126,7 @@ window.MB = window.MB || {};
       rec.fcDirty = true;
       this.saveSoon(rec);
       this.restyle(rec);
-      if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
+      this.refreshPicked(rec);
       this.changed();
     },
     // The attribute table's view of a layer (attrtable.js).
@@ -1144,7 +1144,7 @@ window.MB = window.MB || {};
           if (why) return why;
           look().fields.push({ key: k, alias: '', show: true });
           this.saveSoon(rec);
-          if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
+          this.refreshPicked(rec);
           return '';
         },
         renameField: (from, to) => this.renameField(rec, from, to),
@@ -1190,7 +1190,7 @@ window.MB = window.MB || {};
       panel.querySelectorAll('input[data-iattr]').forEach(inp => inp.addEventListener('change', () => {
         const f = picked.layer.feature, k = inp.dataset.iattr;
         const v = MB.attrs ? MB.attrs.typed(inp.value, (f.properties || {})[k]) : inp.value;
-        this.setValue(rec, f, k, v);
+        this.setValue(rec, f, k, v).catch(e => console.warn('File imports', e));
       }));
       panel.querySelectorAll('[data-imp-pick]').forEach(b => b.addEventListener('click', () => (b.dataset.impPick === 'table' ? this.openTable(rec.meta.id) : this.openSettings(rec.meta.id))));
     },
