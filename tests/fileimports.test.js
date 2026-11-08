@@ -371,3 +371,50 @@ test('review fixes: rings all one way nest by containment; WKT2 false-origin nam
   const white = R.kml('<kml><Style id="w"><IconStyle><color>ffffffff</color></IconStyle></Style><Placemark><styleUrl>#w</styleUrl><Point><coordinates>1,2</coordinates></Point></Placemark></kml>');
   assert.equal(white.features[0].mbStyle, undefined, 'no marker color: the layer\'s');
 });
+
+
+test('a panel redraw waits for a press to end: its release, a context menu, the window losing focus, or 2 s', async () => {
+  // a fresh copy, its own press state, with a stand-in page
+  const MB2 = { escapeHtml: s => String(s) };
+  const ctx = { window: { MB: MB2 }, TextDecoder, Blob, DecompressionStream, console, Date, Math, setTimeout, clearTimeout };
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/fileimports.js'), 'utf8'), ctx, { filename: 'fileimports.js' });
+  const P = MB2.imports.press, doc = new EventTarget(), win = new EventTarget();
+  P.hookPress(doc, win);
+  const fire = (t, init) => { const e = new Event(t); Object.assign(e, init || {}); (t === 'blur' ? win : doc).dispatchEvent(e); };
+  const tick = ms => new Promise(r => setTimeout(r, ms || 0));
+  const ran = [];
+
+  P.whenReleased(() => ran.push('free')); // nothing pressed: on the next turn
+  assert.deepEqual(ran, []);
+  await tick();
+  assert.deepEqual(ran, ['free']);
+
+  fire('pointerdown', { button: 0 });
+  P.whenReleased(() => ran.push('after up'));
+  await tick(20);
+  assert.deepEqual(ran, ['free'], 'held: waiting');
+  fire('pointerup');
+  assert.deepEqual(ran, ['free'], 'not in the release itself (its click comes first)');
+  await tick();
+  assert.deepEqual(ran, ['free', 'after up']);
+
+  fire('pointerdown', { button: 2 }); // a right-click does not hold anything back
+  P.whenReleased(() => ran.push('right'));
+  await tick();
+  assert.equal(ran.at(-1), 'right');
+
+  for (const [end, label] of [['contextmenu', 'menu'], ['blur', 'blur']]) {
+    fire('pointerdown', { button: 0 });
+    P.whenReleased(() => ran.push(label));
+    fire(end);
+    await tick();
+    assert.equal(ran.at(-1), label, end + ' ends a press');
+  }
+
+  fire('pointerdown', { button: 0 }); // a release that never comes
+  P.whenReleased(() => ran.push('given up'));
+  await tick(2100);
+  assert.equal(ran.at(-1), 'given up');
+  assert.equal(P.state.down, false);
+});

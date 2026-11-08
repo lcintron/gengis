@@ -878,21 +878,36 @@ window.MB = window.MB || {};
   const layers = new Map(); // id -> { meta, fc (when loaded), group (when drawn), ds (identify's view of it), styles }
 
   // Whether a pointer is pressed anywhere: something that redraws a panel waits for its release (and the click
-  // that follows it) with whenReleased(fn). Listened to once, for the page.
-  const press = { down: false, waiting: [], hooked: false };
-  function hookPress() {
-    if (press.hooked || typeof document === 'undefined') return;
+  // that follows it) with whenReleased(fn). Listened to once, for the page. Only the main button's press counts (a
+  // right-click's menu may swallow its release); the window losing focus, or a context menu, ends a press too, and
+  // a release that never comes is given up on after 2 s, so nothing waits for good.
+  const press = { down: false, waiting: [], hooked: false, timer: null };
+  function release() {
+    press.down = false;
+    clearTimeout(press.timer);
+    const w = press.waiting.splice(0);
+    if (w.length) setTimeout(() => w.forEach(fn => fn())); // (after the click)
+  }
+  function hookPress(doc, win) {
+    doc = doc || (typeof document !== 'undefined' ? document : null);
+    win = win || (typeof window !== 'undefined' ? window : null);
+    if (press.hooked || !doc) return;
     press.hooked = true;
-    document.addEventListener('pointerdown', () => { press.down = true; }, true);
-    const up = () => { press.down = false; const w = press.waiting.splice(0); if (w.length) setTimeout(() => w.forEach(fn => fn())); }; // (after the click)
-    document.addEventListener('pointerup', up, true);
-    document.addEventListener('pointercancel', up, true);
+    doc.addEventListener('pointerdown', e => {
+      if (e.button > 0 || e.isPrimary === false) return;
+      press.down = true;
+      clearTimeout(press.timer);
+      press.timer = setTimeout(release, 2000);
+    }, true);
+    ['pointerup', 'pointercancel', 'contextmenu'].forEach(t => doc.addEventListener(t, release, true));
+    if (win && typeof win.addEventListener === 'function') win.addEventListener('blur', release);
   }
   const whenReleased = fn => { if (press.down) press.waiting.push(fn); else setTimeout(fn); };
 
   MB.imports = {
     job: null,     // what is being read: { name }
     notes: [],     // what the files opened came to: [{ text, warn }]
+    press: { hookPress, whenReleased, state: press }, // (the tests)
     read: { parseXml, kml: readKml, geoJson: readGeoJson, shapefile: readShapefile, shp: readShp, dbf: readDbf, projection, zip: readZip, files: readFiles, styleFor, toKml, toGeoJson, paint },
 
     async init() {
@@ -1220,8 +1235,16 @@ window.MB = window.MB || {};
         dirty = false;
         // once the edit is kept (its title described anew), and not while a press is down: drawn between a
         // button's press and release, the button would be gone and the click lost
-        const kept = saving;
-        whenReleased(() => kept.then(() => { if (MB.data.picked === picked && sec.isConnected && !MB.selected && !sec.contains(document.activeElement) && MB.ui && MB.ui.renderProps) MB.ui.renderProps(); }));
+        // (the release is looked at once the edit is kept: a press that began during a slow save waits too)
+        saving.then(() => whenReleased(() => {
+          if (MB.data.picked !== picked || !sec.isConnected || MB.selected || sec.contains(document.activeElement) || !MB.ui || !MB.ui.renderProps) return;
+          // focus moved to another of Properties' controls (Shift+Tab to its ✕): the same control keeps it
+          const at = document.activeElement, box = document.getElementById('propsBody');
+          const key = at && box && box.contains(at) ? ['data-act', 'data-imp-pick', 'data-iattr'].map(a => at.getAttribute(a) != null ? `[${a}="${CSS.escape(at.getAttribute(a))}"]` : '').find(Boolean) : '';
+          MB.ui.renderProps();
+          const again = key && box.querySelector(key);
+          if (again) again.focus();
+        }));
       });
       panel.querySelectorAll('[data-imp-pick]').forEach(b => b.addEventListener('click', () => (b.dataset.impPick === 'table' ? this.openTable(rec.meta.id) : this.openSettings(rec.meta.id))));
     },
