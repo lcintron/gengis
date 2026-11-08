@@ -187,7 +187,7 @@ window.MB = window.MB || {};
       if (val(ps, 'fill') === '0') st.fillOpacity = 0;
       if (val(ps, 'outline') === '0') st.outline = false;
     }
-    if (is) { const c = kmlColor(val(is, 'color')); if (c) st.marker = c.color; }
+    if (is) { const c = kmlColor(val(is, 'color')); if (c && c.color !== '#ffffff') st.marker = c.color; } // (white: the icon untinted)
     return st;
   }
   function kmlCoords(s) {
@@ -345,11 +345,16 @@ window.MB = window.MB || {};
     return into;
   }
   // A shapefile polygon's rings: clockwise ones are outlines, counter-clockwise ones holes (in the outline they are
-  // in, the smallest). Files that ignore the rule (all one way) have outlines only.
+  // in, the smallest). Files that ignore the rule (every ring one way) are nested by what is inside what: a ring
+  // inside an odd number of others is a hole.
   function polygonOf(parts, tx) {
     const rs = parts.filter(r => r.length >= 3).map(r => ({ r, a: area(r) }));
     let outers = rs.filter(x => x.a < 0), holes = rs.filter(x => x.a >= 0);
-    if (!outers.length) { outers = holes; holes = []; }
+    if (!outers.length || !holes.length) {
+      const depth = x => rs.filter(y => y !== x && Math.abs(y.a) > Math.abs(x.a) && inRing(x.r[0], y.r)).length;
+      outers = []; holes = [];
+      rs.forEach(x => (depth(x) % 2 ? holes : outers).push(x));
+    }
     const polys = outers.map(o => ({ o, holes: [] }));
     for (const h of holes) {
       let best = null;
@@ -585,7 +590,9 @@ window.MB = window.MB || {};
     const par = (...names) => { for (const nm of names) if (isFinite(P[nm])) return P[nm]; return undefined; };
     const u = one(t, 'UNIT'), k = u && +u.args[1] > 0 ? +u.args[1] : 1; // meters in the linear unit
     const proj = one(t, 'PROJECTION'), method = String(proj ? proj.args[0] : '').toLowerCase().replace(/[\s-]+/g, '_');
-    const fe = par('false_easting') || 0, fn = par('false_northing') || 0;
+    const gu = one(one(t, 'GEOGCS'), 'UNIT'); // the angles' unit: degrees (a .prj in grads would be misread)
+    if (gu && +gu.args[1] > 0 && Math.abs(+gu.args[1] * R2D - 1) > 1e-6) throw new Error('its .prj gives angles in ' + gu.args[0] + ', not degrees: save it with a degree-based coordinate system');
+    const fe = par('false_easting', 'easting_at_false_origin') || 0, fn = par('false_northing', 'northing_at_false_origin') || 0;
     const lon0 = (par('central_meridian', 'longitude_of_center', 'longitude_of_origin', 'longitude_of_natural_origin', 'longitude_of_false_origin') || 0) * D2R;
     const lat0 = (par('latitude_of_origin', 'latitude_of_center', 'latitude_of_natural_origin', 'latitude_of_false_origin') || 0) * D2R;
     const k0 = par('scale_factor', 'scale_factor_at_natural_origin') || 1;
@@ -632,6 +639,7 @@ window.MB = window.MB || {};
 
   /* ---------- .zip and .kmz ---------- */
   async function inflate(data, room) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('this browser cannot unzip it: unzip it first, then open the files inside');
     const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
     const chunks = [];
     let total = 0;
@@ -780,7 +788,8 @@ window.MB = window.MB || {};
     get(store, key) { return this.req(store, 'readonly', (s, m) => (s ? s.get(key) : m.get(key))); },
     all(store) { return this.req(store, 'readonly', (s, m) => (s ? s.getAll() : Array.from(m.values()))); },
     set(store, key, v) { return this.req(store, 'readwrite', (s, m) => (s ? s.put(v, key) : m.set(key, v))); },
-    del(store, key) { return this.req(store, 'readwrite', (s, m) => (s ? s.delete(key) : m.delete(key))); }
+    del(store, key) { return this.req(store, 'readwrite', (s, m) => (s ? s.delete(key) : m.delete(key))); },
+    keys(store) { return this.req(store, 'readonly', (s, m) => (s ? s.getAllKeys() : Array.from(m.keys()))); }
   };
 
   /* ---------- on the map ---------- */
@@ -825,8 +834,11 @@ window.MB = window.MB || {};
       let metas = [];
       try { metas = await DB.all('meta'); } catch (e) { console.warn('File imports', e); }
       metas.sort((a, b) => (a.added || 0) - (b.added || 0)).forEach(meta => layers.set(meta.id, { meta }));
-      for (const l of layers.values()) if (l.meta.visible) await this.draw(l);
       this.changed();
+      // a file's features with no entry for them (a write cut short): gone
+      DB.keys('geo').then(keys => keys.forEach(k => { if (!layers.has(k)) DB.del('geo', k).catch(() => {}); })).catch(() => {});
+      await new Promise(r => setTimeout(r, 300)); // the map first: a large file takes a moment to draw
+      for (const l of layers.values()) if (l.meta.visible) await this.draw(l);
     },
 
     list() { return Array.from(layers.values()).map(l => l.meta); },
@@ -881,7 +893,7 @@ window.MB = window.MB || {};
       const meta = { id, name: l.name, kind: l.kind, color: PALETTE[layers.size % PALETTE.length], visible: true, count: l.features.length,
         bounds: boundsOf(l.features), fields: fieldsOf(l.features), types: typesOf(l.features), added: Date.now() };
       await DB.set('geo', id, fc);
-      await DB.set('meta', id, meta);
+      try { await DB.set('meta', id, meta); } catch (e) { DB.del('geo', id).catch(() => {}); throw e; }
       const rec = { meta, fc };
       layers.set(id, rec);
       await this.draw(rec);
@@ -892,12 +904,21 @@ window.MB = window.MB || {};
       if (!rec.fc) rec.fc = await DB.get('geo', rec.meta.id);
       return rec.fc;
     },
-    // The layer on the map (built the first time it shows).
+    // The layer on the map (built the first time it shows; once, however often it is asked for meanwhile). Nothing is
+    // drawn for a layer hidden or removed while it was being built.
     async draw(rec) {
       if (typeof L === 'undefined' || !MB.map) return;
       if (!rec.group) {
+        rec.building = rec.building || this.build(rec);
+        try { await rec.building; } finally { rec.building = null; }
+      }
+      if (rec.group && rec.meta.visible && layers.get(rec.meta.id) === rec && !MB.map.hasLayer(rec.group)) rec.group.addTo(MB.map);
+    },
+    async build(rec) {
+      if (rec.group) return;
+      {
         const fc = await this.load(rec);
-        if (!fc) return;
+        if (!fc) { this.note(rec.meta.name + ': its features are missing from this device: remove it and open the file again.', true); this.changed(); return; }
         const styles = rec.styles = new WeakMap(), renderer = MB.data && MB.data.dataRenderer ? MB.data.dataRenderer() : undefined;
         const style = f => { const s = styleFor(rec.meta.color, kindOf(f.geometry), f.mbStyle); styles.set(f.properties, { kind: kindOf(f.geometry), own: f.mbStyle }); return s; };
         rec.group = L.geoJSON(fc, {
@@ -923,7 +944,6 @@ window.MB = window.MB || {};
             style: p => { const s = styles.get(p) || { kind: 'polygon' }; return styleFor(rec.meta.color, s.kind, s.own); } }
         };
       }
-      if (rec.meta.visible && !MB.map.hasLayer(rec.group)) rec.group.addTo(MB.map);
     },
 
     async setVisible(id, on) {
@@ -1010,9 +1030,9 @@ window.MB = window.MB || {};
       const job = this.job;
       return `<details class="ds-source" id="impSource" data-src="imports"${MB.data.sourceOpen('imports') ? ' open' : ''}><summary class="ds-source-head"><h3>File imports</h3>${MB.data.dotHtml('impDot', ...this.dot())}</summary>
         <div class="section"><div class="data-item adsb-display" id="impItem">
-          <div class="ds-head"><button type="button" class="btn small with-icon" data-imp-act="open">${MB.ICON.upload.replace('<svg ', '<svg class="mi" ')}Import files</button><span class="dim trk-kinds">.kml · .kmz · .geojson · .shp · .zip</span>${MB.data.infoIcon('KML or KMZ (Google Earth), GeoJSON, or a shapefile: pick its .shp with the .dbf, .prj and .cpg beside it, or a .zip of them. Each file is a layer over the map, kept on this device (not in the project) until you remove it. Click a feature for its attributes; Copy into the project makes them objects you can edit. You can also drop files here or on the map.')}</div>
+          <div class="ds-head"><button type="button" class="btn small with-icon" data-imp-act="open">${MB.ICON.upload.replace('<svg ', '<svg class="mi" ')}Import files</button><span class="dim trk-kinds">.kml · .kmz · .geojson · .shp · .zip</span>${MB.data.infoIcon('KML or KMZ (Google Earth), GeoJSON, or a shapefile: pick its .shp with the .dbf, .prj and .cpg beside it, or a .zip of them. Each file is a layer over the map, kept on this device (not in the project) until you remove it. Click a feature for its attributes; Copy into the project makes them objects you can edit. You can also drop files here, or KML, KMZ, shapefiles and zips on the map (a .geojson dropped on the map opens as objects of the project).')}</div>
           <div class="dstatus" id="impJob"${job ? '' : ' hidden'}>${job ? 'Reading ' + esc(job.name) + '…' : ''}</div>
-          <div id="impNotes">${this.notes.slice(-3).map(n => `<div class="dstatus${n.warn ? ' err' : ''}">${esc(n.text)}</div>`).join('')}</div>
+          <div class="dstatus imp-notes" id="impNotes">${this.notes.slice(-3).map(n => `<span class="imp-note${n.warn ? ' err' : ''}">${esc(n.text)}</span>`).join('')}</div>
           <div id="impList" class="trk-list">${this.list().map(m => this.rowHtml(m)).join('')}</div>
         </div></div></details>`;
     },

@@ -1408,8 +1408,8 @@ window.MB = window.MB || {};
       const others = files.filter(f => /\.(geo)?json$/i.test(f.name) || MB.isProjectFileName(f.name));
       const imports = files.filter(f => MB.imports && MB.imports.isImportFile(f)); // KML, KMZ, shapefiles: layers (fileimports.js)
       if (imports.length) MB.imports.openFiles(imports);
-      const zips = files.filter(f => /.zip$/i.test(f.name)); // a zipped shapefile, KML or GeoJSON, or a zip of map sources
-      const maps = files.filter(f => !/.zip$/i.test(f.name) && MB.mapSources && MB.mapSources.isMapSourceFile(f)); // MOBAC / ATAK map sources
+      const zips = files.filter(f => /\.zip$/i.test(f.name)); // a zipped shapefile, KML or GeoJSON, or a zip of map sources
+      const maps = files.filter(f => !/\.zip$/i.test(f.name) && MB.mapSources && MB.mapSources.isMapSourceFile(f)); // MOBAC / ATAK map sources
       if (maps.length) MB.mapSources.importFiles(maps);
       if (zips.length) (MB.imports ? MB.imports.sortZips(zips) : Promise.resolve({ geo: [], other: zips })).then(({ geo, other }) => {
         if (geo.length) MB.imports.openFiles(geo);

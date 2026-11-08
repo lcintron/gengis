@@ -344,9 +344,30 @@ test('wired in: the page loads it (offline too), the Data panel draws its block,
   const dl = read('js/datalayers.js');
   assert.match(dl, /const impHtml = MB\.imports \? MB\.imports\.panelHtml\(q, ui\.filter\) : '';[^\n]*\n\s*html \+= impHtml;\s*\n\s*const adsbHtml/, 'first in the panel');
   assert.match(dl, /if \(MB\.imports\) MB\.imports\.bindPanel\(panel\);/);
-  assert.match(dl, /MB\.imports\.sets\(\)[\s\S]{0,200}hitTest\(ds, l, lp, cp\)[\s\S]{0,200}return imported\.concat\(hits\);/);
+  assert.match(dl, /MB\.imports\.sets\(\)[\s\S]{0,400}hitTest\(ds, c, lp, cp\)[\s\S]{0,100}hitTest\(ds, l, lp, cp\)[\s\S]{0,200}return imported\.concat\(hits\);/);
   assert.match(dl, /'data-imp'/, 'a row\'s layer decides whether the panel is patched or rebuilt');
   const ui = read('js/ui.js');
   assert.match(ui, /MB\.imports\.isImportFile\(f\)[\s\S]{0,200}MB\.imports\.openFiles\(imports\)/);
   assert.match(ui, /MB\.imports\.sortZips\(zips\)[\s\S]{0,300}MB\.mapSources\.importFiles\(other\)/, 'a zip of map sources still goes to the map sources');
+});
+
+test('review fixes: rings all one way nest by containment; WKT2 false-origin names; angles not in degrees refused; a white KML icon is untinted', () => {
+  const ccw = r => r.slice().reverse();
+  const { features } = R.shapefile({ shp: shp([{ type: 'polygon', parts: [ccw(SQUARE), HOLE] }]) }); // both counter-clockwise
+  assert.equal(features[0].geometry.type, 'Polygon');
+  assert.equal(features[0].geometry.coordinates.length, 2, 'the inner ring is the hole');
+  const both = R.shapefile({ shp: shp([{ type: 'polygon', parts: [SQUARE, ccw(HOLE)] }]) }); // both clockwise
+  assert.equal(both.features[0].geometry.coordinates.length, 2);
+
+  const wkt2ish = PROJ(GEOG('North_American_1927', 'Clarke_1866', 6378206.4, 294.9786982), 'Lambert_Conformal_Conic_2SP',
+    { 'Easting at false origin': 2000000, 'Northing at false origin': 0, 'Longitude of false origin': -99, 'Latitude of 1st standard parallel': 28 + 23 / 60, 'Latitude of 2nd standard parallel': 30 + 17 / 60, 'Latitude of false origin': 27 + 50 / 60 },
+    'UNIT["US survey foot",0.3048006096012192]');
+  const [lon, lat] = inv(wkt2ish, 2963503.91, 254759.80);
+  near(lat, 28.5, 2e-7, 'latitude'); near(lon, -96, 2e-7, 'longitude');
+
+  const grads = `PROJCS["NTF_Paris_Lambert",GEOGCS["NTF",DATUM["NTF",SPHEROID["Clarke 1880",6378249.2,293.4660213]],PRIMEM["Paris",2.33722917],UNIT["grad",0.01570796326794897]],PROJECTION["Lambert_Conformal_Conic_1SP"],PARAMETER["latitude_of_origin",52],PARAMETER["central_meridian",0],PARAMETER["scale_factor",0.99987742],PARAMETER["false_easting",600000],PARAMETER["false_northing",2200000],UNIT["metre",1]]`;
+  assert.throws(() => R.projection(grads), /angles in grad, not degrees/);
+
+  const white = R.kml('<kml><Style id="w"><IconStyle><color>ffffffff</color></IconStyle></Style><Placemark><styleUrl>#w</styleUrl><Point><coordinates>1,2</coordinates></Point></Placemark></kml>');
+  assert.equal(white.features[0].mbStyle, undefined, 'no marker color: the layer\'s');
 });

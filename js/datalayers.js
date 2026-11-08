@@ -1087,7 +1087,10 @@ window.MB = window.MB || {};
     // imported files (fileimports.js): drawn after the data, so on top
     const imported = [];
     if (MB.imports) MB.imports.sets().slice().reverse().forEach(ds => ds.group.eachLayer(l => {
-      if (l.feature && hitTest(ds, l, lp, cp)) imported.push({ ds, layer: l, props: l.feature.properties || {} });
+      if (!l.feature) return;
+      let hit = false; // a multipoint is a group of points: any of them
+      if (l.eachLayer && !l.getLatLng) l.eachLayer(c => { hit = hit || hitTest(ds, c, lp, cp); }); else hit = hitTest(ds, l, lp, cp);
+      if (hit) imported.push({ ds, layer: l, props: l.feature.properties || {} });
     }));
     return imported.concat(hits); // every feature is in the registry once: distinct features are never merged, duplicates never appear
   };
@@ -1185,7 +1188,7 @@ window.MB = window.MB || {};
     let hits = this.featuresAt(latlng, containerPoint);
     if (clicked && clicked.feature && !hits.some(h => h.layer === clicked)) {
       // the layer the map reported (it may be the neighbour of the square that was tapped, when tiled)
-      const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked));
+      const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked)) || (MB.imports && MB.imports.sets().find(d => d.group.hasLayer(clicked)));
       if (ds && !ds.def.tiled) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
     const point = MB.declination ? MB.declination.identifyHtml(latlng, opts.declination) : ''; // facts about the place itself (opts.declination: also with its source off)
@@ -1194,7 +1197,7 @@ window.MB = window.MB || {};
     // shared edge) are one entry; it highlights all of them.
     const byText = new Map();
     hits = hits.filter(h => {
-      const k = h.ds.def.id + '|' + JSON.stringify(h.props);
+      const k = h.ds.def.id + '|' + (h.ds.imp ? MB.uid() : JSON.stringify(h.props)); // (an imported file's features: each its own, however alike)
       const first = byText.get(k);
       if (first) { first.layers.push(h.layer); return false; }
       h.layers = [h.layer];
