@@ -53,6 +53,43 @@ test('the community networks and aisstream.io wait for zoom 8; your own receiver
   assert.match(css, /\.mb-zoom-hint \{/, 'the map says to zoom in');
 });
 
+test('my location: a pin button drops a marker at the position, only while it is known, and leaves the map alone', () => {
+  const loc = js['locate.js'], css = read('css/app.css');
+  assert.match(loc, /const a = self\.btn = [\s\S]*?self\.press\(\); \}\);\s*const p = self\.pinBtn = L\.DomUtil\.create\('a', 'mb-locate-pin', bar\)[\s\S]*?const b = self\.back/, 'right under the location button, above the back button (it does not jump when that one shows)');
+  assert.match(loc, /p\.hidden = true;/, 'hidden until there is a position');
+  assert.match(loc, /canPin\(\) \{ return this\.watchId != null && !!this\.fix && !\(MB\.presenter && MB\.presenter\.active\); \}/, 'shown while the location is on with a position, following or not; never while presenting (nothing is edited then)');
+  assert.match(loc, /this\.pinBtn\.hidden = !this\.canPin\(\)/);
+  assert.match(loc, /MB\.on\('presenter', \(\) => this\.render\(\)\)/, 'presenting starts or ends: the button hides or shows');
+  assert.match(loc, /const had = document\.activeElement;[\s\S]*?this\.pinBtn\.hidden = [\s\S]*?\[this\.back, this\.pinBtn\]\.some\(b => b && b\.hidden && had === b\)\) this\.btn\.focus\(\)/,
+    'a focused button that hides hands the focus to the location button (noted before hiding: that drops the focus at once)');
+  const drop = loc.slice(loc.indexOf('dropPin() {'), loc.indexOf('pan(latlng)'));
+  assert.match(drop, /if \(!this\.canPin\(\)\) return null;/);
+  assert.match(drop, /this\.pinTime\(fix\.at\)/, 'named with when the position was taken');
+  assert.match(drop, /MB\.toast\(`Pin dropped at your location as of \$\{when\}/, 'the toast says when (after a GPS dropout the last position may be old)');
+  assert.match(drop, /MB\.restoreFeature\(\{ type: 'marker', latlng: \[fix\.latlng\.lat, fix\.latlng\.lng\]/);
+  assert.match(drop, /MB\.commit\(/, 'one undo step, and saved');
+  assert.match(drop, /MB\.noteAdded\(f\)/, 'a hidden layer is pointed out');
+  assert.doesNotMatch(drop, /selectFeature|setView|panTo|tools\.set/, 'nothing selected, the view not moved');
+  assert.match(css, /\.mb-locate\.following a\.mb-locate-pin \{ background: var\(--bg-2\)/, 'not lit with the location button');
+  assert.match(css, /\.mb-locate a svg \{ width: 18px; height: 18px; \}/, 'its icon the size of its neighbours');
+});
+
+test('a pin dropped at my location is named with the time, to the second, in the zone the map\'s clock shows', () => {
+  const src = js['locate.js'];
+  const pinTime = new Function('MB', 'return ' + src.slice(src.indexOf('pinTime(at) {') + 'pinTime'.length, src.indexOf('// A marker at the position')).trim().replace(/,$/, '').replace(/^\(at\)/, 'function (at)'));
+  const at = Date.UTC(2026, 0, 15, 18, 32, 5);
+  const clock = c => ({ clock: { config: () => c } });
+  // the app writes the time the user's way; the test reads it in US English, whatever this machine's language
+  const orig = Date.prototype.toLocaleTimeString;
+  Date.prototype.toLocaleTimeString = function (locales, o) { return orig.call(this, 'en-US', o); };
+  try {
+    assert.match(pinTime(clock({ show: true, mode: 'utc', zone: '' }))(at), /^6:32:05\sPM UTC$/, 'the clock in UTC: UTC');
+    assert.match(pinTime(clock({ show: true, mode: 'local', zone: 'Asia/Tokyo' }))(at), /^3:32:05\sAM GMT\+9$/, 'a chosen zone');
+    assert.match(pinTime(clock({ show: false, mode: 'utc', zone: 'Asia/Tokyo' }))(at), /^3:32:05\sAM GMT\+9$/, 'the clock hidden: the chosen local zone still');
+    assert.equal(pinTime({})(at), new Date(at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }), 'no clock: this device\'s zone, named');
+  } finally { Date.prototype.toLocaleTimeString = orig; }
+});
+
 test('my location lets the map be moved off it, with a button back (no spring back, no tug of war)', () => {
   const loc = js['locate.js'];
   assert.doesNotMatch(loc, /'dragend boxzoomend'/, 'a pan by hand no longer springs back');
