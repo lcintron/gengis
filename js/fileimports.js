@@ -12,8 +12,14 @@
  * - kept on this device (IndexedDB) for every project until removed, not in the project file; "Copy into the project"
  *   adds a layer's features to the project as objects that can be edited and that travel with it
  *
- * API: MB.imports.init(), openFiles(files), list(), setVisible(id, on), setColor(id, color), zoomTo(id), remove(id),
- *   toProject(id), enabledCount(), sets() (the shown layers, for datalayers.js's identify), isImportFile(file),
+ * - each layer's look (importstyle.js): what its popup shows, labels on the map, symbols (one, by category, graduated;
+ *   icons for points); its attributes edited in Properties or its attribute table (attrtable.js); exported as GeoJSON
+ *   or KML with them
+ *
+ * API: MB.imports.init(), openFiles(files), list(), record(id), setVisible(id, on), setLook(id, look), zoomTo(id),
+ *   remove(id), toProject(id), exportFile(id, 'geojson' | 'kml'), openTable(id), openSettings(id),
+ *   setValue(rec, feature, key, value), renameField(rec, from, to), deleteField(rec, key), tableAdapter(rec),
+ *   enabledCount(), sets() (the shown layers, for datalayers.js's identify), drawn(), isImportFile(file),
  *   sortZips(files) -> { geo, other } (the dropped .zip files that hold shapefiles, KML or GeoJSON, and the rest)
  *   panelHtml(q, filter) / bindPanel(panel): the Data panel's block
  *   Readers (no map needed): MB.imports.read = { parseXml, kml, geoJson, shapefile, shp, dbf, projection, zip }
@@ -793,19 +799,18 @@ window.MB = window.MB || {};
   };
 
   /* ---------- on the map ---------- */
-  // A feature's style: its own colors where it has them, the layer's color for the rest.
-  function styleFor(color, kind, s) {
-    s = s || {};
+  // A feature's Leaflet style: its symbol's color (the file's own colors where it has them, in "file" mode), the
+  // layer's line width, fill and point size.
+  function styleFor(color, kind, own, opts) {
+    own = own || {};
+    opts = opts || {};
     const op = (v, d) => (v == null || !isFinite(v) ? d : Math.max(0, Math.min(1, v)));
-    if (kind === 'point') return { radius: 6, color: '#ffffff', weight: 1.5, opacity: 1, fillColor: s.marker || s.fill || s.stroke || color, fillOpacity: 0.95 };
-    const w = s.strokeWidth == null || !isFinite(s.strokeWidth) ? (kind === 'line' ? 2.5 : 2) : Math.max(0, Math.min(12, s.strokeWidth));
-    const st = { color: s.stroke || color, weight: w, opacity: !w || (kind === 'polygon' && s.outline === false) ? 0 : op(s.strokeOpacity, 1) };
-    if (kind === 'polygon') { st.fillColor = s.fill || s.stroke || color; st.fillOpacity = op(s.fillOpacity, 0.25); }
+    if (kind === 'point') return { radius: Math.max(3, (opts.size || 24) / 4), color: '#ffffff', weight: 1.5, opacity: 1, fillColor: own.marker || own.fill || own.stroke || color, fillOpacity: 0.95 };
+    const dw = opts.width == null ? (kind === 'line' ? 2.5 : 2) : Math.max(0, Math.min(12, +opts.width));
+    const w = own.strokeWidth == null || !isFinite(own.strokeWidth) ? dw : Math.max(0, Math.min(12, own.strokeWidth));
+    const st = { color: own.stroke || color, weight: w, opacity: !w || (kind === 'polygon' && own.outline === false) ? 0 : op(own.strokeOpacity, 1) };
+    if (kind === 'polygon') { st.fillColor = own.fill || own.stroke || color; st.fillOpacity = op(own.fillOpacity, opts.fill == null ? 0.25 : opts.fill); }
     return st;
-  }
-  function labelOf(p) {
-    for (const k of ['name', 'NAME', 'Name', 'title', 'TITLE', 'label', 'LABEL']) if (p[k] != null && p[k] !== '') return String(p[k]);
-    return '';
   }
   function boundsOf(features) {
     let s = 90, w = 180, n = -90, e = -180;
@@ -813,22 +818,69 @@ window.MB = window.MB || {};
     features.forEach(f => walk(f.geometry.coordinates));
     return n >= s ? [[s, w], [n, e]] : null;
   }
-  function fieldsOf(features) {
-    const keys = new Set();
-    for (let i = 0; i < features.length && i < 500 && keys.size < 18; i++) for (const k of Object.keys(features[i].properties)) { keys.add(k); if (keys.size >= 18) break; }
-    return Array.from(keys);
-  }
   function typesOf(features) {
     const t = new Set(features.map(f => kindOf(f.geometry)));
     return ['point', 'line', 'polygon'].filter(k => t.has(k)).map(k => k + 's').join(', ');
   }
+  const S = () => MB.importStyle;
+  const usesIcons = look => { const s = look.symbol; return !!(s.icon || (s.mode === 'category' && (s.cats || []).some(c => c.icon))); };
+  // A feature as it is drawn: { kind, sym: { color, icon, own }, style }.
+  function paint(rec, f) {
+    const look = rec.meta.look, kind = kindOf(f.geometry), sym = S().symbolOf(look, f);
+    return { kind, sym, style: styleFor(sym.color, kind, sym.own, look.symbol) };
+  }
+  function iconFor(rec, sym) {
+    const size = rec.meta.look.symbol.size || 24, color = (sym.own && sym.own.marker) || sym.color;
+    const svg = sym.icon && MB.icons ? MB.icons.svg(sym.icon, color, true) : '';
+    return svg ? L.divIcon({ className: 'mb-imp-icon', html: svg.replace('width="26" height="26"', `width="${size}" height="${size}"`), iconSize: [size, size], iconAnchor: [size / 2, size / 2] }) : null;
+  }
 
-  const layers = new Map(); // id -> { meta, fc (when loaded), group (when drawn), styles: WeakMap props -> kind/style }
+  /* ---------- writing a layer out ---------- */
+  const xml = s => String(s).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]);
+  const kmlHex = (c, op) => { const h = /^#[0-9a-f]{6}$/i.test(c || '') ? c.slice(1) : 'ffffff', a = Math.round(Math.max(0, Math.min(1, op == null ? 1 : op)) * 255); return a.toString(16).padStart(2, '0') + h.slice(4, 6) + h.slice(2, 4) + h.slice(0, 2); };
+  function kmlGeomOut(g) {
+    const co = c => c[0] + ',' + c[1], ring = r => { const c = r.map(co); if (c[0] !== c[c.length - 1]) c.push(c[0]); return c.join(' '); };
+    switch (g.type) {
+      case 'Point': return `<Point><coordinates>${co(g.coordinates)}</coordinates></Point>`;
+      case 'LineString': return `<LineString><tessellate>1</tessellate><coordinates>${g.coordinates.map(co).join(' ')}</coordinates></LineString>`;
+      case 'Polygon': return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${ring(g.coordinates[0])}</coordinates></LinearRing></outerBoundaryIs>${g.coordinates.slice(1).map(r => `<innerBoundaryIs><LinearRing><coordinates>${ring(r)}</coordinates></LinearRing></innerBoundaryIs>`).join('')}</Polygon>`;
+      default: return `<MultiGeometry>${g.coordinates.map(c => kmlGeomOut({ type: g.type.slice(5), coordinates: c })).join('')}</MultiGeometry>`;
+    }
+  }
+  // The layer as KML: each feature a placemark named by its title, its attributes as extended data, its look as a style.
+  function toKml(rec) {
+    const look = rec.meta.look, styles = new Map();
+    const marks = rec.fc.features.map(f => {
+      const p = paint(rec, f), st = p.style;
+      const key = p.kind === 'point' ? `<IconStyle><color>${kmlHex(st.fillColor, 1)}</color></IconStyle>`
+        : `<LineStyle><color>${kmlHex(st.color, st.opacity)}</color><width>${st.weight}</width></LineStyle>` + (p.kind === 'polygon' ? `<PolyStyle><color>${kmlHex(st.fillColor, st.fillOpacity)}</color></PolyStyle>` : '<PolyStyle><fill>0</fill></PolyStyle>');
+      if (!styles.has(key)) styles.set(key, 's' + (styles.size + 1));
+      const props = f.properties || {}, title = S().titleOf(look, props);
+      const data = Object.keys(props).filter(k => props[k] != null && props[k] !== '').map(k => `<Data name="${xml(k)}"><value>${xml(props[k])}</value></Data>`).join('');
+      return `<Placemark>${title ? `<name>${xml(title)}</name>` : ''}<styleUrl>#${styles.get(key)}</styleUrl>${data ? `<ExtendedData>${data}</ExtendedData>` : ''}${kmlGeomOut(f.geometry)}</Placemark>`;
+    });
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${xml(rec.meta.name)}</name>\n` +
+      Array.from(styles, ([k, id]) => `<Style id="${id}">${k}</Style>`).join('\n') + '\n' + marks.join('\n') + '\n</Document></kml>\n';
+  }
+  // The layer as GeoJSON: its attributes, with its look as simplestyle properties (what other tools read).
+  function toGeoJson(rec) {
+    return { type: 'FeatureCollection', features: rec.fc.features.map(f => {
+      const p = paint(rec, f), st = p.style, props = Object.assign({}, f.properties);
+      if (p.kind === 'point') props['marker-color'] = st.fillColor;
+      else {
+        Object.assign(props, { stroke: st.color, 'stroke-width': st.weight, 'stroke-opacity': st.opacity });
+        if (p.kind === 'polygon') Object.assign(props, { fill: st.fillColor, 'fill-opacity': st.fillOpacity });
+      }
+      return { type: 'Feature', properties: props, geometry: f.geometry };
+    }) };
+  }
+
+  const layers = new Map(); // id -> { meta, fc (when loaded), group (when drawn), ds (identify's view of it), styles }
 
   MB.imports = {
     job: null,     // what is being read: { name }
     notes: [],     // what the files opened came to: [{ text, warn }]
-    read: { parseXml, kml: readKml, geoJson: readGeoJson, shapefile: readShapefile, shp: readShp, dbf: readDbf, projection, zip: readZip, files: readFiles, styleFor },
+    read: { parseXml, kml: readKml, geoJson: readGeoJson, shapefile: readShapefile, shp: readShp, dbf: readDbf, projection, zip: readZip, files: readFiles, styleFor, toKml, toGeoJson, paint },
 
     async init() {
       let metas = [];
@@ -837,14 +889,19 @@ window.MB = window.MB || {};
       this.changed();
       // a file's features with no entry for them (a write cut short): gone
       DB.keys('geo').then(keys => keys.forEach(k => { if (!layers.has(k)) DB.del('geo', k).catch(() => {}); })).catch(() => {});
+      if (MB.map && S()) S().labels.init();
       await new Promise(r => setTimeout(r, 300)); // the map first: a large file takes a moment to draw
       for (const l of layers.values()) if (l.meta.visible) await this.draw(l);
+      if (S()) S().labels.soon();
     },
 
     list() { return Array.from(layers.values()).map(l => l.meta); },
+    record: id => layers.get(id),
     enabledCount() { return this.list().filter(m => m.visible).length; },
     // The shown layers as the identify popup takes a dataset (datalayers.js).
     sets() { return Array.from(layers.values()).filter(l => l.meta.visible && l.group && l.ds).map(l => l.ds); },
+    // The layers on the map, in their order (the labels').
+    drawn() { return Array.from(layers.values()).filter(l => l.meta.visible && l.group && l.meta.look && MB.map && MB.map.hasLayer(l.group)); },
     isImportFile: f => ['kml', 'kmz', 'shp', 'dbf', 'prj', 'cpg', 'shx'].includes(extOf(f.name)),
     // Dropped .zip files: those with a shapefile, KML or GeoJSON in them, and the others (map sources, say).
     async sortZips(files) {
@@ -890,19 +947,27 @@ window.MB = window.MB || {};
     async add(l) {
       const id = MB.uid ? MB.uid() : 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const fc = { type: 'FeatureCollection', features: l.features };
-      const meta = { id, name: l.name, kind: l.kind, color: PALETTE[layers.size % PALETTE.length], visible: true, count: l.features.length,
-        bounds: boundsOf(l.features), fields: fieldsOf(l.features), types: typesOf(l.features), added: Date.now() };
+      const meta = { id, name: l.name, kind: l.kind, visible: true, count: l.features.length, bounds: boundsOf(l.features), types: typesOf(l.features), added: Date.now(),
+        look: S() ? S().defaults(l.features, PALETTE[layers.size % PALETTE.length]) : null };
       await DB.set('geo', id, fc);
       try { await DB.set('meta', id, meta); } catch (e) { DB.del('geo', id).catch(() => {}); throw e; }
       const rec = { meta, fc };
       layers.set(id, rec);
       await this.draw(rec);
+      if (S()) S().labels.soon();
       return id;
     },
 
     async load(rec) {
       if (!rec.fc) rec.fc = await DB.get('geo', rec.meta.id);
+      if (rec.fc) this.ensureLook(rec);
       return rec.fc;
+    },
+    // A layer kept by an earlier version has no look yet: the defaults, its color kept; a field added since is listed.
+    ensureLook(rec) {
+      if (!S()) return;
+      const m = rec.meta;
+      if (!m.look) { m.look = S().defaults(rec.fc.features, m.color || PALETTE[0]); delete m.color; delete m.fields; this.saveSoon(rec); }
     },
     // The layer on the map (built the first time it shows; once, however often it is asked for meanwhile). Nothing is
     // drawn for a layer hidden or removed while it was being built.
@@ -916,34 +981,202 @@ window.MB = window.MB || {};
     },
     async build(rec) {
       if (rec.group) return;
-      {
-        const fc = await this.load(rec);
-        if (!fc) { this.note(rec.meta.name + ': its features are missing from this device: remove it and open the file again.', true); this.changed(); return; }
-        const styles = rec.styles = new WeakMap(), renderer = MB.data && MB.data.dataRenderer ? MB.data.dataRenderer() : undefined;
-        const style = f => { const s = styleFor(rec.meta.color, kindOf(f.geometry), f.mbStyle); styles.set(f.properties, { kind: kindOf(f.geometry), own: f.mbStyle }); return s; };
-        rec.group = L.geoJSON(fc, {
-          pane: 'mb-data', pmIgnore: true, renderer,
-          style,
-          pointToLayer: (f, ll) => L.circleMarker(ll, Object.assign({ pane: 'mb-data', pmIgnore: true, renderer }, style(f))),
-          onEachFeature: (f, layer) => {
-            layer.options.pmIgnore = true;
-            const lbl = labelOf(f.properties || {});
-            if (lbl) layer.bindTooltip(lbl, { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: 0.95 });
-            layer.on('click', e => {
-              const t = MB.tools && MB.tools.current;
-              if (t && t !== 'select' && t !== 'move' && t !== 'present') return;
-              L.DomEvent.stopPropagation(e);
-              if (MB.data && MB.data.identify) MB.data.identify(e.latlng, e.containerPoint, layer);
-            });
-          }
-        });
-        rec.ds = {
-          imp: true, enabled: true, group: rec.group, meta: null, feats: new Map(),
-          def: { id: 'import:' + rec.meta.id, name: rec.meta.name, group: rec.meta.kind + ' file', publisher: 'File import (this device)',
-            fields: rec.meta.fields, label: labelOf,
-            style: p => { const s = styles.get(p) || { kind: 'polygon' }; return styleFor(rec.meta.color, s.kind, s.own); } }
-        };
-      }
+      const fc = await this.load(rec);
+      if (!fc) { this.note(rec.meta.name + ': its features are missing from this device: remove it and open the file again.', true); this.changed(); return; }
+      const look = rec.meta.look;
+      if (usesIcons(look) && MB.icons) await MB.icons.load().catch(() => {});
+      const styles = rec.styles = new WeakMap(), renderer = MB.data && MB.data.dataRenderer ? MB.data.dataRenderer() : undefined;
+      const style = f => { styles.set(f.properties, f); return paint(rec, f).style; };
+      rec.group = L.geoJSON(fc, {
+        pane: 'mb-data', pmIgnore: true, renderer,
+        style,
+        pointToLayer: (f, ll) => {
+          const p = paint(rec, f), icon = p.sym.icon && iconFor(rec, p.sym);
+          styles.set(f.properties, f);
+          return icon ? L.marker(ll, { icon, pane: 'mb-data-markers', pmIgnore: true, keyboard: false })
+            : L.circleMarker(ll, Object.assign({ pane: 'mb-data', pmIgnore: true, renderer }, p.style));
+        },
+        onEachFeature: (f, layer) => {
+          layer.options.pmIgnore = true;
+          this.tip(rec, layer);
+          layer.on('click', e => {
+            const t = MB.tools && MB.tools.current;
+            if (t && t !== 'select' && t !== 'move' && t !== 'present') return;
+            L.DomEvent.stopPropagation(e);
+            if (MB.data && MB.data.identify) MB.data.identify(e.latlng, e.containerPoint, layer);
+          });
+        }
+      });
+      const ds = rec.ds = rec.ds || { imp: true, enabled: true, meta: null, feats: new Map(), def: {
+        id: 'import:' + rec.meta.id, name: rec.meta.name, group: rec.meta.kind + ' file', publisher: 'File import (this device)', fields: null,
+        label: p => S().titleOf(rec.meta.look, p),
+        popupRows: p => S().popupRows(rec.meta.look, p),
+        attrsHtml: p => this.attrsHtml(rec, p),
+        style: p => { const f = rec.styles && rec.styles.get(p); return f ? paint(rec, f).style : styleFor(PALETTE[0], 'polygon'); } } };
+      ds.group = rec.group;
+    },
+    // A feature's name on hover: its title, unless its label shows it already.
+    tip(rec, layer) {
+      const look = rec.meta.look, t = look.label.show ? '' : S().titleOf(look, layer.feature.properties);
+      if (t) { if (layer.getTooltip()) layer.setTooltipContent(t); else layer.bindTooltip(t, { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: 0.95 }); }
+      else if (layer.getTooltip()) layer.unbindTooltip();
+    },
+    // Drawn again from scratch (the symbols' kind changed: a dot became an icon, say).
+    async rebuild(rec) {
+      if (rec.group && MB.map) MB.map.removeLayer(rec.group);
+      rec.group = null;
+      if (rec.ds) rec.ds.group = null;
+      if (rec.meta.visible) await this.draw(rec);
+      if (S()) S().labels.soon();
+    },
+    // Each feature's style, icon and hover name again, in place (a rebuild when one changes kind).
+    async restyle(rec) {
+      if (!rec.group) return;
+      if (usesIcons(rec.meta.look) && MB.icons && !MB.iconData) await MB.icons.load().catch(() => {});
+      let again = false;
+      const one = (l, f) => {
+        const p = paint(rec, f);
+        if (l.setIcon && !l.setStyle) { const ic = p.sym.icon && iconFor(rec, p.sym); if (ic) l.setIcon(ic); else again = true; }
+        else if (l.setStyle) { if (p.kind === 'point' && p.sym.icon && l.setRadius) again = true; else l.setStyle(p.style); }
+      };
+      rec.group.eachLayer(l => {
+        if (!l.feature) return;
+        if (l.eachLayer && !l.getLatLng && !l.getLatLngs) l.eachLayer(c => one(c, l.feature)); else one(l, l.feature);
+        this.tip(rec, l);
+        l._mbAnchor = null;
+      });
+      if (again) await this.rebuild(rec);
+      if (S()) S().labels.soon();
+    },
+    // The layer's settings changed (the Layer settings dialog): kept, and the map follows.
+    async setLook(id, look) {
+      const rec = layers.get(id);
+      if (!rec) return;
+      rec.meta.look = look;
+      this.saveSoon(rec);
+      await this.rebuild(rec);
+      if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
+      MB.attrTable && MB.attrTable.refresh();
+      this.changed();
+    },
+    saveSoon(rec) {
+      clearTimeout(rec.saveTimer);
+      rec.saveTimer = setTimeout(() => {
+        if (layers.get(rec.meta.id) !== rec) return;
+        DB.set('meta', rec.meta.id, rec.meta).catch(e => console.warn('File imports', e));
+        if (rec.fcDirty && rec.fc) { rec.fcDirty = false; DB.set('geo', rec.meta.id, rec.fc).catch(e => this.note(rec.meta.name + ': a change could not be kept (' + (e.message || e) + ').', true)); }
+      }, 500);
+    },
+
+    /* ---------- editing the attributes ---------- */
+    // A feature's value (null: none), kept; its look follows when the field is one the symbols, labels or title use.
+    async setValue(rec, f, key, value) {
+      const p = f.properties = f.properties || {}, look = rec.meta.look, s = look.symbol;
+      if (value == null || value === '') delete p[key]; else p[key] = value;
+      if (!look.fields.some(x => x.key === key)) look.fields.push({ key, alias: '', show: true });
+      rec.fcDirty = true;
+      if (s.field === key) { if (s.mode === 'category') S().fillCats(look, rec.fc.features); if (s.mode === 'graduated') S().fillBreaks(look, rec.fc.features); }
+      this.saveSoon(rec);
+      const used = key === s.field || key === look.title || key === look.label.field || (look.label.text || '').includes('{' + key + '}') || (!look.title && /^(name|title|label)$/i.test(key));
+      if (used) await this.restyle(rec);
+      if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
+      if (used) this.changed(); // (the legend)
+    },
+    // Rename or delete a field in every feature, and wherever the look uses it.
+    renameField(rec, from, to) {
+      const look = rec.meta.look, s = look.symbol;
+      to = String(to || '').trim();
+      const why = !to ? 'Give the field a name' : to.length > 64 ? 'A field name is at most 64 characters' : to !== from && look.fields.some(f => f.key === to) ? 'There is a field of that name already' : '';
+      if (why || to === from) return why;
+      rec.fc.features.forEach(f => { const p = f.properties; if (p && from in p) { const v = p[from]; delete p[from]; p[to] = v; } });
+      look.fields.forEach(f => { if (f.key === from) f.key = to; });
+      if (look.title === from) look.title = to;
+      if (look.label.field === from) look.label.field = to;
+      if (look.label.text) look.label.text = look.label.text.split('{' + from + '}').join('{' + to + '}');
+      if (s.field === from) s.field = to;
+      rec.fcDirty = true;
+      this.saveSoon(rec);
+      this.restyle(rec);
+      if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
+      return '';
+    },
+    deleteField(rec, key) {
+      const look = rec.meta.look, s = look.symbol;
+      rec.fc.features.forEach(f => { if (f.properties) delete f.properties[key]; });
+      look.fields = look.fields.filter(f => f.key !== key);
+      if (look.title === key) look.title = '';
+      if (look.label.field === key) look.label.field = '';
+      if (s.field === key) { s.field = ''; if (s.mode === 'category' || s.mode === 'graduated') s.mode = 'single'; }
+      rec.fcDirty = true;
+      this.saveSoon(rec);
+      this.restyle(rec);
+      if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
+      this.changed();
+    },
+    // The attribute table's view of a layer (attrtable.js).
+    tableAdapter(rec) {
+      const look = () => rec.meta.look;
+      return {
+        title: () => rec.meta.name + ': attributes',
+        fields: () => look().fields.map(f => ({ key: f.key, label: f.alias ? `${f.alias} (${f.key})` : f.key })),
+        rows: () => (rec.fc ? rec.fc.features : []),
+        get: (f, k) => (f.properties || {})[k],
+        set: (f, k, v) => { this.setValue(rec, f, k, v); },
+        addField: k => {
+          k = String(k || '').trim();
+          const why = !k ? 'Give the field a name' : k.length > 64 ? 'A field name is at most 64 characters' : look().fields.some(f => f.key === k) ? 'There is a field of that name already' : '';
+          if (why) return why;
+          look().fields.push({ key: k, alias: '', show: true });
+          this.saveSoon(rec);
+          if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
+          return '';
+        },
+        renameField: (from, to) => this.renameField(rec, from, to),
+        deleteField: k => this.deleteField(rec, k),
+        zoom: f => this.zoomToFeature(rec, f),
+        rowLabel: f => S().titleOf(look(), f.properties) || 'feature'
+      };
+    },
+    async openTable(id) {
+      const rec = layers.get(id);
+      if (!rec || !MB.attrTable) return;
+      if (!(await this.load(rec))) return;
+      MB.attrTable.open(this.tableAdapter(rec));
+    },
+    async openSettings(id) {
+      const rec = layers.get(id);
+      if (rec && S() && (await this.load(rec))) S().open(id);
+    },
+    // Fit the map to a feature and show it in Properties (its layer shown first).
+    async zoomToFeature(rec, f) {
+      if (!rec.meta.visible) await this.setVisible(rec.meta.id, true);
+      else await this.draw(rec);
+      const b = L.geoJSON(f.geometry).getBounds();
+      if (b.isValid()) { if (b.getNorth() - b.getSouth() < 1e-6 && b.getEast() - b.getWest() < 1e-6) MB.map.setView(b.getCenter(), Math.max(MB.map.getZoom(), 17)); else MB.map.fitBounds(b.pad(0.2), { maxZoom: 18 }); }
+      let layer = null;
+      if (rec.group) rec.group.eachLayer(l => { if (l.feature === f) layer = l; });
+      if (layer && MB.data && MB.data.pick) MB.data.pick({ ds: rec.ds, layer, props: f.properties || {} });
+    },
+    // Properties' Attributes section for an imported feature: every field, editable, under its display name.
+    attrsHtml(rec, p) {
+      const look = rec.meta.look, id = esc(rec.meta.id);
+      const rows = look.fields.map(f => {
+        const v = p[f.key] == null ? '' : String(typeof p[f.key] === 'boolean' ? p[f.key] : p[f.key]);
+        return `<tr><td title="${esc(f.key)}">${esc(f.alias || f.key)}</td><td><input type="text" class="attr-cell" data-iattr="${esc(f.key)}" value="${esc(v)}" aria-label="${esc(f.alias || f.key)}" spellcheck="false"></td></tr>`;
+      }).join('');
+      return `<div class="section"><h3>Attributes</h3>${rows ? `<table class="mb-datatable attr-edit">${rows}</table>` : '<p class="note">No fields yet.</p>'}
+        <div class="btn-row"><button type="button" class="btn small with-icon" data-imp-pick="table" data-imp-id="${id}">${MB.ICON.table}Attribute table</button><button type="button" class="btn small with-icon" data-imp-pick="settings" data-imp-id="${id}">${MB.ICON.sliders}Layer settings</button></div></div>`;
+    },
+    // Properties showing an imported feature: its values edited in place.
+    bindPicked(panel, picked) {
+      const rec = Array.from(layers.values()).find(r => r.ds === picked.ds);
+      if (!rec) return;
+      panel.querySelectorAll('input[data-iattr]').forEach(inp => inp.addEventListener('change', () => {
+        const f = picked.layer.feature, k = inp.dataset.iattr;
+        const v = MB.attrs ? MB.attrs.typed(inp.value, (f.properties || {})[k]) : inp.value;
+        this.setValue(rec, f, k, v);
+      }));
+      panel.querySelectorAll('[data-imp-pick]').forEach(b => b.addEventListener('click', () => (b.dataset.impPick === 'table' ? this.openTable(rec.meta.id) : this.openSettings(rec.meta.id))));
     },
 
     async setVisible(id, on) {
@@ -956,14 +1189,7 @@ window.MB = window.MB || {};
         if (MB.data && MB.data.picked && rec.ds && MB.data.picked.ds === rec.ds) MB.data.pick(null);
       }
       await DB.set('meta', id, rec.meta);
-      this.changed();
-    },
-    async setColor(id, color) {
-      const rec = layers.get(id);
-      if (!rec || !/^#[0-9a-f]{6}$/i.test(color)) return;
-      rec.meta.color = color;
-      if (rec.group) rec.group.eachLayer(l => { if (l.feature && l.setStyle) l.setStyle(styleFor(color, kindOf(l.feature.geometry), l.feature.mbStyle)); });
-      await DB.set('meta', id, rec.meta);
+      if (S()) S().labels.soon();
       this.changed();
     },
     // Fit the map to one layer, or to several (ids).
@@ -980,26 +1206,64 @@ window.MB = window.MB || {};
       if (!rec) return;
       if (rec.group && MB.map) MB.map.removeLayer(rec.group);
       if (MB.data && MB.data.picked && rec.ds && MB.data.picked.ds === rec.ds) MB.data.pick(null);
+      clearTimeout(rec.saveTimer);
       layers.delete(id);
       await DB.del('meta', id);
       await DB.del('geo', id);
+      if (S()) S().labels.soon();
       this.changed();
     },
-    // The layer's features into the project as its own objects (a layer of the same name): names and colors carry
-    // over; the attributes stay with the import.
+    async exportFile(id, format) {
+      const rec = layers.get(id);
+      if (!rec || !(await this.load(rec)) || !MB.download) return;
+      const name = rec.meta.name.replace(/[^\w\- ]+/g, '_').trim() || 'layer';
+      if (format === 'kml') MB.download(name + '.kml', toKml(rec), 'application/vnd.google-earth.kml+xml');
+      else MB.download(name + '.geojson', JSON.stringify(toGeoJson(rec)), 'application/geo+json');
+    },
+    // The layer's features into the project as its own objects, in a layer of the same name: each named by its title
+    // (by its label, when labels show, which then shows on it too), its attributes and colors with it, a point drawn
+    // with an icon as that icon.
     async toProject(id) {
       const rec = layers.get(id);
-      if (!rec || !MB.importGeoJSON) return;
+      if (!rec || !MB.restoreFeature) return;
       if (rec.meta.count > COPY_WARN && typeof confirm === 'function' && !confirm(`Copy ${rec.meta.count.toLocaleString()} features into the project? Projects this large are slower to edit and save.`)) return;
-      const fc = await this.load(rec);
-      if (!fc) return;
-      const features = fc.features.map(f => {
-        const st = styleFor(rec.meta.color, kindOf(f.geometry), f.mbStyle), p = { name: labelOf(f.properties) };
-        if (kindOf(f.geometry) === 'point') { p.stroke = st.fillColor; p['marker-color'] = st.fillColor; }
-        else { p.stroke = st.color; p['stroke-width'] = st.weight; p['stroke-opacity'] = st.opacity; if (st.fillColor) { p.fill = st.fillColor; p['fill-opacity'] = st.fillOpacity; } }
-        return { type: 'Feature', properties: p, geometry: f.geometry };
-      });
-      MB.importGeoJSON({ type: 'FeatureCollection', features }, rec.meta.name);
+      if (!(await this.load(rec))) return;
+      const look = rec.meta.look, lb = look.label, size = look.symbol.size || 24;
+      if (usesIcons(look) && MB.icons) await MB.icons.load().catch(() => {});
+      let made = 0, target = null;
+      const run = () => {
+        target = MB.createLayer(rec.meta.name);
+        if (look.fields.length) target.fields = look.fields.map(f => f.key);
+        rec.fc.features.forEach(f => {
+          const p = paint(rec, f), st = p.style, props = f.properties || {};
+          const name = lb.show ? S().labelText(look, props) : S().titleOf(look, props);
+          const attrs = {};
+          Object.keys(props).forEach(k => { if (props[k] != null && props[k] !== '') attrs[k] = props[k]; });
+          const style = Object.assign(MB.deepClone(MB.currentStyle), p.kind === 'point' ? { color: st.fillColor } : { color: st.color, weight: st.weight, opacity: st.opacity },
+            p.kind === 'polygon' ? { fillColor: st.fillColor, fillOpacity: st.fillOpacity } : {});
+          const base = { layerId: target.id, name, style, attrs: Object.keys(attrs).length ? attrs : undefined,
+            label: lb.show && name ? { show: true, size: +lb.size || 12, color: lb.color || '#ffffff', bg: lb.bg !== false } : undefined };
+          const ll = c => [c[1], c[0]], g = f.geometry, c = g.coordinates;
+          const svgId = p.kind === 'point' && p.sym.icon && MB.icons ? MB.icons.libraryId(p.sym.icon, (p.sym.own && p.sym.own.marker) || p.sym.color, true) : null;
+          const point = q => MB.restoreFeature(Object.assign({}, base, svgId ? { type: 'svg', latlng: ll(q), svg: { svgId, mode: 'pin', rotation: 0, opacity: 1, width: size } } : { type: 'marker', latlng: ll(q) }));
+          try {
+            if (g.type === 'Point') point(c);
+            else if (g.type === 'MultiPoint') c.forEach(point);
+            else if (g.type === 'LineString') MB.restoreFeature(Object.assign(base, { type: 'line', latlngs: c.map(ll) }));
+            else if (g.type === 'MultiLineString') MB.restoreFeature(Object.assign(base, { type: 'line', latlngs: c.map(l => l.map(ll)) }));
+            else if (g.type === 'Polygon') MB.restoreFeature(Object.assign(base, { type: 'polygon', latlngs: c.map(r => r.map(ll)) }));
+            else if (g.type === 'MultiPolygon') MB.restoreFeature(Object.assign(base, { type: 'polygon', latlngs: c.map(pg => pg.map(r => r.map(ll))) }));
+            made++;
+          } catch (e) { console.warn('Not copied', f, e); }
+        });
+        MB.applyZOrder();
+        MB.emit('layers'); MB.emit('features');
+        MB.commit('copy into project');
+      };
+      if (MB.batch) MB.batch(run); else run();
+      if (MB.toast) MB.toast(`${plural(made, 'feature')} copied into the layer "${rec.meta.name}"`);
+      const g = target && MB.groups && MB.groups[target.id];
+      if (g && g.getBounds().isValid()) MB.map.fitBounds(g.getBounds().pad(0.2), { maxZoom: 18 });
     },
 
     note(text, warn) { this.notes.push({ text, warn: !!warn }); this.notes = this.notes.slice(-20); },
@@ -1017,20 +1281,30 @@ window.MB = window.MB || {};
       if (filter === 'off' && on) return false;
       return !q || ('file imports import kml kmz geojson json shapefile shp zip google earth ' + this.list().map(m => m.name).join(' ')).toLowerCase().includes(q);
     },
+    // A symbol as a swatch: its icon (once the icons are loaded) or a dot in its color.
+    swatch(color, icon) {
+      const svg = icon && MB.icons && MB.iconData ? MB.icons.svg(icon, color, true) : '';
+      return svg ? `<i class="imp-ic" aria-hidden="true">${svg.replace('width="26" height="26"', 'width="14" height="14"')}</i>` : `<i class="trk-sw" style="background:${esc(color)}"></i>`;
+    },
     rowHtml(m) {
+      const look = m.look, s = look && look.symbol;
       const meta = [m.kind, plural(m.count, 'feature'), m.types].filter(Boolean).join(' · ');
+      const items = look ? S().legend(look) : [];
+      const sw = !s ? `<i class="trk-sw" style="background:${esc(m.color || PALETTE[0])}"></i>` : items.length ? '' : this.swatch(s.color, s.icon);
       return `<div class="data-item trk-item imp-item${m.visible ? ' on' : ''}" data-imp="${esc(m.id)}">
-          <div class="trk-head"><label class="check"><input type="checkbox" data-imp-act="vis"${m.visible ? ' checked' : ''}> <span class="dname" title="${esc(m.name)}">${esc(m.name)}</span></label>
-            <span class="trk-acts"><label class="imp-sw" title="Color for features without their own"><input type="color" value="${esc(m.color)}" data-imp-act="color" aria-label="Color of ${esc(m.name)}"></label>${MB.iconBtn('goto', 'Zoom to the layer', 'data-imp-act="zoom"', '', 'Zoom to ' + m.name)}${MB.iconBtn('copy', 'Copy into the project', 'data-imp-act="copy"', '', 'Copy ' + m.name + ' into the project')}${MB.iconBtn('trash', 'Remove', 'data-imp-act="remove"', 'danger', 'Remove ' + m.name)}</span></div>
+          <div class="trk-head"><label class="check"><input type="checkbox" data-imp-act="vis"${m.visible ? ' checked' : ''}> ${sw}<span class="dname" title="${esc(m.name)}">${esc(m.name)}</span></label>
+            <span class="trk-acts">${MB.iconBtn('goto', 'Zoom to the layer', 'data-imp-act="zoom"', '', 'Zoom to ' + m.name)}${MB.iconBtn('table', 'Attribute table', 'data-imp-act="table"', '', 'Attribute table of ' + m.name)}${MB.iconBtn('sliders', 'Layer settings: popup, labels, symbols', 'data-imp-act="settings"', '', 'Layer settings of ' + m.name)}${MB.iconBtn('copy', 'Copy into the project', 'data-imp-act="copy"', '', 'Copy ' + m.name + ' into the project')}${MB.iconBtn('more', 'More: export, remove', 'data-imp-act="more" aria-haspopup="menu"', '', 'More for ' + m.name)}</span></div>
           <div class="dstatus">${esc(meta)}</div>
+          ${items.length ? `<div class="legend imp-legend">${items.map(it => `<span>${this.swatch(it.color, it.icon)}${esc(it.text)}</span>`).join('')}</div>` : ''}
         </div>`;
     },
     panelHtml(q, filter) {
       if (!this.matches(q, filter)) return '';
       const job = this.job;
+      if (this.list().some(m => m.look && usesIcons(m.look)) && MB.icons && !MB.iconData) MB.icons.load().then(() => this.changed()).catch(() => {}); // the rows' icons
       return `<details class="ds-source" id="impSource" data-src="imports"${MB.data.sourceOpen('imports') ? ' open' : ''}><summary class="ds-source-head"><h3>File imports</h3>${MB.data.dotHtml('impDot', ...this.dot())}</summary>
         <div class="section"><div class="data-item adsb-display" id="impItem">
-          <div class="ds-head"><button type="button" class="btn small with-icon" data-imp-act="open">${MB.ICON.upload.replace('<svg ', '<svg class="mi" ')}Import files</button><span class="dim trk-kinds">.kml · .kmz · .geojson · .shp · .zip</span>${MB.data.infoIcon('KML or KMZ (Google Earth), GeoJSON, or a shapefile: pick its .shp with the .dbf, .prj and .cpg beside it, or a .zip of them. Each file is a layer over the map, kept on this device (not in the project) until you remove it. Click a feature for its attributes; Copy into the project makes them objects you can edit. You can also drop files here, or KML, KMZ, shapefiles and zips on the map (a .geojson dropped on the map opens as objects of the project).')}</div>
+          <div class="ds-head"><button type="button" class="btn small with-icon" data-imp-act="open">${MB.ICON.upload.replace('<svg ', '<svg class="mi" ')}Import files</button><span class="dim trk-kinds">.kml · .kmz · .geojson · .shp · .zip</span>${MB.data.infoIcon('KML or KMZ (Google Earth), GeoJSON, or a shapefile: pick its .shp with the .dbf, .prj and .cpg beside it, or a .zip of them. Each file is a layer over the map, kept on this device (not in the project) until you remove it. Click a feature for its attributes. Each layer has an attribute table, settings for its popup, labels and symbols, and Copy into the project, which makes its features objects you can edit. You can also drop files here, or KML, KMZ, shapefiles and zips on the map (a .geojson dropped on the map opens as objects of the project).')}</div>
           <div class="dstatus" id="impJob"${job ? '' : ' hidden'}>${job ? 'Reading ' + esc(job.name) + '…' : ''}</div>
           <div class="dstatus imp-notes" id="impNotes">${this.notes.slice(-3).map(n => `<span class="imp-note${n.warn ? ' err' : ''}">${esc(n.text)}</span>`).join('')}</div>
           <div id="impList" class="trk-list">${this.list().map(m => this.rowHtml(m)).join('')}</div>
@@ -1043,19 +1317,24 @@ window.MB = window.MB || {};
       item.addEventListener('click', e => {
         const b = e.target.closest('button[data-imp-act]');
         if (!b) return;
-        const act = b.dataset.impAct, id = idOf(b);
+        const act = b.dataset.impAct, id = idOf(b), rec = layers.get(id);
         if (act === 'open') this.input().click();
         else if (act === 'zoom') this.zoomTo(id);
+        else if (act === 'table') this.openTable(id);
+        else if (act === 'settings') this.openSettings(id);
         else if (act === 'copy') this.toProject(id);
-        else if (act === 'remove') {
-          const m = layers.get(id);
-          if (m && (typeof confirm !== 'function' || confirm(`Remove ${m.meta.name} from this device? Open the file again to bring it back.`))) this.remove(id);
+        else if (act === 'more' && rec && MB.contextMenu) {
+          const r = b.getBoundingClientRect();
+          MB.contextMenu.show(r.left, r.bottom + 2, [
+            { label: 'Export as GeoJSON', action: () => this.exportFile(id, 'geojson') },
+            { label: 'Export as KML', action: () => this.exportFile(id, 'kml') },
+            { sep: true },
+            { label: 'Remove', danger: true, action: () => { if (confirm(`Remove ${rec.meta.name} from this device? Open the file again to bring it back.`)) this.remove(id); } }
+          ]);
         }
       });
       item.addEventListener('change', e => {
-        const act = e.target.dataset.impAct, id = idOf(e.target);
-        if (act === 'vis') this.setVisible(id, e.target.checked);
-        else if (act === 'color') this.setColor(id, e.target.value);
+        if (e.target.dataset.impAct === 'vis') this.setVisible(idOf(e.target), e.target.checked);
       });
       item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('over'); });
       item.addEventListener('dragleave', () => item.classList.remove('over'));

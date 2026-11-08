@@ -690,6 +690,11 @@ window.MB = window.MB || {};
   }
 
   function popupHtml(ds, p) {
+    if (ds.def.popupRows) { // an imported layer: the fields its settings show, under their display names
+      let rows = '';
+      try { rows = ds.def.popupRows(p).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join(''); } catch (e) { /* ignore */ }
+      return `<div class="mb-popup"><div class="mb-popup-title">${esc(ds.def.name)}</div><table class="mb-datatable">${rows}</table></div>`;
+    }
     const keys = ds.def.fields || Object.keys(p).filter(k => !/^(OBJECTID|GLOBAL_?ID|Shape__|GlobalID)/i.test(k)).slice(0, 18);
     const row = (k, v) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '';
     let rows = keys.map(k => row(k, fmtVal(k, p[k]))).join('');
@@ -1216,7 +1221,8 @@ window.MB = window.MB || {};
       const name = m.name || (m.type === 'text' ? m.text : '') || type;
       let measure = '';
       try { measure = MB.measureText(h.layer); } catch (e) { /* ignore */ }
-      const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('');
+      const attrs = Object.keys(m.attrs || {}).slice(0, 20).map(k => [k, String(m.attrs[k])]); // its attributes too
+      const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].concat(attrs).map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('');
       const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`;
       return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
@@ -1286,6 +1292,8 @@ window.MB = window.MB || {};
     this.picked = h ? { ds: h.ds, layer: h.layer, layers: h.layers || [h.layer], props: h.props, html: describe(h) } : null;
     MB.emit('datapick', this.picked);
   };
+  // The picked feature's description again (its values were edited), without drawing Properties again.
+  MB.data.refreshPick = function () { if (this.picked) this.picked.html = describe(this.picked); };
 
   const PUBLISHERS = { faa: 'FAA UAS Data Delivery System (UDDS)', esri: 'Esri Living Atlas of the World' };
   // Fields that are the service's bookkeeping, not data: object ids, global ids, and the service's own shape
@@ -1342,7 +1350,7 @@ window.MB = window.MB || {};
       ${label ? `<div class="data-pick-label">${esc(label)}</div>` : ''}
       <div class="section"><h3>Source</h3><table class="mb-datatable">${src}</table>${/^https?:\/\//i.test(def.url || '') ? `<div class="btn-row"><a class="btn small" href="${esc(def.url)}" target="_blank" rel="noopener" title="The service's description, fields and extent">Service page</a></div>` : ''}</div>
       <div class="section"><h3>Geometry</h3><table class="mb-datatable">${geom}</table>${generalized ? '<p class="note">Measured on the outline loaded at this zoom, simplified for display: zoom in for full detail.</p>' : ''}</div>
-      <div class="section"><h3>Attributes</h3>${attrs ? `<table class="mb-datatable">${attrs}</table>` : '<p class="note">No attributes.</p>'}</div>`;
+      ${def.attrsHtml ? def.attrsHtml(p) : `<div class="section"><h3>Attributes</h3>${attrs ? `<table class="mb-datatable">${attrs}</table>` : '<p class="note">No attributes.</p>'}</div>`}`;
   }
 
   /* ---------- panel ---------- */

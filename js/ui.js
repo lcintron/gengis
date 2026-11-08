@@ -817,6 +817,7 @@ window.MB = window.MB || {};
       { label: 'Duplicate layer', hint: n + ' object' + (n === 1 ? '' : 's'), action: () => MB.duplicateLayer(id) },
       { label: l.grouped ? 'Ungroup objects' : 'Group objects', disabled: !l.grouped && n < 2,
         action: () => { const on = !l.grouped; MB.setLayerGrouped(id, on); MB.commit(on ? 'group' : 'ungroup'); } },
+      { label: 'Attribute table', hint: n + ' object' + (n === 1 ? '' : 's'), action: () => MB.attrTable.open(MB.attrs.tableFor(id)) },
       { label: 'Zoom to layer', disabled: !n || !g || !g.getBounds().isValid(), action: () => MB.map.fitBounds(g.getBounds().pad(0.15), { maxZoom: 18 }) },
       { sep: true },
       { label: l.locked ? 'Unlock layer' : 'Lock layer', action: () => { MB.setLayerLocked(id, !l.locked); MB.commit('layer lock'); } },
@@ -1080,6 +1081,7 @@ window.MB = window.MB || {};
       $('#propsSub').textContent = 'data feature';
       panel.innerHTML = MB.data.picked.html;
       $('[data-act="close-data"]', panel).addEventListener('click', () => MB.data.pick(null));
+      if (MB.data.picked.ds.imp && MB.imports) MB.imports.bindPicked(panel, MB.data.picked); // an imported feature: its values editable
       return;
     }
     if (!f) {
@@ -1137,6 +1139,7 @@ window.MB = window.MB || {};
     $('#propLayer', panel).addEventListener('change', e => MB.moveFeatureToLayer(m.id, e.target.value));
     MB.ui.renderMeasureBox();
     if (MB.labelTypes.includes(m.type)) panel.appendChild(labelForm(f));
+    panel.appendChild(attrForm(f));
 
     if (m.type === 'text') {
       const t = document.createElement('div');
@@ -1230,6 +1233,38 @@ window.MB = window.MB || {};
       if (!MB.getLabel(f).show) patch.show = true, ($('[data-lk="show"]', wrap).checked = true);
       MB.setLabel(f, patch);
     }));
+    return wrap;
+  }
+
+  // An object's attributes: its layer's fields (empty ones too), then any of its own; a value edited in place, a
+  // field added below; its layer's attribute table for all of them at once (attrtable.js).
+  function attrForm(f) {
+    const m = f.mb, keys = MB.attrs.fieldsOf(m.layerId), a = m.attrs || {};
+    Object.keys(a).forEach(k => { if (!keys.includes(k)) keys.push(k); });
+    const wrap = document.createElement('div');
+    wrap.className = 'section attr-section';
+    wrap.innerHTML = `<h3>Attributes</h3>
+      ${keys.length ? `<table class="mb-datatable attr-edit">${keys.map(k => `<tr><td title="${esc(k)}">${esc(k)}</td><td><input type="text" class="attr-cell" data-ak="${esc(k)}" value="${esc(a[k] == null ? '' : String(a[k]))}" aria-label="${esc(k)}" spellcheck="false"></td></tr>`).join('')}</table>` : '<p class="note">None yet: fields and values of your own (an ID, a status, a note), kept with the object and in GeoJSON.</p>'}
+      <form class="row attr-add"><input type="text" name="k" placeholder="Field" aria-label="New field" spellcheck="false"><input type="text" name="v" placeholder="Value" aria-label="Its value" spellcheck="false"><button type="submit" class="icon-btn" title="Add the field" aria-label="Add the field">${MB.ICON.plus}</button></form>
+      <div class="btn-row"><button type="button" class="btn small with-icon" data-act="attr-table">${MB.ICON.table}Attribute table</button></div>`;
+    $$('input[data-ak]', wrap).forEach(inp => inp.addEventListener('change', () => {
+      const k = inp.dataset.ak;
+      MB.attrs.set(f, k, MB.attrs.typed(inp.value, (m.attrs || {})[k]));
+      MB.commit('attribute');
+    }));
+    $('form', wrap).addEventListener('submit', e => {
+      e.preventDefault();
+      const k = e.target.k.value.trim(), v = MB.attrs.typed(e.target.v.value, null);
+      if (!k) { MB.toast('Give the field a name'); e.target.k.focus(); return; }
+      if (v == null) { // no value yet: a field of the layer, for every object
+        const lay = MB.getLayer(m.layerId);
+        if (lay && !MB.attrs.fieldsOf(m.layerId).includes(k)) lay.fields = (lay.fields || []).concat(k);
+      } else MB.attrs.set(f, k, v);
+      MB.commit('attribute');
+      MB.ui.renderProps();
+      const box = $(`#propsBody input[data-ak="${CSS.escape(k)}"]`); if (box) box.focus();
+    });
+    $('[data-act="attr-table"]', wrap).addEventListener('click', () => MB.attrTable.open(MB.attrs.tableFor(m.layerId)));
     return wrap;
   }
 

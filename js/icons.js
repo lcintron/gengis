@@ -3,6 +3,9 @@
  *   tags, a color, and a dark outline that keeps a light icon readable on imagery
  * - the icon chosen goes into the image library as an SVG (the same icon in the same color is used again) and the
  *   map's next click places it, as an SVG from the Images panel is placed
+ * - pick(): the same picker choosing an icon for something else (an imported layer's symbols): { name, color }, or
+ *   null when closed without one; svg(name, color, halo) draws one; libraryId(name, color, halo) puts one in the
+ *   image library (once) for an object of the project
  */
 window.MB = window.MB || {};
 (function (MB) {
@@ -26,7 +29,9 @@ window.MB = window.MB || {};
       const dlg = this.dlg = document.getElementById('iconDialog');
       const btn = document.getElementById('iconBtn');
       if (!dlg || !btn) return;
-      btn.addEventListener('click', () => this.open());
+      btn.addEventListener('click', () => { this.settle(null); this.open(); });
+      dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-act="close"]')) setTimeout(() => { if (dlg.classList.contains('hidden')) this.settle(null); }); });
+      dlg.addEventListener('keydown', e => { if (e.key === 'Escape') setTimeout(() => { if (dlg.classList.contains('hidden')) this.settle(null); }); });
       MB.ui.wireDialog(dlg);
       const search = dlg.querySelector('#iconSearch');
       search.addEventListener('input', MB.debounce(() => { this.query = search.value; this.render(); }, 120));
@@ -104,21 +109,54 @@ window.MB = window.MB || {};
       items[i].tabIndex = -1; next.tabIndex = 0; next.focus();
     },
 
-    // Into the library (once per icon and look), then placed with the map's next click.
+    // Into the library (once per icon and look), then placed with the map's next click; or, picking for something
+    // else, handed to it.
     choose(name) {
-      const icon = MB.iconData.icons.find(i => i[0] === name);
-      if (!icon) return;
-      const key = `lucide:${name}:${this.color}:${this.halo ? 1 : 0}`;
+      if (this.picking) { const color = this.color; MB.ui.closeDialog(this.dlg); this.settle({ name, color }); return; }
+      const id = this.libraryId(name, this.color, this.halo);
+      if (!id) return;
+      MB.commit('add icon');
+      MB.ui.closeDialog(this.dlg);
+      MB.svgPlace.svgId = id;
+      if (MB.tools.current !== 'svg') MB.tools.set('svg'); else MB.emit('tool', 'svg');
+    },
+
+    // An icon as SVG markup ('' when unknown, or before the icons are loaded: load() first).
+    svg(name, color, halo) {
+      const icon = MB.iconData && MB.iconData.icons.find(i => i[0] === name);
+      return icon ? iconSvg(icon[2], color || '#ffffff', halo !== false) : '';
+    },
+    // The image library's entry for an icon in a color (made the first time): its id, or null.
+    libraryId(name, color, halo) {
+      halo = halo !== false;
+      const key = `lucide:${name}:${color}:${halo ? 1 : 0}`;
       let entry = Object.values(MB.state.svgLibrary).find(l => l.iconKey === key);
       if (!entry) {
+        const svg = this.svg(name, color, halo);
+        if (!svg) return null;
         const id = MB.uid();
-        entry = MB.state.svgLibrary[id] = { id, name, dataUrl: MB.svgDataUrl(iconSvg(icon[2], this.color, this.halo)), aspect: 1, width: 26, height: 26, iconKey: key };
+        entry = MB.state.svgLibrary[id] = { id, name, dataUrl: MB.svgDataUrl(svg), aspect: 1, width: 26, height: 26, iconKey: key };
         MB.emit('svglibrary');
-        MB.commit('add icon');
       }
-      MB.ui.closeDialog(this.dlg);
-      MB.svgPlace.svgId = entry.id;
-      if (MB.tools.current !== 'svg') MB.tools.set('svg'); else MB.emit('tool', 'svg');
+      return entry.id;
+    },
+    // The picker, choosing an icon: a promise of { name, color }, or null when closed without one. It shows above
+    // the dialog that asked.
+    pick(opts) {
+      this.settle(null);
+      if (opts && opts.color) this.color = opts.color;
+      this.dlg.style.zIndex = 4100;
+      this.dlg.querySelector('#iconTitle').textContent = 'Choose an icon';
+      const p = new Promise(res => { this.picking = res; });
+      this.open();
+      this.setColor(this.color);
+      return p;
+    },
+    settle(v) {
+      const res = this.picking;
+      this.picking = null;
+      if (this.dlg) { this.dlg.style.zIndex = ''; this.dlg.querySelector('#iconTitle').textContent = 'Add an icon'; }
+      if (res) res(v);
     }
   };
 })(window.MB);

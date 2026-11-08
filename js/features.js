@@ -113,6 +113,7 @@ window.MB = window.MB || {};
       label: meta.label ? MB.deepClone(meta.label) : undefined,
       zoom: MB.normZoomRule(meta.zoom)
     };
+    if (meta.attrs && typeof meta.attrs === 'object' && Object.keys(meta.attrs).length) layer.mb.attrs = MB.deepClone(meta.attrs); // its fields' values (attrtable.js)
     // measurements ticked to show on the map (only those the type has: a converted object may have carried others)
     const shown = MB.measureKeys(layer.mb.type).filter(k => (meta.showMeasures || []).includes(k));
     if (shown.length) layer.mb.showMeasures = shown;
@@ -292,7 +293,7 @@ window.MB = window.MB || {};
     const src = MB.getLayer(id);
     if (!src) return null;
     const copy = MB.batch(() => {
-      const c = MB.createLayer(src.name + ' copy', { visible: src.visible, grouped: src.grouped });
+      const c = MB.createLayer(src.name + ' copy', { visible: src.visible, grouped: src.grouped, fields: src.fields });
       const arr = MB.state.layers;
       arr.splice(arr.indexOf(c), 1);
       arr.splice(arr.indexOf(src) + 1, 0, c);
@@ -923,6 +924,7 @@ window.MB = window.MB || {};
     if (m.label) d.label = MB.deepClone(m.label);
     if (m.zoom) d.zoom = MB.deepClone(m.zoom);
     if (m.showMeasures) d.showMeasures = m.showMeasures.slice();
+    if (m.attrs && Object.keys(m.attrs).length) d.attrs = MB.deepClone(m.attrs);
     switch (m.type) {
       case 'marker': d.latlng = toArr(layer.getLatLng()); break;
       case 'text':

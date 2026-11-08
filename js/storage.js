@@ -42,6 +42,8 @@ window.MB = window.MB || {};
       const l = MB.featureLayers[id], m = l.mb;
       const lay = MB.getLayer(m.layerId);
       const props = { id: m.id, name: m.name || '', layer: lay ? lay.name : '', type: m.type, style: m.style };
+      // its attributes as properties of their own, as other tools read them (one named as GenGIS's own: in "attributes")
+      Object.keys(m.attrs || {}).forEach(k => { if (k in props || GJ_OWN.has(k)) (props.attributes = props.attributes || {})[k] = m.attrs[k]; else props[k] = m.attrs[k]; });
       let geometry = null;
       switch (m.type) {
         case 'marker': case 'text': case 'svg': {
@@ -67,6 +69,14 @@ window.MB = window.MB || {};
     MB.toast('GeoJSON exported (' + features.length + ' features)');
   };
 
+  // Properties GenGIS reads itself (an object's kind, look and place); every other one is an attribute of the object.
+  const GJ_OWN = new Set(['id', 'name', 'layer', 'type', 'style', 'text', 'svg', 'radius', 'attributes', 'stroke', 'stroke-width', 'stroke-opacity', 'fill', 'fill-opacity', 'marker-color', 'marker-size', 'marker-symbol']);
+  function attrsOf(p) {
+    const a = {};
+    Object.keys(p).forEach(k => { const v = p[k]; if (!GJ_OWN.has(k) && v != null && v !== '' && typeof v !== 'object') a[k] = v; });
+    if (p.attributes && typeof p.attributes === 'object') Object.keys(p.attributes).forEach(k => { const v = p.attributes[k]; if (v != null && v !== '' && typeof v !== 'object') a[k] = v; });
+    return Object.keys(a).length ? a : undefined;
+  }
   MB.importGeoJSON = (gj, sourceName) => MB.batch(() => importGeoJSON(gj, sourceName)); // one redraw at the end
   function importGeoJSON(gj, sourceName) {
     const feats = gj.type === 'Feature' ? [gj] : (gj.features || []);
@@ -83,7 +93,7 @@ window.MB = window.MB || {};
         targetId = byLayer[p.layer];
       }
       const style = p.style && typeof p.style === 'object' ? p.style : Object.assign({}, MB.currentStyle, styleFromSimpleStyle(p));
-      const base = { layerId: targetId, name: p.name || p.title || '', style };
+      const base = { layerId: targetId, name: p.name || p.title || '', style, attrs: attrsOf(p) };
       const g = f.geometry, c = g.coordinates;
       try {
         switch (g.type) {
