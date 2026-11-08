@@ -1022,16 +1022,16 @@ window.MB = window.MB || {};
       else if (layer.getTooltip()) layer.unbindTooltip();
     },
     // Drawn again from scratch (the symbols' kind changed: a dot became an icon, say).
-    async rebuild(rec) {
+    async rebuild(rec, quiet) {
       if (rec.group && MB.map) MB.map.removeLayer(rec.group);
       rec.group = null;
       if (rec.ds) rec.ds.group = null;
       if (rec.meta.visible) await this.draw(rec);
-      this.refreshPicked(rec);
+      this.refreshPicked(rec, quiet);
       if (S()) S().labels.soon();
     },
     // Each feature's style, icon and hover name again, in place (a rebuild when one changes kind).
-    async restyle(rec) {
+    async restyle(rec, quiet) {
       if (!rec.group) return;
       if (usesIcons(rec.meta.look) && MB.icons && !MB.iconData) await MB.icons.load().catch(() => {});
       let again = false;
@@ -1046,7 +1046,7 @@ window.MB = window.MB || {};
         this.tip(rec, l);
         l._mbAnchor = null;
       });
-      if (again) await this.rebuild(rec);
+      if (again) await this.rebuild(rec, quiet);
       if (S()) S().labels.soon();
     },
     // The layer's settings changed (the Layer settings dialog): kept, and the map follows with only the work the
@@ -1096,8 +1096,9 @@ window.MB = window.MB || {};
       if (s.field === key) { if (s.mode === 'category') S().fillCats(look, rec.fc.features); if (s.mode === 'graduated') S().fillBreaks(look, rec.fc.features); }
       this.saveSoon(rec);
       const used = key === s.field || key === look.title || key === look.label.field || (look.label.text || '').includes('{' + key + '}') || (!look.title && /^(name|title|label)$/i.test(key));
-      if (used) await this.restyle(rec);
-      this.refreshPicked(rec, !!(opts && opts.fromProps));
+      const quiet = !!(opts && opts.fromProps); // (an edit in Properties: not drawn under it, down the whole chain)
+      if (used) await this.restyle(rec, quiet);
+      this.refreshPicked(rec, quiet);
       if (used) this.changed(); // (the legend)
     },
     // Rename or delete a field in every feature, and wherever the look uses it.
@@ -1189,11 +1190,22 @@ window.MB = window.MB || {};
     bindPicked(panel, picked) {
       const rec = Array.from(layers.values()).find(r => r.ds === picked.ds);
       if (!rec) return;
+      // An edit is kept, its box showing the value as kept (" 12 " is 12); Properties is drawn again (its heading
+      // may be the title just edited) once focus leaves it, not on the way from one box to the next.
+      let dirty = false;
       panel.querySelectorAll('input[data-iattr]').forEach(inp => inp.addEventListener('change', () => {
         const f = picked.layer.feature, k = inp.dataset.iattr;
         const v = MB.attrs ? MB.attrs.typed(inp.value, (f.properties || {})[k]) : inp.value;
+        dirty = true;
+        inp.value = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
         this.setValue(rec, f, k, v, { fromProps: true }).catch(e => console.warn('File imports', e));
       }));
+      const sec = panel.querySelector('input[data-iattr]') && panel.querySelector('input[data-iattr]').closest('.section'); // (drawn anew with Properties: its listener goes with it)
+      if (sec) sec.addEventListener('focusout', e => {
+        if (!dirty || sec.contains(e.relatedTarget)) return;
+        dirty = false;
+        setTimeout(() => { if (MB.data.picked === picked && sec.isConnected && !MB.selected && !sec.contains(document.activeElement) && MB.ui && MB.ui.renderProps) MB.ui.renderProps(); });
+      });
       panel.querySelectorAll('[data-imp-pick]').forEach(b => b.addEventListener('click', () => (b.dataset.impPick === 'table' ? this.openTable(rec.meta.id) : this.openSettings(rec.meta.id))));
     },
 
