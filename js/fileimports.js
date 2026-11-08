@@ -1027,6 +1027,7 @@ window.MB = window.MB || {};
       rec.group = null;
       if (rec.ds) rec.ds.group = null;
       if (rec.meta.visible) await this.draw(rec);
+      this.refreshPicked(rec);
       if (S()) S().labels.soon();
     },
     // Each feature's style, icon and hover name again, in place (a rebuild when one changes kind).
@@ -1048,16 +1049,31 @@ window.MB = window.MB || {};
       if (again) await this.rebuild(rec);
       if (S()) S().labels.soon();
     },
-    // The layer's settings changed (the Layer settings dialog): kept, and the map follows.
-    async setLook(id, look) {
+    // The layer's settings changed (the Layer settings dialog): kept, and the map follows with only the work the
+    // change needs. opts.what: 'popup' (nothing on the map), 'labels' (labels and hover names), 'symbols' (restyled
+    // in place; drawn again only when a dot becomes an icon or back); opts.done: the panel's legend too.
+    async setLook(id, look, opts) {
       const rec = layers.get(id);
       if (!rec) return;
+      opts = opts || { what: ['symbols'], done: true };
       rec.meta.look = look;
       this.saveSoon(rec);
-      await this.rebuild(rec);
-      if (MB.data && MB.data.refreshPick) MB.data.refreshPick();
-      MB.attrTable && MB.attrTable.refresh();
-      this.changed();
+      const what = opts.what || ['symbols'];
+      if (what.includes('symbols')) await this.restyle(rec);
+      else if (what.includes('labels')) { if (rec.group) rec.group.eachLayer(l => { if (l.feature) this.tip(rec, l); }); if (S()) S().labels.soon(); }
+      this.refreshPicked(rec);
+      if (what.includes('popup') && MB.attrTable) MB.attrTable.refresh(); // (the display names head its columns)
+      if (opts.done) this.changed();
+    },
+    // Properties showing one of this layer's features: its layer after a redraw, its rows after a change.
+    refreshPicked(rec) {
+      const pk = MB.data && MB.data.picked;
+      if (!pk || !rec.ds || pk.ds !== rec.ds) return;
+      const f = pk.layer && pk.layer.feature;
+      if (rec.group && f && !rec.group.hasLayer(pk.layer)) rec.group.eachLayer(l => { if (l.feature === f) { pk.layer = l; pk.layers = [l]; } });
+      if (MB.data.refreshPick) MB.data.refreshPick();
+      const box = document.getElementById('propsBody'), typing = box && box.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+      if (!typing && MB.ui && MB.ui.renderProps && !MB.selected) MB.ui.renderProps();
     },
     saveSoon(rec) {
       clearTimeout(rec.saveTimer);
@@ -1073,7 +1089,7 @@ window.MB = window.MB || {};
     async setValue(rec, f, key, value) {
       const p = f.properties = f.properties || {}, look = rec.meta.look, s = look.symbol;
       if (value == null || value === '') delete p[key]; else p[key] = value;
-      if (!look.fields.some(x => x.key === key)) look.fields.push({ key, alias: '', show: true });
+      if (value != null && value !== '' && !look.fields.some(x => x.key === key)) look.fields.push({ key, alias: '', show: true });
       rec.fcDirty = true;
       if (s.field === key) { if (s.mode === 'category') S().fillCats(look, rec.fc.features); if (s.mode === 'graduated') S().fillBreaks(look, rec.fc.features); }
       this.saveSoon(rec);
@@ -1121,7 +1137,7 @@ window.MB = window.MB || {};
         fields: () => look().fields.map(f => ({ key: f.key, label: f.alias ? `${f.alias} (${f.key})` : f.key })),
         rows: () => (rec.fc ? rec.fc.features : []),
         get: (f, k) => (f.properties || {})[k],
-        set: (f, k, v) => { this.setValue(rec, f, k, v); },
+        set: (f, k, v) => { this.setValue(rec, f, k, v).catch(e => console.warn('File imports', e)); },
         addField: k => {
           k = String(k || '').trim();
           const why = !k ? 'Give the field a name' : k.length > 64 ? 'A field name is at most 64 characters' : look().fields.some(f => f.key === k) ? 'There is a field of that name already' : '';
@@ -1161,7 +1177,7 @@ window.MB = window.MB || {};
     attrsHtml(rec, p) {
       const look = rec.meta.look, id = esc(rec.meta.id);
       const rows = look.fields.map(f => {
-        const v = p[f.key] == null ? '' : String(typeof p[f.key] === 'boolean' ? p[f.key] : p[f.key]);
+        const raw = p[f.key], v = raw == null ? '' : typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
         return `<tr><td title="${esc(f.key)}">${esc(f.alias || f.key)}</td><td><input type="text" class="attr-cell" data-iattr="${esc(f.key)}" value="${esc(v)}" aria-label="${esc(f.alias || f.key)}" spellcheck="false"></td></tr>`;
       }).join('');
       return `<div class="section"><h3>Attributes</h3>${rows ? `<table class="mb-datatable attr-edit">${rows}</table>` : '<p class="note">No fields yet.</p>'}
@@ -1226,7 +1242,7 @@ window.MB = window.MB || {};
     async toProject(id) {
       const rec = layers.get(id);
       if (!rec || !MB.restoreFeature) return;
-      if (rec.meta.count > COPY_WARN && typeof confirm === 'function' && !confirm(`Copy ${rec.meta.count.toLocaleString()} features into the project? Projects this large are slower to edit and save.`)) return;
+      if (rec.meta.count > COPY_WARN && MB.ask && !(await MB.ask(`Copy ${rec.meta.count.toLocaleString()} features into the project? Projects this large are slower to edit and save.`, 'Copy', 'Cancel'))) return;
       if (!(await this.load(rec))) return;
       const look = rec.meta.look, lb = look.label, size = look.symbol.size || 24;
       if (usesIcons(look) && MB.icons) await MB.icons.load().catch(() => {});
@@ -1238,7 +1254,7 @@ window.MB = window.MB || {};
           const p = paint(rec, f), st = p.style, props = f.properties || {};
           const name = lb.show ? S().labelText(look, props) : S().titleOf(look, props);
           const attrs = {};
-          Object.keys(props).forEach(k => { if (props[k] != null && props[k] !== '') attrs[k] = props[k]; });
+          Object.keys(props).forEach(k => { const v = props[k]; if (v != null && v !== '') attrs[k] = typeof v === 'object' ? JSON.stringify(v) : v; });
           const style = Object.assign(MB.deepClone(MB.currentStyle), p.kind === 'point' ? { color: st.fillColor } : { color: st.color, weight: st.weight, opacity: st.opacity },
             p.kind === 'polygon' ? { fillColor: st.fillColor, fillOpacity: st.fillOpacity } : {});
           const base = { layerId: target.id, name, style, attrs: Object.keys(attrs).length ? attrs : undefined,
@@ -1329,7 +1345,7 @@ window.MB = window.MB || {};
             { label: 'Export as GeoJSON', action: () => this.exportFile(id, 'geojson') },
             { label: 'Export as KML', action: () => this.exportFile(id, 'kml') },
             { sep: true },
-            { label: 'Remove', danger: true, action: () => { if (confirm(`Remove ${rec.meta.name} from this device? Open the file again to bring it back.`)) this.remove(id); } }
+            { label: 'Remove', danger: true, action: async () => { if (await MB.ask(`Remove ${rec.meta.name} from this device? Open the file again to bring it back.`, 'Remove', 'Cancel')) this.remove(id); } }
           ]);
         }
       });

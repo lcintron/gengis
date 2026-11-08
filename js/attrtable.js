@@ -16,8 +16,8 @@ window.MB = window.MB || {};
 
   const esc = s => (MB.escapeHtml ? MB.escapeHtml(s) : String(s));
   const PAGE = 100;
-  const NAME = '\u0000name'; // the Name column of a project layer (an object's name, not an attribute)
-  const show = v => (v == null ? '' : typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v));
+  const NAME = '\u0000name'; // the Name column of a project layer (an object's name, not an attribute; never in the page: columns go by their index)
+  const show = v => (v == null ? '' : typeof v === 'boolean' ? (v ? 'true' : 'false') : typeof v === 'object' ? JSON.stringify(v) : String(v)); // (a nested value in a GeoJSON file: as JSON)
   const badKey = k => (!k ? 'Give the field a name' : k.length > 64 ? 'A field name is at most 64 characters' : '');
 
   // What a typed value is: a number where it reads as one (and the field held numbers, or nothing yet; leading zeros
@@ -58,15 +58,15 @@ window.MB = window.MB || {};
         if (MB.selected === f && MB.ui) MB.ui.renderProps();
       },
       addField(k) {
-        const l = lay(), why = badKey(k) || (fieldsOf(layerId).includes(k) ? 'There is a field of that name already' : '');
-        if (why || !l) return why;
+        const l = lay(), why = !l ? 'The layer is gone' : badKey(k) || (fieldsOf(layerId).includes(k) ? 'There is a field of that name already' : '');
+        if (why) return why;
         l.fields = (l.fields || []).concat(k);
         commit('add field');
         return '';
       },
       renameField(from, to) {
-        const l = lay(), why = badKey(to) || (to !== from && fieldsOf(layerId).includes(to) ? 'There is a field of that name already' : '');
-        if (why || !l) return why;
+        const l = lay(), why = !l ? 'The layer is gone' : badKey(to) || (to !== from && fieldsOf(layerId).includes(to) ? 'There is a field of that name already' : '');
+        if (why) return why;
         if (to === from) return '';
         objectsOf(layerId).forEach(f => { const a = f.mb.attrs; if (a && from in a) { const v = a[from]; delete a[from]; a[to] = v; } });
         if (l.fields) l.fields = l.fields.map(k => (k === from ? to : k));
@@ -85,7 +85,8 @@ window.MB = window.MB || {};
   }
 
   /* ---------- the table ---------- */
-  const T = { dlg: null, ad: null, q: '', sort: null, dir: 1, page: 0, list: [], renaming: null };
+  const T = { dlg: null, ad: null, q: '', sort: null, dir: 1, page: 0, list: [], renaming: null, fields: [] };
+  const keyAt = el => { const f = T.fields[+el.dataset.c]; return f ? f.key : null; }; // a column's field, by its index
 
   function dialog() {
     if (T.dlg) return T.dlg;
@@ -126,39 +127,40 @@ window.MB = window.MB || {};
     const head = d.querySelector('#attrHead'), body = d.querySelector('#attrBody');
     head.addEventListener('click', e => {
       const sortBtn = e.target.closest('[data-sort]'), menuBtn = e.target.closest('[data-col]');
-      if (sortBtn) { const k = sortBtn.dataset.sort; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } build(); return; }
-      if (menuBtn) colMenu(menuBtn.dataset.col, menuBtn);
+      if (sortBtn) { const k = keyAt(sortBtn); if (k == null) return; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } build(); return; }
+      if (menuBtn) { const k = keyAt(menuBtn); if (k != null) colMenu(k, menuBtn); }
     });
     head.addEventListener('keydown', e => {
       const inp = e.target.closest('input[data-rename]');
       if (!inp) return;
       if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.value = inp.dataset.rename; inp.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.value = keyAt(inp) || ''; inp.blur(); }
     });
     head.addEventListener('focusout', e => {
       const inp = e.target.closest('input[data-rename]');
       if (!inp || T.renaming == null) return;
-      const from = inp.dataset.rename, to = inp.value.trim();
+      const from = keyAt(inp), to = inp.value.trim();
       T.renaming = null;
+      if (from == null) { build(); return; }
       const why = T.ad.renameField(from, to);
       if (why) MB.toast(why); else if (T.sort === from) T.sort = to;
       build();
     });
     body.addEventListener('change', e => {
-      const inp = e.target.closest('input[data-k]');
+      const inp = e.target.closest('input[data-c]');
       if (!inp) return;
-      const row = T.list[+inp.closest('tr').dataset.i];
-      if (!row) return;
-      const k = inp.dataset.k, v = k === NAME ? inp.value : typed(inp.value, T.ad.get(row, k));
+      const row = T.list[+inp.closest('tr').dataset.i], k = keyAt(inp);
+      if (!row || k == null) return;
+      const v = k === NAME ? inp.value : typed(inp.value, T.ad.get(row, k));
       T.ad.set(row, k, v);
       inp.value = show(T.ad.get(row, k));
       inp.title = inp.value;
     });
     body.addEventListener('keydown', e => {
-      const inp = e.target.closest('input[data-k]');
+      const inp = e.target.closest('input[data-c]');
       if (!inp || e.key !== 'Enter') return;
       e.preventDefault(); // Enter: the cell below, as a spreadsheet
-      const tr = inp.closest('tr').nextElementSibling, next = tr && tr.querySelector(`input[data-k="${CSS.escape(inp.dataset.k)}"]`);
+      const tr = inp.closest('tr').nextElementSibling, next = tr && tr.querySelector(`input[data-c="${inp.dataset.c}"]`);
       if (next) next.focus(); else inp.blur();
     });
     body.addEventListener('click', e => {
@@ -178,7 +180,10 @@ window.MB = window.MB || {};
       { label: 'Sort descending', action: () => { T.sort = key; T.dir = -1; build(); } },
       { sep: true },
       { label: 'Rename field', disabled: f.fixed, action: () => { T.renaming = key; paintHead(); const inp = T.dlg.querySelector('input[data-rename]'); if (inp) { inp.focus(); inp.select(); } } },
-      { label: 'Delete field', danger: true, disabled: f.fixed, action: () => { if (confirm(`Delete the field "${key}" and its values from every row?`)) { T.ad.deleteField(key); if (T.sort === key) T.sort = null; build(); } } }
+      { label: 'Delete field', danger: true, disabled: f.fixed, action: async () => {
+        if (!(await MB.ask(`Delete the field "${key}" and its values from every row?`, 'Delete field', 'Cancel'))) return;
+        T.ad.deleteField(key); if (T.sort === key) T.sort = null; build();
+      } }
     ]);
   }
 
@@ -202,21 +207,22 @@ window.MB = window.MB || {};
     paint();
   }
   function paintHead() {
-    const fields = T.ad.fields();
-    T.dlg.querySelector('#attrHead').innerHTML = `<tr><th class="attr-n" scope="col"><span class="sr-only">Zoom to</span></th>${fields.map(f => {
+    const fields = T.fields = T.ad.fields();
+    T.dlg.querySelector('#attrHead').innerHTML = `<tr><th class="attr-n" scope="col"><span class="sr-only">Zoom to</span></th>${fields.map((f, c) => {
       const arrow = T.sort === f.key ? (T.dir > 0 ? ' ▲' : ' ▼') : '';
-      const label = T.renaming === f.key ? `<input type="text" class="attr-rename" data-rename="${esc(f.key)}" value="${esc(f.key)}" aria-label="New name for ${esc(f.key)}" spellcheck="false">`
-        : `<button type="button" class="attr-sort" data-sort="${esc(f.key)}" title="Sort by ${esc(f.label)}"${T.sort === f.key ? ` aria-sort="${T.dir > 0 ? 'ascending' : 'descending'}"` : ''}>${esc(f.label)}${arrow}</button>`;
-      return `<th scope="col"><div class="attr-th">${label}${MB.iconBtn('more', 'Field options', `data-col="${esc(f.key)}" aria-haspopup="menu"`, '', 'Options for ' + f.label)}</div></th>`;
+      const label = T.renaming === f.key ? `<input type="text" class="attr-rename" data-rename data-c="${c}" value="${esc(f.key)}" aria-label="New name for ${esc(f.key)}" spellcheck="false">`
+        : `<button type="button" class="attr-sort" data-sort data-c="${c}" title="Sort by ${esc(f.label)}">${esc(f.label)}${arrow}</button>`;
+      return `<th scope="col"${T.sort === f.key ? ` aria-sort="${T.dir > 0 ? 'ascending' : 'descending'}"` : ''}><div class="attr-th">${label}${MB.iconBtn('more', 'Field options', `data-col data-c="${c}" aria-haspopup="menu"`, '', 'Options for ' + f.label)}</div></th>`;
     }).join('')}</tr>`;
   }
   function paint() {
-    const ad = T.ad, fields = ad.fields(), d = T.dlg;
+    const ad = T.ad, d = T.dlg;
     paintHead();
+    const fields = T.fields;
     const from = T.page * PAGE, rows = T.list.slice(from, from + PAGE);
     d.querySelector('#attrBody').innerHTML = rows.map((r, i) => `<tr data-i="${from + i}"><td class="attr-n">${MB.iconBtn('goto', 'Zoom to', 'data-zoom', '', 'Zoom to ' + (ad.rowLabel ? ad.rowLabel(r) : 'row ' + (from + i + 1)))}</td>${fields.map(f => {
       const v = show(ad.get(r, f.key));
-      return `<td><input type="text" class="attr-cell" data-k="${esc(f.key)}" value="${esc(v)}" title="${esc(v)}" aria-label="${esc(f.label)}, row ${from + i + 1}" spellcheck="false"></td>`;
+      return `<td><input type="text" class="attr-cell" data-c="${fields.indexOf(f)}" value="${esc(v)}" title="${esc(v)}" aria-label="${esc(f.label)}, row ${from + i + 1}" spellcheck="false"></td>`;
     }).join('')}</tr>`).join('') || `<tr><td colspan="${fields.length + 1}" class="note">${T.q ? 'No row matches.' : 'No rows.'}</td></tr>`;
     const total = ad.rows().length, pages = Math.max(1, Math.ceil(T.list.length / PAGE));
     d.querySelector('#attrCount').textContent = (T.q ? `${T.list.length.toLocaleString()} of ${total.toLocaleString()}` : total.toLocaleString()) + ` row${total === 1 ? '' : 's'} · ${(fields.length - fields.filter(f => f.fixed).length)} field${fields.length === 1 ? '' : 's'}`;

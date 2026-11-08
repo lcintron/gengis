@@ -37,7 +37,7 @@ window.MB = window.MB || {};
   const AUTO_TITLE = ['name', 'NAME', 'Name', 'title', 'TITLE', 'Title', 'label', 'LABEL'];
 
   const filled = v => v != null && v !== '';
-  const fmt = v => (v == null ? '' : typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toFixed(6))) : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v));
+  const fmt = v => (v == null ? '' : typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toFixed(6))) : typeof v === 'boolean' ? (v ? 'yes' : 'no') : typeof v === 'object' ? JSON.stringify(v) : String(v));
   const catKey = v => (filled(v) ? String(v) : '');
   const kindOf = g => (/Point/.test(g.type) ? 'point' : /LineString/.test(g.type) ? 'line' : 'polygon');
 
@@ -191,14 +191,14 @@ window.MB = window.MB || {};
         const size = +lb.size || 12;
         rec.group.eachLayer(l => {
           if (placed.length >= MAX_LABELS || !l.feature) return;
-          const text = labelText(look, l.feature.properties);
-          if (!text) return;
           let at = l._mbAnchor;
           if (!at) {
             try { at = l.getLatLng ? l.getLatLng() : l.getCenter ? l.getCenter() : l.getBounds().getCenter(); } catch (e) { return; }
             l._mbAnchor = at;
           }
           if (!view.contains(at)) return;
+          const text = labelText(look, l.feature.properties);
+          if (!text) return;
           const pt = map.latLngToContainerPoint(at), point = !!(l.getLatLng || (l.eachLayer && !l.getBounds));
           const lift = point ? (l.options.icon ? (look.symbol.size || 22) / 2 : 7) + 2 : 0;
           const w = Math.min(320, text.length * size * 0.58 + 12), h = size * 1.35 + 6;
@@ -230,8 +230,8 @@ window.MB = window.MB || {};
     d.innerHTML = `<div class="modal-box look-box" role="dialog" aria-modal="true" aria-labelledby="impLookTitle">
       <button type="button" class="modal-x" data-act="close" aria-label="Close" title="Close">✕</button>
       <h2 id="impLookTitle">Layer settings</h2>
-      <div class="seg look-tabs" role="tablist"><button type="button" role="tab" data-tab="popup">Popup</button><button type="button" role="tab" data-tab="labels">Labels</button><button type="button" role="tab" data-tab="symbols">Symbols</button></div>
-      <div class="look-body" id="impLookBody"></div></div>`;
+      <div class="seg look-tabs" role="tablist" aria-label="Settings"><button type="button" role="tab" id="impLookTabPopup" aria-controls="impLookBody" data-tab="popup">Popup</button><button type="button" role="tab" id="impLookTabLabels" aria-controls="impLookBody" data-tab="labels">Labels</button><button type="button" role="tab" id="impLookTabSymbols" aria-controls="impLookBody" data-tab="symbols">Symbols</button></div>
+      <div class="look-body" id="impLookBody" role="tabpanel"></div></div>`;
     document.body.appendChild(d);
     MB.ui.wireDialog(d);
     d.querySelector('.look-tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) { ui.tab = b.dataset.tab; render(); } });
@@ -260,7 +260,7 @@ window.MB = window.MB || {};
     const r = rec();
     if (!r || !ui.dlg || ui.dlg.classList.contains('hidden')) return;
     const look = r.meta.look, body = ui.dlg.querySelector('#impLookBody');
-    ui.dlg.querySelectorAll('.look-tabs [data-tab]').forEach(b => { const on = b.dataset.tab === ui.tab; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
+    ui.dlg.querySelectorAll('.look-tabs [data-tab]').forEach(b => { const on = b.dataset.tab === ui.tab; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); if (on) body.setAttribute('aria-labelledby', b.id); });
     const act = document.activeElement && body.contains(document.activeElement) ? document.activeElement : null; // focus stays on the control (in its row)
     const fl = act && act.dataset.l, fk = act && act.closest('[data-k]') ? act.closest('[data-k]').dataset.k : null;
     if (ui.tab === 'popup') body.innerHTML = popupTab(look);
@@ -290,8 +290,8 @@ window.MB = window.MB || {};
       <div class="row"><label for="lookLabelField">Field</label><select id="lookLabelField" data-l="label.field">${fieldOpts(look, lb.field, 'The title')}</select></div>
       <div class="row"><label for="lookLabelText">Or text</label><input type="text" id="lookLabelText" data-l="label.text" value="${esc(lb.text || '')}" placeholder="{NAME} ({TYPE})" spellcheck="false"></div>
       <p class="note">Field names in braces are replaced by the feature's values; empty: the field above.</p>
-      <div class="row"><label>Text color</label><input type="color" data-l="label.color" value="${esc(lb.color || '#ffffff')}"><span class="grow"></span></div>
-      <div class="row"><label>Text size</label><input type="range" data-l="label.size" min="9" max="24" step="1" value="${+lb.size || 12}"><span class="val">${+lb.size || 12}px</span></div>
+      <div class="row"><label>Text color</label><input type="color" aria-label="Label text color" data-l="label.color" value="${esc(lb.color || '#ffffff')}"><span class="grow"></span></div>
+      <div class="row"><label>Text size</label><input type="range" aria-label="Label text size" data-l="label.size" min="9" max="24" step="1" value="${+lb.size || 12}"><span class="val">${+lb.size || 12}px</span></div>
       <label class="check"><input type="checkbox" data-l="label.bg"${lb.bg !== false ? ' checked' : ''}> Label background</label>
       <div class="row"><label for="lookLabelZoom">Show from ${MB.zoomIcon || 'zoom'}</label><input type="number" id="lookLabelZoom" class="narrow" data-l="label.minZoom" min="0" max="22" step="1" value="${+lb.minZoom || 0}"><span class="note">0: at every zoom</span></div>
       <p class="note">Labels that would overlap are left out: zoom in to see more.</p>`;
@@ -304,7 +304,7 @@ window.MB = window.MB || {};
     let html = `<div class="seg look-modes" role="radiogroup" aria-label="Symbols">${modes.map(([v, t]) => `<button type="button" role="radio" data-l="mode" data-v="${v}" aria-checked="${s.mode === v}"${s.mode === v ? ' class="active"' : ''}>${t}</button>`).join('')}</div>`;
     const iconRow = (icon, color, which, label) => points ? `<div class="row"><label>${label || 'Icon'}</label><button type="button" class="btn small look-icon" data-l="icon" data-which="${which}" title="Choose an icon">${iconPreview(icon, color)}<span>${icon ? esc(icon) : 'Dot'}</span></button>${icon ? `<button type="button" class="link" data-l="icon-clear" data-which="${which}">Dot</button>` : ''}</div>` : '';
     if (s.mode === 'file' || s.mode === 'single') {
-      html += `<div class="row"><label>Color</label><input type="color" data-l="symbol.color" value="${esc(s.color)}"><span class="note">${s.mode === 'file' ? 'for features without their own' : ''}</span></div>`;
+      html += `<div class="row"><label>Color</label><input type="color" aria-label="Symbol color" data-l="symbol.color" value="${esc(s.color)}"><span class="note">${s.mode === 'file' ? 'for features without their own' : ''}</span></div>`;
       html += iconRow(s.icon, s.color, 'all');
     } else if (s.mode === 'category') {
       html += `<div class="row"><label for="lookCatField">Field</label><select id="lookCatField" data-l="symbol.field">${fieldOpts(look, s.field, '— choose —')}</select></div>`;
@@ -316,23 +316,31 @@ window.MB = window.MB || {};
     } else {
       const nums = numericFields(look, r.fc ? r.fc.features : []);
       html += `<div class="row"><label for="lookGradField">Field</label><select id="lookGradField" data-l="symbol.field">${fieldOpts(look, nums.includes(s.field) ? s.field : '', nums.length ? '— choose —' : 'No number fields', nums)}</select></div>
-        <div class="row"><label>Classes</label><select data-l="symbol.classes">${[3, 4, 5, 6, 7].map(n => opt(String(n), String(n), String(s.classes || 5))).join('')}</select><select data-l="symbol.method" aria-label="Class method">${opt('equal', 'Equal intervals', s.method)}${opt('quantile', 'Quantiles', s.method)}</select></div>
-        <div class="row"><label>Colors</label><select data-l="symbol.ramp">${Object.keys(RAMPS).map(k => opt(k, RAMPS[k].name, s.ramp)).join('')}</select></div>`;
+        <div class="row"><label>Classes</label><select data-l="symbol.classes" aria-label="Number of classes">${[3, 4, 5, 6, 7].map(n => opt(String(n), String(n), String(s.classes || 5))).join('')}</select><select data-l="symbol.method" aria-label="Class method">${opt('equal', 'Equal intervals', s.method)}${opt('quantile', 'Quantiles', s.method)}</select></div>
+        <div class="row"><label>Colors</label><select data-l="symbol.ramp" aria-label="Color ramp">${Object.keys(RAMPS).map(k => opt(k, RAMPS[k].name, s.ramp)).join('')}</select></div>`;
       if (s.field) html += `<div class="look-cats">${legend(look).map(it => `<div class="look-cat"><i class="trk-sw" style="background:${esc(it.color)}"></i><span class="look-cat-v">${esc(it.text)}</span></div>`).join('')}</div>`;
       html += iconRow(s.icon, s.other || OTHER, 'all');
     }
-    if (points) html += `<div class="row"><label>Point size</label><input type="range" data-l="symbol.size" min="10" max="48" step="1" value="${s.size || 22}"><span class="val">${s.size || 22}px</span></div>`;
-    if (shapes) html += `<div class="row"><label>Line width</label><input type="range" data-l="symbol.width" min="0" max="8" step="0.5" value="${s.width == null ? 2 : s.width}"><span class="val">${s.width == null ? 2 : s.width}px</span></div>`;
-    if (areas) html += `<div class="row"><label>Fill</label><input type="range" data-l="symbol.fill" min="0" max="1" step="0.05" value="${s.fill == null ? 0.25 : s.fill}"><span class="val">${Math.round((s.fill == null ? 0.25 : s.fill) * 100)}%</span></div>`;
+    if (points) html += `<div class="row"><label>Point size</label><input type="range" aria-label="Point size" data-l="symbol.size" min="10" max="48" step="1" value="${s.size || 22}"><span class="val">${s.size || 22}px</span></div>`;
+    if (shapes) html += `<div class="row"><label>Line width</label><input type="range" aria-label="Line width" data-l="symbol.width" min="0" max="8" step="0.5" value="${s.width == null ? 2 : s.width}"><span class="val">${s.width == null ? 2 : s.width}px</span></div>`;
+    if (areas) html += `<div class="row"><label>Fill</label><input type="range" aria-label="Fill opacity" data-l="symbol.fill" min="0" max="1" step="0.05" value="${s.fill == null ? 0.25 : s.fill}"><span class="val">${Math.round((s.fill == null ? 0.25 : s.fill) * 100)}%</span></div>`;
     if (s.mode === 'file') html += '<p class="note">Width and fill apply to features without a style of their own.</p>';
     return html;
   }
 
   // An edit in the dialog: into the look, the map following (a slider at once, typed text when it is done).
-  let applyTimer = null;
-  function apply(r, rebuildDialog) {
+  // what: 'popup' (no map work), 'labels' (the labels and hover names) or 'symbols' (the features restyled in place);
+  // done: the edit is over (a slider let go, a color chosen): the panel's legend too.
+  let applyTimer = null, pending = { what: new Set(), done: false };
+  function apply(r, rebuildDialog, what, done) {
+    pending.what.add(what || 'symbols');
+    if (done !== false) pending.done = true;
     clearTimeout(applyTimer);
-    applyTimer = setTimeout(() => MB.imports.setLook(r.meta.id, r.meta.look), 120);
+    applyTimer = setTimeout(() => {
+      const p = pending;
+      pending = { what: new Set(), done: false };
+      MB.imports.setLook(r.meta.id, r.meta.look, { what: Array.from(p.what), done: p.done });
+    }, 150);
     if (rebuildDialog) render();
   }
   function onEdit(e, done) {
@@ -342,17 +350,17 @@ window.MB = window.MB || {};
     const v = el.type === 'checkbox' ? el.checked : el.type === 'range' || el.type === 'number' ? +el.value : el.value;
     if (el.type === 'range') { const val = el.parentNode.querySelector('.val'); if (val) val.textContent = l === 'symbol.fill' ? Math.round(v * 100) + '%' : v + 'px'; }
     if (!done && el.type !== 'range' && el.type !== 'color') return; // text: when it is done
-    if (l === 'f.show' || l === 'f.alias') { const f = look.fields.find(x => x.key === row.dataset.k); if (f) f[l.slice(2)] = l === 'f.alias' ? String(v).trim() : v; apply(r); return; }
-    if (l === 'cat.color') { const c = s.cats[+row.dataset.k]; if (c) c.color = v; apply(r); return; }
-    if (l === 'title') { look.title = v; apply(r); return; }
+    if (l === 'f.show' || l === 'f.alias') { const f = look.fields.find(x => x.key === row.dataset.k); if (f) f[l.slice(2)] = l === 'f.alias' ? String(v).trim() : v; apply(r, false, 'popup'); return; }
+    if (l === 'cat.color') { const c = s.cats[+row.dataset.k]; if (c) c.color = v; apply(r, false, 'symbols', done); return; }
+    if (l === 'title') { look.title = v; apply(r, false, 'labels'); return; }
     const [obj, key] = l.split('.');
-    if (obj === 'label') { look.label[key] = key === 'minZoom' ? Math.max(0, Math.min(22, Math.round(v) || 0)) : v; apply(r); return; }
+    if (obj === 'label') { look.label[key] = key === 'minZoom' ? Math.max(0, Math.min(22, Math.round(v) || 0)) : v; apply(r, false, 'labels'); return; }
     if (obj === 'symbol') {
       s[key] = key === 'classes' ? +v : v;
       const features = r.fc ? r.fc.features : [];
       if (s.mode === 'category' && key === 'field') fillCats(look, features);
       if (s.mode === 'graduated' && ['field', 'classes', 'method'].includes(key)) fillBreaks(look, features);
-      apply(r, ['field', 'classes', 'method', 'ramp'].includes(key));
+      apply(r, ['field', 'classes', 'method', 'ramp'].includes(key), 'symbols', done);
     }
   }
   function onClick(e) {
@@ -364,20 +372,20 @@ window.MB = window.MB || {};
       s.mode = b.dataset.v;
       if (s.mode === 'category' && s.field) fillCats(look, features);
       if (s.mode === 'graduated') { if (!numericFields(look, features).includes(s.field)) s.field = ''; fillBreaks(look, features); }
-      apply(r, true);
+      apply(r, true, 'symbols');
     } else if (l === 'f.up' || l === 'f.down') {
       const i = look.fields.findIndex(f => f.key === b.closest('[data-k]').dataset.k), j = i + (l === 'f.up' ? -1 : 1);
       if (i < 0 || j < 0 || j >= look.fields.length) return;
       [look.fields[i], look.fields[j]] = [look.fields[j], look.fields[i]];
-      apply(r, true);
-    } else if (l === 'all' || l === 'none') { look.fields.forEach(f => { f.show = l === 'all'; }); apply(r, true); }
-    else if (l === 'icon-clear') { s.icon = ''; apply(r, true); }
+      apply(r, true, 'popup');
+    } else if (l === 'all' || l === 'none') { look.fields.forEach(f => { f.show = l === 'all'; }); apply(r, true, 'popup'); }
+    else if (l === 'icon-clear') { s.icon = ''; apply(r, true, 'symbols'); }
     else if (l === 'icon' && MB.icons) {
       const which = b.dataset.which, cat = which === 'all' ? null : s.cats[+which];
       MB.icons.pick({ color: cat ? cat.color : s.color }).then(res => {
         if (!res) return;
         if (cat) { cat.icon = res.name; cat.color = res.color; } else { s.icon = res.name; if (s.mode === 'single' || s.mode === 'file') s.color = res.color; }
-        apply(r, true);
+        apply(r, true, 'symbols');
       });
     }
   }

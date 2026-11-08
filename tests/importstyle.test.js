@@ -141,3 +141,34 @@ test('the project\'s objects carry attributes: kept and saved, edited in Propert
     assert.match(sw, new RegExp(`'\\./js/${f}\\.js'`));
   }
 });
+
+test('a field renamed or deleted in the attribute table: every feature, and every rule that used it', () => {
+  const feats = [pt({ kind: 'park', h: 3 }), pt({ kind: 'pier', h: 12 })];
+  const look = S.defaults(feats);
+  Object.assign(look, { title: 'kind' });
+  Object.assign(look.label, { show: true, field: 'kind', text: '{kind} ({h} m)' });
+  Object.assign(look.symbol, { mode: 'category', field: 'kind' });
+  S.fillCats(look, feats);
+  const rec = { meta: { id: 'x', name: 'x', look }, fc: { type: 'FeatureCollection', features: feats } };
+  const ad = MB.imports.tableAdapter(rec);
+  assert.equal(ad.renameField('kind', 'h'), 'There is a field of that name already');
+  assert.equal(ad.renameField('kind', 'type'), '');
+  assert.deepEqual(plain(feats.map(f => f.properties.type)), ['park', 'pier']);
+  assert.equal(feats[0].properties.kind, undefined);
+  assert.deepEqual([look.title, look.label.field, look.label.text, look.symbol.field], ['type', 'type', '{type} ({h} m)', 'type']);
+  assert.equal(S.labelText(look, feats[1].properties), 'pier (12 m)');
+  ad.deleteField('type');
+  assert.deepEqual([look.title, look.label.field, look.symbol.field, look.symbol.mode], ['', '', '', 'single'], 'nothing left pointing at it');
+  assert.deepEqual(plain(look.fields.map(f => f.key)), ['h']);
+  assert.equal(ad.addField('h'), 'There is a field of that name already');
+  assert.equal(ad.addField('  note '), '');
+  assert.deepEqual(plain(look.fields.map(f => f.key)), ['h', 'note']);
+});
+
+test('the attribute table names its columns by their index: no field name goes into the page and back', () => {
+  const src = read('js/attrtable.js');
+  assert.ok(!/data-(k|sort|col|rename)="\$\{esc\(f\.key\)\}"/.test(src), 'a field name (the Object name column\'s key has a NUL in it) would not survive an attribute');
+  assert.match(src, /data-sort data-c="\$\{c\}"/);
+  assert.match(src, /class="attr-cell" data-c="\$\{fields\.indexOf\(f\)\}"/);
+  assert.match(src, /const keyAt = el => \{ const f = T\.fields\[\+el\.dataset\.c\]; return f \? f\.key : null; \};/);
+});
