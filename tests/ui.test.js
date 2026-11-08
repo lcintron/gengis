@@ -55,12 +55,14 @@ test('the community networks and aisstream.io wait for zoom 8; your own receiver
 
 test('my location: a pin button drops a marker at the position, only while it is known, and leaves the map alone', () => {
   const loc = js['locate.js'], css = read('css/app.css');
-  assert.match(loc, /const a = self\.btn = [\s\S]*?self\.press\(\); \}\);\s*const p = self\.pinBtn = L\.DomUtil\.create\('a', 'mb-locate-pin', bar\)[\s\S]*?const b = self\.back/, 'right under the location button, above the back button (it does not jump when that one shows)');
-  assert.match(loc, /p\.hidden = true;/, 'hidden until there is a position');
+  assert.match(loc, /const b = self\.back = L\.DomUtil\.create\('a', 'mb-locate-back', bar\)[\s\S]*?const pinBar = self\.pinBar = L\.DomUtil\.create\('div', 'leaflet-bar mb-locate mb-locate-pinbar', ctl\)[\s\S]*?self\.pinBtn = L\.DomUtil\.create\('a', 'mb-locate-pin', pinBar\)/,
+    'below the back button, in a bar of its own (not in the location bar)');
+  assert.match(loc, /pinBar\.hidden = true;/, 'hidden until there is a position');
+  assert.match(loc, /this\.bar\.classList\.toggle\('following'/, 'only the location bar is lit, not the pin');
   assert.match(loc, /canPin\(\) \{ return this\.watchId != null && !!this\.fix && !\(MB\.presenter && MB\.presenter\.active\); \}/, 'shown while the location is on with a position, following or not; never while presenting (nothing is edited then)');
-  assert.match(loc, /this\.pinBtn\.hidden = !this\.canPin\(\)/);
+  assert.match(loc, /hidePin = !this\.canPin\(\)[\s\S]*?this\.pinBar\.hidden = hidePin;/);
   assert.match(loc, /MB\.on\('presenter', \(\) => this\.render\(\)\)/, 'presenting starts or ends: the button hides or shows');
-  assert.match(loc, /const had = document\.activeElement;[\s\S]*?this\.pinBtn\.hidden = [\s\S]*?\[this\.back, this\.pinBtn\]\.some\(b => b && b\.hidden && had === b\)\) this\.btn\.focus\(\)/,
+  assert.match(loc, /const had = document\.activeElement;[\s\S]*?this\.pinBar\.hidden = hidePin;\s*[^\n]*\n\s*if \(\(hideBack && had === this\.back\) \|\| \(hidePin && had === this\.pinBtn\)\) this\.btn\.focus\(\)/,
     'a focused button that hides hands the focus to the location button (noted before hiding: that drops the focus at once)');
   const drop = loc.slice(loc.indexOf('dropPin() {'), loc.indexOf('pan(latlng)'));
   assert.match(drop, /if \(!this\.canPin\(\)\) return null;/);
@@ -70,7 +72,7 @@ test('my location: a pin button drops a marker at the position, only while it is
   assert.match(drop, /MB\.commit\(/, 'one undo step, and saved');
   assert.match(drop, /MB\.noteAdded\(f\)/, 'a hidden layer is pointed out');
   assert.doesNotMatch(drop, /selectFeature|setView|panTo|tools\.set/, 'nothing selected, the view not moved');
-  assert.match(css, /\.mb-locate\.following a\.mb-locate-pin \{ background: var\(--bg-2\)/, 'not lit with the location button');
+  assert.match(css, /\.mb-locate-pinbar \{ margin-top: 10px; \}/, 'a gap above it: a button on its own');
   assert.match(css, /\.mb-locate a svg \{ width: 18px; height: 18px; \}/, 'its icon the size of its neighbours');
 });
 
@@ -95,7 +97,7 @@ test('my location lets the map be moved off it, with a button back (no spring ba
   assert.doesNotMatch(loc, /'dragend boxzoomend'/, 'a pan by hand no longer springs back');
   assert.match(loc, /map\.on\('dragstart', \(\) => this\.unfollow\(\)\)/, 'a drag stops the following');
   assert.match(loc, /if \(this\.own\) \{ this\.own = false; return; \}/, 'its own pans do not stop it');
-  assert.match(loc, /this\.back\.hidden = !\(on && this\.fix && !this\.follow\)/, 'the button back shows only while off the position');
+  assert.match(loc, /hideBack = !\(on && this\.fix && !this\.follow\)[\s\S]*?this\.back\.hidden = hideBack;/, 'the button back shows only while off the position');
   // a live popup re-placed with every report would pan the map each time (Leaflet's autoPan on setLatLng)
   for (const f of ['adsb.js', 'ais.js', 'mavlink.js']) assert.match(js[f], /popup\.openOn\(MB\.map\);\r?\n\s*popup\.options\.autoPan = false;/, f + ': its popup pans only as it opens');
 });

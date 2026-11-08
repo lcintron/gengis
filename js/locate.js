@@ -3,8 +3,8 @@
  * permission the first time. While the location is on, the map follows it (the wheel, a pinch or a double-click zoom
  * about the position) until it is moved some other way: a drag, the keys, a search, a popup opening at its edge. Then
  * it stays where it was put, the dot still moving, and a button under this one brings it back to following.
- * While the position is known, a pin button (right under the location button, so it stays in one place) drops a marker
- * there, named with the time, in one press: the map stays as it is, following or not.
+ * While the position is known, a pin button (on its own below those two) drops a marker there, named with the time, in
+ * one press: the map stays as it is, following or not.
  * A press of the location button turns the location off.
  * A beam from the dot shows where the device points: its compass where it has one (corrected from magnetic to true
  * north with the World Magnetic Model, as the map is drawn), else the direction of travel while moving.
@@ -64,21 +64,14 @@
       const Ctl = L.Control.extend({
         options: { position: 'topright' },
         onAdd() {
-          const bar = self.bar = L.DomUtil.create('div', 'leaflet-bar leaflet-control mb-locate');
+          const ctl = L.DomUtil.create('div', 'mb-locate-ctl');
+          L.DomEvent.disableClickPropagation(ctl);
+          const bar = self.bar = L.DomUtil.create('div', 'leaflet-bar mb-locate', ctl);
           const a = self.btn = L.DomUtil.create('a', '', bar);
           a.href = '#';
           a.setAttribute('role', 'button');
           a.innerHTML = ICON;
-          L.DomEvent.disableClickPropagation(bar);
           L.DomEvent.on(a, 'click', e => { L.DomEvent.preventDefault(e); self.press(); });
-          const p = self.pinBtn = L.DomUtil.create('a', 'mb-locate-pin', bar); // shown while the position is known
-          p.href = '#';
-          p.setAttribute('role', 'button');
-          p.title = 'Drop a pin at my location';
-          p.setAttribute('aria-label', p.title);
-          p.innerHTML = MB.ICON.pinAdd;
-          p.hidden = true;
-          L.DomEvent.on(p, 'click', e => { L.DomEvent.preventDefault(e); self.dropPin(); });
           const b = self.back = L.DomUtil.create('a', 'mb-locate-back', bar); // shown while the map is off the position
           b.href = '#';
           b.setAttribute('role', 'button');
@@ -87,8 +80,18 @@
           b.innerHTML = BACK;
           b.hidden = true;
           L.DomEvent.on(b, 'click', e => { L.DomEvent.preventDefault(e); self.recenter(); });
+          // the pin: a button of its own below the bar, apart from it (it adds to the map; the others move it)
+          const pinBar = self.pinBar = L.DomUtil.create('div', 'leaflet-bar mb-locate mb-locate-pinbar', ctl);
+          pinBar.hidden = true; // shown while the position is known
+          const p = self.pinBtn = L.DomUtil.create('a', 'mb-locate-pin', pinBar);
+          p.href = '#';
+          p.setAttribute('role', 'button');
+          p.title = 'Drop a pin at my location';
+          p.setAttribute('aria-label', p.title);
+          p.innerHTML = MB.ICON.pinAdd;
+          L.DomEvent.on(p, 'click', e => { L.DomEvent.preventDefault(e); self.dropPin(); });
           self.render();
-          return bar;
+          return ctl;
         }
       });
       new Ctl().addTo(MB.map);
@@ -294,10 +297,11 @@
       this.bar.classList.toggle('following', on && !!this.fix && this.follow);
       const h = this.heading, dir = h && this.fix ? ` · heading ${Math.round(h.deg) % 360}° (${h.src === 'compass' ? 'compass' : 'direction of travel'})` : '';
       const had = document.activeElement; // (hiding a button drops its focus at once: noted first)
-      if (this.back) this.back.hidden = !(on && this.fix && !this.follow);
-      if (this.pinBtn) this.pinBtn.hidden = !this.canPin();
+      const hideBack = !(on && this.fix && !this.follow), hidePin = !this.canPin();
+      if (this.back) this.back.hidden = hideBack;
+      if (this.pinBar) this.pinBar.hidden = hidePin;
       // a button hidden while it had the focus: the focus to the location button, not lost to the page
-      if ([this.back, this.pinBtn].some(b => b && b.hidden && had === b)) this.btn.focus();
+      if ((hideBack && had === this.back) || (hidePin && had === this.pinBtn)) this.btn.focus();
       const title = !on ? 'Center on my location' : (waiting ? 'Finding your location… (press to cancel)' : (this.follow ? 'Following your location' : 'Showing your location') + dir + ': press to turn it off');
       if (this.btn.title !== title) { this.btn.title = title; this.btn.setAttribute('aria-label', title); } // the compass redraws many times a second
       this.btn.setAttribute('aria-pressed', on ? 'true' : 'false');
