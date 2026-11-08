@@ -53,6 +53,20 @@ test('the community networks and aisstream.io wait for zoom 8; your own receiver
   assert.match(css, /\.mb-zoom-hint \{/, 'the map says to zoom in');
 });
 
+test('my location: a pin button drops a marker at the position, only while it is known, and leaves the map alone', () => {
+  const loc = js['locate.js'], css = read('css/app.css');
+  assert.match(loc, /self\.pinBtn = L\.DomUtil\.create\('a', 'mb-locate-pin', bar\)[\s\S]*?const b = self\.back/, 'right under the location button, above the back button (it does not jump when that one shows)');
+  assert.match(loc, /p\.hidden = true;/, 'hidden until there is a position');
+  assert.match(loc, /this\.pinBtn\.hidden = !\(on && this\.fix\)/, 'shown while the location is on with a position, following or not');
+  const drop = loc.slice(loc.indexOf('dropPin() {'), loc.indexOf('pan(latlng)'));
+  assert.match(drop, /if \(this\.watchId == null \|\| !fix\) return null;/);
+  assert.match(drop, /MB\.restoreFeature\(\{ type: 'marker', latlng: \[fix\.latlng\.lat, fix\.latlng\.lng\]/);
+  assert.match(drop, /MB\.commit\(/, 'one undo step, and saved');
+  assert.match(drop, /MB\.noteAdded\(f\)/, 'a hidden layer is pointed out');
+  assert.doesNotMatch(drop, /selectFeature|setView|panTo|tools\.set/, 'nothing selected, the view not moved');
+  assert.match(css, /\.mb-locate\.following a\.mb-locate-pin \{ background: var\(--bg-2\)/, 'not lit with the location button');
+});
+
 test('my location lets the map be moved off it, with a button back (no spring back, no tug of war)', () => {
   const loc = js['locate.js'];
   assert.doesNotMatch(loc, /'dragend boxzoomend'/, 'a pan by hand no longer springs back');
