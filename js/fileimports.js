@@ -877,6 +877,19 @@ window.MB = window.MB || {};
 
   const layers = new Map(); // id -> { meta, fc (when loaded), group (when drawn), ds (identify's view of it), styles }
 
+  // Whether a pointer is pressed anywhere: something that redraws a panel waits for its release (and the click
+  // that follows it) with whenReleased(fn). Listened to once, for the page.
+  const press = { down: false, waiting: [], hooked: false };
+  function hookPress() {
+    if (press.hooked || typeof document === 'undefined') return;
+    press.hooked = true;
+    document.addEventListener('pointerdown', () => { press.down = true; }, true);
+    const up = () => { press.down = false; const w = press.waiting.splice(0); if (w.length) setTimeout(() => w.forEach(fn => fn())); }; // (after the click)
+    document.addEventListener('pointerup', up, true);
+    document.addEventListener('pointercancel', up, true);
+  }
+  const whenReleased = fn => { if (press.down) press.waiting.push(fn); else setTimeout(fn); };
+
   MB.imports = {
     job: null,     // what is being read: { name }
     notes: [],     // what the files opened came to: [{ text, warn }]
@@ -1192,19 +1205,23 @@ window.MB = window.MB || {};
       if (!rec) return;
       // An edit is kept, its box showing the value as kept (" 12 " is 12); Properties is drawn again (its heading
       // may be the title just edited) once focus leaves it, not on the way from one box to the next.
-      let dirty = false;
+      let dirty = false, saving = Promise.resolve();
+      hookPress();
       panel.querySelectorAll('input[data-iattr]').forEach(inp => inp.addEventListener('change', () => {
         const f = picked.layer.feature, k = inp.dataset.iattr;
         const v = MB.attrs ? MB.attrs.typed(inp.value, (f.properties || {})[k]) : inp.value;
         dirty = true;
         inp.value = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
-        this.setValue(rec, f, k, v, { fromProps: true }).catch(e => console.warn('File imports', e));
+        saving = this.setValue(rec, f, k, v, { fromProps: true }).catch(e => console.warn('File imports', e));
       }));
       const sec = panel.querySelector('input[data-iattr]') && panel.querySelector('input[data-iattr]').closest('.section'); // (drawn anew with Properties: its listener goes with it)
       if (sec) sec.addEventListener('focusout', e => {
         if (!dirty || sec.contains(e.relatedTarget)) return;
         dirty = false;
-        setTimeout(() => { if (MB.data.picked === picked && sec.isConnected && !MB.selected && !sec.contains(document.activeElement) && MB.ui && MB.ui.renderProps) MB.ui.renderProps(); });
+        // once the edit is kept (its title described anew), and not while a press is down: drawn between a
+        // button's press and release, the button would be gone and the click lost
+        const kept = saving;
+        whenReleased(() => kept.then(() => { if (MB.data.picked === picked && sec.isConnected && !MB.selected && !sec.contains(document.activeElement) && MB.ui && MB.ui.renderProps) MB.ui.renderProps(); }));
       });
       panel.querySelectorAll('[data-imp-pick]').forEach(b => b.addEventListener('click', () => (b.dataset.impPick === 'table' ? this.openTable(rec.meta.id) : this.openSettings(rec.meta.id))));
     },
