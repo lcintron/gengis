@@ -92,6 +92,7 @@
         }
       });
       new Ctl().addTo(MB.map);
+      MB.on('presenter', () => this.render()); // presenting, nothing is edited: no pin button
       // The map moved some other way than following (a drag, the keys, a box zoom, a search, a popup's pan): it stays
       // there. A zoom about the position keeps it centered, so it follows on.
       const map = MB.map;
@@ -124,15 +125,27 @@
       this.render();
     },
 
-    // A marker at the position, named with the time it was taken (several dropped along a walk tell apart).
-    // The map is left as it is: nothing is selected and the view does not move.
+    // A pin can be dropped: the position is known, and the map is not being presented (nothing is edited then).
+    canPin() { return this.watchId != null && !!this.fix && !(MB.presenter && MB.presenter.active); },
+
+    // When the position was taken, to the second (several dropped along a walk tell apart), with its zone's name: in
+    // the zone the map's clock shows (UTC, or the zone chosen for local time; else this device's).
+    pinTime(at) {
+      const c = MB.clock ? MB.clock.config() : { show: false, mode: 'local', zone: '' };
+      const timeZone = c.show && c.mode === 'utc' ? 'UTC' : (c.zone || undefined);
+      return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short', timeZone });
+    },
+
+    // A marker at the position, named with the time it was taken. The map is left as it is: nothing is selected and
+    // the view does not move.
     dropPin() {
       const fix = this.fix;
-      if (this.watchId == null || !fix) return null;
-      const when = new Date(fix.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      if (!this.canPin()) return null;
+      const when = this.pinTime(fix.at);
       const f = MB.restoreFeature({ type: 'marker', latlng: [fix.latlng.lat, fix.latlng.lng], name: 'My location, ' + when, style: MB.newShapeStyle(true) });
       MB.commit('add marker at my location');
-      if (!MB.noteAdded(f)) MB.toast('Pin dropped at your location (accurate to about ' + MB.formatDistance(fix.accuracy) + ')', 2500);
+      // (the time says which position: after a GPS dropout the last one stays, and may be a while old)
+      if (!MB.noteAdded(f)) MB.toast(`Pin dropped at your location as of ${when} (accurate to about ${MB.formatDistance(fix.accuracy)})`, 3000);
       return f;
     },
 
@@ -280,8 +293,11 @@
       this.bar.classList.toggle('active', on && !!this.fix);
       this.bar.classList.toggle('following', on && !!this.fix && this.follow);
       const h = this.heading, dir = h && this.fix ? ` · heading ${Math.round(h.deg) % 360}° (${h.src === 'compass' ? 'compass' : 'direction of travel'})` : '';
+      const had = document.activeElement; // (hiding a button drops its focus at once: noted first)
       if (this.back) this.back.hidden = !(on && this.fix && !this.follow);
-      if (this.pinBtn) this.pinBtn.hidden = !(on && this.fix);
+      if (this.pinBtn) this.pinBtn.hidden = !this.canPin();
+      // a button hidden while it had the focus: the focus to the location button, not lost to the page
+      if ([this.back, this.pinBtn].some(b => b && b.hidden && had === b)) this.btn.focus();
       const title = !on ? 'Center on my location' : (waiting ? 'Finding your location… (press to cancel)' : (this.follow ? 'Following your location' : 'Showing your location') + dir + ': press to turn it off');
       if (this.btn.title !== title) { this.btn.title = title; this.btn.setAttribute('aria-label', title); } // the compass redraws many times a second
       this.btn.setAttribute('aria-pressed', on ? 'true' : 'false');
