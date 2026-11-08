@@ -381,6 +381,7 @@ test('a panel redraw waits for a press to end: its release, a context menu, the 
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/fileimports.js'), 'utf8'), ctx, { filename: 'fileimports.js' });
   const P = MB2.imports.press, doc = new EventTarget(), win = new EventTarget();
   P.hookPress(doc, win);
+  P.state.giveUp = 60; // (2 s in the app)
   const fire = (t, init) => { const e = new Event(t); Object.assign(e, init || {}); (t === 'blur' ? win : doc).dispatchEvent(e); };
   const tick = ms => new Promise(r => setTimeout(r, ms || 0));
   const ran = [];
@@ -399,6 +400,15 @@ test('a panel redraw waits for a press to end: its release, a context menu, the 
   await tick();
   assert.deepEqual(ran, ['free', 'after up']);
 
+  fire('pointerdown', { button: 0 }); // a second finger lifting does not end the first one's press
+  P.whenReleased(() => ran.push('two fingers'));
+  fire('pointerup', { isPrimary: false });
+  await tick(20);
+  assert.notEqual(ran.at(-1), 'two fingers');
+  fire('pointerup', { isPrimary: true });
+  await tick();
+  assert.equal(ran.at(-1), 'two fingers');
+
   fire('pointerdown', { button: 2 }); // a right-click does not hold anything back
   P.whenReleased(() => ran.push('right'));
   await tick();
@@ -414,7 +424,7 @@ test('a panel redraw waits for a press to end: its release, a context menu, the 
 
   fire('pointerdown', { button: 0 }); // a release that never comes
   P.whenReleased(() => ran.push('given up'));
-  await tick(2100);
+  await tick(150);
   assert.equal(ran.at(-1), 'given up');
   assert.equal(P.state.down, false);
 });

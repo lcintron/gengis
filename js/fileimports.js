@@ -881,7 +881,7 @@ window.MB = window.MB || {};
   // that follows it) with whenReleased(fn). Listened to once, for the page. Only the main button's press counts (a
   // right-click's menu may swallow its release); the window losing focus, or a context menu, ends a press too, and
   // a release that never comes is given up on after 2 s, so nothing waits for good.
-  const press = { down: false, waiting: [], hooked: false, timer: null };
+  const press = { down: false, waiting: [], hooked: false, timer: null, giveUp: 2000 }; // (giveUp: ms; the tests shorten it)
   function release() {
     press.down = false;
     clearTimeout(press.timer);
@@ -897,9 +897,11 @@ window.MB = window.MB || {};
       if (e.button > 0 || e.isPrimary === false) return;
       press.down = true;
       clearTimeout(press.timer);
-      press.timer = setTimeout(release, 2000);
+      press.timer = setTimeout(release, press.giveUp);
     }, true);
-    ['pointerup', 'pointercancel', 'contextmenu'].forEach(t => doc.addEventListener(t, release, true));
+    const end = e => { if (e.isPrimary !== false) release(); }; // (a second finger lifting is not the press ending)
+    ['pointerup', 'pointercancel'].forEach(t => doc.addEventListener(t, end, true));
+    doc.addEventListener('contextmenu', release, true);
     if (win && typeof win.addEventListener === 'function') win.addEventListener('blur', release);
   }
   const whenReleased = fn => { if (press.down) press.waiting.push(fn); else setTimeout(fn); };
@@ -1237,7 +1239,8 @@ window.MB = window.MB || {};
         // button's press and release, the button would be gone and the click lost
         // (the release is looked at once the edit is kept: a press that began during a slow save waits too)
         saving.then(() => whenReleased(() => {
-          if (MB.data.picked !== picked || !sec.isConnected || MB.selected || sec.contains(document.activeElement) || !MB.ui || !MB.ui.renderProps) return;
+          if (sec.isConnected && sec.contains(document.activeElement)) { dirty = true; return; } // back in the Attributes before the save was kept: next time focus leaves
+          if (MB.data.picked !== picked || !sec.isConnected || MB.selected || !MB.ui || !MB.ui.renderProps) return;
           // focus moved to another of Properties' controls (Shift+Tab to its ✕): the same control keeps it
           const at = document.activeElement, box = document.getElementById('propsBody');
           const key = at && box && box.contains(at) ? ['data-act', 'data-imp-pick', 'data-iattr'].map(a => at.getAttribute(a) != null ? `[${a}="${CSS.escape(at.getAttribute(a))}"]` : '').find(Boolean) : '';
