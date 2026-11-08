@@ -1065,15 +1065,17 @@ window.MB = window.MB || {};
       if (what.includes('popup') && MB.attrTable) MB.attrTable.refresh(); // (the display names head its columns)
       if (opts.done) this.changed();
     },
-    // Properties showing one of this layer's features: its layer after a redraw, its rows after a change.
-    refreshPicked(rec) {
+    // Properties showing one of this layer's features: its layer after a redraw, its rows after a change. Not drawn
+    // again while focus is in it, nor for an edit made there (quiet: it shows the value already; drawing it in the
+    // middle of a Tab or a click would lose where focus was going; during that change event focus is on the page body).
+    refreshPicked(rec, quiet) {
       const pk = MB.data && MB.data.picked;
       if (!pk || !rec.ds || pk.ds !== rec.ds) return;
       const f = pk.layer && pk.layer.feature;
       if (rec.group && f && !rec.group.hasLayer(pk.layer)) rec.group.eachLayer(l => { if (l.feature === f) { pk.layer = l; pk.layers = [l]; } });
       if (MB.data.refreshPick) MB.data.refreshPick();
-      const box = document.getElementById('propsBody'), typing = box && box.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
-      if (!typing && MB.ui && MB.ui.renderProps && !MB.selected) MB.ui.renderProps();
+      const box = document.getElementById('propsBody'), inside = box && box.contains(document.activeElement);
+      if (!quiet && !inside && MB.ui && MB.ui.renderProps && !MB.selected) MB.ui.renderProps();
     },
     saveSoon(rec) {
       clearTimeout(rec.saveTimer);
@@ -1086,7 +1088,7 @@ window.MB = window.MB || {};
 
     /* ---------- editing the attributes ---------- */
     // A feature's value (null: none), kept; its look follows when the field is one the symbols, labels or title use.
-    async setValue(rec, f, key, value) {
+    async setValue(rec, f, key, value, opts) {
       const p = f.properties = f.properties || {}, look = rec.meta.look, s = look.symbol;
       if (value == null || value === '') delete p[key]; else p[key] = value;
       if (value != null && value !== '' && !look.fields.some(x => x.key === key)) look.fields.push({ key, alias: '', show: true });
@@ -1095,7 +1097,7 @@ window.MB = window.MB || {};
       this.saveSoon(rec);
       const used = key === s.field || key === look.title || key === look.label.field || (look.label.text || '').includes('{' + key + '}') || (!look.title && /^(name|title|label)$/i.test(key));
       if (used) await this.restyle(rec);
-      this.refreshPicked(rec);
+      this.refreshPicked(rec, !!(opts && opts.fromProps));
       if (used) this.changed(); // (the legend)
     },
     // Rename or delete a field in every feature, and wherever the look uses it.
@@ -1190,7 +1192,7 @@ window.MB = window.MB || {};
       panel.querySelectorAll('input[data-iattr]').forEach(inp => inp.addEventListener('change', () => {
         const f = picked.layer.feature, k = inp.dataset.iattr;
         const v = MB.attrs ? MB.attrs.typed(inp.value, (f.properties || {})[k]) : inp.value;
-        this.setValue(rec, f, k, v).catch(e => console.warn('File imports', e));
+        this.setValue(rec, f, k, v, { fromProps: true }).catch(e => console.warn('File imports', e));
       }));
       panel.querySelectorAll('[data-imp-pick]').forEach(b => b.addEventListener('click', () => (b.dataset.impPick === 'table' ? this.openTable(rec.meta.id) : this.openSettings(rec.meta.id))));
     },
