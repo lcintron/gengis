@@ -86,7 +86,7 @@ test('a pin dropped at my location is named with the time, to the second, in the
     assert.match(pinTime(clock({ show: true, mode: 'utc', zone: '' }))(at), /^6:32:05\sPM UTC$/, 'the clock in UTC: UTC');
     assert.match(pinTime(clock({ show: true, mode: 'local', zone: 'Asia/Tokyo' }))(at), /^3:32:05\sAM GMT\+9$/, 'a chosen zone');
     assert.match(pinTime(clock({ show: false, mode: 'utc', zone: 'Asia/Tokyo' }))(at), /^3:32:05\sAM GMT\+9$/, 'the clock hidden: the chosen local zone still');
-    assert.match(pinTime({})(at), /^\d{1,2}:32:05\s[AP]M \S+$/, 'no clock: this device\'s zone, named');
+    assert.equal(pinTime({})(at), new Date(at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }), 'no clock: this device\'s zone, named');
   } finally { Date.prototype.toLocaleTimeString = orig; }
 });
 
