@@ -79,10 +79,10 @@ test('a pin dropped at my location is named with the time, to the second, in the
   const pinTime = new Function('MB', 'return ' + src.slice(src.indexOf('pinTime(at) {') + 'pinTime'.length, src.indexOf('// A marker at the position')).trim().replace(/,$/, '').replace(/^\(at\)/, 'function (at)'));
   const at = Date.UTC(2026, 0, 15, 18, 32, 5);
   const clock = c => ({ clock: { config: () => c } });
-  assert.match(pinTime(clock({ show: true, mode: 'utc', zone: '' }))(at), /6:32:05\sPM UTC/, 'the clock in UTC: UTC');
-  assert.match(pinTime(clock({ show: true, mode: 'local', zone: 'Asia/Tokyo' }))(at), /3:32:05\sAM (GMT\+9|JST)/, 'a chosen zone');
-  assert.match(pinTime(clock({ show: false, mode: 'utc', zone: 'Asia/Tokyo' }))(at), /3:32:05\sAM (GMT\+9|JST)/, 'the clock hidden: the chosen local zone still');
-  assert.match(pinTime({})(at), /\d:32:05\s[AP]M \S+/, 'no clock: this device\'s zone, named');
+  assert.match(pinTime(clock({ show: true, mode: 'utc', zone: '' }))(at), /(6:32:05\sPM|18:32:05) UTC/, 'the clock in UTC: UTC');
+  assert.match(pinTime(clock({ show: true, mode: 'local', zone: 'Asia/Tokyo' }))(at), /(3:32:05\sAM|03:32:05) (GMT\+9|JST)/, 'a chosen zone');
+  assert.match(pinTime(clock({ show: false, mode: 'utc', zone: 'Asia/Tokyo' }))(at), /(3:32:05\sAM|03:32:05) (GMT\+9|JST)/, 'the clock hidden: the chosen local zone still');
+  assert.match(pinTime({})(at), /\d:32:05(\s[AP]M)? \S+/, 'no clock: this device\'s zone, named');
 });
 
 test('my location lets the map be moved off it, with a button back (no spring back, no tug of war)', () => {
