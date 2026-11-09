@@ -118,6 +118,9 @@ html.tb-right body.presenting #mapwrap .leaflet-top.leaflet-right { top: max(60p
 .seg button { background: var(--bg); border: 0; padding: 7px 12px; cursor: pointer; color: var(--text-dim); }
 .seg button.active { background: var(--accent); color: #06201e; font-weight: 600; }
 .seg.small button { padding: 4px 10px; font-size: 12px; }
+.marker-shapes button { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; min-height: 30px; padding: 4px 8px; }
+.marker-shapes svg { display: block; pointer-events: none; }
+@media (pointer: coarse) { .marker-shapes button { min-width: 40px; min-height: 40px; } } /* a finger's size */
 /* Settings fields: a small label over a full-width control, evenly spaced (Units, Grid systems) */
 .field { margin-bottom: 14px; }
 .field:last-child { margin-bottom: 0; }
@@ -817,6 +820,7 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .mb-datatable { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .mb-datatable td { padding: 2px 6px 2px 0; vertical-align: top; }
 .mb-datatable td:first-child { color: var(--text-dim); white-space: nowrap; }
+.mb-datatable td + td { white-space: pre-line; } /* a value written on several lines (a KML description) keeps them */
 /* a data feature in Properties (datalayers.js) */
 #propsBody .panel-head .badge + .icon-btn { margin-left: auto; }
 #propsBody .panel-head h3 + .badge { margin-left: 8px; }

@@ -1186,8 +1186,9 @@ window.MB = window.MB || {};
 
   // Everything under a click in one popup. opts.own: the user's objects at the point, listed first (their objects
   // draw above the data, so a click on one never reaches the data under it). opts.declination: the magnetic
-  // declination at the point too, whether or not its source is on (right-click → Other info). It opens only when there is data at the
-  // point; the return value says whether it did.
+  // declination at the point too, whether or not its source is on (right-click → Other info). opts.open: the object
+  // clicked, its entry open when it has attributes. It opens only when there is data at the point, or one of the
+  // objects has attributes; the return value says whether it did.
   MB.data.identify = function (latlng, containerPoint, clicked, opts) {
     opts = opts || {};
     let hits = this.featuresAt(latlng, containerPoint);
@@ -1197,7 +1198,8 @@ window.MB = window.MB || {};
       if (ds && !ds.def.tiled) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
     const point = MB.declination ? MB.declination.identifyHtml(latlng, opts.declination) : ''; // facts about the place itself (opts.declination: also with its source off)
-    if (!hits.length && !point) return false;
+    const hasAttrs = l => !!(l && l.mb && l.mb.attrs && Object.keys(l.mb.attrs).length);
+    if (!hits.length && !point && !(opts.own || []).some(hasAttrs)) return false;
     // Polygons that read the same (a LAANC grid square and its neighbour with the same ceiling, tapped near their
     // shared edge) are one entry; it highlights all of them.
     const byText = new Map();
@@ -1224,7 +1226,8 @@ window.MB = window.MB || {};
       const attrs = Object.keys(m.attrs || {}).slice(0, 20).map(k => [k, String(m.attrs[k])]); // its attributes too
       const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].concat(attrs).map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('');
       const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`;
-      return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
+      const open = h.layer === opts.open && attrs.length ? ' open' : '';
+      return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"${open}><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
     const sections = hits.map((h, i) => {
       if (h.own) return ownSection(h, i);

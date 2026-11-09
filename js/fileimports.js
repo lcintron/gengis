@@ -111,8 +111,9 @@ window.MB = window.MB || {};
   function htmlText(s) {
     if (!s) return '';
     if (!/[<&]/.test(s)) return s.trim();
-    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' '))
-      .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    // (the markup's own line breaks are spaces, as a browser shows them: a <br> then a new line is one break)
+    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/\s+/g, ' ').replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' '))
+      .replace(/[ \t]*\n[ \t]*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
   /* ---------- geometry, as the layers keep it ----------
@@ -1295,7 +1296,7 @@ window.MB = window.MB || {};
     },
     // The layer's features into the project as its own objects, in a layer of the same name: each named by its title
     // (by its label, when labels show, which then shows on it too), its attributes and colors with it, a point drawn
-    // with an icon as that icon.
+    // with an icon as that icon, one drawn as a dot as a dot marker.
     async toProject(id) {
       const rec = layers.get(id);
       if (!rec || !MB.restoreFeature) return;
@@ -1312,7 +1313,8 @@ window.MB = window.MB || {};
           const name = lb.show ? S().labelText(look, props) : S().titleOf(look, props);
           const attrs = {};
           Object.keys(props).forEach(k => { const v = props[k]; if (v != null && v !== '') attrs[k] = typeof v === 'object' ? JSON.stringify(v) : v; });
-          const style = Object.assign(MB.deepClone(MB.currentStyle), p.kind === 'point' ? { color: st.fillColor } : { color: st.color, weight: st.weight, opacity: st.opacity },
+          // (a point drawn as a dot: a dot marker its size, not a pin)
+          const style = Object.assign(MB.deepClone(MB.currentStyle), p.kind === 'point' ? { color: st.fillColor, markerShape: 'dot', markerSize: Math.max(8, Math.round((+st.radius || 5) * 2 + 3)) } : { color: st.color, weight: st.weight, opacity: st.opacity },
             p.kind === 'polygon' ? { fillColor: st.fillColor, fillOpacity: st.fillOpacity } : {});
           const base = { layerId: target.id, name, style, attrs: Object.keys(attrs).length ? attrs : undefined,
             label: lb.show && name ? { show: true, size: +lb.size || 12, color: lb.color || '#ffffff', bg: lb.bg !== false } : undefined };

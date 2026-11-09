@@ -960,7 +960,7 @@ window.MB = window.MB || {};
 
   /* ================= style form ================= */
 
-  const PX_KEYS = ['weight', 'textSize', 'textShadowBlur', 'textShadowOffset']; // slider readouts in px (the rest: %)
+  const PX_KEYS = ['weight', 'textSize', 'textShadowBlur', 'textShadowOffset', 'markerSize']; // slider readouts in px (the rest: %)
 
   function styleForm(sections, getStyle, onChange) {
     const st = Object.assign({}, MB.defaultStyle, getStyle()); // defaults fill in fields older objects lack
@@ -968,6 +968,12 @@ window.MB = window.MB || {};
     if (sections.includes('stroke')) {
       html += `<div class="section"><h3>${sections.includes('markerOnly') ? 'Marker' : 'Border / line'}</h3>
         <div class="row"><label>Color</label><input type="color" data-k="color" value="${st.color}"><span class="grow"></span></div>`;
+      if (sections.includes('markerOnly')) { // its shape: the pin, or a smaller symbol centred on the point
+        const shape = MB.markerShape(st), size = MB.markerSize(st);
+        html += `<div class="row"><label>Shape</label><div class="seg small marker-shapes" data-set="markerShape" role="group" aria-label="Marker shape">${Object.keys(MB.markerShapes).map(k =>
+          `<button type="button" data-v="${k}"${shape === k ? ' class="active"' : ''} title="${MB.markerShapes[k]}" aria-label="${MB.markerShapes[k]}" aria-pressed="${shape === k}">${k === 'pin' ? MB.pinIconSvg('currentColor').replace('width="26" height="40"', 'width="11" height="17"') : MB.shapeSvg(k, 'currentColor', 14)}</button>`).join('')}</div></div>
+        <div class="row" data-row="markerSize"${shape === 'pin' ? ' hidden' : ''}><label>Size</label><input type="range" data-k="markerSize" min="8" max="40" step="1" value="${size}" aria-label="Marker size"><span class="val" data-val="markerSize">${size}px</span></div>`;
+      }
       if (!sections.includes('markerOnly')) {
         html += `<div class="row"><label>Width</label><input type="range" data-k="weight" min="0.5" max="${sections.includes('wide') ? 40 : 16}" step="0.5" value="${st.weight}"><span class="val" data-val="weight">${st.weight}px</span></div>
         <div class="row"><label>Opacity</label><input type="range" data-k="opacity" min="0" max="1" step="0.05" value="${st.opacity}"><span class="val" data-val="opacity">${Math.round(st.opacity * 100)}%</span></div>
@@ -1027,7 +1033,8 @@ window.MB = window.MB || {};
     $$('[data-set]', wrap).forEach(group => group.addEventListener('click', e => {
       const b = e.target.closest('button[data-v]');
       if (!b) return;
-      $$('button', group).forEach(x => x.classList.toggle('active', x === b));
+      $$('button', group).forEach(x => { x.classList.toggle('active', x === b); if (x.hasAttribute('aria-pressed')) x.setAttribute('aria-pressed', x === b); });
+      if (group.dataset.set === 'markerShape') { const row = $('[data-row="markerSize"]', wrap); if (row) row.hidden = b.dataset.v === 'pin'; } // (a pin has one size)
       const patch = {}; patch[group.dataset.set] = b.dataset.v; onChange(patch);
     }));
     return wrap;
@@ -1274,7 +1281,7 @@ window.MB = window.MB || {};
     if (MB.measureLabelText(f)) { MB.updateTooltip(f); return; } // its tooltip is its measurement label (placed by the name label)
     if (f.getTooltip()) f.unbindTooltip();
     const labelShown = MB.labelTypes.includes(f.mb.type) && MB.getLabel(f).show;
-    if (f.mb.name && !labelShown) f.bindTooltip(f.mb.name, { direction: 'top', className: 'mb-name-tip', offset: f.mb.type === 'marker' ? [0, -30] : [0, 0] });
+    if (f.mb.name && !labelShown) f.bindTooltip(f.mb.name, { direction: 'top', className: 'mb-name-tip', offset: f.mb.type === 'marker' ? [0, MB.markerShape(f.mb.style) === 'pin' ? -30 : -4] : [0, 0] });
   }
   MB.ui.bindNameTip = bindNameTip;
 

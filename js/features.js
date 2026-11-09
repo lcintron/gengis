@@ -350,11 +350,14 @@ window.MB = window.MB || {};
         if (shift) return;
       }
       // Objects draw above the data layers, so the data under one is only reachable from here: the same popup as
-      // a click on the data, with the objects at this point listed first. Nothing opens where there is no data, nor
-      // with the Move tool (a click there ends a drag).
+      // a click on the data, with the objects at this point listed first (the clicked one open when it has
+      // attributes). Nothing opens where there is no data and no object with attributes, nor with the Move tool (a
+      // click there ends a drag).
       if (shift || t === 'move' || t === 'scale' || !MB.data || !MB.data.identify) return;
       const oe = e.originalEvent, { latlng, cp } = pointerAt(e);
-      MB.data.identify(latlng, cp, null, { own: MB.data.objectsAt(latlng, cp) });
+      const own = MB.data.objectsAt(latlng, cp);
+      if (!own.includes(layer)) own.unshift(layer); // (the clicked one, wherever on it the click was)
+      MB.data.identify(latlng, cp, null, { own, open: layer });
       if (oe) oe._mbIdentified = true; // presenting, the click goes on to the map: its popup is already open
     });
     layer.on('pm:snap', ev => MB.snap.show(ev));
@@ -406,7 +409,14 @@ window.MB = window.MB || {};
       if (MB.fillPattern) MB.fillPattern.apply(layer, ls.fill ? st : null); // a hatch/dot/grid fill over the flat one
       if (MB.isMeasureType(t)) updateSegLabels(layer);
     }
-    else if (t === 'marker') layer.setIcon(MB.pinIcon(st.color));
+    else if (t === 'marker') {
+      layer.setIcon(MB.markerIcon(st));
+      const el = layer.getElement && layer.getElement();
+      if (el && (MB.selected === layer || (MB.multi && MB.multi.has(layer)))) L.DomUtil.addClass(el, 'mb-selected'); // (a new icon element)
+      if (patch && ('markerShape' in patch || 'markerSize' in patch)) { // its name label and measurements sit around the new shape
+        if (MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(layer); else { MB.updateLabel(layer); MB.updateTooltip(layer); }
+      }
+    }
     else if (t === 'text') MB.applyTextStyle(layer);
     else if (t === 'svg') MB.refreshSvg(layer);
     if (!opts.noCommit) MB.commitDebounced('style');
@@ -604,7 +614,10 @@ window.MB = window.MB || {};
     } else if (layer.pm) {
       try {
         if (moveOnly) layer.pm.enableLayerDrag();
-        else layer.pm.enable({ allowSelfIntersection: true, draggable: true, snappable: MB.state.snapping, snapDistance: 15 });
+        // preventMarkerRemoval: Geoman takes a marker, text or circle off the map on a right-click while it is edited
+        // (behind the project's back: it stays in the project, unseen); the right-click is the object's menu. A line's or
+        // shape's vertex still goes on a right-click on it.
+        else layer.pm.enable({ allowSelfIntersection: true, draggable: true, snappable: MB.state.snapping, snapDistance: 15, preventMarkerRemoval: !layer.getLatLngs });
       } catch (e) { console.warn(e); }
     }
     if (editable && moveOnly) MB.scaler.attach(layer, { frame: true }); // what is being moved: its box, as the Scale tool's without handles
@@ -760,7 +773,7 @@ window.MB = window.MB || {};
     const point = m.type === 'marker' || (m.type === 'svg' && !layer.setBounds);
     if (point) {
       const under = lb && lb.v === 'bottom' ? nameH + 2 : 0;
-      if (m.type === 'marker') return { direction: 'bottom', offset: [0, 32 + under] }; // the pin's tooltip anchor is near its top
+      if (m.type === 'marker') return { direction: 'bottom', offset: [0, (MB.markerShape(m.style) === 'pin' ? 32 : MB.markerSize(m.style)) + under] }; // (the icon's tooltip anchor is at its top)
       const lib = MB.state.svgLibrary[m.svg.svgId] || { aspect: 1 };
       return { direction: 'bottom', offset: [0, (+m.svg.width || 48) / (lib.aspect || 1) / 2 + under] };
     }
@@ -866,7 +879,7 @@ window.MB = window.MB || {};
         lb.h === 'left' ? bounds.getWest() : lb.h === 'right' ? bounds.getEast() : c.lng);
     } else {
       latlng = layer.getLatLng();
-      let box = { l: -13, r: 13, t: -38, b: 0 }; // pin icon
+      let box = MB.markerBox(m.style); // its pin or shape
       if (m.type === 'svg') {
         const lib = MB.state.svgLibrary[m.svg.svgId] || { aspect: 1 };
         const w = +m.svg.width || 48, h = w / (lib.aspect || 1);
@@ -942,7 +955,7 @@ window.MB = window.MB || {};
     const st = MB.toLeafletStyle(d.style);
     let layer = null;
     switch (d.type) {
-      case 'marker': layer = L.marker(fromArr(d.latlng), { icon: MB.pinIcon((d.style || {}).color) }); break;
+      case 'marker': layer = L.marker(fromArr(d.latlng), { icon: MB.markerIcon(d.style) }); break;
       case 'text': layer = L.marker(fromArr(d.latlng), { textMarker: true, text: d.text || '' }); break;
       case 'line': case 'measure-line': layer = L.polyline(fromArr(d.latlngs), st); break;
       case 'ink': layer = L.polyline(fromArr(d.latlngs), Object.assign(st, { fill: false, className: 'mb-ink mb-ink-' + ((d.style && d.style.ink) || 'pen') })); break; // (ink.js)

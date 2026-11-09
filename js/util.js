@@ -276,6 +276,37 @@ window.MB = window.MB || {};
     });
   };
 
+  // A marker's shape (style.markerShape; a pin when unset) and, for the small shapes, its size in px
+  // (style.markerSize). The small shapes are centred on their point; the pin stands on it.
+  MB.markerShapes = { pin: 'Pin', dot: 'Dot', diamond: 'Diamond', square: 'Square', triangle: 'Triangle' };
+  const SHAPE_PATHS = {
+    dot: '<circle cx="10" cy="10" r="8"/>',
+    diamond: '<path d="M10 1.5 18.5 10 10 18.5 1.5 10z"/>',
+    square: '<rect x="3" y="3" width="14" height="14" rx="1.5"/>',
+    triangle: '<path d="M10 2.2 18.6 17.4H1.4z"/>'
+  };
+  MB.markerShape = st => (st && SHAPE_PATHS[st.markerShape]) ? st.markerShape : 'pin';
+  MB.markerSize = st => Math.max(6, Math.min(48, Math.round(+(st && st.markerSize) || 16)));
+  MB.shapeSvg = function (shape, color, size) {
+    const p = SHAPE_PATHS[shape] || SHAPE_PATHS.dot;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 20 20">` +
+      `<g fill="none" stroke="#000" stroke-opacity=".45" stroke-width="4" stroke-linejoin="round">${p}</g>` + // a dark edge on any background
+      `<g fill="${color}" stroke="#fff" stroke-width="2" stroke-linejoin="round">${p}</g></svg>`;
+  };
+  MB.markerIcon = function (st) {
+    const shape = MB.markerShape(st), color = (st && st.color) || '#e4572e';
+    if (shape === 'pin') return MB.pinIcon(color);
+    const s = MB.markerSize(st);
+    return L.divIcon({ className: 'mb-pin mb-pin-' + shape, html: MB.shapeSvg(shape, color, s), iconSize: [s, s], iconAnchor: [s / 2, s / 2],
+      popupAnchor: [0, -s / 2], tooltipAnchor: [0, -s / 2] });
+  };
+  // The marker's box around its point, in px (where its name label and measurements go).
+  MB.markerBox = function (st) {
+    if (MB.markerShape(st) === 'pin') return { l: -13, r: 13, t: -38, b: 0 };
+    const h = MB.markerSize(st) / 2;
+    return { l: -h, r: h, t: -h, b: h };
+  };
+
   // text, or a Blob as it is (an exported picture)
   MB.download = function (filename, text, mime) {
     const blob = text instanceof Blob ? text : new Blob([text], { type: mime || 'application/json' });
