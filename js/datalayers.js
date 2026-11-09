@@ -927,7 +927,7 @@ window.MB = window.MB || {};
       if (casing) lines.push(L.polyline(p.lines, Object.assign({ fill: false, lineJoin: 'round' }, casing, { pane: 'mb-data', renderer: dataRenderer(), pmIgnore: true, interactive: false })));
       const line = L.polyline(p.lines, Object.assign({}, style, { pane: 'mb-data', renderer: dataRenderer(), pmIgnore: true, interactive: true }));
       const names = [p.a.label, p.b.label].filter(Boolean);
-      if (names.length) line.bindTooltip(names.join(' / '), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
+      if (names.length) line.bindTooltip(esc(names.join(' / ')), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
       lines.push(line);
     });
     return lines;
@@ -1040,7 +1040,7 @@ window.MB = window.MB || {};
         const p = f.properties || {};
         layer.options.pmIgnore = true;
         const lbl = def.label ? def.label(p) : firstText(p);
-        if (lbl) layer.bindTooltip(String(lbl), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
+        if (lbl) layer.bindTooltip(esc(String(lbl)), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
         layer.on('click', e => {
           const t = MB.tools.current;
           if (t !== 'select' && t !== 'move' && t !== 'present') return;

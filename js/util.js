@@ -53,12 +53,17 @@ window.MB = window.MB || {};
     'font', 'center', 'blockquote', 'pre', 'code', 'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th',
     'caption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img']);
   const VOID_TAGS = new Set(['br', 'hr', 'img']);
+  const TABLE_PARTS = new Set(['thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption']); // (only inside a table of the value's own)
   const GONE = /<(script|style|iframe|frame|frameset|object|embed|applet|noscript|template|svg|math|head|title|textarea|select|button|form)\b[\s\S]*?(<\/\1\s*>|$)/gi; // with what is in them
   const TAG = /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s"'<>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*\/?>/g;
   const IS_RICH = new RegExp(`<\\/?(${Array.from(RICH).join('|')})\\b[^<>]*>`, 'i');
-  const ENTS = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+  const ENTS = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0', copy: '\u00a9', reg: '\u00ae', deg: '\u00b0', plusmn: '\u00b1',
+    middot: '\u00b7', ndash: '\u2013', mdash: '\u2014', lsquo: '\u2018', rsquo: '\u2019', ldquo: '\u201c', rdquo: '\u201d', hellip: '\u2026', bull: '\u2022',
+    euro: '\u20ac', aacute: '\u00e1', eacute: '\u00e9', iacute: '\u00ed', oacute: '\u00f3', uacute: '\u00fa', ntilde: '\u00f1', uuml: '\u00fc', ouml: '\u00f6',
+    auml: '\u00e4', ccedil: '\u00e7', egrave: '\u00e8', agrave: '\u00e0', Aacute: '\u00c1', Eacute: '\u00c9', Iacute: '\u00cd', Oacute: '\u00d3', Uacute: '\u00da',
+    Ntilde: '\u00d1' };
   const unent = s => String(s).replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (m, e) => {
-    if (e[0] !== '#') return ENTS[e.toLowerCase()] !== undefined ? ENTS[e.toLowerCase()] : m;
+    if (e[0] !== '#') { const v = ENTS[e] !== undefined ? ENTS[e] : ENTS[e.toLowerCase()]; return v !== undefined ? v : m; }
     const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
     try { return String.fromCodePoint(n); } catch (x) { return m; }
   });
@@ -98,6 +103,7 @@ window.MB = window.MB || {};
       last = TAG.lastIndex;
       const tag = m[2].toLowerCase();
       if (!RICH.has(tag)) continue; // an unknown tag: its text stays, the tag goes
+      if (TABLE_PARTS.has(tag) && !open.includes('table')) continue; // a row or cell outside a table of its own would land in the popup's
       if (m[1]) { // a closing tag: what it closes, and what was left open inside it
         const i = open.lastIndexOf(tag);
         if (i >= 0) while (open.length > i) out += `</${open.pop()}>`;
@@ -118,8 +124,8 @@ window.MB = window.MB || {};
     // in markup with line break tags the file's own line breaks are spaces, as a browser shows them (a <br> then a
     // new line is one break); text with none (an entity, a bold word) keeps its lines
     if (/<br\b|<\/(p|div|tr|li|h\d)\s*>/i.test(s)) s = s.replace(/\s+/g, ' ');
-    return unent(s.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<!--[\s\S]*?(-->|$)/g, '').replace(GONE, '').replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^>]*>/g, ''))
-      .replace(/ /g, ' ').replace(/[ \t\r]*\n[ \t]*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    return unent(s.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<!--[\s\S]*?(-->|$)/g, '').replace(GONE, '').replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^<>]*>/g, ''))
+      .replace(/\u00a0/g, ' ').split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim(); // (linear on any input: no regex here backtracks)
   };
   // A value in a popup: its formatting kept (made safe) when it has any, else as text.
   MB.richValue = v => MB.isHtml(v) ? `<div class="mb-rich">${MB.safeHtml(v)}</div>` : MB.escapeHtml(v);

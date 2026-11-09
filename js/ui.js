@@ -1281,7 +1281,8 @@ window.MB = window.MB || {};
     if (MB.measureLabelText(f)) { MB.updateTooltip(f); return; } // its tooltip is its measurement label (placed by the name label)
     if (f.getTooltip()) f.unbindTooltip();
     const labelShown = MB.labelTypes.includes(f.mb.type) && MB.getLabel(f).show;
-    if (f.mb.name && !labelShown) f.bindTooltip(f.mb.name, { direction: 'top', className: 'mb-name-tip', offset: f.mb.type === 'marker' ? [0, MB.markerShape(f.mb.style) === 'pin' ? -30 : -4] : [0, 0] });
+    if (f.mb.name && !labelShown) f.bindTooltip(esc(f.mb.name), { // (text: Leaflet sets a tooltip's string as HTML)
+      direction: 'top', className: 'mb-name-tip', offset: f.mb.type === 'marker' ? [0, MB.markerShape(f.mb.style) === 'pin' ? -30 : -4] : [0, 0] });
   }
   MB.ui.bindNameTip = bindNameTip;
 
@@ -1522,7 +1523,7 @@ window.MB = window.MB || {};
     list.className = 'poi-list';
     pois.forEach(p => {
       const cm = L.circleMarker(p.latlng, { radius: 6, color: '#fff', weight: 1.5, fillColor: '#2f80ed', fillOpacity: .9, pmIgnore: true });
-      cm.bindTooltip(p.name, { direction: 'top', className: 'mb-name-tip', offset: [0, -6] });
+      cm.bindTooltip(esc(p.name), { direction: 'top', className: 'mb-name-tip', offset: [0, -6] });
       cm.on('click', () => addPoi(p));
       cm.addTo(g);
       const item = document.createElement('div');

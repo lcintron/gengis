@@ -120,7 +120,7 @@ test('formatted values: only what is safe is kept, rebuilt from scratch', () => 
   assert.equal(S('<a href="data:text/html,x">x</a>'), '<a>x</a>');
   assert.equal(S('<img src="https://e.com/p.png" width="80" height="x" onload="y">'), '<img src="https://e.com/p.png" loading="lazy" referrerpolicy="no-referrer" width="80">');
   assert.equal(S('<font color="red" face="x">r</font><font color="red;background:url(x)">s</font>'), '<font style="color:red">r</font><font>s</font>');
-  assert.equal(S('<td colspan="2" align="center">c</td>'), '<td colspan="2" style="text-align:center">c</td>');
+  assert.equal(S('<table><tr><td colspan="2" align="center">c</td></tr></table>'), '<table><tr><td colspan="2" style="text-align:center">c</td></tr></table>');
   // text stays text; tags left open are closed; stray closes dropped
   assert.equal(S('a < b & c > d'), 'a &lt; b &amp; c &gt; d');
   assert.equal(S('fish &amp; chips &eacute;'), 'fish &amp; chips &eacute;', 'entities kept');
@@ -152,4 +152,30 @@ test('formatted values: shown made safe in popups; titles, labels and hover name
   assert.equal(S.labelText(look, p), 'N0LO: Andytown 442.825');
   const dl = read('js/datalayers.js');
   assert.equal(dl.split('MB.richValue(v)}</td></tr>').length - 1, 2, 'an imported layer\'s popup and an object\'s');
+});
+
+test('review fixes: names on hover are text; a stray row or cell stays out of the popup\'s table; no slow reading of crafted text', () => {
+  // a title that reads as markup once its entities are read (hover names are set as HTML by Leaflet)
+  const tips = [];
+  const layer = { feature: { properties: { name: 'x', description: '<b>t</b>&lt;img src=x onerror=alert(1)&gt;' } },
+    getTooltip: () => null, bindTooltip: t => tips.push(t), setTooltipContent: t => tips.push(t), unbindTooltip() {} };
+  const look = ALL.importStyle.defaults([{ type: 'Feature', properties: layer.feature.properties, geometry: { type: 'Point', coordinates: [0, 0] } }]);
+  look.title = 'description';
+  ALL.imports.tip({ meta: { look } }, layer);
+  assert.equal(tips[0], 't&lt;img src=x onerror=alert(1)&gt;');
+  for (const [f, re] of [['js/ui.js', /bindTooltip\(esc\(f\.mb\.name\)/], ['js/ui.js', /cm\.bindTooltip\(esc\(p\.name\)/],
+    ['js/datalayers.js', /layer\.bindTooltip\(esc\(String\(lbl\)\)/], ['js/datalayers.js', /line\.bindTooltip\(esc\(names\.join\(' \/ '\)\)/]]) assert.match(read(f), re, f);
+
+  const S = ALL.safeHtml;
+  assert.equal(S('<td>x</td><tr><td>y</td></tr><thead>z</thead><caption>c</caption>'), 'xyzc', 'no table of its own: its rows and cells are text');
+  assert.equal(S('<table><tr><td colspan="2">x</td></tr></table>'), '<table><tr><td colspan="2">x</td></tr></table>');
+  assert.equal(ALL.htmlText('caf&eacute; &copy; 2026 &ndash; 5&deg;'), 'café © 2026 – 5°');
+
+  for (const big of ['&lt;'.repeat(100000), '<'.repeat(100000), '<b>x</b>' + ' '.repeat(200000) + 'y', ('<br>' + ' '.repeat(50)).repeat(5000)]) {
+    const t0 = Date.now();
+    ALL.htmlText(big); ALL.safeHtml(big);
+    ALL.imports.read.kml('<?xml version="1.0"?><kml><Document><Placemark><name>x</name><description>' + big.replace(/</g, '&lt;') + '</description><Point><coordinates>1,2</coordinates></Point></Placemark></Document></kml>');
+    assert.ok(Date.now() - t0 < 1500, 'read in ' + (Date.now() - t0) + ' ms');
+  }
+  assert.ok(read('electron/main.js').includes('const external = url => { if (/^(https?:\\/\\/|mailto:)/i.test(url)) shell.openExternal(url); };'), 'the desktop app opens an email link');
 });

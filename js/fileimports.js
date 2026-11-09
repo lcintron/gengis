@@ -111,12 +111,13 @@ window.MB = window.MB || {};
   // popups show it made safe (MB.safeHtml), labels and titles as text (MB.htmlText).
   function htmlText(s) {
     if (!s) return '';
+    if (MB.htmlText) return MB.htmlText(s); // (util.js: the one reading; this below only where it is not loaded)
     if (!/[<&]/.test(s)) return s.trim();
     // (in markup with line break tags, the file's own line breaks are spaces, as a browser shows them: a <br> then a
     // new line is one break; text with none, entities or a bold word only, keeps its lines)
     if (/<br\b|<\/(p|div|tr|li|h\d)\s*>/i.test(s)) s = s.replace(/\s+/g, ' ');
-    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' '))
-      .replace(/[ \t\r]*\n[ \t]*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^<>]*>/g, '').replace(/&nbsp;/gi, ' '))
+      .split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
   /* ---------- geometry, as the layers keep it ----------
@@ -1051,7 +1052,8 @@ window.MB = window.MB || {};
     },
     // A feature's name on hover: its title, unless its label shows it already.
     tip(rec, layer) {
-      const look = rec.meta.look, t = look.label.show ? '' : S().titleOf(look, layer.feature.properties);
+      const look = rec.meta.look, title = look.label.show ? '' : S().titleOf(look, layer.feature.properties);
+      const t = title && esc(title); // (text: Leaflet sets a tooltip's string as HTML)
       if (t) { if (layer.getTooltip()) layer.setTooltipContent(t); else layer.bindTooltip(t, { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: 0.95 }); }
       else if (layer.getTooltip()) layer.unbindTooltip();
     },
