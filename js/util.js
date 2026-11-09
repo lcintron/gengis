@@ -63,7 +63,7 @@ window.MB = window.MB || {};
     auml: '\u00e4', ccedil: '\u00e7', egrave: '\u00e8', agrave: '\u00e0', Aacute: '\u00c1', Eacute: '\u00c9', Iacute: '\u00cd', Oacute: '\u00d3', Uacute: '\u00da',
     Ntilde: '\u00d1' };
   const unent = s => String(s).replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (m, e) => {
-    if (e[0] !== '#') { const v = ENTS[e] !== undefined ? ENTS[e] : ENTS[e.toLowerCase()]; return v !== undefined ? v : m; }
+    if (e[0] !== '#') { const k = Object.hasOwn(ENTS, e) ? e : e.toLowerCase(); return Object.hasOwn(ENTS, k) ? ENTS[k] : m; } // (only its own names: never "constructor")
     const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
     try { return String.fromCodePoint(n); } catch (x) { return m; }
   });
@@ -97,6 +97,7 @@ window.MB = window.MB || {};
     s = String(s == null ? '' : s).replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<!--[\s\S]*?(-->|$)/g, '').replace(GONE, '');
     let out = '', last = 0, m;
     const open = [];
+    let droppedTables = 0;
     TAG.lastIndex = 0;
     while ((m = TAG.exec(s))) {
       out += richText(s.slice(last, m.index));
@@ -104,6 +105,11 @@ window.MB = window.MB || {};
       const tag = m[2].toLowerCase();
       if (!RICH.has(tag)) continue; // an unknown tag: its text stays, the tag goes
       if (TABLE_PARTS.has(tag) && !open.includes('table')) continue; // a row or cell outside a table of its own would land in the popup's
+      if (tag === 'table') { // a table inside a table only in a cell: anywhere else the page would close the open one, then the popup's
+        if (m[1] && droppedTables) { droppedTables--; continue; } // (the end of one dropped: not the end of the one around it)
+        const ctx = open.slice().reverse().find(t => t === 'table' || TABLE_PARTS.has(t));
+        if (!m[1] && ctx && !/^(td|th|caption)$/.test(ctx)) { droppedTables++; continue; }
+      }
       if (m[1]) { // a closing tag: what it closes, and what was left open inside it
         const i = open.lastIndexOf(tag);
         if (i >= 0) while (open.length > i) out += `</${open.pop()}>`;

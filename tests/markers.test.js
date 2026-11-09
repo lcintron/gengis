@@ -179,3 +179,13 @@ test('review fixes: names on hover are text; a stray row or cell stays out of th
   }
   assert.ok(read('electron/main.js').includes('const external = url => { if (/^(https?:\\/\\/|mailto:)/i.test(url)) shell.openExternal(url); };'), 'the desktop app opens an email link');
 });
+
+test('review fixes: a table in a table only inside a cell; entity names only from the list', () => {
+  const S = ALL.safeHtml;
+  assert.equal(S('<table><table></table><td>x</td></table><b>after</b>'), '<table><td>x</td></table><b>after</b>', 'a second table in table context: dropped, with its end (the cell stays in the table around it)');
+  assert.equal(S('<table><tr><table></table><td>x</td>'), '<table><tr><td>x</td></tr></table>');
+  assert.equal(S('<table><tr><td><table><tr><td>in</td></tr></table></td></tr></table>'), '<table><tr><td><table><tr><td>in</td></tr></table></td></tr></table>', 'in a cell: kept');
+  assert.equal(S('<table><caption><table><tr><td>c</td></tr></table></caption></table>'), '<table><caption><table><tr><td>c</td></tr></table></caption></table>');
+  for (const e of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) assert.equal(ALL.htmlText('<b>x</b>&' + e + ';'), 'x&' + e + ';', e);
+  assert.equal(ALL.htmlText('<b>&Eacute;cole &eacute;t&eacute;</b>'), 'École été');
+});
