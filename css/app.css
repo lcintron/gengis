@@ -821,6 +821,19 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .mb-datatable td { padding: 2px 6px 2px 0; vertical-align: top; }
 .mb-datatable td:first-child { color: var(--text-dim); white-space: nowrap; }
 .mb-datatable td + td { white-space: pre-line; } /* a value written on several lines (a KML description) keeps them */
+/* a value with formatting (MB.safeHtml): laid out as written, inside the popup's width */
+.mb-rich { white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+.mb-rich > :first-child { margin-top: 0; }
+.mb-rich > :last-child { margin-bottom: 0; }
+.mb-rich p, .mb-rich ul, .mb-rich ol, .mb-rich dl, .mb-rich blockquote, .mb-rich pre, .mb-rich table { margin: 4px 0; }
+.mb-rich ul, .mb-rich ol { padding-left: 18px; }
+.mb-rich h1, .mb-rich h2, .mb-rich h3, .mb-rich h4, .mb-rich h5, .mb-rich h6 { font-size: 13px; margin: 6px 0 2px; }
+.mb-rich a { color: var(--accent); text-decoration: underline; }
+.mb-rich img { max-width: 100%; height: auto; border-radius: 4px; }
+.mb-rich pre { white-space: pre-wrap; }
+.mb-rich table { border-collapse: collapse; }
+.mb-rich td, .mb-rich th, .mb-rich td:first-child { padding: 2px 6px 2px 0; vertical-align: top; color: inherit; white-space: normal; }
+.mb-rich hr { border: 0; border-top: 1px solid var(--border); margin: 6px 0; }
 /* a data feature in Properties (datalayers.js) */
 #propsBody .panel-head .badge + .icon-btn { margin-left: auto; }
 #propsBody .panel-head h3 + .badge { margin-left: 8px; }

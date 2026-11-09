@@ -107,15 +107,16 @@ window.MB = window.MB || {};
   const val = (n, name) => textOf(kid(n, name)).trim();
   function findDeep(n, name) { if (n.name === name) return n; for (const k of n.kids) { const f = findDeep(k, name); if (f) return f; } return null; }
 
-  // A description written as HTML, as plain text (the popup shows text, never the file's markup).
+  // A description with no formatting, as text (its entities read). One with formatting is kept as the file has it:
+  // popups show it made safe (MB.safeHtml), labels and titles as text (MB.htmlText).
   function htmlText(s) {
     if (!s) return '';
     if (!/[<&]/.test(s)) return s.trim();
     // (in markup with line break tags, the file's own line breaks are spaces, as a browser shows them: a <br> then a
     // new line is one break; text with none, entities or a bold word only, keeps its lines)
     if (/<br\b|<\/(p|div|tr|li|h\d)\s*>/i.test(s)) s = s.replace(/\s+/g, ' ');
-    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' '))
-      .replace(/[ \t]*\n[ \t]*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' '))
+      .replace(/[ \t\r]*\n[ \t]*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
   /* ---------- geometry, as the layers keep it ----------
@@ -258,7 +259,7 @@ window.MB = window.MB || {};
     let bare = 0;
     const placemark = (pm, folders) => {
       const props = {};
-      const name = val(pm, 'name'), desc = htmlText(val(pm, 'description'));
+      const name = val(pm, 'name'), rawDesc = val(pm, 'description'), desc = MB.isHtml && MB.isHtml(rawDesc) ? rawDesc : htmlText(rawDesc);
       if (name) props.name = name;
       if (desc) props.description = desc;
       if (folders.length) props.folder = folders.join(' / ');

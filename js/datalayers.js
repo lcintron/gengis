@@ -692,7 +692,8 @@ window.MB = window.MB || {};
   function popupHtml(ds, p) {
     if (ds.def.popupRows) { // an imported layer: the fields its settings show, under their display names
       let rows = '';
-      try { rows = ds.def.popupRows(p).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join(''); } catch (e) { /* ignore */ }
+      // (a value with formatting: kept, made safe)
+      try { rows = ds.def.popupRows(p).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${MB.richValue(v)}</td></tr>`).join(''); } catch (e) { /* ignore */ }
       return `<div class="mb-popup"><div class="mb-popup-title">${esc(ds.def.name)}</div><table class="mb-datatable">${rows}</table></div>`;
     }
     const keys = ds.def.fields || Object.keys(p).filter(k => !/^(OBJECTID|GLOBAL_?ID|Shape__|GlobalID)/i.test(k)).slice(0, 18);
@@ -1224,7 +1225,8 @@ window.MB = window.MB || {};
       let measure = '';
       try { measure = MB.measureText(h.layer); } catch (e) { /* ignore */ }
       const attrs = Object.keys(m.attrs || {}).slice(0, 20).map(k => [k, String(m.attrs[k])]); // its attributes too
-      const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].concat(attrs).map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('');
+      const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('') +
+        attrs.map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${MB.richValue(v)}</td></tr>` : '').join(''); // (an attribute with formatting: kept, made safe)
       const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`;
       const open = h.layer === opts.open && attrs.length ? ' open' : '';
       return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"${open}><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;

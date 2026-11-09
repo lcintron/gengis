@@ -43,6 +43,87 @@ window.MB = window.MB || {};
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 
+  /* ----- formatted text in a value (a KML description, a GeoJSON property written as HTML) -----
+   * isHtml(v): a value with formatting. safeHtml(s): that formatting rebuilt from an allow-list: text, a few tags
+   * for emphasis, lists, tables, headings, links (http, https, mailto; opened in a new tab) and pictures (http,
+   * https, data:image); never a script, a style, an event handler, a frame or a form. Each tag kept is written
+   * anew with only its allowed, checked attributes, every bit of text escaped, and tags left open closed.
+   * htmlText(s): the same as plain text (a label, a title, a hover name). */
+  const RICH = new Set(['a', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'ins', 'small', 'big', 'sub', 'sup', 'br', 'hr', 'p', 'div', 'span',
+    'font', 'center', 'blockquote', 'pre', 'code', 'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th',
+    'caption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img']);
+  const VOID_TAGS = new Set(['br', 'hr', 'img']);
+  const GONE = /<(script|style|iframe|frame|frameset|object|embed|applet|noscript|template|svg|math|head|title|textarea|select|button|form)\b[\s\S]*?(<\/\1\s*>|$)/gi; // with what is in them
+  const TAG = /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s"'<>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*\/?>/g;
+  const IS_RICH = new RegExp(`<\\/?(${Array.from(RICH).join('|')})\\b[^<>]*>`, 'i');
+  const ENTS = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+  const unent = s => String(s).replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (m, e) => {
+    if (e[0] !== '#') return ENTS[e.toLowerCase()] !== undefined ? ENTS[e.toLowerCase()] : m;
+    const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+    try { return String.fromCodePoint(n); } catch (x) { return m; }
+  });
+  // text as it is in the page: its entities kept (they are only text), anything else that could start markup escaped
+  const richText = t => t.replace(/&(?!(#\d+|#x[\da-f]+|[a-z][a-z\d]*);)/gi, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  function richAttrs(tag, src) {
+    const a = {};
+    for (const m of src.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) a[m[1].toLowerCase()] = unent(m[2] != null ? m[2] : m[3] != null ? m[3] : m[4] || '').trim();
+    const esc = MB.escapeHtml, num = v => /^\d{1,4}$/.test(v) ? v : null;
+    let out = '';
+    if (tag === 'a') {
+      if (/^(https?:\/\/|mailto:)/i.test(a.href || '')) out += ` href="${esc(a.href)}" target="_blank" rel="noopener noreferrer"`;
+    } else if (tag === 'img') {
+      if (!/^https?:\/\//i.test(a.src || '') && !/^data:image\/(png|jpe?g|gif|webp);base64,[\w+/=\s]+$/i.test(a.src || '')) return null; // (a picture inside a KMZ is not kept)
+      out += ` src="${esc(a.src)}" loading="lazy" referrerpolicy="no-referrer"`;
+      if (a.alt) out += ` alt="${esc(a.alt)}"`;
+      if (num(a.width)) out += ` width="${a.width}"`;
+      if (num(a.height)) out += ` height="${a.height}"`;
+    } else if (tag === 'font') {
+      if (/^(#[\da-f]{3,8}|[a-z]{3,20})$/i.test(a.color || '')) out += ` style="color:${a.color}"`;
+    } else if (tag === 'td' || tag === 'th') {
+      if (num(a.colspan)) out += ` colspan="${a.colspan}"`;
+      if (num(a.rowspan)) out += ` rowspan="${a.rowspan}"`;
+    }
+    if (/^(p|div|td|th|h\d)$/.test(tag) && /^(left|center|right)$/i.test(a.align || '')) out += ` style="text-align:${a.align.toLowerCase()}"`;
+    if (a.title && tag !== 'img') out += ` title="${esc(a.title)}"`;
+    return out;
+  }
+  MB.isHtml = v => typeof v === 'string' && IS_RICH.test(v);
+  MB.safeHtml = function (s) {
+    s = String(s == null ? '' : s).replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<!--[\s\S]*?(-->|$)/g, '').replace(GONE, '');
+    let out = '', last = 0, m;
+    const open = [];
+    TAG.lastIndex = 0;
+    while ((m = TAG.exec(s))) {
+      out += richText(s.slice(last, m.index));
+      last = TAG.lastIndex;
+      const tag = m[2].toLowerCase();
+      if (!RICH.has(tag)) continue; // an unknown tag: its text stays, the tag goes
+      if (m[1]) { // a closing tag: what it closes, and what was left open inside it
+        const i = open.lastIndexOf(tag);
+        if (i >= 0) while (open.length > i) out += `</${open.pop()}>`;
+        continue;
+      }
+      const attrs = richAttrs(tag, m[3] || '');
+      if (attrs === null) continue;
+      out += `<${tag}${attrs}>`;
+      if (!VOID_TAGS.has(tag)) open.push(tag);
+    }
+    out += richText(s.slice(last));
+    while (open.length) out += `</${open.pop()}>`;
+    return out;
+  };
+  MB.htmlText = function (s) {
+    s = String(s == null ? '' : s);
+    if (!/[<&]/.test(s)) return s.trim();
+    // in markup with line break tags the file's own line breaks are spaces, as a browser shows them (a <br> then a
+    // new line is one break); text with none (an entity, a bold word) keeps its lines
+    if (/<br\b|<\/(p|div|tr|li|h\d)\s*>/i.test(s)) s = s.replace(/\s+/g, ' ');
+    return unent(s.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<!--[\s\S]*?(-->|$)/g, '').replace(GONE, '').replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^>]*>/g, ''))
+      .replace(/ /g, ' ').replace(/[ \t\r]*\n[ \t]*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  };
+  // A value in a popup: its formatting kept (made safe) when it has any, else as text.
+  MB.richValue = v => MB.isHtml(v) ? `<div class="mb-rich">${MB.safeHtml(v)}</div>` : MB.escapeHtml(v);
+
   MB.deepClone = o => JSON.parse(JSON.stringify(o));
 
   MB.isLatLng = v => v && typeof v === 'object' && 'lat' in v && 'lng' in v;

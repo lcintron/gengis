@@ -72,27 +72,28 @@ test('imported points drawn as dots are copied into the project as dot markers t
   assert.match(read('js/fileimports.js'), /markerShape: 'dot', markerSize: Math\.max\(8, Math\.round\(\(\+st\.radius \|\| 5\) \* 2 \+ 3\)\)/);
 });
 
-test('a KML description: a <br> and the new line after it in the file are one line break', () => {
+function loadAll() {
   const M = { escapeHtml: s => String(s) };
   const ctx = { window: { MB: M }, TextDecoder, Blob, console, Date, Math, setTimeout, clearTimeout };
   vm.createContext(ctx);
-  for (const f of ['js/importstyle.js', 'js/fileimports.js']) vm.runInContext(read(f), ctx, { filename: f });
-  const kml = `<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>N0LO</name>
-<description><![CDATA[\r\nAndytown<br>\r\n442.825000+ 110.9<br>\r\nOn-air:   Yes<br>\r\n<a href='https://example.com/?a=1&b=2'>Click for Details</a>\r\n]]></description>
-<Point><coordinates>-80.45,26.15,0</coordinates></Point></Placemark></Document></kml>`;
-  const { features } = M.imports.read.kml(kml);
-  assert.equal(features[0].properties.description, 'Andytown\n442.825000+ 110.9\nOn-air: Yes\nClick for Details');
+  for (const f of ['js/util.js', 'js/importstyle.js', 'js/fileimports.js']) vm.runInContext(read(f), ctx, { filename: f });
+  return M;
+}
+const ALL = loadAll();
+const kmlDesc = d => ALL.imports.read.kml('<?xml version="1.0"?><kml><Document><Placemark><name>x</name><description>' + d + '</description><Point><coordinates>1,2</coordinates></Point></Placemark></Document></kml>').features[0].properties.description;
+
+test('a KML description with formatting is kept as written; as text, a <br> and the new line after it are one break', () => {
+  const raw = "\r\nAndytown<br>\r\n442.825000+ 110.9<br>\r\nOn-air:   Yes<br>\r\n<a href='https://example.com/?a=1&b=2'>Click for Details</a>\r\n";
+  assert.equal(kmlDesc('<![CDATA[' + raw + ']]>'), raw.trim(), 'the file\'s HTML, kept');
+  assert.equal(ALL.htmlText(raw), 'Andytown\n442.825000+ 110.9\nOn-air: Yes\nClick for Details');
+  assert.equal(ALL.htmlText('one<br class="x">\r\ntwo'), 'one\ntwo', 'a <br> with attributes is a break too');
 });
 
 test('review fixes: a description with no line break tags keeps its lines; a file\'s shape only from the list; the move cursor kept', () => {
-  const M = { escapeHtml: s => String(s) };
-  const ctx = { window: { MB: M }, TextDecoder, Blob, console, Date, Math, setTimeout, clearTimeout };
-  vm.createContext(ctx);
-  for (const f of ['js/importstyle.js', 'js/fileimports.js']) vm.runInContext(read(f), ctx, { filename: f });
-  const desc = d => M.imports.read.kml(`<?xml version="1.0"?><kml><Document><Placemark><name>x</name><description>${d}</description><Point><coordinates>1,2</coordinates></Point></Placemark></Document></kml>`).features[0].properties.description;
-  assert.equal(desc('Owner: Smith &amp; Sons\nPhone: 555\nNote'), 'Owner: Smith & Sons\nPhone: 555\nNote', 'an entity: the lines kept');
-  assert.equal(desc('Owner: Smith and Sons\nPhone: 555'), 'Owner: Smith and Sons\nPhone: 555');
-  assert.equal(desc('Line one\n<![CDATA[Line <b>two</b>]]>'), 'Line one\nLine two', 'a bold word: the lines kept');
+  assert.equal(kmlDesc('Owner: Smith &amp; Sons\nPhone: 555\nNote'), 'Owner: Smith & Sons\nPhone: 555\nNote', 'an entity: the lines kept');
+  assert.equal(kmlDesc('Owner: Smith and Sons\nPhone: 555'), 'Owner: Smith and Sons\nPhone: 555');
+  assert.equal(ALL.htmlText('Line one\nLine <b>two</b>'), 'Line one\nLine two', 'a bold word: the lines kept');
+  assert.equal(ALL.htmlText('Smith &amp; Sons\r\nPhone'), 'Smith & Sons\nPhone', 'no carriage return left');
 
   for (const bad of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
     assert.equal(MB.markerShape({ markerShape: bad }), 'pin', bad);
@@ -103,4 +104,52 @@ test('review fixes: a description with no line break tags keeps its lines; a fil
 
 test('the click that ends a drag of an object opens no popup', () => {
   assert.match(read('js/features.js'), /if \(layer\.pm && layer\.pm\.dragging && layer\.pm\.dragging\(\)\) return;/);
+});
+
+test('formatted values: only what is safe is kept, rebuilt from scratch', () => {
+  const S = ALL.safeHtml;
+  assert.equal(S('Andytown<br>\n<b>On-air</b>: Yes<br><a href="https://example.com/d.php?a=1&amp;b=2">Click for Details</a>'),
+    'Andytown<br>\n<b>On-air</b>: Yes<br><a href="https://example.com/d.php?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">Click for Details</a>');
+  // scripts, handlers, frames, styles: gone
+  assert.equal(S('<p onclick="alert(1)" style="x">hi</p><script>alert(1)</script><style>p{}</style><iframe src="https://x"></iframe>'), '<p>hi</p>');
+  assert.equal(S('<img src=x onerror=alert(1)>ok'), 'ok', 'a picture from nowhere: dropped');
+  assert.equal(S('<svg onload=alert(1)><circle/></svg>ok'), 'ok');
+  assert.equal(S('<a href="javascript:alert(1)">x</a>'), '<a>x</a>');
+  assert.equal(S('<a href="java&#115;cript:alert(1)">x</a>'), '<a>x</a>', 'an entity does not hide javascript:');
+  assert.equal(S('<a href=" JAVASCRIPT:alert(1)">x</a>'), '<a>x</a>');
+  assert.equal(S('<a href="data:text/html,x">x</a>'), '<a>x</a>');
+  assert.equal(S('<img src="https://e.com/p.png" width="80" height="x" onload="y">'), '<img src="https://e.com/p.png" loading="lazy" referrerpolicy="no-referrer" width="80">');
+  assert.equal(S('<font color="red" face="x">r</font><font color="red;background:url(x)">s</font>'), '<font style="color:red">r</font><font>s</font>');
+  assert.equal(S('<td colspan="2" align="center">c</td>'), '<td colspan="2" style="text-align:center">c</td>');
+  // text stays text; tags left open are closed; stray closes dropped
+  assert.equal(S('a < b & c > d'), 'a &lt; b &amp; c &gt; d');
+  assert.equal(S('fish &amp; chips &eacute;'), 'fish &amp; chips &eacute;', 'entities kept');
+  assert.equal(S('<b>bold <i>both</b> after</i>'), '<b>bold <i>both</i></b> after');
+  assert.equal(S('<table><tr><td>x'), '<table><tr><td>x</td></tr></table>');
+  assert.equal(S('</div>x<!-- <script>alert(1)</script> -->'), 'x');
+  assert.equal(S('<unknown>x</unknown> <SCRIPT>a</SCRIPT>'), 'x ');
+  assert.equal(S('<b title="a&quot; onmouseover=&quot;x">t</b>'), '<b title="a&quot; onmouseover=&quot;x">t</b>', 'an attribute value: escaped');
+  assert.equal(S('<a href="https://e.com/"onclick="x">t</a>'), '&lt;a href="https://e.com/"onclick="x"&gt;t', 'attributes run together: not a tag, its text shown');
+  assert.equal(S('<scr<script>ipt>alert(1)</script>'), '&lt;scr', 'a split tag: what is left is text');
+
+  // a value is formatted only when it has real tags; ordinary text with < and & is text
+  assert.equal(ALL.isHtml('a <b>b</b>'), true);
+  assert.equal(ALL.isHtml('<5 km & >3 m'), false);
+  assert.equal(ALL.isHtml('Name <none>'), false);
+  assert.equal(ALL.isHtml(42), false);
+  assert.equal(ALL.richValue('<b>x</b>'), '<div class="mb-rich"><b>x</b></div>');
+  assert.equal(ALL.richValue('a <none> & b'), 'a &lt;none&gt; &amp; b');
+});
+
+test('formatted values: shown made safe in popups; titles, labels and hover names as text', () => {
+  const S = ALL.importStyle, p = { name: 'N0LO', description: '<b>Andytown</b><br>442.825' };
+  const look = S.defaults([{ type: 'Feature', properties: p, geometry: { type: 'Point', coordinates: [0, 0] } }]);
+  look.title = 'description';
+  assert.equal(S.titleOf(look, p), 'Andytown\n442.825');
+  look.label.field = 'description';
+  assert.equal(S.labelText(look, p), 'Andytown\n442.825');
+  look.label.field = ''; look.label.text = '{name}: {description}';
+  assert.equal(S.labelText(look, p), 'N0LO: Andytown 442.825');
+  const dl = read('js/datalayers.js');
+  assert.equal(dl.split('MB.richValue(v)}</td></tr>').length - 1, 2, 'an imported layer\'s popup and an object\'s');
 });

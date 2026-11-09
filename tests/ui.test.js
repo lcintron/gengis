@@ -22,6 +22,12 @@ for (const m of allJs.matchAll(/\bid=\\?"([\w-]+)\\?"/g)) ids.add(m[1]);
 for (const m of allJs.matchAll(/\bid="([\w-]+)"/g)) ids.add(m[1]);
 for (const m of allJs.matchAll(/dotHtml\('([\w-]+)'/g)) ids.add(m[1]); // a section's on/off dot (MB.data.dotHtml)
 
+test('every script compiles (a syntax error stops the whole file, and with it the app, where no other test loads it)', () => {
+  const vm = require('vm');
+  for (const [f, src] of Object.entries(js)) assert.doesNotThrow(() => new vm.Script(src, { filename: 'js/' + f }), 'js/' + f);
+  assert.doesNotThrow(() => new vm.Script(read('sw.js'), { filename: 'sw.js' }), 'sw.js');
+});
+
 test('the hidden attribute always hides (no display rule of its own may show a hidden element)', () => {
   assert.match(css, /^\[hidden\]\s*\{\s*display:\s*none\s*!important;\s*\}/m, 'css/app.css keeps [hidden] { display: none !important; }');
 });

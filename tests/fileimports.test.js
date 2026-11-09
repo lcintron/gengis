@@ -15,7 +15,7 @@ function load() {
   const MB = { escapeHtml: s => String(s) };
   const ctx = { window: { MB }, TextDecoder, Blob, DecompressionStream, console, Date, Math };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/fileimports.js'), 'utf8'), ctx, { filename: 'fileimports.js' });
+  for (const f of ['js/util.js', 'js/fileimports.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }); // (util.js: formatted text)
   return MB.imports;
 }
 const IMP = load(), R = IMP.read;
@@ -130,7 +130,7 @@ test('KML: placemarks with their styles (shared, through a style map, or their o
   const [tower] = byName('Tower & mast');
   assert.deepEqual(plain(tower.geometry), { type: 'Point', coordinates: [-73.9857, 40.7484] }, 'longitude/latitude; the altitude dropped; spaces after commas forgiven');
   assert.equal(tower.properties.folder, 'Sites / North');
-  assert.equal(tower.properties.description, 'Height: 30 m\nBuilt 1999', 'the description as text: no markup, no script');
+  assert.equal(tower.properties.description, '<b>Height</b>: 30&nbsp;m<br/>Built 1999<script>alert(1)</script>', 'a formatted description: kept as the file has it (popups show it made safe)');
   assert.equal(tower.properties.owner, 'County');
   assert.equal(tower.properties.id, 'T-7');
   assert.deepEqual(plain(tower.mbStyle), { marker: '#0000ff' }, 'the style map\'s normal style (KML colors are aabbggrr)');

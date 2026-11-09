@@ -38,6 +38,7 @@ window.MB = window.MB || {};
 
   const filled = v => v != null && v !== '';
   const fmt = v => (v == null ? '' : typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toFixed(6))) : typeof v === 'boolean' ? (v ? 'yes' : 'no') : typeof v === 'object' ? JSON.stringify(v) : String(v));
+  const plainOf = v => { const s = fmt(v); return MB.isHtml && MB.isHtml(s) ? MB.htmlText(s) : s; }; // a formatted value as text (a title, a label)
   const catKey = v => (filled(v) ? String(v) : '');
   const kindOf = g => (/Point/.test(g.type) ? 'point' : /LineString/.test(g.type) ? 'line' : 'polygon');
 
@@ -68,8 +69,8 @@ window.MB = window.MB || {};
 
   function titleOf(look, p) {
     p = p || {};
-    if (look && look.title) return fmt(p[look.title]);
-    for (const k of AUTO_TITLE) if (filled(p[k])) return fmt(p[k]);
+    if (look && look.title) return plainOf(p[look.title]);
+    for (const k of AUTO_TITLE) if (filled(p[k])) return plainOf(p[k]);
     return '';
   }
   function popupRows(look, p) {
@@ -79,8 +80,8 @@ window.MB = window.MB || {};
   function labelText(look, p) {
     const lb = look.label || {};
     p = p || {};
-    if (lb.text && lb.text.trim()) return lb.text.replace(/\{([^{}]+)\}/g, (m, k) => fmt(p[k.trim()])).replace(/\s+/g, ' ').trim();
-    return lb.field ? fmt(p[lb.field]).trim() : titleOf(look, p);
+    if (lb.text && lb.text.trim()) return lb.text.replace(/\{([^{}]+)\}/g, (m, k) => plainOf(p[k.trim()])).replace(/\s+/g, ' ').trim();
+    return lb.field ? plainOf(p[lb.field]).trim() : titleOf(look, p);
   }
 
   // A field's values with how many features have each, the commonest first ('' for none).
