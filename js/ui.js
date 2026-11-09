@@ -1249,7 +1249,7 @@ window.MB = window.MB || {};
   // breaks when it is edited). (attrtable.js draws its cells the same way)
   const valueBox = (v, attrs) => {
     const s = v == null ? '' : String(v);
-    return s.includes('\n') ? `<textarea class="attr-cell attr-multi" ${attrs} spellcheck="false">${esc(s)}</textarea>`
+    return s.includes('\n') ? `<textarea class="attr-cell attr-multi" ${attrs} spellcheck="false">\n${esc(s)}</textarea>` // (the page drops a first line break: one is added, so a value's own is kept)
       : `<input type="text" class="attr-cell" ${attrs} value="${esc(s)}" spellcheck="false">`;
   };
 
@@ -1258,7 +1258,7 @@ window.MB = window.MB || {};
   // or removing one does it for all of them (asking first when others have a value in it). A field is added below;
   // the layer's attribute table has them all at once (attrtable.js).
   function attrForm(f) {
-    const m = f.mb, keys = MB.attrs.fieldsOf(m.layerId), a = m.attrs || {};
+    const m = f.mb, keys = MB.attrs.fieldsOf(m.layerId), a = m.attrs || {}, val = MB.attrs.valueOf;
     Object.keys(a).forEach(k => { if (!keys.includes(k)) keys.push(k); });
     const table = () => MB.attrs.tableFor(m.layerId);
     const wrap = document.createElement('div');
@@ -1266,7 +1266,7 @@ window.MB = window.MB || {};
     wrap.innerHTML = `<div class="attr-head"><h3>Attributes</h3>${MB.iconBtn('table', 'Attribute table: every object of the layer', 'data-act="attr-table"')}</div>
       ${keys.length ? `<table class="mb-datatable attr-edit"><thead><tr><th scope="col">Field</th><th scope="col">Value</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead><tbody>${keys.map((k, i) => `<tr data-i="${i}">
         <td><input type="text" class="attr-cell attr-key" data-ak value="${esc(k)}" title="${esc(k)}: renaming it renames it on every object of the layer" aria-label="Field name ${esc(k)}" spellcheck="false"></td>
-        <td>${valueBox(a[k], `data-av aria-label="Value of ${esc(k)}"`)}</td>
+        <td>${valueBox(val(m, k), `data-av aria-label="Value of ${esc(k)}"`)}</td>
         <td>${MB.iconBtn('trash', 'Remove the field', 'data-adel', 'danger', 'Remove the field ' + k)}</td></tr>`).join('')}</tbody></table>` : '<p class="note">None yet: fields and values of your own (an ID, a status, a note), kept with the object and in GeoJSON.</p>'}
       <form class="row attr-add"><input type="text" name="k" placeholder="Field" aria-label="New field" spellcheck="false"><input type="text" name="v" placeholder="Value" aria-label="Its value" spellcheck="false"><button type="submit" class="icon-btn" title="Add the field" aria-label="Add the field">${MB.ICON.plus}</button></form>`;
     const keyOf = el => keys[+el.closest('tr').dataset.i]; // (by the row: a field name can be anything)
@@ -1279,7 +1279,7 @@ window.MB = window.MB || {};
     };
     $$('[data-av]', wrap).forEach(inp => inp.addEventListener('change', () => {
       const k = keyOf(inp);
-      MB.attrs.set(f, k, MB.attrs.typed(inp.value, (m.attrs || {})[k]));
+      MB.attrs.set(f, k, MB.attrs.typed(inp.value, val(m, k)));
       MB.commit('attribute');
     }));
     $$('input[data-ak]', wrap).forEach(inp => {
@@ -1297,17 +1297,21 @@ window.MB = window.MB || {};
       });
     });
     $$('[data-adel]', wrap).forEach(b => b.addEventListener('click', async () => {
-      const k = keyOf(b), lay = MB.getLayer(m.layerId);
-      const others = MB.layerFeatures(m.layerId).filter(o => o !== f && o.mb.attrs && o.mb.attrs[k] != null && o.mb.attrs[k] !== '').length;
+      const k = keyOf(b), i = +b.closest('tr').dataset.i, lay = MB.getLayer(m.layerId);
+      const others = MB.layerFeatures(m.layerId).filter(o => o !== f && val(o.mb, k) != null && val(o.mb, k) !== '').length;
       if (others && !(await MB.ask(`Remove the field "${k}" from every object of "${lay ? lay.name : 'this layer'}"? ${others} other object${others === 1 ? ' has a value' : 's have values'} in it.`, 'Remove field', 'Cancel'))) return;
       table().deleteField(k);
       MB.ui.renderProps();
+      // the keyboard: on the field that took its place (or the one before it, or the new field's box)
+      const rows = $$('#propsBody .attr-edit tbody tr'), row = rows[Math.min(i, rows.length - 1)];
+      const to = row ? $('[data-ak]', row) : $('#propsBody .attr-add input[name="k"]');
+      if (to) to.focus();
     }));
     $('form', wrap).addEventListener('submit', e => {
       e.preventDefault();
       const k = e.target.k.value.trim(), v = MB.attrs.typed(e.target.v.value, null);
-      if (!k) { MB.toast('Give the field a name'); e.target.k.focus(); return; }
-      if (k.length > 64) { MB.toast('A field name is at most 64 characters'); e.target.k.focus(); return; }
+      const why = MB.attrs.badKey(k);
+      if (why) { MB.toast(why); e.target.k.focus(); return; }
       if (v == null) { // no value yet: a field of the layer, for every object
         const lay = MB.getLayer(m.layerId);
         if (lay && !MB.attrs.fieldsOf(m.layerId).includes(k)) lay.fields = (lay.fields || []).concat(k);

@@ -855,6 +855,21 @@ window.MB = window.MB || {};
   MB.defaultLabel = t => ({ show: false, v: (t === 'marker' || t === 'svg') ? 'top' : 'middle', h: 'center', size: 12, color: '#ffffff', bg: true });
   MB.getLabel = layer => Object.assign(MB.defaultLabel(layer.mb.type), layer.mb.label || {});
 
+  // A label takes a click for its object (selecting it, its popup), but not while its object is selected: then a
+  // press on it goes through to the object (dragging it, its vertices), as with the Move, Scale and drawing tools
+  // (css: .mb-label-held, .mb-move, .mb-scale-tool, .mb-crosshair).
+  const heldNow = l => MB.selected === l || !!(MB.multi && MB.multi.has(l));
+  const labelClass = l => 'mb-name-label-wrap' + (heldNow(l) ? ' mb-label-held' : '');
+  let heldHooked = false;
+  function hookHeld() {
+    if (heldHooked || !MB.on) return;
+    heldHooked = true;
+    MB.on('selection', () => Object.keys(MB.featureLayers).forEach(id => {
+      const l = MB.featureLayers[id], el = l._mbLabel && l._mbLabel.getElement();
+      if (el) el.classList.toggle('mb-label-held', heldNow(l));
+    }));
+  }
+
   function removeLabel(layer) {
     const mk = layer._mbLabel;
     if (!mk) return;
@@ -894,7 +909,8 @@ window.MB = window.MB || {};
     const ty = lb.v === 'top' ? 'calc(-100% - 5px)' : lb.v === 'bottom' ? '5px' : '-50%';
     const css = `left:${dx}px;top:${dy}px;transform:translate(${tx},${ty});font-size:${+lb.size || 12}px;color:${lb.color};` +
       (lb.bg ? '' : 'background:transparent;border-color:transparent;text-shadow:0 0 3px #000,0 0 2px #000,0 0 1px #000;');
-    const icon = L.divIcon({ className: 'mb-name-label-wrap', html: `<span class="mb-name-label" style="${css}">${MB.escapeHtml(m.name)}</span>`, iconSize: [0, 0] });
+    hookHeld();
+    const icon = L.divIcon({ className: labelClass(layer), html: `<span class="mb-name-label" style="${css}">${MB.escapeHtml(m.name)}</span>`, iconSize: [0, 0] });
     if (layer._mbLabel) {
       layer._mbLabel.setLatLng(latlng);
       layer._mbLabel.setIcon(icon);

@@ -65,7 +65,7 @@ test('a click on an object with attributes shows them, with no data under it too
   assert.match(features, /const at = own\.indexOf\(layer\); if \(at > 0\) own\.splice\(at, 1\); if \(at !== 0\) own\.unshift\(layer\);/, 'the clicked one first');
   assert.match(dl, /if \(!hits\.length && !point && !\(opts\.own \|\| \[\]\)\.some\(hasAttrs\)\) return false;/);
   assert.match(dl, /const open = i === 0 \? ' open' : '';/, 'the one in front (first) open');
-  assert.match(dl, /data-i="\$\{i\}"\$\{i === 0 \? ' open' : ''\}>/, 'a data feature in front open too');
+  assert.match(dl, /data-i="\$\{i\}"\$\{hits\.length === 1 \? ' open' : ''\}>/, 'of data alone, several start collapsed (the list in view)');
   assert.match(read('css/app.css'), /\.mb-datatable td \+ td \{ white-space: pre-line; \}/, 'a value on several lines keeps them');
 });
 
@@ -200,6 +200,36 @@ test('a name label is its object: a click on it selects the object and shows its
   const features = read('js/features.js');
   assert.match(features, /layer\._mbLabel\.on\('click contextmenu', e => layer\.fire\(e\.type, e\)\);/);
   assert.doesNotMatch(features, /_mbLabel = L\.marker\(latlng, \{ icon, interactive: false/);
+  // but not in the way of dragging its object: passed through while it is selected, and with the drag and draw tools
+  assert.match(features, /className: labelClass\(layer\)/);
+  assert.match(features, /el\.classList\.toggle\('mb-label-held', heldNow\(l\)\)/);
+  assert.match(read('css/app.css'), /:is\(\.mb-label-held, \.mb-move, \.mb-scale-tool, \.mb-crosshair\) \.mb-name-label \{ pointer-events: none; \}/);
+});
+
+test('attribute fields: reserved names refused, values read as the object\'s own, Properties redrawn by the table', () => {
+  const M = { escapeHtml: s => String(s), featureLayers: {}, getLayer: () => ({ name: 'L' }), on() {}, emit() {}, commit() {}, ui: {} };
+  const ctx = { window: { MB: M }, console };
+  vm.createContext(ctx);
+  vm.runInContext(read('js/attrtable.js'), ctx, { filename: 'js/attrtable.js' });
+  const A = M.attrs;
+  for (const k of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) assert.match(A.badKey(k), /reserved/, k);
+  assert.equal(A.badKey('Status'), '');
+  assert.equal(A.valueOf({ attrs: {} }, 'constructor'), undefined, 'an inherited name is no value');
+  const f = { mb: { layerId: 'l1', attrs: JSON.parse('{"__proto__":"p","a":1}') } };
+  assert.equal(A.valueOf(f.mb, '__proto__'), 'p', 'a file\'s own "__proto__" field');
+  A.set(f, '__proto__', 'q');
+  assert.equal(Object.getPrototypeOf(f.mb.attrs), Object.prototype, 'set as its own field, never as the prototype');
+  assert.equal(A.valueOf(f.mb, '__proto__'), 'q');
+  // a rename in the table: the selected object's Properties drawn anew
+  M.featureLayers = { x: f }; M.selected = f; let drawn = 0; M.ui.renderProps = () => { drawn++; };
+  assert.equal(A.tableFor('l1').renameField('a', 'b'), '');
+  assert.equal(drawn, 1);
+  assert.equal(A.valueOf(f.mb, 'b'), 1);
+});
+
+test('a value on several lines keeps a first line break in its box', () => {
+  assert.match(read('js/ui.js'), /spellcheck="false">\\n\$\{esc\(s\)\}<\/textarea>/);
+  assert.match(read('js/attrtable.js'), /rows="1" \$\{at\}>\\n\$\{esc\(v\)\}<\/textarea>/);
 });
 
 test('Properties: the attributes come last, a field renamed or removed on the whole layer', () => {

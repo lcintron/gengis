@@ -883,6 +883,8 @@ button.link:hover { text-decoration: underline; }
   position: absolute; white-space: nowrap; background: rgba(27,31,39,.86); color: #fff; padding: 1px 7px; border-radius: 4px;
   border: 1px solid rgba(255,255,255,.22); font-weight: 600; line-height: 1.35; cursor: pointer;
 } /* (a click on it is a click on its object: features.js) */
+/* ...but a press on it goes through to the object while that is selected, and with the tools that drag or draw */
+:is(.mb-label-held, .mb-move, .mb-scale-tool, .mb-crosshair) .mb-name-label { pointer-events: none; }
 
 /* ---------- snap indicator ---------- */
 .leaflet-tooltip.mb-snap-tip { background: rgba(27,31,39,.9); color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; padding: 1px 6px; font-size: 10px; box-shadow: none; }
@@ -1275,6 +1277,7 @@ textarea.attr-multi { display: block; height: auto; min-height: 28px; padding: 5
   .attr-scroll { max-height: 58vh; }
   .attr-cell { height: 36px; font-size: 14px; }
   .attr-tools input { height: 38px; }
+  .attr-table textarea.attr-multi { height: 36px; } /* (as the other cells) */
   .attr-table td.attr-n .icon-btn.mini, .attr-th .icon-btn.mini, .look-field .icon-btn.mini, .attr-head .icon-btn.mini, .attr-edit .icon-btn.mini { width: 36px; height: 36px; }
   .mb-datatable.attr-edit th:last-child { width: 40px; }
   .look-field input[type="text"] { height: 36px; }

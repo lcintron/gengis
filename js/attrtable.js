@@ -7,7 +7,8 @@
  *   It works on an adapter, so imported layers (fileimports.js) and the project's layers share it:
  *   { title, fields() -> [{ key, label, fixed }], rows() -> [row], get(row, key), set(row, key, value),
  *     addField(key) -> error text or '', renameField(from, to) -> error text or '', deleteField(key), zoom(row) }
- * API: MB.attrs.typed(text, was), fieldsOf(layerId), set(feature, key, value), tableFor(layerId);
+ * API: MB.attrs.typed(text, was), fieldsOf(layerId), set(feature, key, value), valueOf(mb, key), badKey(key) -> error
+ *   text or '', tableFor(layerId);
  *   MB.attrTable.open(adapter), refresh()
  */
 window.MB = window.MB || {};
@@ -18,7 +19,12 @@ window.MB = window.MB || {};
   const PAGE = 100;
   const NAME = '\u0000name'; // the Name column of a project layer (an object's name, not an attribute; never in the page: columns go by their index)
   const show = v => (v == null ? '' : typeof v === 'boolean' ? (v ? 'true' : 'false') : typeof v === 'object' ? JSON.stringify(v) : String(v)); // (a nested value in a GeoJSON file: as JSON)
-  const badKey = k => (!k ? 'Give the field a name' : k.length > 64 ? 'A field name is at most 64 characters' : '');
+  const badKey = k => (!k ? 'Give the field a name' : k.length > 64 ? 'A field name is at most 64 characters'
+    : k in Object.prototype ? 'That name is reserved: choose another' : ''); // ("constructor", "__proto__": names every object has)
+  // A field's value: the object's own (never one every object inherits, for a field named "constructor" in a file);
+  // and set as its own (a field named "__proto__" too)
+  const valueOf = (m, k) => (m && m.attrs && Object.hasOwn(m.attrs, k) ? m.attrs[k] : undefined);
+  const put = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
 
   // What a typed value is: a number where it reads as one (and the field held numbers, or nothing yet; leading zeros
   // stay text: "007"), true/false in a field of those, otherwise text; nothing for an empty box.
@@ -41,21 +47,24 @@ window.MB = window.MB || {};
   function set(f, key, value) {
     const m = f.mb;
     if (value == null || value === '') { if (m.attrs) delete m.attrs[key]; }
-    else (m.attrs = m.attrs || {})[key] = value;
+    else put(m.attrs = m.attrs || {}, key, value);
     if (m.attrs && !Object.keys(m.attrs).length) delete m.attrs;
   }
   function tableFor(layerId) {
     const lay = () => MB.getLayer(layerId);
-    const commit = what => { MB.commit(what); MB.emit('features'); };
+    const commit = what => {
+      MB.commit(what); MB.emit('features');
+      const sel = MB.selected; // its Properties show the layer's fields: drawn anew (a field renamed here is not left there under its old name)
+      if (sel && sel.mb && sel.mb.layerId === layerId && MB.ui && MB.ui.renderProps) MB.ui.renderProps();
+    };
     return {
       title: () => (lay() ? lay().name : 'Layer') + ': attributes',
       fields: () => [{ key: NAME, label: 'Object name', fixed: true }].concat(fieldsOf(layerId).map(k => ({ key: k, label: k }))),
       rows: () => objectsOf(layerId),
-      get: (f, k) => (k === NAME ? f.mb.name || '' : ((f.mb.attrs || {})[k])),
-      set(f, k, v) {
+      get: (f, k) => (k === NAME ? f.mb.name || '' : valueOf(f.mb, k)),
+      set(f, k, v) { // (Properties drawn anew by commit)
         if (k === NAME) { f.mb.name = v == null ? '' : String(v); if (MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(f); commit('rename'); if (MB.ui) MB.ui.renderLayersSoon && MB.ui.renderLayersSoon(); }
         else { set(f, k, v); commit('attribute'); }
-        if (MB.selected === f && MB.ui) MB.ui.renderProps();
       },
       addField(k) {
         const l = lay(), why = !l ? 'The layer is gone' : badKey(k) || (fieldsOf(layerId).includes(k) ? 'There is a field of that name already' : '');
@@ -68,7 +77,7 @@ window.MB = window.MB || {};
         const l = lay(), why = !l ? 'The layer is gone' : badKey(to) || (to !== from && fieldsOf(layerId).includes(to) ? 'There is a field of that name already' : '');
         if (why) return why;
         if (to === from) return '';
-        objectsOf(layerId).forEach(f => { const a = f.mb.attrs; if (a && from in a) { const v = a[from]; delete a[from]; a[to] = v; } });
+        objectsOf(layerId).forEach(f => { const a = f.mb.attrs; if (a && Object.hasOwn(a, from)) { const v = a[from]; delete a[from]; put(a, to, v); } });
         if (l.fields) l.fields = l.fields.map(k => (k === from ? to : k));
         commit('rename field');
         return '';
@@ -223,7 +232,7 @@ window.MB = window.MB || {};
     d.querySelector('#attrBody').innerHTML = rows.map((r, i) => `<tr data-i="${from + i}"><td class="attr-n">${MB.iconBtn('goto', 'Zoom to', 'data-zoom', '', 'Zoom to ' + (ad.rowLabel ? ad.rowLabel(r) : 'row ' + (from + i + 1)))}</td>${fields.map((f, c) => {
       const v = show(ad.get(r, f.key));
       const at = `data-c="${c}" title="${esc(v)}" aria-label="${esc(f.label)}, row ${from + i + 1}" spellcheck="false"`;
-      return v.includes('\n') ? `<td><textarea class="attr-cell attr-multi" rows="1" ${at}>${esc(v)}</textarea></td>` // (several lines: kept when edited)
+      return v.includes('\n') ? `<td><textarea class="attr-cell attr-multi" rows="1" ${at}>\n${esc(v)}</textarea></td>` // (several lines: kept when edited; the page drops a first line break, so one is added)
         : `<td><input type="text" class="attr-cell" value="${esc(v)}" ${at}></td>`;
     }).join('')}</tr>`).join('') || `<tr><td colspan="${fields.length + 1}" class="note">${T.q ? 'No row matches.' : 'No rows.'}</td></tr>`;
     const total = ad.rows().length, pages = Math.max(1, Math.ceil(T.list.length / PAGE));
@@ -246,5 +255,5 @@ window.MB = window.MB || {};
     refresh() { if (T.dlg && !T.dlg.classList.contains('hidden') && T.ad) build(); },
     isOpen: () => !!(T.dlg && !T.dlg.classList.contains('hidden'))
   };
-  MB.attrs = { typed, fieldsOf, set, tableFor, NAME };
+  MB.attrs = { typed, fieldsOf, set, tableFor, valueOf, badKey, NAME };
 })(window.MB);

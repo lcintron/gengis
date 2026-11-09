@@ -1187,9 +1187,10 @@ window.MB = window.MB || {};
 
   // Everything under a click in one popup. opts.own: the user's objects at the point, listed first (their objects
   // draw above the data, so a click on one never reaches the data under it). opts.declination: the magnetic
-  // declination at the point too, whether or not its source is on (right-click → Other info). The first entry, the one
-  // in front (the object clicked, or the top-most at the point), opens expanded. It opens only when there is data at the point, or one of the
-  // objects has attributes; the return value says whether it did.
+  // declination at the point too, whether or not its source is on (right-click → Other info). The object in front
+  // (the one clicked: listed first) opens expanded; of data alone, only a single entry does (several start collapsed,
+  // below). It opens only when there is data at the point, or one of the objects has attributes; the return value
+  // says whether it did.
   MB.data.identify = function (latlng, containerPoint, clicked, opts) {
     opts = opts || {};
     let hits = this.featuresAt(latlng, containerPoint);
@@ -1228,14 +1229,14 @@ window.MB = window.MB || {};
       const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('') +
         attrs.map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${MB.richValue(v)}</td></tr>` : '').join(''); // (an attribute with formatting: kept, made safe)
       const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`;
-      const open = i === 0 ? ' open' : ''; // the one in front (listed first) opens
+      const open = i === 0 ? ' open' : ''; // the one in front (listed first) opens: an object clicked
       return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"${open}><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
     const sections = hits.map((h, i) => {
       if (h.own) return ownSection(h, i);
       const body = popupHtml(h.ds, h.props).replace(/^<div class="mb-popup"><div class="mb-popup-title">[^<]*<\/div>/, '').replace(/<\/div>$/, '');
       const extra = h.ds.def.popupExtra ? `<div class="mb-extra dim" data-extra="${i}">Loading frequencies…</div>` : '';
-      return `<details class="mb-ident" name="mb-ident" data-i="${i}"${i === 0 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
+      return `<details class="mb-ident" name="mb-ident" data-i="${i}"${hits.length === 1 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
     }).join('');
     // No header: each entry names its dataset and feature. Several features start collapsed, so the whole list is
     // in view at once (an expanded first entry used to push the others below the popup's scroll); the shared
