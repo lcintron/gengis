@@ -170,6 +170,7 @@ test('the attribute table names its columns by their index: no field name goes i
   const src = read('js/attrtable.js');
   assert.ok(!/data-(k|sort|col|rename)="\$\{esc\(f\.key\)\}"/.test(src), 'a field name (the Object name column\'s key has a NUL in it) would not survive an attribute');
   assert.match(src, /data-sort data-c="\$\{c\}"/);
-  assert.match(src, /class="attr-cell" data-c="\$\{c\}"/);
+  assert.match(src, /const at = `data-c="\$\{c\}" title=/, 'a cell names its column by its index');
+  assert.match(src, /<textarea class="attr-cell attr-multi" rows="1" \$\{at\}>/, 'a value on several lines in a box that keeps them');
   assert.match(src, /const keyAt = el => \{ const f = T\.fields\[\+el\.dataset\.c\]; return f \? f\.key : null; \};/);
 });

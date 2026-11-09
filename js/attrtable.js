@@ -147,7 +147,7 @@ window.MB = window.MB || {};
       build();
     });
     body.addEventListener('change', e => {
-      const inp = e.target.closest('input[data-c]');
+      const inp = e.target.closest('[data-c]');
       if (!inp) return;
       const row = T.list[+inp.closest('tr').dataset.i], k = keyAt(inp);
       if (!row || k == null) return;
@@ -157,10 +157,10 @@ window.MB = window.MB || {};
       inp.title = inp.value;
     });
     body.addEventListener('keydown', e => {
-      const inp = e.target.closest('input[data-c]');
-      if (!inp || e.key !== 'Enter') return;
+      const inp = e.target.closest('[data-c]');
+      if (!inp || e.key !== 'Enter' || (inp.tagName === 'TEXTAREA' && !e.ctrlKey && !e.metaKey)) return; // (in a box of several lines, Enter is a new line; Ctrl+Enter moves on)
       e.preventDefault(); // Enter: the cell below, as a spreadsheet
-      const tr = inp.closest('tr').nextElementSibling, next = tr && tr.querySelector(`input[data-c="${inp.dataset.c}"]`);
+      const tr = inp.closest('tr').nextElementSibling, next = tr && tr.querySelector(`[data-c="${inp.dataset.c}"]`);
       if (next) next.focus(); else inp.blur();
     });
     body.addEventListener('click', e => {
@@ -222,7 +222,9 @@ window.MB = window.MB || {};
     const from = T.page * PAGE, rows = T.list.slice(from, from + PAGE);
     d.querySelector('#attrBody').innerHTML = rows.map((r, i) => `<tr data-i="${from + i}"><td class="attr-n">${MB.iconBtn('goto', 'Zoom to', 'data-zoom', '', 'Zoom to ' + (ad.rowLabel ? ad.rowLabel(r) : 'row ' + (from + i + 1)))}</td>${fields.map((f, c) => {
       const v = show(ad.get(r, f.key));
-      return `<td><input type="text" class="attr-cell" data-c="${c}" value="${esc(v)}" title="${esc(v)}" aria-label="${esc(f.label)}, row ${from + i + 1}" spellcheck="false"></td>`;
+      const at = `data-c="${c}" title="${esc(v)}" aria-label="${esc(f.label)}, row ${from + i + 1}" spellcheck="false"`;
+      return v.includes('\n') ? `<td><textarea class="attr-cell attr-multi" rows="1" ${at}>${esc(v)}</textarea></td>` // (several lines: kept when edited)
+        : `<td><input type="text" class="attr-cell" value="${esc(v)}" ${at}></td>`;
     }).join('')}</tr>`).join('') || `<tr><td colspan="${fields.length + 1}" class="note">${T.q ? 'No row matches.' : 'No rows.'}</td></tr>`;
     const total = ad.rows().length, pages = Math.max(1, Math.ceil(T.list.length / PAGE));
     d.querySelector('#attrCount').textContent = (T.q ? `${T.list.length.toLocaleString()} of ${total.toLocaleString()}` : total.toLocaleString()) + ` row${total === 1 ? '' : 's'} · ${(fields.length - fields.filter(f => f.fixed).length)} field${fields.length === 1 ? '' : 's'}`;

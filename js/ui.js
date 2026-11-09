@@ -791,6 +791,7 @@ window.MB = window.MB || {};
           <span class="active-dot"></span>
           <span class="layer-name" data-act="rename">${esc(l.name)}</span>
           ${l.grouped ? `<button class="icon-btn mini on" data-act="ungroup" title="Grouped: its objects are selected, moved and resized together. Click to ungroup">${icons.group}</button>` : ''}
+          ${(l.fields && l.fields.length) || feats.some(f => f.mb.attrs) ? MB.iconBtn('table', 'Attribute table: its objects and their fields', 'data-act="attr-table"', '', 'Attribute table of ' + l.name) : ''}
           <button class="icon-btn mini" data-act="layer-menu" title="Layer options: rename, duplicate, group…" aria-haspopup="menu">${icons.more}</button>
           <span class="count">${feats.length}</span>
           <button class="icon-btn mini${l.visible ? ' on' : ''}" data-act="vis" title="${l.visible ? 'Hide' : 'Show'} layer (all objects)">${l.visible ? icons.eye : icons.eyeOff}</button>
@@ -855,6 +856,7 @@ window.MB = window.MB || {};
     if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
     if (act === 'layer-menu') { const r = actEl.getBoundingClientRect(); layerMenu(id, r.left, r.bottom + 2); return; }
     if (act === 'ungroup') { MB.setLayerGrouped(id, false); MB.commit('ungroup'); return; }
+    if (act === 'attr-table') { MB.attrTable.open(MB.attrs.tableFor(id)); return; }
     if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
     else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
     else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
@@ -1146,7 +1148,6 @@ window.MB = window.MB || {};
     $('#propLayer', panel).addEventListener('change', e => MB.moveFeatureToLayer(m.id, e.target.value));
     MB.ui.renderMeasureBox();
     if (MB.labelTypes.includes(m.type)) panel.appendChild(labelForm(f));
-    panel.appendChild(attrForm(f));
 
     if (m.type === 'text') {
       const t = document.createElement('div');
@@ -1174,6 +1175,7 @@ window.MB = window.MB || {};
       panel.appendChild(r);
       $('#propRadius', panel).addEventListener('change', e => { const v = iu.toMeters(+e.target.value); if (v > 0) { f.setRadius(v); MB.updateTooltip(f); MB.ui.renderMeasureBox(); MB.commit('radius'); } });
     }
+    panel.appendChild(attrForm(f)); // last: the object's data, after how it looks
 
     $('.obj-tools', head).addEventListener('click', e => {
       const btn = e.target.closest('button[data-act]');
@@ -1243,35 +1245,78 @@ window.MB = window.MB || {};
     return wrap;
   }
 
-  // An object's attributes: its layer's fields (empty ones too), then any of its own; a value edited in place, a
-  // field added below; its layer's attribute table for all of them at once (attrtable.js).
+  // A value's box: one line, or several for a value written on several lines (a box of one line would drop its line
+  // breaks when it is edited). (attrtable.js draws its cells the same way)
+  const valueBox = (v, attrs) => {
+    const s = v == null ? '' : String(v);
+    return s.includes('\n') ? `<textarea class="attr-cell attr-multi" ${attrs} spellcheck="false">${esc(s)}</textarea>`
+      : `<input type="text" class="attr-cell" ${attrs} value="${esc(s)}" spellcheck="false">`;
+  };
+
+  // An object's attributes, last in Properties: one row per field of its layer (empty ones too), then any of its own.
+  // A value is this object's; a field is the layer's (every object has it, as in the attribute table), so renaming
+  // or removing one does it for all of them (asking first when others have a value in it). A field is added below;
+  // the layer's attribute table has them all at once (attrtable.js).
   function attrForm(f) {
     const m = f.mb, keys = MB.attrs.fieldsOf(m.layerId), a = m.attrs || {};
     Object.keys(a).forEach(k => { if (!keys.includes(k)) keys.push(k); });
+    const table = () => MB.attrs.tableFor(m.layerId);
     const wrap = document.createElement('div');
     wrap.className = 'section attr-section';
-    wrap.innerHTML = `<h3>Attributes</h3>
-      ${keys.length ? `<table class="mb-datatable attr-edit">${keys.map(k => `<tr><td title="${esc(k)}">${esc(k)}</td><td><input type="text" class="attr-cell" data-ak="${esc(k)}" value="${esc(a[k] == null ? '' : String(a[k]))}" aria-label="${esc(k)}" spellcheck="false"></td></tr>`).join('')}</table>` : '<p class="note">None yet: fields and values of your own (an ID, a status, a note), kept with the object and in GeoJSON.</p>'}
-      <form class="row attr-add"><input type="text" name="k" placeholder="Field" aria-label="New field" spellcheck="false"><input type="text" name="v" placeholder="Value" aria-label="Its value" spellcheck="false"><button type="submit" class="icon-btn" title="Add the field" aria-label="Add the field">${MB.ICON.plus}</button></form>
-      <div class="btn-row"><button type="button" class="btn small with-icon" data-act="attr-table">${MB.ICON.table}Attribute table</button></div>`;
-    $$('input[data-ak]', wrap).forEach(inp => inp.addEventListener('change', () => {
-      const k = inp.dataset.ak;
+    wrap.innerHTML = `<div class="attr-head"><h3>Attributes</h3>${MB.iconBtn('table', 'Attribute table: every object of the layer', 'data-act="attr-table"')}</div>
+      ${keys.length ? `<table class="mb-datatable attr-edit"><thead><tr><th scope="col">Field</th><th scope="col">Value</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead><tbody>${keys.map((k, i) => `<tr data-i="${i}">
+        <td><input type="text" class="attr-cell attr-key" data-ak value="${esc(k)}" title="${esc(k)}: renaming it renames it on every object of the layer" aria-label="Field name ${esc(k)}" spellcheck="false"></td>
+        <td>${valueBox(a[k], `data-av aria-label="Value of ${esc(k)}"`)}</td>
+        <td>${MB.iconBtn('trash', 'Remove the field', 'data-adel', 'danger', 'Remove the field ' + k)}</td></tr>`).join('')}</tbody></table>` : '<p class="note">None yet: fields and values of your own (an ID, a status, a note), kept with the object and in GeoJSON.</p>'}
+      <form class="row attr-add"><input type="text" name="k" placeholder="Field" aria-label="New field" spellcheck="false"><input type="text" name="v" placeholder="Value" aria-label="Its value" spellcheck="false"><button type="submit" class="icon-btn" title="Add the field" aria-label="Add the field">${MB.ICON.plus}</button></form>`;
+    const keyOf = el => keys[+el.closest('tr').dataset.i]; // (by the row: a field name can be anything)
+    wrap.querySelectorAll('textarea[data-av]').forEach(t => { t.rows = Math.min(6, t.value.split('\n').length); });
+    const focusRow = (sel, k) => { // drawn anew: the same field's box keeps the keyboard
+      const fresh = MB.attrs.fieldsOf(m.layerId), own = Object.keys(m.attrs || {});
+      own.forEach(x => { if (!fresh.includes(x)) fresh.push(x); });
+      const i = fresh.indexOf(k), el = i < 0 ? null : $(`#propsBody .attr-edit tr[data-i="${i}"] ${sel}`);
+      if (el) el.focus();
+    };
+    $$('[data-av]', wrap).forEach(inp => inp.addEventListener('change', () => {
+      const k = keyOf(inp);
       MB.attrs.set(f, k, MB.attrs.typed(inp.value, (m.attrs || {})[k]));
       MB.commit('attribute');
+    }));
+    $$('input[data-ak]', wrap).forEach(inp => {
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.value = keyOf(inp); inp.blur(); }
+      });
+      inp.addEventListener('change', () => {
+        const from = keyOf(inp), to = inp.value.trim();
+        if (to === from) { inp.value = from; return; }
+        const why = table().renameField(from, to);
+        if (why) { MB.toast(why); inp.value = from; return; }
+        MB.ui.renderProps();
+        focusRow('[data-av]', to);
+      });
+    });
+    $$('[data-adel]', wrap).forEach(b => b.addEventListener('click', async () => {
+      const k = keyOf(b), lay = MB.getLayer(m.layerId);
+      const others = MB.layerFeatures(m.layerId).filter(o => o !== f && o.mb.attrs && o.mb.attrs[k] != null && o.mb.attrs[k] !== '').length;
+      if (others && !(await MB.ask(`Remove the field "${k}" from every object of "${lay ? lay.name : 'this layer'}"? ${others} other object${others === 1 ? ' has a value' : 's have values'} in it.`, 'Remove field', 'Cancel'))) return;
+      table().deleteField(k);
+      MB.ui.renderProps();
     }));
     $('form', wrap).addEventListener('submit', e => {
       e.preventDefault();
       const k = e.target.k.value.trim(), v = MB.attrs.typed(e.target.v.value, null);
       if (!k) { MB.toast('Give the field a name'); e.target.k.focus(); return; }
+      if (k.length > 64) { MB.toast('A field name is at most 64 characters'); e.target.k.focus(); return; }
       if (v == null) { // no value yet: a field of the layer, for every object
         const lay = MB.getLayer(m.layerId);
         if (lay && !MB.attrs.fieldsOf(m.layerId).includes(k)) lay.fields = (lay.fields || []).concat(k);
       } else MB.attrs.set(f, k, v);
       MB.commit('attribute');
       MB.ui.renderProps();
-      const box = $(`#propsBody input[data-ak="${CSS.escape(k)}"]`); if (box) box.focus();
+      focusRow('[data-av]', k);
     });
-    $('[data-act="attr-table"]', wrap).addEventListener('click', () => MB.attrTable.open(MB.attrs.tableFor(m.layerId)));
+    $('[data-act="attr-table"]', wrap).addEventListener('click', () => MB.attrTable.open(table()));
     return wrap;
   }
 
@@ -1321,7 +1366,7 @@ window.MB = window.MB || {};
     const level = z.level != null ? z.level : zoomNow();
     wrap.innerHTML = `<label class="check" title="Show this object only above or below a zoom level"><input type="checkbox" id="propZoomOn"${z.on ? ' checked' : ''}> <b>Zoom display</b></label>
       <div class="row"><label>Show when ${MB.zoomIcon} is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
-      <div class="row"><label>${MB.zoomIcon} level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
+      <div class="row"><label>${MB.zoomIcon} Level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
       <p class="note" id="propZoomNote"></p>`;
     const on = $('#propZoomOn', wrap), op = $('#propZoomOp', wrap), lv = $('#propZoomLevel', wrap);
     const apply = e => {

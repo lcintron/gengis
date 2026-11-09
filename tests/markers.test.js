@@ -62,9 +62,10 @@ test('a right-click on an edited marker, text or circle opens its menu: Geoman n
 test('a click on an object with attributes shows them, with no data under it too', () => {
   const features = read('js/features.js'), dl = read('js/datalayers.js');
   assert.match(features, /MB\.data\.identify\(latlng, cp, null, \{ own, open: layer \}\)/);
-  assert.match(features, /if \(!own\.includes\(layer\)\) own\.unshift\(layer\);/);
+  assert.match(features, /const at = own\.indexOf\(layer\); if \(at > 0\) own\.splice\(at, 1\); if \(at !== 0\) own\.unshift\(layer\);/, 'the clicked one first');
   assert.match(dl, /if \(!hits\.length && !point && !\(opts\.own \|\| \[\]\)\.some\(hasAttrs\)\) return false;/);
-  assert.match(dl, /const open = h\.layer === opts\.open && attrs\.length \? ' open' : '';/, 'the clicked one\'s entry open');
+  assert.match(dl, /const open = i === 0 \? ' open' : '';/, 'the one in front (first) open');
+  assert.match(dl, /data-i="\$\{i\}"\$\{i === 0 \? ' open' : ''\}>/, 'a data feature in front open too');
   assert.match(read('css/app.css'), /\.mb-datatable td \+ td \{ white-space: pre-line; \}/, 'a value on several lines keeps them');
 });
 
@@ -193,4 +194,43 @@ test('review fixes: one table at a time, never one inside another; entity names 
   }
   for (const e of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) assert.equal(ALL.htmlText('<b>x</b>&' + e + ';'), 'x&' + e + ';', e);
   assert.equal(ALL.htmlText('<b>&Eacute;cole &eacute;t&eacute;</b>'), 'École été');
+});
+
+test('a name label is its object: a click on it selects the object and shows its data', () => {
+  const features = read('js/features.js');
+  assert.match(features, /layer\._mbLabel\.on\('click contextmenu', e => layer\.fire\(e\.type, e\)\);/);
+  assert.doesNotMatch(features, /_mbLabel = L\.marker\(latlng, \{ icon, interactive: false/);
+});
+
+test('Properties: the attributes come last, a field renamed or removed on the whole layer', () => {
+  const ui = read('js/ui.js');
+  const render = ui.slice(ui.indexOf('MB.ui.renderProps = function'), ui.indexOf('function lockProps'));
+  assert.ok(render.indexOf('panel.appendChild(attrForm(f))') > render.indexOf("MB.commit('radius')"), 'after the style and the radius');
+  assert.equal(render.split('attrForm(f)').length, 2, 'once');
+  const form = ui.slice(ui.indexOf('function attrForm(f)'), ui.indexOf('function bindNameTip(f)'));
+  assert.match(form, /table\(\)\.renameField\(from, to\)/);
+  assert.match(form, /table\(\)\.deleteField\(k\)/);
+  assert.match(form, /if \(others && !\(await MB\.ask\(/, 'asks when other objects have a value');
+  assert.match(form, /data-ak value="\$\{esc\(k\)\}"/, 'the field name escaped');
+  assert.match(form, /const keyOf = el => keys\[\+el\.closest\('tr'\)\.dataset\.i\]/, 'a field found by its row, never by its name in a selector');
+});
+
+test('a layer with attributes has an attribute table button in its row', () => {
+  const ui = read('js/ui.js');
+  assert.match(ui, /\(l\.fields && l\.fields\.length\) \|\| feats\.some\(f => f\.mb\.attrs\) \? MB\.iconBtn\('table'/);
+  assert.match(ui, /if \(act === 'attr-table'\) \{ MB\.attrTable\.open\(MB\.attrs\.tableFor\(id\)\); return; \}/);
+});
+
+test('every dialog box is a block, so its close button floats to the top-right corner', () => {
+  const css = read('css/app.css');
+  const src = ['index.html'].concat(fs.readdirSync(path.join(ROOT, 'js')).map(f => 'js/' + f)).map(read).join('\n');
+  const boxes = new Set([...src.matchAll(/class="modal-box ([a-z -]+)"/g)].flatMap(m => m[1].split(' ')));
+  assert.ok(boxes.has('attr-box') && boxes.size > 5, 'the dialogs found');
+  for (const b of boxes) for (const m of css.matchAll(new RegExp('^\\.' + b + '\\s*\\{([^}]*)\\}', 'gm'))) assert.doesNotMatch(m[1], /display:\s*(flex|grid)/, b + ' must not be a flex or grid box');
+  assert.match(css, /\.modal-x \{\s*float: right;/);
+  for (const f of ['js/app.js', 'js/cloudui.js', 'js/datalayers.js']) assert.doesNotMatch(read(f), /&times;|'✕'|data-act="close-data" title="Close" aria-label="Close"><svg/, f + ': the shared close icon');
+});
+
+test('zoom display: Level, capitalized like the other labels', () => {
+  assert.match(read('js/ui.js'), /<label>\$\{MB\.zoomIcon\} Level<\/label><input type="number" id="propZoomLevel"/);
 });

@@ -350,14 +350,14 @@ window.MB = window.MB || {};
         if (shift) return;
       }
       // Objects draw above the data layers, so the data under one is only reachable from here: the same popup as
-      // a click on the data, with the objects at this point listed first (the clicked one open when it has
-      // attributes). Nothing opens where there is no data and no object with attributes, nor with the Move tool (a
+      // a click on the data, with the objects at this point listed first (the clicked one, in front, first
+      // and expanded). Nothing opens where there is no data and no object with attributes, nor with the Move tool (a
       // click there ends a drag).
       if (shift || t === 'move' || t === 'scale' || !MB.data || !MB.data.identify) return;
       if (layer.pm && layer.pm.dragging && layer.pm.dragging()) return; // the click that ends a drag (Geoman's drag ends 10 ms after it)
       const oe = e.originalEvent, { latlng, cp } = pointerAt(e);
       const own = MB.data.objectsAt(latlng, cp);
-      if (!own.includes(layer)) own.unshift(layer); // (the clicked one, wherever on it the click was)
+      const at = own.indexOf(layer); if (at > 0) own.splice(at, 1); if (at !== 0) own.unshift(layer); // the clicked one first (it is the one in front), wherever on it the click was
       MB.data.identify(latlng, cp, null, { own, open: layer });
       if (oe) oe._mbIdentified = true; // presenting, the click goes on to the map: its popup is already open
     });
@@ -900,7 +900,8 @@ window.MB = window.MB || {};
       layer._mbLabel.setIcon(icon);
       if (!g.hasLayer(layer._mbLabel)) g.addLayer(layer._mbLabel);
     } else {
-      layer._mbLabel = L.marker(latlng, { icon, interactive: false, keyboard: false, pmIgnore: true, zIndexOffset: 500 });
+      layer._mbLabel = L.marker(latlng, { icon, keyboard: false, pmIgnore: true, zIndexOffset: 500, bubblingMouseEvents: true }); // (the map has its clicks too while drawing: a point can go there)
+      layer._mbLabel.on('click contextmenu', e => layer.fire(e.type, e)); // the name is its object: a click on it is a click on the object
       g.addLayer(layer._mbLabel);
     }
   };

@@ -1187,8 +1187,8 @@ window.MB = window.MB || {};
 
   // Everything under a click in one popup. opts.own: the user's objects at the point, listed first (their objects
   // draw above the data, so a click on one never reaches the data under it). opts.declination: the magnetic
-  // declination at the point too, whether or not its source is on (right-click → Other info). opts.open: the object
-  // clicked, its entry open when it has attributes. It opens only when there is data at the point, or one of the
+  // declination at the point too, whether or not its source is on (right-click → Other info). The first entry, the one
+  // in front (the object clicked, or the top-most at the point), opens expanded. It opens only when there is data at the point, or one of the
   // objects has attributes; the return value says whether it did.
   MB.data.identify = function (latlng, containerPoint, clicked, opts) {
     opts = opts || {};
@@ -1228,14 +1228,14 @@ window.MB = window.MB || {};
       const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('') +
         attrs.map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${MB.richValue(v)}</td></tr>` : '').join(''); // (an attribute with formatting: kept, made safe)
       const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`;
-      const open = h.layer === opts.open && attrs.length ? ' open' : '';
+      const open = i === 0 ? ' open' : ''; // the one in front (listed first) opens
       return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"${open}><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
     const sections = hits.map((h, i) => {
       if (h.own) return ownSection(h, i);
       const body = popupHtml(h.ds, h.props).replace(/^<div class="mb-popup"><div class="mb-popup-title">[^<]*<\/div>/, '').replace(/<\/div>$/, '');
       const extra = h.ds.def.popupExtra ? `<div class="mb-extra dim" data-extra="${i}">Loading frequencies…</div>` : '';
-      return `<details class="mb-ident" name="mb-ident" data-i="${i}"${hits.length === 1 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
+      return `<details class="mb-ident" name="mb-ident" data-i="${i}"${i === 0 ? ' open' : ''}><summary><span class="mb-ident-ds">${esc(h.ds.def.name)}</span><span class="mb-ident-label">${esc(label(h))}</span></summary>${body}${extra}</details>`;
     }).join('');
     // No header: each entry names its dataset and feature. Several features start collapsed, so the whole list is
     // in view at once (an expanded first entry used to push the others below the popup's scroll); the shared
@@ -1351,7 +1351,7 @@ window.MB = window.MB || {};
     let attrs = keys.map(k => row(k, fmtVal(k, p[k]))).join('');
     if (def.rows) { try { attrs += def.rows(p).map(([k, v]) => row(k, v)).join(''); } catch (e) { /* ignore */ } }
 
-    return `<div class="panel-head"><h3>${esc(def.name)}</h3><span class="badge">data</span><button type="button" class="icon-btn mini" data-act="close-data" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
+    return `<div class="panel-head"><h3>${esc(def.name)}</h3><span class="badge">data</span>${MB.iconBtn('close', 'Close', 'data-act="close-data"')}</div>
       ${label ? `<div class="data-pick-label">${esc(label)}</div>` : ''}
       <div class="section"><h3>Source</h3><table class="mb-datatable">${src}</table>${/^https?:\/\//i.test(def.url || '') ? `<div class="btn-row"><a class="btn small" href="${esc(def.url)}" target="_blank" rel="noopener" title="The service's description, fields and extent">Service page</a></div>` : ''}</div>
       <div class="section"><h3>Geometry</h3><table class="mb-datatable">${geom}</table>${generalized ? '<p class="note">Measured on the outline loaded at this zoom, simplified for display: zoom in for full detail.</p>' : ''}</div>
