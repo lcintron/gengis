@@ -1228,7 +1228,7 @@ window.MB = window.MB || {};
       const attrs = Object.keys(m.attrs || {}).slice(0, 20).map(k => [k, String(m.attrs[k])]); // its attributes too
       const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('') +
         attrs.map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${MB.richValue(v)}</td></tr>` : '').join(''); // (an attribute with formatting: kept, made safe)
-      const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`;
+      const act = presenting || h.layer === MB.selected ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`; // (another object at the point, one under it: to edit it; not the one already selected)
       const open = i === 0 ? ' open' : ''; // the one in front (listed first) opens: an object clicked
       return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"${open}><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
@@ -1247,7 +1247,7 @@ window.MB = window.MB || {};
     // Hand Leaflet a DOM node, not the HTML string: popup.update() (called when frequencies arrive) re-renders
     // string content from scratch, which would wipe the loaded frequencies, the listeners and the expanded state.
     const content = document.createElement('div'); content.innerHTML = html;
-    const popup = identifyPopup = L.popup({ maxWidth: Math.max(200, Math.min(400, MB.map.getSize().x - 72)), maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [12, 12] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
+    const popup = identifyPopup = L.popup({ minWidth: Math.max(160, Math.min(280, MB.map.getSize().x - 72)), maxWidth: Math.max(200, Math.min(400, MB.map.getSize().x - 72)), maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [12, 12] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
     let pinned = hits.length === 1 ? hits[0] : null; // the expanded entry stays highlighted when the pointer leaves the list
     popup.on('remove', () => { pinned = null; clearHighlight(); });
     const root = popup.getElement();

@@ -8,7 +8,7 @@
  *   { title, fields() -> [{ key, label, fixed }], rows() -> [row], get(row, key), set(row, key, value),
  *     addField(key) -> error text or '', renameField(from, to) -> error text or '', deleteField(key), zoom(row) }
  * API: MB.attrs.typed(text, was), fieldsOf(layerId), set(feature, key, value), valueOf(mb, key), badKey(key) -> error
- *   text or '', tableFor(layerId);
+ *   text or '', cellHtml(value, attrs) -> a value's box, tableFor(layerId);
  *   MB.attrTable.open(adapter), refresh()
  */
 window.MB = window.MB || {};
@@ -24,6 +24,16 @@ window.MB = window.MB || {};
   // A field's value: the object's own (never one every object inherits, for a field named "constructor" in a file);
   // and set as its own (a field named "__proto__" too)
   const valueOf = (m, k) => (m && m.attrs && Object.hasOwn(m.attrs, k) ? m.attrs[k] : undefined);
+  // A value's box, showing all of it: one line for a short value; for a long one or one on several lines, a box that
+  // grows with it (css: field-sizing) and keeps its line breaks when it is edited (data-ml: Enter is a new line). The
+  // page drops a box's first line break, so one is added before the value.
+  const LONG = 40;
+  const cellHtml = (v, attrs) => {
+    const s = show(v), ml = s.includes('\n');
+    return ml || s.length > LONG
+      ? `<textarea class="attr-cell attr-multi"${ml ? ' data-ml' : ''} rows="${ml ? Math.min(12, s.split('\n').length) : 2}" ${attrs} spellcheck="false">\n${esc(s)}</textarea>`
+      : `<input type="text" class="attr-cell" value="${esc(s)}" ${attrs} spellcheck="false">`;
+  };
   const put = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
 
   // What a typed value is: a number where it reads as one (and the field held numbers, or nothing yet; leading zeros
@@ -167,7 +177,7 @@ window.MB = window.MB || {};
     });
     body.addEventListener('keydown', e => {
       const inp = e.target.closest('[data-c]');
-      if (!inp || e.key !== 'Enter' || (inp.tagName === 'TEXTAREA' && !e.ctrlKey && !e.metaKey)) return; // (in a box of several lines, Enter is a new line; Ctrl+Enter moves on)
+      if (!inp || e.key !== 'Enter' || (inp.hasAttribute('data-ml') && !e.ctrlKey && !e.metaKey)) return; // (in a value of several lines, Enter is a new line; Ctrl+Enter moves on)
       e.preventDefault(); // Enter: the cell below, as a spreadsheet
       const tr = inp.closest('tr').nextElementSibling, next = tr && tr.querySelector(`[data-c="${inp.dataset.c}"]`);
       if (next) next.focus(); else inp.blur();
@@ -231,9 +241,7 @@ window.MB = window.MB || {};
     const from = T.page * PAGE, rows = T.list.slice(from, from + PAGE);
     d.querySelector('#attrBody').innerHTML = rows.map((r, i) => `<tr data-i="${from + i}"><td class="attr-n">${MB.iconBtn('goto', 'Zoom to', 'data-zoom', '', 'Zoom to ' + (ad.rowLabel ? ad.rowLabel(r) : 'row ' + (from + i + 1)))}</td>${fields.map((f, c) => {
       const v = show(ad.get(r, f.key));
-      const at = `data-c="${c}" title="${esc(v)}" aria-label="${esc(f.label)}, row ${from + i + 1}" spellcheck="false"`;
-      return v.includes('\n') ? `<td><textarea class="attr-cell attr-multi" rows="1" ${at}>\n${esc(v)}</textarea></td>` // (several lines: kept when edited; the page drops a first line break, so one is added)
-        : `<td><input type="text" class="attr-cell" value="${esc(v)}" ${at}></td>`;
+      return `<td>${cellHtml(v, `data-c="${c}" aria-label="${esc(f.label)}, row ${from + i + 1}"`)}</td>`;
     }).join('')}</tr>`).join('') || `<tr><td colspan="${fields.length + 1}" class="note">${T.q ? 'No row matches.' : 'No rows.'}</td></tr>`;
     const total = ad.rows().length, pages = Math.max(1, Math.ceil(T.list.length / PAGE));
     d.querySelector('#attrCount').textContent = (T.q ? `${T.list.length.toLocaleString()} of ${total.toLocaleString()}` : total.toLocaleString()) + ` row${total === 1 ? '' : 's'} · ${(fields.length - fields.filter(f => f.fixed).length)} field${fields.length === 1 ? '' : 's'}`;
@@ -255,5 +263,5 @@ window.MB = window.MB || {};
     refresh() { if (T.dlg && !T.dlg.classList.contains('hidden') && T.ad) build(); },
     isOpen: () => !!(T.dlg && !T.dlg.classList.contains('hidden'))
   };
-  MB.attrs = { typed, fieldsOf, set, tableFor, valueOf, badKey, NAME };
+  MB.attrs = { typed, fieldsOf, set, tableFor, valueOf, badKey, cellHtml, NAME };
 })(window.MB);

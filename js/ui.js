@@ -1245,14 +1245,6 @@ window.MB = window.MB || {};
     return wrap;
   }
 
-  // A value's box: one line, or several for a value written on several lines (a box of one line would drop its line
-  // breaks when it is edited). (attrtable.js draws its cells the same way)
-  const valueBox = (v, attrs) => {
-    const s = v == null ? '' : String(v);
-    return s.includes('\n') ? `<textarea class="attr-cell attr-multi" ${attrs} spellcheck="false">\n${esc(s)}</textarea>` // (the page drops a first line break: one is added, so a value's own is kept)
-      : `<input type="text" class="attr-cell" ${attrs} value="${esc(s)}" spellcheck="false">`;
-  };
-
   // An object's attributes, last in Properties: one row per field of its layer (empty ones too), then any of its own.
   // A value is this object's; a field is the layer's (every object has it, as in the attribute table), so renaming
   // or removing one does it for all of them (asking first when others have a value in it). A field is added below;
@@ -1266,17 +1258,19 @@ window.MB = window.MB || {};
     wrap.innerHTML = `<div class="attr-head"><h3>Attributes</h3>${MB.iconBtn('table', 'Attribute table: every object of the layer', 'data-act="attr-table"')}</div>
       ${keys.length ? `<table class="mb-datatable attr-edit"><thead><tr><th scope="col">Field</th><th scope="col">Value</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead><tbody>${keys.map((k, i) => `<tr data-i="${i}">
         <td><input type="text" class="attr-cell attr-key" data-ak value="${esc(k)}" title="${esc(k)}: renaming it renames it on every object of the layer" aria-label="Field name ${esc(k)}" spellcheck="false"></td>
-        <td>${valueBox(val(m, k), `data-av aria-label="Value of ${esc(k)}"`)}</td>
+        <td>${MB.attrs.cellHtml(val(m, k), `data-av aria-label="Value of ${esc(k)}"`)}</td>
         <td>${MB.iconBtn('trash', 'Remove the field', 'data-adel', 'danger', 'Remove the field ' + k)}</td></tr>`).join('')}</tbody></table>` : '<p class="note">None yet: fields and values of your own (an ID, a status, a note), kept with the object and in GeoJSON.</p>'}
       <form class="row attr-add"><input type="text" name="k" placeholder="Field" aria-label="New field" spellcheck="false"><input type="text" name="v" placeholder="Value" aria-label="Its value" spellcheck="false"><button type="submit" class="icon-btn" title="Add the field" aria-label="Add the field">${MB.ICON.plus}</button></form>`;
     const keyOf = el => keys[+el.closest('tr').dataset.i]; // (by the row: a field name can be anything)
-    wrap.querySelectorAll('textarea[data-av]').forEach(t => { t.rows = Math.min(6, t.value.split('\n').length); });
     const focusRow = (sel, k) => { // drawn anew: the same field's box keeps the keyboard
       const fresh = MB.attrs.fieldsOf(m.layerId), own = Object.keys(m.attrs || {});
       own.forEach(x => { if (!fresh.includes(x)) fresh.push(x); });
       const i = fresh.indexOf(k), el = i < 0 ? null : $(`#propsBody .attr-edit tr[data-i="${i}"] ${sel}`);
       if (el) el.focus();
     };
+    $$('textarea[data-av]:not([data-ml])', wrap).forEach(t => t.addEventListener('keydown', e => { // a long value of one line: Enter keeps it, as in a one-line box
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); t.blur(); }
+    }));
     $$('[data-av]', wrap).forEach(inp => inp.addEventListener('change', () => {
       const k = keyOf(inp);
       MB.attrs.set(f, k, MB.attrs.typed(inp.value, val(m, k)));

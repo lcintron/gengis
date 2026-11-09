@@ -235,9 +235,27 @@ test('copied into the project, every property is its own field ("__proto__" too)
   assert.match(af, /return; \} \/\/ \(done: Properties drawn anew by the table's commit\)\n\s*focusRow/, 'a rename drawn once');
 });
 
-test('a value on several lines keeps a first line break in its box', () => {
-  assert.match(read('js/ui.js'), /spellcheck="false">\\n\$\{esc\(s\)\}<\/textarea>/);
-  assert.match(read('js/attrtable.js'), /rows="1" \$\{at\}>\\n\$\{esc\(v\)\}<\/textarea>/);
+test('a value\'s box shows all of it and keeps its lines (Properties and the table alike)', () => {
+  const M = { escapeHtml: s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') };
+  const ctx = { window: { MB: M }, console };
+  vm.createContext(ctx);
+  vm.runInContext(read('js/attrtable.js'), ctx, { filename: 'js/attrtable.js' });
+  const cell = M.attrs.cellHtml;
+  assert.match(cell('N0LO', 'data-av'), /^<input type="text" class="attr-cell" value="N0LO" data-av/, 'a short value: one line');
+  const two = cell('\nAndytown\n442.825', 'data-av');
+  assert.match(two, /^<textarea class="attr-cell attr-multi" data-ml rows="3" data-av spellcheck="false">\n\nAndytown\n442\.825<\/textarea>$/, 'several lines, a first break kept');
+  assert.match(cell('x'.repeat(60), 'data-c="1"'), /^<textarea class="attr-cell attr-multi" rows="2" data-c="1"/, 'a long one: a box that wraps (no data-ml: Enter moves on)');
+  assert.match(cell('"><img src=x onerror=alert(1)>' + 'y'.repeat(40), ''), /&quot;&gt;&lt;img/, 'escaped');
+  assert.match(read('js/ui.js'), /MB\.attrs\.cellHtml\(val\(m, k\), /);
+  assert.match(read('css/app.css'), /\.attr-table \.attr-cell \{ field-sizing: content;/);
+});
+
+test('the popup: wide enough to read, words kept whole, no Select on the object already selected', () => {
+  const dl = read('js/datalayers.js'), css = read('css/app.css');
+  assert.match(dl, /const act = presenting \|\| h\.layer === MB\.selected \? '' :/);
+  assert.match(dl, /L\.popup\(\{ minWidth: Math\.max\(160, Math\.min\(280, MB\.map\.getSize\(\)\.x - 72\)\),/);
+  assert.match(css, /\.leaflet-popup-content \.mb-datatable td \{ overflow-wrap: break-word; \}/);
+  assert.match(css, /\.leaflet-popup-content \.mb-rich \{ overflow-wrap: break-word; \}/);
 });
 
 test('Properties: the attributes come last, a field renamed or removed on the whole layer', () => {
