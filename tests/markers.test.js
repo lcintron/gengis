@@ -252,7 +252,9 @@ test('a value\'s box shows all of it and keeps its lines (Properties and the tab
 
 test('the popup: wide enough to read, words kept whole, no Select on the object already selected', () => {
   const dl = read('js/datalayers.js'), css = read('css/app.css');
-  assert.match(dl, /const act = presenting \|\| h\.layer === MB\.selected \? '' :/);
+  assert.match(dl, /const act = presenting \? '' : `<div class="btn-row"\$\{h\.layer === MB\.selected \? ' hidden' : ''\}>/);
+  assert.match(dl, /b\.parentNode\.hidden = !!h && h\.layer === MB\.selected;/, 'and following the selection while the popup is open');
+  assert.match(css, /@supports not \(field-sizing: content\) \{[^}]*\.attr-table textarea\.attr-multi \{ overflow: auto; resize: vertical;/, 'a long cell reachable where boxes do not size themselves');
   assert.match(dl, /L\.popup\(\{ minWidth: Math\.max\(160, Math\.min\(280, MB\.map\.getSize\(\)\.x - 72\)\),/);
   assert.match(css, /\.leaflet-popup-content \.mb-datatable td \{ overflow-wrap: break-word; \}/);
   assert.match(css, /\.leaflet-popup-content \.mb-rich \{ overflow-wrap: break-word; \}/);

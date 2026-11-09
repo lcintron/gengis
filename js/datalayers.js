@@ -1150,6 +1150,18 @@ window.MB = window.MB || {};
   };
 
   let identifyPopup = null, highlighted = null;
+  // An open popup's Select buttons follow the selection: none on the object selected, back on one no longer selected
+  // (picked elsewhere, Escape, undo) so it can be selected again from here.
+  let selectionHooked = false;
+  function hookSelection() {
+    if (selectionHooked || !MB.on) return;
+    selectionHooked = true;
+    MB.on('selection', () => {
+      const p = identifyPopup, root = p && p.isOpen() && p.getElement();
+      if (!root || !p._mbHits) return;
+      root.querySelectorAll('[data-select]').forEach(b => { const h = p._mbHits[+b.dataset.select]; b.parentNode.hidden = !!h && h.layer === MB.selected; });
+    });
+  }
   function clearHighlight() {
     if (!highlighted) return;
     if (highlighted.own) { // the user's object: a class, so its own style is never touched
@@ -1228,7 +1240,7 @@ window.MB = window.MB || {};
       const attrs = Object.keys(m.attrs || {}).slice(0, 20).map(k => [k, String(m.attrs[k])]); // its attributes too
       const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('') +
         attrs.map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${MB.richValue(v)}</td></tr>` : '').join(''); // (an attribute with formatting: kept, made safe)
-      const act = presenting || h.layer === MB.selected ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`; // (another object at the point, one under it: to edit it; not the one already selected)
+      const act = presenting ? '' : `<div class="btn-row"${h.layer === MB.selected ? ' hidden' : ''}><button type="button" class="btn small" data-select="${i}">Select</button></div>`; // (another object at the point, one under it: to edit it; hidden on the one already selected, while it is: selectionShown)
       const open = i === 0 ? ' open' : ''; // the one in front (listed first) opens: an object clicked
       return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"${open}><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
@@ -1250,6 +1262,8 @@ window.MB = window.MB || {};
     const popup = identifyPopup = L.popup({ minWidth: Math.max(160, Math.min(280, MB.map.getSize().x - 72)), maxWidth: Math.max(200, Math.min(400, MB.map.getSize().x - 72)), maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [12, 12] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
     let pinned = hits.length === 1 ? hits[0] : null; // the expanded entry stays highlighted when the pointer leaves the list
     popup.on('remove', () => { pinned = null; clearHighlight(); });
+    popup._mbHits = hits;
+    hookSelection();
     const root = popup.getElement();
     root.querySelectorAll('[data-select]').forEach(b => b.addEventListener('click', () => {
       if (MB.presenter && MB.presenter.active) return; // a popup opened before presenting: no editing now

@@ -1251,6 +1251,9 @@ body.presenting .mb-ident-own .btn-row { display: none; }
 textarea.attr-multi { display: block; height: auto; min-height: 28px; padding: 5px 8px; line-height: 1.4; font-family: inherit; resize: none; white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; field-sizing: content; }
 .attr-table td { vertical-align: top; }
 .attr-table .attr-cell { field-sizing: content; width: auto; min-width: max(100%, 120px); max-width: 420px; }
+@supports not (field-sizing: content) { /* (an older browser, an Android WebView: the box as tall as its rows, the rest scrolled to, or pulled taller) */
+  .attr-table textarea.attr-multi { overflow: auto; resize: vertical; min-width: 220px; }
+}
 .attr-table tbody tr:hover td { background: rgba(255,255,255,.03); }
 .attr-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .attr-foot .note { margin: 0; }
