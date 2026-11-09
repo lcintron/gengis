@@ -227,6 +227,14 @@ test('attribute fields: reserved names refused, values read as the object\'s own
   assert.equal(A.valueOf(f.mb, 'b'), 1);
 });
 
+test('copied into the project, every property is its own field ("__proto__" too)', () => {
+  assert.match(read('js/fileimports.js'), /Object\.defineProperty\(attrs, k, \{ value: typeof v === 'object' \? JSON\.stringify\(v\) : v, writable: true, enumerable: true, configurable: true \}\)/);
+  const form = read('js/ui.js');
+  const af = form.slice(form.indexOf('function attrForm(f)'), form.indexOf('function bindNameTip(f)'));
+  assert.match(af, /table\(\)\.deleteField\(k\); \/\/ \(Properties drawn anew by the table's commit\)\n\s*\/\/ the keyboard/, 'a remove drawn once');
+  assert.match(af, /return; \} \/\/ \(done: Properties drawn anew by the table's commit\)\n\s*focusRow/, 'a rename drawn once');
+});
+
 test('a value on several lines keeps a first line break in its box', () => {
   assert.match(read('js/ui.js'), /spellcheck="false">\\n\$\{esc\(s\)\}<\/textarea>/);
   assert.match(read('js/attrtable.js'), /rows="1" \$\{at\}>\\n\$\{esc\(v\)\}<\/textarea>/);

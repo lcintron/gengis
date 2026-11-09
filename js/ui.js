@@ -1291,8 +1291,7 @@ window.MB = window.MB || {};
         const from = keyOf(inp), to = inp.value.trim();
         if (to === from) { inp.value = from; return; }
         const why = table().renameField(from, to);
-        if (why) { MB.toast(why); inp.value = from; return; }
-        MB.ui.renderProps();
+        if (why) { MB.toast(why); inp.value = from; return; } // (done: Properties drawn anew by the table's commit)
         focusRow('[data-av]', to);
       });
     });
@@ -1300,8 +1299,7 @@ window.MB = window.MB || {};
       const k = keyOf(b), i = +b.closest('tr').dataset.i, lay = MB.getLayer(m.layerId);
       const others = MB.layerFeatures(m.layerId).filter(o => o !== f && val(o.mb, k) != null && val(o.mb, k) !== '').length;
       if (others && !(await MB.ask(`Remove the field "${k}" from every object of "${lay ? lay.name : 'this layer'}"? ${others} other object${others === 1 ? ' has a value' : 's have values'} in it.`, 'Remove field', 'Cancel'))) return;
-      table().deleteField(k);
-      MB.ui.renderProps();
+      table().deleteField(k); // (Properties drawn anew by the table's commit)
       // the keyboard: on the field that took its place (or the one before it, or the new field's box)
       const rows = $$('#propsBody .attr-edit tbody tr'), row = rows[Math.min(i, rows.length - 1)];
       const to = row ? $('[data-ak]', row) : $('#propsBody .attr-add input[name="k"]');

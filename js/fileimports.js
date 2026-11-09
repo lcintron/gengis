@@ -1317,7 +1317,7 @@ window.MB = window.MB || {};
           const p = paint(rec, f), st = p.style, props = f.properties || {};
           const name = lb.show ? S().labelText(look, props) : S().titleOf(look, props);
           const attrs = {};
-          Object.keys(props).forEach(k => { const v = props[k]; if (v != null && v !== '') attrs[k] = typeof v === 'object' ? JSON.stringify(v) : v; });
+          Object.keys(props).forEach(k => { const v = props[k]; if (v != null && v !== '') Object.defineProperty(attrs, k, { value: typeof v === 'object' ? JSON.stringify(v) : v, writable: true, enumerable: true, configurable: true }); }); // (as its own field, whatever its name: "__proto__" too)
           // (a point drawn as a dot: a dot marker its size, not a pin)
           const style = Object.assign(MB.deepClone(MB.currentStyle), p.kind === 'point' ? { color: st.fillColor, markerShape: 'dot', markerSize: Math.max(8, Math.round((+st.radius || 5) * 2 + 3)) } : { color: st.color, weight: st.weight, opacity: st.opacity },
             p.kind === 'polygon' ? { fillColor: st.fillColor, fillOpacity: st.fillOpacity } : {});
