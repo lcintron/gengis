@@ -111,8 +111,10 @@ window.MB = window.MB || {};
   function htmlText(s) {
     if (!s) return '';
     if (!/[<&]/.test(s)) return s.trim();
-    // (the markup's own line breaks are spaces, as a browser shows them: a <br> then a new line is one break)
-    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/\s+/g, ' ').replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' '))
+    // (in markup with line break tags, the file's own line breaks are spaces, as a browser shows them: a <br> then a
+    // new line is one break; text with none, entities or a bold word only, keeps its lines)
+    if (/<br\b|<\/(p|div|tr|li|h\d)\s*>/i.test(s)) s = s.replace(/\s+/g, ' ');
+    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' '))
       .replace(/[ \t]*\n[ \t]*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 

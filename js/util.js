@@ -285,7 +285,7 @@ window.MB = window.MB || {};
     square: '<rect x="3" y="3" width="14" height="14" rx="1.5"/>',
     triangle: '<path d="M10 2.2 18.6 17.4H1.4z"/>'
   };
-  MB.markerShape = st => (st && SHAPE_PATHS[st.markerShape]) ? st.markerShape : 'pin';
+  MB.markerShape = st => (st && Object.prototype.hasOwnProperty.call(SHAPE_PATHS, st.markerShape)) ? st.markerShape : 'pin'; // (a file's own value: only these)
   MB.markerSize = st => Math.max(6, Math.min(48, Math.round(+(st && st.markerSize) || 16)));
   MB.shapeSvg = function (shape, color, size) {
     const p = SHAPE_PATHS[shape] || SHAPE_PATHS.dot;

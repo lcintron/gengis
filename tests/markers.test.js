@@ -83,3 +83,24 @@ test('a KML description: a <br> and the new line after it in the file are one li
   const { features } = M.imports.read.kml(kml);
   assert.equal(features[0].properties.description, 'Andytown\n442.825000+ 110.9\nOn-air: Yes\nClick for Details');
 });
+
+test('review fixes: a description with no line break tags keeps its lines; a file\'s shape only from the list; the move cursor kept', () => {
+  const M = { escapeHtml: s => String(s) };
+  const ctx = { window: { MB: M }, TextDecoder, Blob, console, Date, Math, setTimeout, clearTimeout };
+  vm.createContext(ctx);
+  for (const f of ['js/importstyle.js', 'js/fileimports.js']) vm.runInContext(read(f), ctx, { filename: f });
+  const desc = d => M.imports.read.kml(`<?xml version="1.0"?><kml><Document><Placemark><name>x</name><description>${d}</description><Point><coordinates>1,2</coordinates></Point></Placemark></Document></kml>`).features[0].properties.description;
+  assert.equal(desc('Owner: Smith &amp; Sons\nPhone: 555\nNote'), 'Owner: Smith & Sons\nPhone: 555\nNote', 'an entity: the lines kept');
+  assert.equal(desc('Owner: Smith and Sons\nPhone: 555'), 'Owner: Smith and Sons\nPhone: 555');
+  assert.equal(desc('Line one\n<![CDATA[Line <b>two</b>]]>'), 'Line one\nLine two', 'a bold word: the lines kept');
+
+  for (const bad of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    assert.equal(MB.markerShape({ markerShape: bad }), 'pin', bad);
+    assert.equal(MB.markerIcon({ markerShape: bad }).options.className, 'mb-pin');
+  }
+  assert.match(read('js/features.js'), /layer\.pm\.layerDragEnabled\(\)\) L\.DomUtil\.addClass\(el, 'leaflet-pm-draggable'\)/);
+});
+
+test('the click that ends a drag of an object opens no popup', () => {
+  assert.match(read('js/features.js'), /if \(layer\.pm && layer\.pm\.dragging && layer\.pm\.dragging\(\)\) return;/);
+});

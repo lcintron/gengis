@@ -354,6 +354,7 @@ window.MB = window.MB || {};
       // attributes). Nothing opens where there is no data and no object with attributes, nor with the Move tool (a
       // click there ends a drag).
       if (shift || t === 'move' || t === 'scale' || !MB.data || !MB.data.identify) return;
+      if (layer.pm && layer.pm.dragging && layer.pm.dragging()) return; // the click that ends a drag (Geoman's drag ends 10 ms after it)
       const oe = e.originalEvent, { latlng, cp } = pointerAt(e);
       const own = MB.data.objectsAt(latlng, cp);
       if (!own.includes(layer)) own.unshift(layer); // (the clicked one, wherever on it the click was)
@@ -412,7 +413,8 @@ window.MB = window.MB || {};
     else if (t === 'marker') {
       layer.setIcon(MB.markerIcon(st));
       const el = layer.getElement && layer.getElement();
-      if (el && (MB.selected === layer || (MB.multi && MB.multi.has(layer)))) L.DomUtil.addClass(el, 'mb-selected'); // (a new icon element)
+      if (el && (MB.selected === layer || (MB.multi && MB.multi.has(layer)))) L.DomUtil.addClass(el, 'mb-selected');
+      if (el && layer.pm && layer.pm.layerDragEnabled && layer.pm.layerDragEnabled()) L.DomUtil.addClass(el, 'leaflet-pm-draggable'); // (a new icon element: its classes again, the move cursor too)
       if (patch && ('markerShape' in patch || 'markerSize' in patch)) { // its name label and measurements sit around the new shape
         if (MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(layer); else { MB.updateLabel(layer); MB.updateTooltip(layer); }
       }
