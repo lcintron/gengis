@@ -105,10 +105,12 @@ window.MB = window.MB || {};
       const tag = m[2].toLowerCase();
       if (!RICH.has(tag)) continue; // an unknown tag: its text stays, the tag goes
       if (TABLE_PARTS.has(tag) && !open.includes('table')) continue; // a row or cell outside a table of its own would land in the popup's
-      if (tag === 'table') { // a table inside a table only in a cell: anywhere else the page would close the open one, then the popup's
+      // One table at a time, never one inside another: where the page closes cells and rows on its own (a <tr> in a
+      // cell, a second <caption>), a table opened in what looks like a cell would close the open one, and then the
+      // popup's. With a single table of its own, only its real end closes it.
+      if (tag === 'table') {
         if (m[1] && droppedTables) { droppedTables--; continue; } // (the end of one dropped: not the end of the one around it)
-        const ctx = open.slice().reverse().find(t => t === 'table' || TABLE_PARTS.has(t));
-        if (!m[1] && ctx && !/^(td|th|caption)$/.test(ctx)) { droppedTables++; continue; }
+        if (!m[1] && open.includes('table')) { droppedTables++; continue; }
       }
       if (m[1]) { // a closing tag: what it closes, and what was left open inside it
         const i = open.lastIndexOf(tag);
