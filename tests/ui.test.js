@@ -246,3 +246,9 @@ test('dialogs stay between the system bars (Android edge-to-edge: the insets com
   // the export buttons' footer: the box ends above the bar, so no inset again
   assert.ok(one('.export-actions').every(b => !inset('bottom').test(b)));
 });
+test('the Project menu\'s items end without an ellipsis', () => {
+  const menu = (html.split('<div id="menu"')[1] || '').split('</div>')[0];
+  const labels = [...menu.matchAll(/<span>([^<]*)<\/span>/g)].map(m => m[1].trim());
+  assert.ok(labels.length >= 10, 'the menu\'s labels found');
+  assert.deepEqual(labels.filter(l => /(…|\.\.\.)$/.test(l)), [], 'menu labels ending in an ellipsis');
+});
