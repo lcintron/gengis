@@ -12,16 +12,20 @@
 #                     by hand: Actions -> Release -> Run workflow (nothing is released by a merge).
 #                     Local use (needs permission to push main): BUMP=major|minor|patch|prerelease, PRE=Beta, DRY=1
 #   make version      print the current version
+#   make apk          build the Android test APK (out/gengis-debug.apk); needs JDK 21+ and the Android SDK
+#   make apk-run      build it, install it on the running emulator or phone, and open it
+#   make emulator     start an Android emulator (AVD=<name>, or the first one Android Studio has)
+#   make android-clean  remove the generated android/ project (the next make apk makes it again)
 
 NPX ?= npx
 BUMP ?= auto
 PRE ?=
 RELEASE_FLAGS := $(if $(PRE),--pre=$(PRE),) $(if $(DRY),--dry,) $(if $(CI),--ci,)
 
-.PHONY: help serve install build build-win build-mac build-linux dist-all release version clean
+.PHONY: help serve install build build-win build-mac build-linux dist-all release version clean apk apk-run emulator android-clean
 
 help:
-	@sed -n '2,15p' Makefile
+	@node -e "console.log(require('fs').readFileSync('Makefile','utf8').split(/\r?\n/).slice(1,19).join('\n'))"
 
 serve:
 	node serve.js 8080
@@ -51,4 +55,16 @@ version:
 	@node scripts/release.js --show
 
 clean:
-	rm -rf dist
+	node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+apk: install
+	node scripts/android-build.js
+
+apk-run: install
+	node scripts/android-build.js --install
+
+emulator:
+	node scripts/android-build.js --emulator
+
+android-clean:
+	node scripts/android-build.js --clean

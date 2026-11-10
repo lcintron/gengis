@@ -120,7 +120,8 @@ window.MB = window.MB || {};
     return String(description || code || 'Could not sign in to Google Drive.');
   }
 
-  const desktop = () => window.gengisDesktop && window.gengisDesktop.cloud;
+  const native = () => !!window.gengisDesktop || !!(MB.native && MB.native.app); // a native app (desktop or Android)
+  const desktop = () => (window.gengisDesktop ? window.gengisDesktop.cloud : native() && MB.native.cloud) || null; // its sign-in bridge
 
   const GD = {
     id: 'gdrive',
@@ -129,16 +130,16 @@ window.MB = window.MB || {};
     bin: 'It goes to Google Drive\'s trash, where it can be restored for 30 days.', // (where a deleted project goes, for the confirm)
     clientId: WEB_CLIENT_ID,
     explain,
-    // In the web app with a client id; in the desktop app when its main process has a Google client.
+    // In the web app with a client id; in a native app when it signs in itself (the desktop app's main process with a
+    // Google client; the Android app through Android's own Google sign-in).
     available() {
-      if (MB.native && MB.native.app) return false; // (the Android app: its own sign-in is not set up yet)
       const d = desktop();
-      if (window.gengisDesktop) return !!d && (d.providers || []).includes('gdrive');
+      if (native()) return !!d && (d.providers || []).includes('gdrive');
       return !!GD.clientId && /^https?:$/.test(location.protocol);
     },
     // The web app signs in with a pop-up (Google's library loaded beforehand, so the click still counts as one).
     popup: true,
-    preload() { if (!desktop() && GD.clientId) loadGis().catch(() => {}); },
+    preload() { if (!native() && GD.clientId) loadGis().catch(() => {}); },
     async signIn(acc) {
       await loadGis();
       return new Promise((res, rej) => {

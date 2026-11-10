@@ -156,8 +156,10 @@ select:focus { outline: none; border-color: var(--accent); }
 .dropdown.more-menu {
   position: fixed; top: var(--topbar-h); left: 0; right: auto; bottom: 0; width: min(calc(320px + env(safe-area-inset-left, 0px)), calc(100vw - 48px)); max-height: none;
   border-radius: 0; border-width: 0 1px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px)) calc(14px + env(safe-area-inset-left, 0px)); overflow: auto; animation: mb-drawer-in .16s ease-out;
+  will-change: transform; /* one layer for as long as it shows: no flicker on Android's WebView as it slides in */
+  overscroll-behavior: contain; /* its scroll never carries on to the sheet or page under it */
 } /* (its items clear of the phone's system bars: above one at the bottom, beside one or a cutout at the left, wider by it) */
-@keyframes mb-drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes mb-drawer-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 .more-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); margin: 12px 2px 6px; }
 .more-label:first-child { margin-top: 0; }
 .more-slot .seg { display: flex; width: 100%; }
