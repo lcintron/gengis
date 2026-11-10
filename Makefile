@@ -67,4 +67,4 @@ emulator:
 	node scripts/android-build.js --emulator
 
 android-clean:
-	node -e "for (const d of ['android','www']) require('fs').rmSync(d,{recursive:true,force:true})"
+	node scripts/android-build.js --clean
