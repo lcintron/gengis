@@ -262,6 +262,46 @@ test('the Project menu\'s items end without an ellipsis', () => {
   assert.deepEqual(labels.filter(l => /(…|\.\.\.)$/.test(l)), [], 'menu labels ending in an ellipsis');
 });
 
+test('the cloud dialog deletes a project from the cloud only after a red confirm, with finger-sized buttons', () => {
+  const ui = js['cloudui.js'];
+  assert.ok(ui.includes("MB.iconBtn('trash', 'Delete from '"), 'a bin per cloud project');
+  const del = ui.split('async function deleteRemote(')[1] || '';
+  assert.ok(del.indexOf('await MB.ask(') >= 0 && del.indexOf('await MB.ask(') < del.indexOf('C().deleteRemote('), 'asked first');
+  assert.match(del, /MB\.ask\([^;]*\{ danger: true \}\)/, 'the confirm is a delete\'s');
+  assert.match(js['util.js'], /MB\.ask = function \(message, yes, no, opts\)/);
+  assert.match(js['util.js'], /if \(opts && opts\.danger\) yesBtn\.classList\.replace\('primary', 'danger'\);/);
+  assert.match(js['util.js'], /\(opts && opts\.danger \? noBtn : yesBtn\)\.focus\(\);/, 'Cancel has the focus');
+  assert.match(css, /\.cloud-row \.icon-btn\.mini, \.cloud-h-row \.icon-btn\.mini \{ width: 36px; height: 36px; \}/);
+  // one question per click, the focus kept in the list after a delete, no spinner left by a failed open
+  assert.ok(del.indexOf("busy[fileId] = 'delete'") < del.indexOf('await MB.ask('), 'busy before the question');
+  assert.match(del, /if \(!f \|\| busy\[fileId\]\) return;/);
+  assert.match(del, /const el = near \? rowButton\(accId, near\.fileId[^;]*: dlg\.querySelector\(`\[data-reload=/);
+  assert.match(ui, /try \{ ok = await C\(\)\.openRemote\(accId, fileId\); \}\s*catch \(e\) \{[^}]*\}\s*finally \{ delete busy\[fileId\]; \}/);
+});
+
+test('the cloud dialog\'s search: gone with its box, and a cloud section saying why it is empty stays shown', () => {
+  const ui = js['cloudui.js'];
+  assert.match(ui, /if \(!searchable\) query = '';/);
+  assert.match(ui, /sec\.hidden = none && !sec\.querySelector\('\.note'\);/);
+});
+
+test('Recent projects deletes a synced project from the cloud first, and from this device only once that went through', () => {
+  const ps = js['projectstore.js'];
+  const del = ps.split("box.querySelectorAll('[data-del]')")[1].split("box.querySelectorAll('[data-restore]')")[0];
+  assert.match(del, /if \(b\.dataset\.pending \|\| b\.closest\('\.recent-item'\)\.querySelector\('\.recent-ask'\)\) return;[\s\S]*b\.dataset\.pending = '1';[\s\S]*await MB\.cloud\.linkOf\(id\)/, 'a double click asks once');
+  assert.match(del, /try \{ await MB\.cloud\.deleteRemote\(cloud\.accountId, cloud\.fileId\); \}\s*catch \(err\) \{[\s\S]*?Nothing was deleted\.[\s\S]*?return;\s*\}\s*await P\.remove\(id\);/,
+    'a failed cloud delete returns before anything here is deleted');
+  // another tab editing it: refused before anything is deleted
+  assert.ok(del.indexOf('if (await P.openElsewhere(id)) {') >= 0 && del.indexOf('if (await P.openElsewhere(id)) {') < del.indexOf('MB.cloud.deleteRemote('));
+  assert.match(del, /cloud\.changed \? ' The cloud version has changes that are not on this device\.' : ''/);
+  assert.match(del, /querySelectorAll\('button'\)\.forEach\(x => \{ x\.disabled = true; \}\)/, 'Cancel too, while it goes');
+  assert.match(del, /Sign in to ' \+ prov\.name \+ ' \(Cloud sync\), or turn its sync off there, to delete it from this device only\./);
+  assert.ok(!/P\.openDialog\(\)/.test(del), 'a closed dialog is not reopened when the delete finishes');
+  assert.match(ps, /const refresh = \(\) => \{ if \(!dlg\.classList\.contains\('hidden'\)\) P\.openDialog\(\); \};/);
+  assert.match(ps, /MB\.iconBtn\('trash', 'Delete everywhere \(this device and ' \+ syncedTo\(r\) \+ '\)'/, 'its bin says it deletes it everywhere');
+  assert.match(del, /'Delete it and its earlier copies\?', 'Delete'/, 'a project that does not sync: this device only, as before');
+});
+
 test('the Cast to a screen icon is the standard cast glyph: arcs ending on the screen\'s bottom line, not below it', () => {
   const OLD = 'M2 16a6 6 0 0 1 6 6M2 20a2 2 0 0 1 2 2M2 12a10 10 0 0 1 10 10';
   for (const [f, src] of [['index.html', html], ['css/app.css', css], ...Object.entries(js).map(([f, s]) => ['js/' + f, s])]) {

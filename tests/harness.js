@@ -285,9 +285,11 @@ function makeApp(o) {
     owns: () => device.locksHeld.get(state.projectId) === tabId,
     openElsewhere: async id => device.locksHeld.has(id) && device.locksHeld.get(id) !== tabId,
     flush: async () => true,
-    beforeOpen: async () => true,
+    // (the real one keeps what is saved here for that project in its earlier copies first)
+    beforeOpen: async p => { if (p && p.id && projects.recs.has(p.id)) projects.copies.push({ id: p.id, reason: 'before opening a file', data: projects.recs.get(p.id).data }); return true; },
     markFileBacked: () => { const r = projects.recs.get(state.projectId); if (r) r.fileBacked = true; },
     remove: async id => { projects.recs.delete(id); MB.emit('project-removed', id); },
+    open: async id => { const r = projects.recs.get(id); if (r) MB.loadProject(JSON.parse(JSON.stringify(r.data))); },
     list_: null
   };
   const MB = {
@@ -298,6 +300,7 @@ function makeApp(o) {
     on: (e, fn) => { (events[e] = events[e] || []).push(fn); },
     emit: (e, d) => (events[e] || []).forEach(fn => fn(d)),
     toast: m => toasts.push(m),
+    ask: async (message, yes, no, opts) => { app.asked.push({ message, yes, no, opts }); return app.answer; }, // (MB.ask: app.answer is the reply)
     escapeHtml: s => String(s),
     loadProject: (data) => { loaded.push(data); state.projectId = data.id; state.projectName = data.name; state.current = JSON.parse(JSON.stringify(data)); },
     // what the real app saves of the open project: with its own version, and this device's own live-traffic server
@@ -333,7 +336,7 @@ function makeApp(o) {
   let online = true;
   Object.assign(C.env, { store: device.store, lock: device.lock, fetch: route, online: () => online, visible: () => true, go: url => { app.wentTo = url; }, pushDelay: o.pushDelay === 'default' ? C.env.pushDelay : (o.pushDelay == null ? 0 : o.pushDelay) });
   const app = {
-    MB, C, P, device, server, toasts, loaded, tabId, events, listeners, wentTo: null, popups: [],
+    MB, C, P, device, server, toasts, loaded, tabId, events, listeners, wentTo: null, popups: [], asked: [], answer: true,
     setSearch: s => { search = s; },
     setOnline: v => { online = v; ctx.navigator.onLine = v; if (v) (listeners.online || []).forEach(fn => fn()); },
     open: id => { state.projectId = id; const r = projects.recs.get(id); state.projectName = r ? r.name : ''; state.current = r ? JSON.parse(JSON.stringify(r.data)) : null; device.locksHeld.set(id, tabId); },
