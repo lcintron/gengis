@@ -5,11 +5,11 @@
 [![GenGIS Live](https://img.shields.io/badge/Live-g2.luiscintron.com-success?style=for-the-badge&logo=githubpages&logoColor=white)](https://g2.luiscintron.com)
 [![Latest release](https://img.shields.io/github/v/release/lcintron/gengis?style=for-the-badge&logo=github&label=Release)](https://github.com/lcintron/gengis/releases/latest)
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900?style=for-the-badge&logo=leaflet&logoColor=white)](https://leafletjs.com/)
-[![PWA and Electron](https://img.shields.io/badge/PWA%20%2B%20Electron-Web%20%26%20Desktop-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://github.com/lcintron/gengis/releases/latest)
+[![PWA and Electron](https://img.shields.io/badge/PWA%20%2B%20Electron-Web%20%26%20Native-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://github.com/lcintron/gengis/releases/latest)
 
-Offline-first geospatial intelligence app: map, measure and annotate, overlay live or static data, and export your maps. Use built-in map services or bring your own, including ATAK/MOBAC map sources. Browser and desktop, with OneDrive and Google Drive sync.
+Offline-first geospatial intelligence app: map, measure and annotate, overlay live or static data, and export your maps. Use built-in map services or bring your own, including ATAK/MOBAC map sources. On the web or as a native app (desktop and Android), with OneDrive and Google Drive sync.
 
-**Use it now** at [g2.luiscintron.com](https://g2.luiscintron.com) (installable, works offline), or get the desktop app for [Windows, macOS or Linux](https://github.com/lcintron/gengis/releases/latest). No account or API key needed.
+**Use it now** at [g2.luiscintron.com](https://g2.luiscintron.com) (installable, works offline), or get the native app for [Windows, macOS or Linux](https://github.com/lcintron/gengis/releases/latest) or [Android](#android-app). No account or API key needed.
 
 ![GenGIS on the desktop: Tampa Bay with airspace and LAANC ceilings](docs/screenshots/desktop-map.jpg)
 
@@ -76,15 +76,15 @@ Informational only: not for navigation or flight authorization.
 
 ## Connecting live data
 
-Browsers only read another server's data when that server allows it (CORS), and an HTTPS page can't load plain `http://` data. The desktop app has neither limit.
+Browsers only read another server's data when that server allows it (CORS), and an HTTPS page can't load plain `http://` data. The native app (desktop or Android) has neither limit.
 
-| Source | Desktop app | Web app over `http://` | Web app over HTTPS |
+| Source | Native app | Web app over `http://` | Web app over HTTPS |
 | --- | --- | --- | --- |
 | dump1090-fa, tar1090 (send CORS headers) | yes | yes | only on `localhost` or over HTTPS |
 | Other dump1090 builds | yes | no | no |
 | adsb.fi, adsb.lol | yes | no | no |
 | AIS-catcher (web viewer on, `-N 8100`) | yes | yes | only on `localhost` or over HTTPS |
-| aisstream.io (free API key) | yes | no | no |
+| aisstream.io (free API key) | desktop only | no | no |
 
 **MAVLink:** the desktop app connects to mavp2p directly over TCP or UDP. A web page can't, so the web app connects through a WebSocket bridge.
 
@@ -93,7 +93,7 @@ Browsers only read another server's data when that server allows it (CORS), and 
 | TCP | `tcps:0.0.0.0:5760` | `192.168.1.20` | desktop app |
 | UDP | `udps:0.0.0.0:14550` | `192.168.1.20` | desktop app |
 | UDP, listen here | `udpc:<this computer>:14550` | `14550` | desktop app |
-| WebSocket | `tcps:0.0.0.0:5760` + `websockify 5761 localhost:5760` | `192.168.1.20:5761` | desktop app; web app over `http://`, on `localhost` or with `wss://` |
+| WebSocket | `tcps:0.0.0.0:5760` + `websockify 5761 localhost:5760` | `192.168.1.20:5761` | desktop app; Android app with `wss://`; web app over `http://`, on `localhost` or with `wss://` |
 
 For example: `mavp2p serial:/dev/ttyUSB0:57600 tcps:0.0.0.0:5760`.
 
@@ -110,6 +110,12 @@ The installed desktop app opens `gengis://` links in the window already open:
 | `gengis://https://example.com/Trip.gengis` | A project on the web |
 
 GenGIS asks before opening a file or web project from a link. A project opened from the web is kept in your projects folder, like any other. Links can't name network shares (`\\server\…`).
+
+## Android app
+
+GenGIS is also a native Android app (package `com.luiscintron.gengis`). It reads what a web page can't: the adsb.fi and adsb.lol networks, aircraft look-ups, and receivers on your network over plain HTTP. Saving a project or exporting a map opens Android's share sheet, and the back button closes dialogs and panels first.
+
+Not in the Android app yet: the aisstream.io stream, MAVLink over TCP or UDP (a WebSocket bridge works over `wss://`), and cloud sync.
 
 ## Data sources and fair use
 
@@ -146,6 +152,14 @@ npm test                  # automated tests, no installs needed
 
 - **Tests** cover cloud sign-in and sync against a fake Microsoft and a fake Google, the desktop app's sign-in, load and stress runs, and checks of the page itself. They run on every pull request.
 - **Releases** run in CI: Actions → Release → Run workflow on `main`, or `gh workflow run release.yml -f bump=auto`. The version bump follows conventional commits. The workflow tags the release, builds the Windows, macOS and Linux installers, publishes a GitHub Release and deploys the site. A dry run only reports the version.
+- **Android** builds in CI: Actions → Android → Run workflow, or any pull request that touches the app.
+  - It makes a debug APK for testing.
+  - Once the signing secrets are set, it also makes a signed `.aab` for Google Play and a signed `.apk`.
+  - Locally: `npm install`, `npx cap add android` (once), `npm run android:sync`, then open `android/` in Android Studio.
+- **Android signing** (once):
+  - Create an upload key: `keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000`.
+  - Add the repository secrets `ANDROID_KEYSTORE_BASE64` (the file, base64-encoded), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
+  - Keep the key safe: Google Play only accepts updates signed with it.
 
 <details>
 <summary><b>Setting up cloud sync</b> (once, for whoever hosts GenGIS)</summary>
