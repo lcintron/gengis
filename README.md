@@ -27,6 +27,7 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 - Draw freehand with a stylus (its eraser end erases), or Shift + drag with a mouse.
 - Move, resize, join and duplicate objects; copy a style onto others.
 - Organize your work in layers and groups, with show/hide, lock and undo/redo.
+- Give objects attributes (an ID, a status, a note): edit them in Properties or in a layer's attribute table; they travel in GeoJSON.
 
 **Measure and locate**
 - Distances and areas in metric, imperial or nautical units.
@@ -37,6 +38,7 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 - A clock on the map (Settings → Interface, off by default): local time in your zone or one you choose, UTC, or both.
 
 **Overlay data**
+- **Your own files**: KML and KMZ (Google Earth), GeoJSON, and shapefiles (the `.shp` with its `.dbf`, `.prj` and `.cpg`, or a `.zip` of them) as layers, from Data → File imports or dropped on the map. Their own colors are kept; click a feature for its attributes. Shapefiles in UTM, state plane (transverse Mercator or Lambert), Albers or Web Mercator are placed from their `.prj`. Each layer has GIS-style settings: what its popup shows (fields, order, display names), labels on the map from a field or a template like `{NAME} ({HEIGHT} m)`, and symbols (one color, by category, or graduated on a number field; icons for points). Edit values in Properties or the layer's attribute table; export back to GeoJSON or KML. Kept on your device until you remove them; *Copy into the project* turns one into objects you can edit, with their attributes, icons and labels.
 - **FAA data**, live for the area in view: airspace classes, special use airspace, LAANC ceilings, TFRs, airports and more. Click anywhere to see everything under that point.
 - **Any public ArcGIS layer**, plus borders and place names.
 - **Live air traffic (ADS-B)** from your own receiver or the adsb.fi and adsb.lol networks.

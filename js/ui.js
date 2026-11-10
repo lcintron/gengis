@@ -791,6 +791,7 @@ window.MB = window.MB || {};
           <span class="active-dot"></span>
           <span class="layer-name" data-act="rename">${esc(l.name)}</span>
           ${l.grouped ? `<button class="icon-btn mini on" data-act="ungroup" title="Grouped: its objects are selected, moved and resized together. Click to ungroup">${icons.group}</button>` : ''}
+          ${(l.fields && l.fields.length) || feats.some(f => f.mb.attrs) ? MB.iconBtn('table', 'Attribute table: its objects and their fields', 'data-act="attr-table"', '', 'Attribute table of ' + l.name) : ''}
           <button class="icon-btn mini" data-act="layer-menu" title="Layer options: rename, duplicate, group…" aria-haspopup="menu">${icons.more}</button>
           <span class="count">${feats.length}</span>
           <button class="icon-btn mini${l.visible ? ' on' : ''}" data-act="vis" title="${l.visible ? 'Hide' : 'Show'} layer (all objects)">${l.visible ? icons.eye : icons.eyeOff}</button>
@@ -817,6 +818,7 @@ window.MB = window.MB || {};
       { label: 'Duplicate layer', hint: n + ' object' + (n === 1 ? '' : 's'), action: () => MB.duplicateLayer(id) },
       { label: l.grouped ? 'Ungroup objects' : 'Group objects', disabled: !l.grouped && n < 2,
         action: () => { const on = !l.grouped; MB.setLayerGrouped(id, on); MB.commit(on ? 'group' : 'ungroup'); } },
+      { label: 'Attribute table', hint: n + ' object' + (n === 1 ? '' : 's'), action: () => MB.attrTable.open(MB.attrs.tableFor(id)) },
       { label: 'Zoom to layer', disabled: !n || !g || !g.getBounds().isValid(), action: () => MB.map.fitBounds(g.getBounds().pad(0.15), { maxZoom: 18 }) },
       { sep: true },
       { label: l.locked ? 'Unlock layer' : 'Lock layer', action: () => { MB.setLayerLocked(id, !l.locked); MB.commit('layer lock'); } },
@@ -854,6 +856,7 @@ window.MB = window.MB || {};
     if (act === 'toggle') { if (MB.ui.collapsed.has(id)) MB.ui.collapsed.delete(id); else MB.ui.collapsed.add(id); MB.ui.renderLayers(); return; }
     if (act === 'layer-menu') { const r = actEl.getBoundingClientRect(); layerMenu(id, r.left, r.bottom + 2); return; }
     if (act === 'ungroup') { MB.setLayerGrouped(id, false); MB.commit('ungroup'); return; }
+    if (act === 'attr-table') { MB.attrTable.open(MB.attrs.tableFor(id)); return; }
     if (act === 'vis') { MB.setLayerVisible(id, !MB.getLayer(id).visible); MB.commit('layer visibility'); }
     else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
     else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
@@ -959,7 +962,7 @@ window.MB = window.MB || {};
 
   /* ================= style form ================= */
 
-  const PX_KEYS = ['weight', 'textSize', 'textShadowBlur', 'textShadowOffset']; // slider readouts in px (the rest: %)
+  const PX_KEYS = ['weight', 'textSize', 'textShadowBlur', 'textShadowOffset', 'markerSize']; // slider readouts in px (the rest: %)
 
   function styleForm(sections, getStyle, onChange) {
     const st = Object.assign({}, MB.defaultStyle, getStyle()); // defaults fill in fields older objects lack
@@ -967,6 +970,12 @@ window.MB = window.MB || {};
     if (sections.includes('stroke')) {
       html += `<div class="section"><h3>${sections.includes('markerOnly') ? 'Marker' : 'Border / line'}</h3>
         <div class="row"><label>Color</label><input type="color" data-k="color" value="${st.color}"><span class="grow"></span></div>`;
+      if (sections.includes('markerOnly')) { // its shape: the pin, or a smaller symbol centred on the point
+        const shape = MB.markerShape(st), size = MB.markerSize(st);
+        html += `<div class="row"><label>Shape</label><div class="seg small marker-shapes" data-set="markerShape" role="group" aria-label="Marker shape">${Object.keys(MB.markerShapes).map(k =>
+          `<button type="button" data-v="${k}"${shape === k ? ' class="active"' : ''} title="${MB.markerShapes[k]}" aria-label="${MB.markerShapes[k]}" aria-pressed="${shape === k}">${k === 'pin' ? MB.pinIconSvg('currentColor').replace('width="26" height="40"', 'width="11" height="17"') : MB.shapeSvg(k, 'currentColor', 14)}</button>`).join('')}</div></div>
+        <div class="row" data-row="markerSize"${shape === 'pin' ? ' hidden' : ''}><label>Size</label><input type="range" data-k="markerSize" min="8" max="40" step="1" value="${size}" aria-label="Marker size"><span class="val" data-val="markerSize">${size}px</span></div>`;
+      }
       if (!sections.includes('markerOnly')) {
         html += `<div class="row"><label>Width</label><input type="range" data-k="weight" min="0.5" max="${sections.includes('wide') ? 40 : 16}" step="0.5" value="${st.weight}"><span class="val" data-val="weight">${st.weight}px</span></div>
         <div class="row"><label>Opacity</label><input type="range" data-k="opacity" min="0" max="1" step="0.05" value="${st.opacity}"><span class="val" data-val="opacity">${Math.round(st.opacity * 100)}%</span></div>
@@ -1026,7 +1035,8 @@ window.MB = window.MB || {};
     $$('[data-set]', wrap).forEach(group => group.addEventListener('click', e => {
       const b = e.target.closest('button[data-v]');
       if (!b) return;
-      $$('button', group).forEach(x => x.classList.toggle('active', x === b));
+      $$('button', group).forEach(x => { x.classList.toggle('active', x === b); if (x.hasAttribute('aria-pressed')) x.setAttribute('aria-pressed', x === b); });
+      if (group.dataset.set === 'markerShape') { const row = $('[data-row="markerSize"]', wrap); if (row) row.hidden = b.dataset.v === 'pin'; } // (a pin has one size)
       const patch = {}; patch[group.dataset.set] = b.dataset.v; onChange(patch);
     }));
     return wrap;
@@ -1080,6 +1090,7 @@ window.MB = window.MB || {};
       $('#propsSub').textContent = 'data feature';
       panel.innerHTML = MB.data.picked.html;
       $('[data-act="close-data"]', panel).addEventListener('click', () => MB.data.pick(null));
+      if (MB.data.picked.ds.imp && MB.imports) MB.imports.bindPicked(panel, MB.data.picked); // an imported feature: its values editable
       return;
     }
     if (!f) {
@@ -1164,6 +1175,7 @@ window.MB = window.MB || {};
       panel.appendChild(r);
       $('#propRadius', panel).addEventListener('change', e => { const v = iu.toMeters(+e.target.value); if (v > 0) { f.setRadius(v); MB.updateTooltip(f); MB.ui.renderMeasureBox(); MB.commit('radius'); } });
     }
+    panel.appendChild(attrForm(f)); // last: the object's data, after how it looks
 
     $('.obj-tools', head).addEventListener('click', e => {
       const btn = e.target.closest('button[data-act]');
@@ -1233,13 +1245,85 @@ window.MB = window.MB || {};
     return wrap;
   }
 
+  // An object's attributes, last in Properties: one row per field of its layer (empty ones too), then any of its own.
+  // A value is this object's; a field is the layer's (every object has it, as in the attribute table), so renaming
+  // or removing one does it for all of them (asking first when others have a value in it). A field is added below;
+  // the layer's attribute table has them all at once (attrtable.js).
+  function attrForm(f) {
+    const m = f.mb, keys = MB.attrs.fieldsOf(m.layerId), a = m.attrs || {}, val = MB.attrs.valueOf;
+    Object.keys(a).forEach(k => { if (!keys.includes(k)) keys.push(k); });
+    const table = () => MB.attrs.tableFor(m.layerId);
+    const wrap = document.createElement('div');
+    wrap.className = 'section attr-section';
+    wrap.innerHTML = `<div class="attr-head"><h3>Attributes</h3>${MB.iconBtn('table', 'Attribute table: every object of the layer', 'data-act="attr-table"')}</div>
+      ${keys.length ? `<table class="mb-datatable attr-edit"><thead><tr><th scope="col">Field</th><th scope="col">Value</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead><tbody>${keys.map((k, i) => `<tr data-i="${i}">
+        <td><input type="text" class="attr-cell attr-key" data-ak value="${esc(k)}" title="${esc(k)}: renaming it renames it on every object of the layer" aria-label="Field name ${esc(k)}" spellcheck="false"></td>
+        <td>${MB.attrs.cellHtml(val(m, k), `data-av aria-label="Value of ${esc(k)}"`)}</td>
+        <td>${MB.iconBtn('trash', 'Remove the field', 'data-adel', 'danger', 'Remove the field ' + k)}</td></tr>`).join('')}</tbody></table>` : '<p class="note">None yet: fields and values of your own (an ID, a status, a note), kept with the object and in GeoJSON.</p>'}
+      <form class="row attr-add"><input type="text" name="k" placeholder="Field" aria-label="New field" spellcheck="false"><input type="text" name="v" placeholder="Value" aria-label="Its value" spellcheck="false"><button type="submit" class="icon-btn" title="Add the field" aria-label="Add the field">${MB.ICON.plus}</button></form>`;
+    const keyOf = el => keys[+el.closest('tr').dataset.i]; // (by the row: a field name can be anything)
+    const focusRow = (sel, k) => { // drawn anew: the same field's box keeps the keyboard
+      const fresh = MB.attrs.fieldsOf(m.layerId), own = Object.keys(m.attrs || {});
+      own.forEach(x => { if (!fresh.includes(x)) fresh.push(x); });
+      const i = fresh.indexOf(k), el = i < 0 ? null : $(`#propsBody .attr-edit tr[data-i="${i}"] ${sel}`);
+      if (el) el.focus();
+    };
+    $$('textarea[data-av]:not([data-ml])', wrap).forEach(t => t.addEventListener('keydown', e => { // a long value of one line: Enter keeps it, as in a one-line box
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); t.blur(); }
+    }));
+    $$('[data-av]', wrap).forEach(inp => inp.addEventListener('change', () => {
+      const k = keyOf(inp);
+      MB.attrs.set(f, k, MB.attrs.typed(inp.value, val(m, k)));
+      MB.commit('attribute');
+    }));
+    $$('input[data-ak]', wrap).forEach(inp => {
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.value = keyOf(inp); inp.blur(); }
+      });
+      inp.addEventListener('change', () => {
+        const from = keyOf(inp), to = inp.value.trim();
+        if (to === from) { inp.value = from; return; }
+        const why = table().renameField(from, to);
+        if (why) { MB.toast(why); inp.value = from; return; } // (done: Properties drawn anew by the table's commit)
+        focusRow('[data-av]', to);
+      });
+    });
+    $$('[data-adel]', wrap).forEach(b => b.addEventListener('click', async () => {
+      const k = keyOf(b), i = +b.closest('tr').dataset.i, lay = MB.getLayer(m.layerId);
+      const others = MB.layerFeatures(m.layerId).filter(o => o !== f && val(o.mb, k) != null && val(o.mb, k) !== '').length;
+      if (others && !(await MB.ask(`Remove the field "${k}" from every object of "${lay ? lay.name : 'this layer'}"? ${others} other object${others === 1 ? ' has a value' : 's have values'} in it.`, 'Remove field', 'Cancel'))) return;
+      table().deleteField(k); // (Properties drawn anew by the table's commit)
+      // the keyboard: on the field that took its place (or the one before it, or the new field's box)
+      const rows = $$('#propsBody .attr-edit tbody tr'), row = rows[Math.min(i, rows.length - 1)];
+      const to = row ? $('[data-ak]', row) : $('#propsBody .attr-add input[name="k"]');
+      if (to) to.focus();
+    }));
+    $('form', wrap).addEventListener('submit', e => {
+      e.preventDefault();
+      const k = e.target.k.value.trim(), v = MB.attrs.typed(e.target.v.value, null);
+      const why = MB.attrs.badKey(k);
+      if (why) { MB.toast(why); e.target.k.focus(); return; }
+      if (v == null) { // no value yet: a field of the layer, for every object
+        const lay = MB.getLayer(m.layerId);
+        if (lay && !MB.attrs.fieldsOf(m.layerId).includes(k)) lay.fields = (lay.fields || []).concat(k);
+      } else MB.attrs.set(f, k, v);
+      MB.commit('attribute');
+      MB.ui.renderProps();
+      focusRow('[data-av]', k);
+    });
+    $('[data-act="attr-table"]', wrap).addEventListener('click', () => MB.attrTable.open(table()));
+    return wrap;
+  }
+
   function bindNameTip(f) {
     MB.updateLabel(f);
     if (f.mb.type === 'text' || MB.isMeasureType(f.mb.type)) return;
     if (MB.measureLabelText(f)) { MB.updateTooltip(f); return; } // its tooltip is its measurement label (placed by the name label)
     if (f.getTooltip()) f.unbindTooltip();
     const labelShown = MB.labelTypes.includes(f.mb.type) && MB.getLabel(f).show;
-    if (f.mb.name && !labelShown) f.bindTooltip(f.mb.name, { direction: 'top', className: 'mb-name-tip', offset: f.mb.type === 'marker' ? [0, -30] : [0, 0] });
+    if (f.mb.name && !labelShown) f.bindTooltip(esc(f.mb.name), { // (text: Leaflet sets a tooltip's string as HTML)
+      direction: 'top', className: 'mb-name-tip', offset: f.mb.type === 'marker' ? [0, MB.markerShape(f.mb.style) === 'pin' ? -30 : -4] : [0, 0] });
   }
   MB.ui.bindNameTip = bindNameTip;
 
@@ -1278,7 +1362,7 @@ window.MB = window.MB || {};
     const level = z.level != null ? z.level : zoomNow();
     wrap.innerHTML = `<label class="check" title="Show this object only above or below a zoom level"><input type="checkbox" id="propZoomOn"${z.on ? ' checked' : ''}> <b>Zoom display</b></label>
       <div class="row"><label>Show when ${MB.zoomIcon} is</label><select id="propZoomOp"${z.on ? '' : ' disabled'}><option value=">"${z.op !== '<' ? ' selected' : ''}>Greater than</option><option value="<"${z.op === '<' ? ' selected' : ''}>Less than</option></select></div>
-      <div class="row"><label>${MB.zoomIcon} level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
+      <div class="row"><label>${MB.zoomIcon} Level</label><input type="number" id="propZoomLevel" min="0" max="22" step="${MB.ZOOM_STEP}" value="${esc(String(level))}"${z.on ? '' : ' disabled'}></div>
       <p class="note" id="propZoomNote"></p>`;
     const on = $('#propZoomOn', wrap), op = $('#propZoomOp', wrap), lv = $('#propZoomLevel', wrap);
     const apply = e => {
@@ -1406,8 +1490,15 @@ window.MB = window.MB || {};
       const files = Array.from(e.dataTransfer.files || []);
       const svgs = files.filter(f => MB.isSvgFile(f) || MB.isRasterFile(f));
       const others = files.filter(f => /\.(geo)?json$/i.test(f.name) || MB.isProjectFileName(f.name));
-      const maps = files.filter(f => MB.mapSources && MB.mapSources.isMapSourceFile(f)); // MOBAC / ATAK map sources
+      const imports = files.filter(f => MB.imports && MB.imports.isImportFile(f)); // KML, KMZ, shapefiles: layers (fileimports.js)
+      if (imports.length) MB.imports.openFiles(imports);
+      const zips = files.filter(f => /\.zip$/i.test(f.name)); // a zipped shapefile, KML or GeoJSON, or a zip of map sources
+      const maps = files.filter(f => !/\.zip$/i.test(f.name) && MB.mapSources && MB.mapSources.isMapSourceFile(f)); // MOBAC / ATAK map sources
       if (maps.length) MB.mapSources.importFiles(maps);
+      if (zips.length) (MB.imports ? MB.imports.sortZips(zips) : Promise.resolve({ geo: [], other: zips })).then(({ geo, other }) => {
+        if (geo.length) MB.imports.openFiles(geo);
+        if (other.length && MB.mapSources) MB.mapSources.importFiles(other);
+      });
       const mavLogs = files.filter(f => MB.mavLogs && MB.mavLogs.isLogFile(f)); // MAVLink flight logs (.bin, .tlog, .ulg)
       if (mavLogs.length) MB.mavLogs.openFiles(mavLogs);
       const bfLogs = files.filter(f => MB.betaflight && MB.betaflight.isLogFile(f)); // Betaflight blackbox logs (.bbl, .bfl, .gps.csv)
@@ -1473,7 +1564,7 @@ window.MB = window.MB || {};
     list.className = 'poi-list';
     pois.forEach(p => {
       const cm = L.circleMarker(p.latlng, { radius: 6, color: '#fff', weight: 1.5, fillColor: '#2f80ed', fillOpacity: .9, pmIgnore: true });
-      cm.bindTooltip(p.name, { direction: 'top', className: 'mb-name-tip', offset: [0, -6] });
+      cm.bindTooltip(esc(p.name), { direction: 'top', className: 'mb-name-tip', offset: [0, -6] });
       cm.on('click', () => addPoi(p));
       cm.addTo(g);
       const item = document.createElement('div');

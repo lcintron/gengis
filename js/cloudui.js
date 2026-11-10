@@ -77,7 +77,7 @@ window.MB = window.MB || {};
     const focusKey = active ? active.dataset.key : null, scroll = box.scrollTop;
     let html = `${MB.modalCloseHtml}<div class="cloud-head"><span class="cloud-head-ic">${ICON}</span><h2 id="cloudTitle">Cloud sync</h2>
         ${tip('Your named projects in your own cloud storage, on all your devices. They stay saved here too and work offline. No GenGIS server; API keys never leave this device.')}</div>
-      ${c.lastError ? `<div class="cloud-error" role="alert">${I.error}<span>${esc(c.lastError)}</span>${iconBtn('data-act="dismiss"', '✕', 'Dismiss')}</div>` : ''}`;
+      ${c.lastError ? `<div class="cloud-error" role="alert">${I.error}<span>${esc(c.lastError)}</span>${iconBtn('data-act="dismiss"', MB.ICON.close, 'Dismiss')}</div>` : ''}`;
     offered.forEach(pid => {
       const p = MB.cloudProviders[pid], mine = accs.filter(a => a.provider === pid);
       if (!mine.length) {

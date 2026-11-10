@@ -43,6 +43,101 @@ window.MB = window.MB || {};
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 
+  /* ----- formatted text in a value (a KML description, a GeoJSON property written as HTML) -----
+   * isHtml(v): a value with formatting. safeHtml(s): that formatting rebuilt from an allow-list: text, a few tags
+   * for emphasis, lists, tables, headings, links (http, https, mailto; opened in a new tab) and pictures (http,
+   * https, data:image); never a script, a style, an event handler, a frame or a form. Each tag kept is written
+   * anew with only its allowed, checked attributes, every bit of text escaped, and tags left open closed.
+   * htmlText(s): the same as plain text (a label, a title, a hover name). */
+  const RICH = new Set(['a', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'ins', 'small', 'big', 'sub', 'sup', 'br', 'hr', 'p', 'div', 'span',
+    'font', 'center', 'blockquote', 'pre', 'code', 'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th',
+    'caption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img']);
+  const VOID_TAGS = new Set(['br', 'hr', 'img']);
+  const TABLE_PARTS = new Set(['thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption']); // (only inside a table of the value's own)
+  const GONE = /<(script|style|iframe|frame|frameset|object|embed|applet|noscript|template|svg|math|head|title|textarea|select|button|form)\b[\s\S]*?(<\/\1\s*>|$)/gi; // with what is in them
+  const TAG = /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s"'<>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*\/?>/g;
+  const IS_RICH = new RegExp(`<\\/?(${Array.from(RICH).join('|')})\\b[^<>]*>`, 'i');
+  const ENTS = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0', copy: '\u00a9', reg: '\u00ae', deg: '\u00b0', plusmn: '\u00b1',
+    middot: '\u00b7', ndash: '\u2013', mdash: '\u2014', lsquo: '\u2018', rsquo: '\u2019', ldquo: '\u201c', rdquo: '\u201d', hellip: '\u2026', bull: '\u2022',
+    euro: '\u20ac', aacute: '\u00e1', eacute: '\u00e9', iacute: '\u00ed', oacute: '\u00f3', uacute: '\u00fa', ntilde: '\u00f1', uuml: '\u00fc', ouml: '\u00f6',
+    auml: '\u00e4', ccedil: '\u00e7', egrave: '\u00e8', agrave: '\u00e0', Aacute: '\u00c1', Eacute: '\u00c9', Iacute: '\u00cd', Oacute: '\u00d3', Uacute: '\u00da',
+    Ntilde: '\u00d1' };
+  const unent = s => String(s).replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (m, e) => {
+    if (e[0] !== '#') { const k = Object.hasOwn(ENTS, e) ? e : e.toLowerCase(); return Object.hasOwn(ENTS, k) ? ENTS[k] : m; } // (only its own names: never "constructor")
+    const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+    try { return String.fromCodePoint(n); } catch (x) { return m; }
+  });
+  // text as it is in the page: its entities kept (they are only text), anything else that could start markup escaped
+  const richText = t => t.replace(/&(?!(#\d+|#x[\da-f]+|[a-z][a-z\d]*);)/gi, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  function richAttrs(tag, src) {
+    const a = {};
+    for (const m of src.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) a[m[1].toLowerCase()] = unent(m[2] != null ? m[2] : m[3] != null ? m[3] : m[4] || '').trim();
+    const esc = MB.escapeHtml, num = v => /^\d{1,4}$/.test(v) ? v : null;
+    let out = '';
+    if (tag === 'a') {
+      if (/^(https?:\/\/|mailto:)/i.test(a.href || '')) out += ` href="${esc(a.href)}" target="_blank" rel="noopener noreferrer"`;
+    } else if (tag === 'img') {
+      if (!/^https?:\/\//i.test(a.src || '') && !/^data:image\/(png|jpe?g|gif|webp);base64,[\w+/=\s]+$/i.test(a.src || '')) return null; // (a picture inside a KMZ is not kept)
+      out += ` src="${esc(a.src)}" loading="lazy" referrerpolicy="no-referrer"`;
+      if (a.alt) out += ` alt="${esc(a.alt)}"`;
+      if (num(a.width)) out += ` width="${a.width}"`;
+      if (num(a.height)) out += ` height="${a.height}"`;
+    } else if (tag === 'font') {
+      if (/^(#[\da-f]{3,8}|[a-z]{3,20})$/i.test(a.color || '')) out += ` style="color:${a.color}"`;
+    } else if (tag === 'td' || tag === 'th') {
+      if (num(a.colspan)) out += ` colspan="${a.colspan}"`;
+      if (num(a.rowspan)) out += ` rowspan="${a.rowspan}"`;
+    }
+    if (/^(p|div|td|th|h\d)$/.test(tag) && /^(left|center|right)$/i.test(a.align || '')) out += ` style="text-align:${a.align.toLowerCase()}"`;
+    if (a.title && tag !== 'img') out += ` title="${esc(a.title)}"`;
+    return out;
+  }
+  MB.isHtml = v => typeof v === 'string' && IS_RICH.test(v);
+  MB.safeHtml = function (s) {
+    s = String(s == null ? '' : s).replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<!--[\s\S]*?(-->|$)/g, '').replace(GONE, '');
+    let out = '', last = 0, m;
+    const open = [];
+    let droppedTables = 0;
+    TAG.lastIndex = 0;
+    while ((m = TAG.exec(s))) {
+      out += richText(s.slice(last, m.index));
+      last = TAG.lastIndex;
+      const tag = m[2].toLowerCase();
+      if (!RICH.has(tag)) continue; // an unknown tag: its text stays, the tag goes
+      if (TABLE_PARTS.has(tag) && !open.includes('table')) continue; // a row or cell outside a table of its own would land in the popup's
+      // One table at a time, never one inside another: where the page closes cells and rows on its own (a <tr> in a
+      // cell, a second <caption>), a table opened in what looks like a cell would close the open one, and then the
+      // popup's. With a single table of its own, only its real end closes it.
+      if (tag === 'table') {
+        if (m[1] && droppedTables) { droppedTables--; continue; } // (the end of one dropped: not the end of the one around it)
+        if (!m[1] && open.includes('table')) { droppedTables++; continue; }
+      }
+      if (m[1]) { // a closing tag: what it closes, and what was left open inside it
+        const i = open.lastIndexOf(tag);
+        if (i >= 0) while (open.length > i) out += `</${open.pop()}>`;
+        continue;
+      }
+      const attrs = richAttrs(tag, m[3] || '');
+      if (attrs === null) continue;
+      out += `<${tag}${attrs}>`;
+      if (!VOID_TAGS.has(tag)) open.push(tag);
+    }
+    out += richText(s.slice(last));
+    while (open.length) out += `</${open.pop()}>`;
+    return out;
+  };
+  MB.htmlText = function (s) {
+    s = String(s == null ? '' : s);
+    if (!/[<&]/.test(s)) return s.trim();
+    // in markup with line break tags the file's own line breaks are spaces, as a browser shows them (a <br> then a
+    // new line is one break); text with none (an entity, a bold word) keeps its lines
+    if (/<br\b|<\/(p|div|tr|li|h\d)\s*>/i.test(s)) s = s.replace(/\s+/g, ' ');
+    return unent(s.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<!--[\s\S]*?(-->|$)/g, '').replace(GONE, '').replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^<>]*>/g, ''))
+      .replace(/\u00a0/g, ' ').split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim(); // (linear on any input: no regex here backtracks)
+  };
+  // A value in a popup: its formatting kept (made safe) when it has any, else as text.
+  MB.richValue = v => MB.isHtml(v) ? `<div class="mb-rich">${MB.safeHtml(v)}</div>` : MB.escapeHtml(v);
+
   MB.deepClone = o => JSON.parse(JSON.stringify(o));
 
   MB.isLatLng = v => v && typeof v === 'object' && 'lat' in v && 'lng' in v;
@@ -276,6 +371,37 @@ window.MB = window.MB || {};
     });
   };
 
+  // A marker's shape (style.markerShape; a pin when unset) and, for the small shapes, its size in px
+  // (style.markerSize). The small shapes are centred on their point; the pin stands on it.
+  MB.markerShapes = { pin: 'Pin', dot: 'Dot', diamond: 'Diamond', square: 'Square', triangle: 'Triangle' };
+  const SHAPE_PATHS = {
+    dot: '<circle cx="10" cy="10" r="8"/>',
+    diamond: '<path d="M10 1.5 18.5 10 10 18.5 1.5 10z"/>',
+    square: '<rect x="3" y="3" width="14" height="14" rx="1.5"/>',
+    triangle: '<path d="M10 2.2 18.6 17.4H1.4z"/>'
+  };
+  MB.markerShape = st => (st && Object.prototype.hasOwnProperty.call(SHAPE_PATHS, st.markerShape)) ? st.markerShape : 'pin'; // (a file's own value: only these)
+  MB.markerSize = st => Math.max(6, Math.min(48, Math.round(+(st && st.markerSize) || 16)));
+  MB.shapeSvg = function (shape, color, size) {
+    const p = SHAPE_PATHS[shape] || SHAPE_PATHS.dot;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 20 20">` +
+      `<g fill="none" stroke="#000" stroke-opacity=".45" stroke-width="4" stroke-linejoin="round">${p}</g>` + // a dark edge on any background
+      `<g fill="${color}" stroke="#fff" stroke-width="2" stroke-linejoin="round">${p}</g></svg>`;
+  };
+  MB.markerIcon = function (st) {
+    const shape = MB.markerShape(st), color = (st && st.color) || '#e4572e';
+    if (shape === 'pin') return MB.pinIcon(color);
+    const s = MB.markerSize(st);
+    return L.divIcon({ className: 'mb-pin mb-pin-' + shape, html: MB.shapeSvg(shape, color, s), iconSize: [s, s], iconAnchor: [s / 2, s / 2],
+      popupAnchor: [0, -s / 2], tooltipAnchor: [0, -s / 2] });
+  };
+  // The marker's box around its point, in px (where its name label and measurements go).
+  MB.markerBox = function (st) {
+    if (MB.markerShape(st) === 'pin') return { l: -13, r: 13, t: -38, b: 0 };
+    const h = MB.markerSize(st) / 2;
+    return { l: -h, r: h, t: -h, b: h };
+  };
+
   // text, or a Blob as it is (an exported picture)
   MB.download = function (filename, text, mime) {
     const blob = text instanceof Blob ? text : new Blob([text], { type: mime || 'application/json' });
@@ -313,7 +439,12 @@ window.MB = window.MB || {};
     close: ic('<path d="M6 6l12 12M18 6L6 18"/>'),
     search: ic('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>'),
     pinAdd: ic('<path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 1.3-.3 2.5-.8 3.6"/><circle cx="12" cy="10" r="2"/><path d="M18 16v6M15 19h6"/>'),
-    clock: ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>') // the time on the map (clock.js)
+    clock: ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'), // the time on the map (clock.js)
+    table: ic('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>'), // an attribute table
+    sliders: ic('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'), // a layer's settings
+    more: ic('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'),
+    up: ic('<path d="M6 15l6-6 6 6"/>'),
+    down: ic('<path d="M6 9l6 6 6-6"/>')
   };
   // An icon-only button. attrs: its other attributes as HTML (data-…, disabled); cls: more classes; label: what a
   // screen reader says when the short tooltip is not enough (in a list: which row, as 'Delete Alpha').
@@ -326,6 +457,7 @@ window.MB = window.MB || {};
 
   MB.ask = function (message, yes, no) {
     return new Promise(resolve => {
+      const back = document.activeElement;
       const dlg = document.createElement('div');
       dlg.className = 'modal mb-ask';
       dlg.innerHTML = '<div class="modal-box" role="alertdialog" aria-modal="true">' + MB.modalCloseHtml + '<p class="ask-text"></p><div class="row right"><button type="button" class="btn" data-no></button><button type="button" class="btn primary" data-yes></button></div></div>';
@@ -333,7 +465,13 @@ window.MB = window.MB || {};
       dlg.querySelector('[data-yes]').textContent = yes || 'OK';
       dlg.querySelector('[data-no]').textContent = no || 'Cancel';
       const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]'), xBtn = dlg.querySelector('.modal-x');
-      const finish = v => { window.removeEventListener('keydown', onKey, true); dlg.remove(); resolve(v); };
+      const finish = v => {
+        window.removeEventListener('keydown', onKey, true);
+        dlg.remove();
+        if (back && back !== document.body && back.isConnected && back.getClientRects().length && back.focus) back.focus(); // (the button that asked; not a menu's item, hidden by now)
+        else { const open = Array.from(document.querySelectorAll('.modal:not(.hidden) .modal-x')).pop(); if (open) open.focus(); }
+        resolve(v);
+      };
       // While it is open no key reaches the app (Delete must not delete the selection behind it). Enter and Space
       // still press the focused button; Tab stays on the dialog's buttons; Escape, like the ✕, answers no.
       const order = [xBtn, noBtn, yesBtn];
