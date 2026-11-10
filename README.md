@@ -55,7 +55,7 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 - Projects save automatically as you work, with recent projects and earlier copies to restore.
 - Save and open `.gengis` project files (older `.gengis.json` files open too); import and export GeoJSON. In the desktop app, double-click a `.gengis` file to open it.
 - Export the map as PNG, JPEG or PDF, at up to 4× resolution.
-- **Cloud sync** to your own OneDrive (personal or Microsoft 365) or Google Drive. Files go straight between your device and your account, with no GenGIS server in between. A project edited in two places is never overwritten: you choose which version to keep. See the [privacy policy](https://g2.luiscintron.com/privacy.html).
+- **Cloud sync** to your own OneDrive (personal or Microsoft 365) or Google Drive. Files go straight between your device and your account, with no GenGIS server in between. A project edited in two places is never overwritten: you choose which version to keep. The Cloud sync dialog lists every project in your cloud folder: open any of them, or delete one from the cloud (it goes to OneDrive's recycle bin or Google Drive's trash, and copies on your devices are kept), and deleting a synced project from Recent projects deletes it everywhere. See the [privacy policy](https://g2.luiscintron.com/privacy.html).
 - Presenter mode, and casting to a TV.
 
 Informational only: not for navigation or flight authorization.
