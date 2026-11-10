@@ -252,3 +252,13 @@ test('the Project menu\'s items end without an ellipsis', () => {
   assert.ok(labels.length >= 10, 'the menu\'s labels found');
   assert.deepEqual(labels.filter(l => /(…|\.\.\.)$/.test(l)), [], 'menu labels ending in an ellipsis');
 });
+
+test('the Cast to a screen icon is the standard cast glyph: arcs ending on the screen\'s bottom line, not below it', () => {
+  const OLD = 'M2 16a6 6 0 0 1 6 6M2 20a2 2 0 0 1 2 2M2 12a10 10 0 0 1 10 10';
+  for (const [f, src] of [['index.html', html], ['css/app.css', css], ...Object.entries(js).map(([f, s]) => ['js/' + f, s])]) {
+    assert.ok(!src.includes(OLD), f + ' still draws the old cast glyph');
+  }
+  const item = (html.match(/<button data-act="cast">([\s\S]*?)<\/button>/) || [])[1] || '';
+  assert.ok(item.includes('<path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><path d="M2 12a9 9 0 0 1 8 8"/>' +
+    '<path d="M2 16a5 5 0 0 1 4 4"/><path d="M2 20h.01"/>'), 'the menu\'s cast item uses the new glyph');
+});
