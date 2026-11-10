@@ -717,7 +717,26 @@ window.MB = window.MB || {};
       return false;
     }
     if (!MB.isProject(data)) { MB.toast('That file is not a GenGIS project.', 5000); return false; }
-    if (!(await MB.projects.beforeOpen(data))) return false;
+    // The same project is on this device, not linked to this file (its file was deleted from the cloud, then restored
+    // or written again by another device): the copy here is never replaced without asking. The same content: the copy
+    // here opens (and syncs to this file when it synced to none); otherwise the user chooses.
+    const mine = data.id && await MB.projects.get(data.id);
+    if (mine) {
+      const ml = await store().get('links', mine.id), syncing = !!(ml && !ml.excluded && ml.fileId);
+      const hash = await hashOf(data), same = (await hashOf(mine.data)) === hash;
+      const cloud = !same && await MB.ask('"' + (mine.name || data.name) + '" is also on this device' + (syncing ? '' : ', with sync off') + '. Open the version from ' +
+        providerOf(acc).name + ' instead? The copy on this device is kept in its earlier copies.', 'Open the cloud version', 'Keep this device\'s copy');
+      if (!cloud) {
+        await MB.projects.open(mine.id);
+        if (MB.state.projectId !== mine.id) return false;
+        if (same && !syncing) {
+          await env.lock(() => saveLink({ projectId: mine.id, accountId: accId, fileId, name: remote.name, nameFor: mine.name, etag: remote.etag, hash, syncedAt: env.now(), state: 'synced' }));
+          emit();
+        }
+        return true;
+      }
+    }
+    if (!(await MB.projects.beforeOpen(data))) return false; // (a project saved here is kept in its earlier copies first)
     const id = data.id;
     MB.loadProject(data);
     MB.projects.markFileBacked();
@@ -751,13 +770,13 @@ window.MB = window.MB || {};
     return kept; // the projects here that were linked to it (now sync off)
   };
 
-  // A project's cloud file while it syncs to one ({ accountId, provider, fileId }), else null: Recent projects deletes
-  // that file too when the project is deleted.
+  // A project's cloud file while it syncs to one ({ accountId, provider, fileId, changed: the cloud version has changes
+  // not here }), else null: Recent projects deletes that file too when the project is deleted.
   C.linkOf = async function (id) {
     if (!C.ready) return null;
     const l = await store().get('links', id);
     const acc = l && !l.excluded && l.fileId && await store().get('accounts', l.accountId);
-    return acc ? { accountId: acc.id, provider: acc.provider, fileId: l.fileId } : null;
+    return acc ? { accountId: acc.id, provider: acc.provider, fileId: l.fileId, changed: l.state === 'conflict' || (!!l.remoteEtag && l.remoteEtag !== l.etag) } : null;
   };
 
   // A project's state; its account being signed out shows (a conflict still comes first: it is the user's to settle).

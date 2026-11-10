@@ -115,6 +115,7 @@ window.MB = window.MB || {};
     if (accs.length) {
       const rmFiles = accs.reduce((n, a) => n + ((remote[a.id] && remote[a.id].files) || []).length, 0);
       const searchable = list.length + rmFiles > SEARCH_FROM;
+      if (!searchable) query = ''; // (no search box: no row stays hidden by a search no longer shown)
       html += `<div class="cloud-h-row"><h3 class="cloud-h">Projects <span class="dim">${list.length}</span></h3>${searchable
         ? `<div class="search-wrap">${SEARCH_ICON}<input class="search-input" type="text" inputmode="search" enterkeyhint="search" data-search data-key="search" placeholder="Search projects" aria-label="Search projects" spellcheck="false" value="${esc(query)}">${CLEAR_BTN}</div>` : ''}</div>
         <div class="cloud-sec"><div class="cloud-list cloud-scroll" data-list="projects">${list.length ? sortRows(list).map(r => projectRow(r, accs)).join('') : '<p class="note">Nothing here yet.</p>'}</div>
@@ -155,7 +156,7 @@ window.MB = window.MB || {};
       let shown = 0;
       sec.querySelectorAll('.cloud-row[data-name]').forEach(row => { const hit = !q || row.dataset.name.includes(q); row.hidden = !hit; if (hit) shown++; });
       const none = !!q && !shown;
-      if (sec.hasAttribute('data-remote')) sec.hidden = none;
+      if (sec.hasAttribute('data-remote')) sec.hidden = none && !sec.querySelector('.note'); // (one saying loading, offline... stays, with its Check again)
       else { const nm = sec.querySelector('.cloud-nomatch'); if (nm) nm.hidden = !none; }
     });
   }
@@ -205,33 +206,47 @@ window.MB = window.MB || {};
   async function openRemote(accId, fileId) {
     const l = linkTo(accId, fileId);
     if (l && await MB.projects.get(l.projectId)) { MB.ui.closeDialog(dlg); await MB.projects.open(l.projectId); return; } // here already
+    if (busy[fileId]) return;
     busy[fileId] = 'open'; U.render();
     let ok = false;
-    try { ok = await C().openRemote(accId, fileId); } finally { delete busy[fileId]; }
+    try { ok = await C().openRemote(accId, fileId); }
+    catch (e) { console.warn('Cloud sync: opening', e); MB.toast('Could not open it: ' + (e.message || e), 6000); }
+    finally { delete busy[fileId]; }
     if (ok) MB.ui.closeDialog(dlg); else if (isOpen()) U.render();
   }
 
+  const rowButton = (accId, fileId, sel) => dlg.querySelector(`${sel || ''}[data-acc="${CSS.escape(accId)}"][data-file="${CSS.escape(fileId)}"]`);
   async function deleteRemote(accId, fileId) {
     const a = C().accounts.find(x => x.id === accId), f = a && ((remote[accId] || {}).files || []).find(x => x.fileId === fileId);
-    if (!f) return;
-    const p = MB.cloudProviders[a.provider], name = fileTitle(f), l = linkTo(accId, fileId);
-    const here = !!(l && await MB.projects.get(l.projectId));
-    const conflict = here && !l.excluded && (l.state === 'conflict' || (l.remoteEtag && l.remoteEtag !== l.etag));
-    const msg = 'Delete "' + name + '" from ' + accLabel(a) + '?\n\n' + p.bin + '\n\n' +
-      (here ? 'The copy on this device is kept and stops syncing.' + (conflict ? ' The cloud version has changes that are not on this device.' : '') : 'It is not on this device.') +
-      ' Other devices that have it keep their copy.';
-    if (!(await MB.ask(msg, 'Delete from ' + p.name, 'Cancel', { danger: true }))) return;
-    busy[fileId] = 'delete'; U.render();
+    if (!f || busy[fileId]) return;
+    busy[fileId] = 'delete'; // (before the question: a second click asks nothing more)
+    const p = MB.cloudProviders[a.provider], name = fileTitle(f);
+    let gone = false, at = -1;
     try {
-      await C().deleteRemote(accId, fileId);
-      const rm = remote[accId] || {};
-      // (a listing already under way may still hold it: its answer is dropped)
-      remote[accId] = Object.assign({}, rm, { files: (rm.files || []).filter(x => x.fileId !== fileId), loading: false, seq: (rm.seq || 0) + 1 });
-      MB.toast('Deleted "' + name + '" from ' + p.name + '.' + (here ? ' Kept on this device, sync off.' : ''), 5000);
+      const l = linkTo(accId, fileId), here = !!(l && await MB.projects.get(l.projectId));
+      const conflict = here && !l.excluded && (l.state === 'conflict' || (l.remoteEtag && l.remoteEtag !== l.etag));
+      const msg = 'Delete "' + name + '" from ' + accLabel(a) + '?\n\n' + p.bin + '\n\n' +
+        (here ? 'The copy on this device is kept and stops syncing.' + (conflict ? ' The cloud version has changes that are not on this device.' : '') : 'It is not on this device.') +
+        ' Other devices that have it keep their copy.';
+      if (await MB.ask(msg, 'Delete from ' + p.name, 'Cancel', { danger: true })) {
+        U.render();
+        await C().deleteRemote(accId, fileId);
+        gone = true;
+        const rm = remote[accId] || {}, files = rm.files || [];
+        at = files.findIndex(x => x.fileId === fileId);
+        // (a listing already under way may still hold it: its answer is dropped)
+        remote[accId] = Object.assign({}, rm, { files: files.filter(x => x.fileId !== fileId), loading: false, seq: (rm.seq || 0) + 1 });
+        MB.toast('Deleted "' + name + '" from ' + p.name + '.' + (here ? ' Kept on this device, sync off.' : ''), 5000);
+      }
     } catch (e) {
       MB.toast('Could not delete "' + name + '" from ' + p.name + ': ' + (e.code === 'network' ? 'you are offline' : (e.message || 'error')) + '.', 6000);
     } finally { delete busy[fileId]; }
-    if (isOpen()) U.render();
+    if (!isOpen()) return;
+    await U.render();
+    // the focus stays in the list: on the next row (its Open, else its Delete), else the one before, else Check again
+    const left = (remote[accId] || {}).files || [], near = gone ? left[at] || left[at - 1] : f;
+    const el = near ? rowButton(accId, near.fileId, gone ? '' : '[data-delremote]') : dlg.querySelector(`[data-reload="${CSS.escape(accId)}"]`);
+    if (el) el.focus();
   }
 
   const connect = (pid, acc) => C().connect(pid, acc).catch(e => MB.toast('Could not start the sign-in: ' + (e.message || e), 6000));

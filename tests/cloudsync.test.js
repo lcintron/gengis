@@ -520,6 +520,46 @@ test('opening from the cloud resolves whether it opened; a project already here 
   assert.equal(app.MB.state.projectId, 'p1');
 });
 
+test('a deleted file back in the cloud (restored, or written again elsewhere) never replaces the copy kept here without asking', async () => {
+  const { server, app } = await connected();
+  const accId = app.C.accounts[0].id;
+  await app.C.deleteRemote(accId, fileOf(server, 'Alpha.gengis.json').id);
+  // the same content: the copy here opens, and syncs to that file again (nothing asked)
+  const same = server.create('Alpha.gengis.json', JSON.stringify(project('p1', 'Alpha', 3)));
+  assert.equal(await app.C.openRemote(accId, same.id), true);
+  assert.equal(app.asked.length, 0);
+  assert.equal(app.MB.state.projectId, 'p1');
+  assert.equal(linkOf(app, 'p1').fileId, same.id);
+  assert.equal(linkOf(app, 'p1').state, 'synced');
+  // different content: asked; keeping this device's copy opens it, its sync left off
+  await app.C.deleteRemote(accId, same.id);
+  const other = server.create('Alpha.gengis.json', JSON.stringify(project('p1', 'Alpha', 7)));
+  app.answer = false;
+  app.MB.state.projectId = null;
+  assert.equal(await app.C.openRemote(accId, other.id), true);
+  assert.match(app.asked[0].message, /^"Alpha" is also on this device, with sync off\. Open the version from OneDrive instead\? The copy on this device is kept in its earlier copies\.$/);
+  assert.equal(app.asked[0].yes, 'Open the cloud version');
+  assert.equal(app.MB.state.projectId, 'p1');
+  assert.equal(app.loaded[app.loaded.length - 1].features.length, 3, 'the copy here');
+  assert.equal(linkOf(app, 'p1').excluded, true);
+  assert.equal(linkOf(app, 'p1').fileId, undefined);
+  // choosing the cloud version: the copy here goes to its earlier copies first, then the cloud version opens, linked
+  app.answer = true;
+  assert.equal(await app.C.openRemote(accId, other.id), true);
+  assert.equal(app.loaded[app.loaded.length - 1].features.length, 7);
+  assert.ok(app.device.projects.copies.some(c => c.id === 'p1' && c.data.features.length === 3));
+  assert.equal(linkOf(app, 'p1').fileId, other.id);
+  assert.notEqual(linkOf(app, 'p1').excluded, true);
+});
+
+test('Recent projects learns what a delete there takes with it: the account, the file, and cloud changes not here', async () => {
+  const { server, app } = await inConflict();
+  const l = await app.C.linkOf('p1');
+  assert.deepEqual(JSON.parse(JSON.stringify(l)), { accountId: app.C.accounts[0].id, provider: 'onedrive', fileId: fileOf(server, 'Alpha.gengis.json').id, changed: true });
+  await app.C.setSync('p1', null);
+  assert.equal(await app.C.linkOf('p1'), null, 'sync off: this device only');
+});
+
 test('a project another tab is editing: this tab leaves the cloud change to that tab', async () => {
   const { server, app } = await connected();
   app.device.locksHeld.set('p1', 'other-tab');

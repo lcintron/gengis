@@ -514,13 +514,19 @@ window.MB = window.MB || {};
     const cur = MB.state.projectId;
     const DF = MB.desktopFiles || {}, BF = MB.browserFiles || {};
     const [list, snaps, files, linked] = await Promise.all([P.list(), P.snapshots(cur), DF.available ? DF.recent() : [], BF.available ? BF.recent() : []]);
+    // where each project syncs (its delete button says it deletes it there too)
+    const synced = MB.cloud && MB.cloud.linkOf ? await Promise.all(list.map(r => MB.cloud.linkOf(r.id).catch(() => null))) : [];
+    const syncedTo = r => { const c = synced[list.indexOf(r)], p = c && (MB.cloudProviders || {})[c.provider]; return p ? p.name : ''; };
+    const delBtn = r => (syncedTo(r)
+      ? MB.iconBtn('trash', 'Delete everywhere (this device and ' + syncedTo(r) + ')', `data-del="${esc(r.id)}"`, 'danger', 'Delete ' + r.name + ' everywhere: from this device and from ' + syncedTo(r))
+      : MB.iconBtn('trash', 'Delete from this device', `data-del="${esc(r.id)}"`, 'danger', 'Delete ' + r.name + ' from this device'));
     const box = dlg.querySelector('.modal-box');
     const reason = r => ({ 'before opening a file': 'before a file replaced it', 'before restoring an earlier copy': 'before a restore' })[r] || '';
     box.innerHTML = `${MB.modalCloseHtml}<h2 id="recentTitle">Recent projects</h2>
       <p class="dim">Saved automatically on this device as you work.</p>
       <div class="recent-list">${list.length ? list.map(r => `<div class="recent-item${r.id === cur ? ' current' : ''}">
           <div class="recent-main"><b>${esc(r.name)}</b><span class="dim">${esc(when(r.savedAt))} · ${objects(r.objects)}</span></div>
-          ${r.id === cur ? '<span class="badge">open</span>' : MB.iconBtn('open', 'Open', `data-open="${esc(r.id)}"`, '', 'Open ' + r.name) + MB.iconBtn('trash', 'Delete from this device', `data-del="${esc(r.id)}"`, 'danger', 'Delete ' + r.name + ' from this device')}
+          ${r.id === cur ? '<span class="badge">open</span>' : MB.iconBtn('open', 'Open', `data-open="${esc(r.id)}"`, '', 'Open ' + r.name) + delBtn(r)}
         </div>`).join('') : '<p class="note">Nothing saved yet.</p>'}</div>
       <h3>Earlier copies of “${esc(MB.state.projectName)}”</h3>
       <div class="recent-list">${snaps.length ? snaps.map(s => `<div class="recent-item">
@@ -556,28 +562,38 @@ window.MB = window.MB || {};
     };
     // A project that syncs is deleted everywhere: from the cloud first (the provider's recycle bin; other devices keep
     // their copy, sync off), and from this device only once that went through.
+    const refresh = () => { if (!dlg.classList.contains('hidden')) P.openDialog(); }; // (not reopened once the user closed it)
     box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      if (b.dataset.pending || b.closest('.recent-item').querySelector('.recent-ask')) return; // (a double click: one question)
       const id = b.dataset.del, name = (list.find(r => r.id === id) || {}).name || 'The project';
-      const cloud = MB.cloud && MB.cloud.linkOf ? await MB.cloud.linkOf(id) : null;
+      b.dataset.pending = '1';
+      let cloud = null;
+      try { cloud = MB.cloud && MB.cloud.linkOf ? await MB.cloud.linkOf(id) : null; } finally { delete b.dataset.pending; }
       const prov = cloud && (MB.cloudProviders || {})[cloud.provider];
       if (!prov) {
         ask(b, 'Delete it and its earlier copies?', 'Delete', async () => {
           await P.remove(id);
-          P.openDialog();
+          refresh();
         });
         return;
       }
-      ask(b, 'Delete it from this device (with its earlier copies) and from ' + prov.name + '? ' + prov.bin + ' Other devices that have it keep their copy, sync off.', 'Delete everywhere', async e => {
-        e.currentTarget.disabled = true;
+      ask(b, 'Delete it from this device (with its earlier copies) and from ' + prov.name + '? ' + prov.bin + ' Other devices that have it keep their copy, sync off.' +
+        (cloud.changed ? ' The cloud version has changes that are not on this device.' : ''), 'Delete everywhere', async e => {
+        e.currentTarget.closest('.recent-ask').querySelectorAll('button').forEach(x => { x.disabled = true; }); // (Cancel too, while it goes)
+        // another tab edits it: that tab would save it again
+        if (await P.openElsewhere(id)) { MB.toast('This map is open in another tab. Open another map there, then delete it.', 6000); refresh(); return; }
         try { await MB.cloud.deleteRemote(cloud.accountId, cloud.fileId); }
         catch (err) {
-          MB.toast('Could not delete "' + name + '" from ' + prov.name + ': ' + (err.code === 'network' ? 'you are offline' : (err.message || 'error')) + '. Nothing was deleted.', 7000);
-          P.openDialog();
+          const how = err.code === 'signin' ? 'signed out. Nothing was deleted. Sign in to ' + prov.name + ' (Cloud sync), or turn its sync off there, to delete it from this device only.'
+            : (err.code === 'network' ? 'you are offline. Nothing was deleted. Connect, or turn its sync off in Cloud sync, to delete it from this device only.'
+              : (err.message || 'error') + '. Nothing was deleted.');
+          MB.toast('Could not delete "' + name + '" from ' + prov.name + ': ' + how, 9000);
+          refresh();
           return;
         }
         await P.remove(id);
         MB.toast('Deleted "' + name + '" from this device and from ' + prov.name + '.', 4000);
-        P.openDialog();
+        refresh();
       }, true);
     }));
     box.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', () => ask(b, 'Replace the open project with this copy?', 'Restore', async () => {
