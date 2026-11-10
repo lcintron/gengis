@@ -211,3 +211,9 @@ test('the clock settings show only what applies: its choices while it is on, the
   assert.match(html, /<script src="js\/clock\.js"><\/script>/);
   assert.match(read('sw.js'), /'\.\/js\/clock\.js'/, 'offline too');
 });
+test('the Project menu\'s items end without an ellipsis', () => {
+  const menu = (html.split('<div id="menu"')[1] || '').split('</div>')[0];
+  const labels = [...menu.matchAll(/<span>([^<]*)<\/span>/g)].map(m => m[1].trim());
+  assert.ok(labels.length >= 10, 'the menu\'s labels found');
+  assert.deepEqual(labels.filter(l => /(…|\.\.\.)$/.test(l)), [], 'menu labels ending in an ellipsis');
+});
