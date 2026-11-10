@@ -211,9 +211,103 @@ test('the clock settings show only what applies: its choices while it is on, the
   assert.match(html, /<script src="js\/clock\.js"><\/script>/);
   assert.match(read('sw.js'), /'\.\/js\/clock\.js'/, 'offline too');
 });
+test('dialogs stay between the system bars (Android edge-to-edge: the insets come as env(safe-area-inset-*))', () => {
+  // the bodies of the rules whose selector list holds exactly this selector (not .modal-box-x, not .x .modal-box)
+  const plain = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = sel => [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(m => m[1].split(',').some(s => s.trim() === sel)).map(m => m[2]);
+  const one = sel => { const r = rules(sel); assert.ok(r.length, sel + ' found'); return r; };
+  const inset = side => new RegExp(String.raw`env\(safe-area-inset-${side}\b`);
+  // a vh max-height, then the same in dvh, both less the top and bottom insets
+  const fits = (body, n, what) => {
+    const less = String.raw`\s*-\s*env\(safe-area-inset-top, 0px\)\s*-\s*env\(safe-area-inset-bottom, 0px\)\)`;
+    assert.match(body, new RegExp(String.raw`max-height: calc\(${n}vh${less};\s*max-height: calc\(${n}dvh${less};`), what);
+  };
+  const modal = one('.modal');
+  assert.ok(modal.some(b => /(^|;)\s*padding:/.test(b) && ['top', 'right', 'bottom', 'left'].every(s => inset(s).test(b))),
+    'the backdrop keeps its box off all four bars');
+  const box = one('.modal-box').filter(b => /max-height/.test(b));
+  assert.equal(box.length, 2, 'a dialog box\'s height: the base rule and the phone one');
+  fits(box[0], 90, 'a dialog box');
+  fits(box[1], 92, 'a dialog box on a phone');
+  assert.ok(box.every(b => !/max-height: \d+vh;/.test(b)), 'no bare vh height left');
+  assert.ok(one('.modal-box').some(b => /overscroll-behavior: contain/.test(b)), 'a dialog\'s scroll stays its own');
+  const attr = one('.attr-box');
+  assert.ok(attr.some(b => /max-height/.test(b)), 'the attribute table\'s height on a phone');
+  attr.filter(b => /max-height/.test(b)).forEach(b => fits(b, 100, 'the attribute table on a phone'));
+  assert.ok(attr.every(b => !/max-height: 100vh;/.test(b)), 'no full-screen attribute table under the bars');
+  assert.ok(attr.some(b => /width: calc\(100vw - env\(safe-area-inset-left, 0px\) - env\(safe-area-inset-right, 0px\)\)/.test(b)),
+    'nor beside them');
+  // a drag on Cloud sync's lists, at their end, scrolls the dialog on
+  assert.ok(one('.cloud-scroll').every(b => !/overscroll-behavior/.test(b)));
+  // and the side menu's last items and the toast stay above the bar too
+  // (top, right, bottom, left: a bar or cutout at the left too, in landscape, the drawer wider by it)
+  const drawer = one('.dropdown.more-menu');
+  assert.ok(drawer.some(b => /padding: 14px 14px calc\(14px \+ env\(safe-area-inset-bottom, 0px\)\) calc\(14px \+ env\(safe-area-inset-left, 0px\)\);/.test(b)));
+  assert.ok(drawer.some(b => /width: min\(calc\(320px \+ env\(safe-area-inset-left, 0px\)\), calc\(100vw - 48px\)\);/.test(b)));
+  assert.ok(one('#mb-toast').some(b => /bottom: calc\(24px \+ env\(safe-area-inset-bottom, 0px\)\)/.test(b)));
+  // the new-version and read-only notices
+  for (const sel of ['#mb-update', '#mb-readonly']) {
+    const r = one(sel);
+    assert.ok(r.some(b => /bottom: calc\(22px \+ env\(safe-area-inset-bottom, 0px\)\)/.test(b)), sel);
+    assert.ok(r.every(b => !/bottom: \d+px;/.test(b)), sel + ': no bare bottom left');
+  }
+  // the export buttons' footer: the box ends above the bar, so no inset again
+  assert.ok(one('.export-actions').every(b => !inset('bottom').test(b)));
+});
 test('the Project menu\'s items end without an ellipsis', () => {
   const menu = (html.split('<div id="menu"')[1] || '').split('</div>')[0];
   const labels = [...menu.matchAll(/<span>([^<]*)<\/span>/g)].map(m => m[1].trim());
   assert.ok(labels.length >= 10, 'the menu\'s labels found');
   assert.deepEqual(labels.filter(l => /(…|\.\.\.)$/.test(l)), [], 'menu labels ending in an ellipsis');
+});
+
+test('the cloud dialog deletes a project from the cloud only after a red confirm, with finger-sized buttons', () => {
+  const ui = js['cloudui.js'];
+  assert.ok(ui.includes("MB.iconBtn('trash', 'Delete from '"), 'a bin per cloud project');
+  const del = ui.split('async function deleteRemote(')[1] || '';
+  assert.ok(del.indexOf('await MB.ask(') >= 0 && del.indexOf('await MB.ask(') < del.indexOf('C().deleteRemote('), 'asked first');
+  assert.match(del, /MB\.ask\([^;]*\{ danger: true \}\)/, 'the confirm is a delete\'s');
+  assert.match(js['util.js'], /MB\.ask = function \(message, yes, no, opts\)/);
+  assert.match(js['util.js'], /if \(opts && opts\.danger\) yesBtn\.classList\.replace\('primary', 'danger'\);/);
+  assert.match(js['util.js'], /\(opts && opts\.danger \? noBtn : yesBtn\)\.focus\(\);/, 'Cancel has the focus');
+  assert.match(css, /\.cloud-row \.icon-btn\.mini, \.cloud-h-row \.icon-btn\.mini \{ width: 36px; height: 36px; \}/);
+  // one question per click, the focus kept in the list after a delete, no spinner left by a failed open
+  assert.ok(del.indexOf("busy[fileId] = 'delete'") < del.indexOf('await MB.ask('), 'busy before the question');
+  assert.match(del, /if \(!f \|\| busy\[fileId\]\) return;/);
+  assert.match(del, /const el = near \? rowButton\(accId, near\.fileId[^;]*: dlg\.querySelector\(`\[data-reload=/);
+  assert.match(ui, /try \{ ok = await C\(\)\.openRemote\(accId, fileId\); \}\s*catch \(e\) \{[^}]*\}\s*finally \{ delete busy\[fileId\]; \}/);
+});
+
+test('the cloud dialog\'s search: gone with its box, and a cloud section saying why it is empty stays shown', () => {
+  const ui = js['cloudui.js'];
+  assert.match(ui, /if \(!searchable\) query = '';/);
+  assert.match(ui, /sec\.hidden = none && !sec\.querySelector\('\.note'\);/);
+});
+
+test('Recent projects deletes a synced project from the cloud first, and from this device only once that went through', () => {
+  const ps = js['projectstore.js'];
+  const del = ps.split("box.querySelectorAll('[data-del]')")[1].split("box.querySelectorAll('[data-restore]')")[0];
+  assert.match(del, /if \(b\.dataset\.pending \|\| b\.closest\('\.recent-item'\)\.querySelector\('\.recent-ask'\)\) return;[\s\S]*b\.dataset\.pending = '1';[\s\S]*await MB\.cloud\.linkOf\(id\)/, 'a double click asks once');
+  assert.match(del, /try \{ await MB\.cloud\.deleteRemote\(cloud\.accountId, cloud\.fileId\); \}\s*catch \(err\) \{[\s\S]*?Nothing was deleted\.[\s\S]*?return;\s*\}\s*await P\.remove\(id\);/,
+    'a failed cloud delete returns before anything here is deleted');
+  // another tab editing it: refused before anything is deleted
+  assert.ok(del.indexOf('if (await P.openElsewhere(id)) {') >= 0 && del.indexOf('if (await P.openElsewhere(id)) {') < del.indexOf('MB.cloud.deleteRemote('));
+  assert.match(del, /cloud\.changed \? ' The cloud version has changes that are not on this device\.' : ''/);
+  assert.match(del, /querySelectorAll\('button'\)\.forEach\(x => \{ x\.disabled = true; \}\)/, 'Cancel too, while it goes');
+  assert.match(del, /Sign in to ' \+ prov\.name \+ ' \(Cloud sync\), or turn its sync off there, to delete it from this device only\./);
+  assert.ok(!/P\.openDialog\(\)/.test(del), 'a closed dialog is not reopened when the delete finishes');
+  assert.match(ps, /const refresh = \(\) => \{ if \(!dlg\.classList\.contains\('hidden'\)\) P\.openDialog\(\); \};/);
+  assert.match(ps, /MB\.iconBtn\('trash', 'Delete everywhere \(this device and ' \+ syncedTo\(r\) \+ '\)'/, 'its bin says it deletes it everywhere');
+  assert.match(del, /'Delete it and its earlier copies\?', 'Delete'/, 'a project that does not sync: this device only, as before');
+});
+
+test('the Cast to a screen icon is the standard cast glyph: arcs ending on the screen\'s bottom line, not below it', () => {
+  const OLD = 'M2 16a6 6 0 0 1 6 6M2 20a2 2 0 0 1 2 2M2 12a10 10 0 0 1 10 10';
+  for (const [f, src] of [['index.html', html], ['css/app.css', css], ...Object.entries(js).map(([f, s]) => ['js/' + f, s])]) {
+    assert.ok(!src.includes(OLD), f + ' still draws the old cast glyph');
+  }
+  const item = (html.match(/<button data-act="cast">([\s\S]*?)<\/button>/) || [])[1] || '';
+  assert.ok(item.includes('<path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><path d="M2 12a9 9 0 0 1 8 8"/>' +
+    '<path d="M2 16a5 5 0 0 1 4 4"/><path d="M2 20h.01"/>'), 'the menu\'s cast item uses the new glyph');
 });

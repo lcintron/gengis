@@ -123,6 +123,33 @@ test('Drive: the change feed reports changes and removals in the folder only', a
   assert.equal((await GD.changes(ctx(), '999999')).reset, true);
 });
 
+test('Drive: deleting a file sends it to the trash (restorable), and it reads as gone everywhere', async () => {
+  const { google, GD, ctx } = adapter();
+  const a = await GD.put(ctx(), { name: 'A.gengis.json', text: '{}' });
+  const first = await GD.changes(ctx(), null);
+  google.calls.length = 0;
+  await GD.remove(ctx(), a.fileId);
+  assert.ok(google.calls.some(c => c.method === 'PATCH'), 'a PATCH to the trash');
+  assert.ok(!google.calls.some(c => c.method === 'DELETE'), 'never deleted for good');
+  assert.equal(google.files.get(a.fileId).trashed, true, 'still in Drive, in the trash');
+  await assert.rejects(GD.meta(ctx(), a.fileId), e => e.status === 404);
+  assert.ok(!(await GD.list(ctx())).some(f => f.fileId === a.fileId));
+  assert.ok((await GD.changes(ctx(), first.cursor)).items.some(i => i.fileId === a.fileId && i.deleted));
+});
+
+test('web: deleting a synced project from Google Drive trashes its file and keeps it here, sync off', async () => {
+  const { google, app } = await connected();
+  const f = fileOf(google, 'Alpha.gengis.json'), accId = app.C.accounts[0].id;
+  assert.deepEqual(Array.from(await app.C.deleteRemote(accId, f.id)), ['p1']);
+  assert.equal(google.files.get(f.id).trashed, true);
+  assert.equal(app.C.links.p1.excluded, true);
+  assert.ok(app.device.projects.recs.get('p1'));
+  assert.ok(!(await app.C.listCloud(accId)).some(x => x.fileId === f.id));
+  await app.C.pull(true); await app.settle();
+  assert.ok(!app.toasts.some(t => /deleted from the cloud/.test(t)));
+  assert.ok(!fileOf(google, 'Alpha.gengis.json'), 'not written again');
+});
+
 test('Drive: throttling is a wait-and-retry, a full Drive says so', async () => {
   const { google, GD, ctx } = adapter();
   google.fail = () => ({ status: 403, ok: false, headers: { get: () => null }, json: async () => ({ error: { code: 403, message: 'Rate', errors: [{ reason: 'userRateLimitExceeded' }] } }) });

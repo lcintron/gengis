@@ -126,6 +126,7 @@ window.MB = window.MB || {};
     id: 'gdrive',
     name: 'Google Drive',
     folder: 'Google Drive → GenGIS',
+    bin: 'It goes to Google Drive\'s trash, where it can be restored for 30 days.', // (where a deleted project goes, for the confirm)
     clientId: WEB_CLIENT_ID,
     explain,
     // In the web app with a client id; in the desktop app when its main process has a Google client.
@@ -208,7 +209,8 @@ window.MB = window.MB || {};
       if (other && other.fileId !== fileId) throw Object.assign(new Error('A file of that name is there'), { status: 409 });
       return item(await api(ctx, 'PATCH', API + '/files/' + encodeURIComponent(fileId) + '?fields=' + FIELDS, { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }));
     },
-    remove: (ctx, fileId) => api(ctx, 'DELETE', API + '/files/' + encodeURIComponent(fileId)),
+    // To Drive's trash (kept there 30 days), not deleted for good: meta, list and changes already read a trashed file as gone.
+    remove: (ctx, fileId) => api(ctx, 'PATCH', API + '/files/' + encodeURIComponent(fileId) + '?fields=id', { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) }),
 
     // What changed since cursor (none: the whole folder, and a cursor to continue from).
     async changes(ctx, cursor) {

@@ -181,6 +181,7 @@ window.MB = window.MB || {};
     id: 'onedrive',
     name: 'OneDrive',
     folder: 'OneDrive → Apps → GenGIS',
+    bin: 'It goes to OneDrive\'s recycle bin, where it can be restored for a while.', // (where a deleted project goes, for the confirm)
     signInDays: 1, // a web app's Microsoft sign-in lasts 24 hours
     clientId: CLIENT_ID,
     explain,

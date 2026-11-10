@@ -455,7 +455,8 @@ window.MB = window.MB || {};
   MB.zoomText = t => MB.escapeHtml(t).replace(/\bzoom (?=\d)/gi, MB.zoomIcon);
   MB.setZoomText = (el, t) => { if (el.textContent.toLowerCase() !== String(t).toLowerCase()) el.innerHTML = MB.zoomText(t); };
 
-  MB.ask = function (message, yes, no) {
+  // opts.danger: the yes button is a delete's red one, and Cancel has the focus (Enter does not delete).
+  MB.ask = function (message, yes, no, opts) {
     return new Promise(resolve => {
       const back = document.activeElement;
       const dlg = document.createElement('div');
@@ -465,6 +466,7 @@ window.MB = window.MB || {};
       dlg.querySelector('[data-yes]').textContent = yes || 'OK';
       dlg.querySelector('[data-no]').textContent = no || 'Cancel';
       const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]'), xBtn = dlg.querySelector('.modal-x');
+      if (opts && opts.danger) yesBtn.classList.replace('primary', 'danger');
       const finish = v => {
         window.removeEventListener('keydown', onKey, true);
         dlg.remove();
@@ -490,7 +492,7 @@ window.MB = window.MB || {};
       xBtn.addEventListener('click', () => finish(false));
       window.addEventListener('keydown', onKey, true);
       document.body.appendChild(dlg);
-      dlg.querySelector('[data-yes]').focus();
+      (opts && opts.danger ? noBtn : yesBtn).focus();
     });
   };
 

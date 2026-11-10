@@ -39,6 +39,18 @@ test('a deleted file answers 404', async () => {
   await assert.rejects(od.put(ctx, { fileId: a.fileId, text: 'y', ifMatch: a.etag }), e => e.status === 404);
 });
 
+test('remove deletes the file by its id (to the recycle bin): gone from the list, deleted in the change feed', async () => {
+  const { od, ctx, server } = await setup();
+  const a = await od.put(ctx, { name: 'R.gengis.json', text: '{}' });
+  await od.put(ctx, { name: 'S.gengis.json', text: '{}' });
+  const first = await od.changes(ctx, null);
+  server.calls.length = 0;
+  await od.remove(ctx, a.fileId);
+  assert.deepEqual(server.calls.map(c => c.method + ' ' + c.url), ['DELETE https://graph.microsoft.com/v1.0/me/drive/items/' + a.fileId]);
+  assert.deepEqual(Array.from(await od.list(ctx), f => f.name), ['S.gengis.json']);
+  assert.ok((await od.changes(ctx, first.cursor)).items.some(i => i.fileId === a.fileId && i.deleted));
+});
+
 test('large files go up in an upload session: 320 KiB-multiple chunks, byte-exact', async () => {
   const { od, ctx, server } = await setup();
   const big = JSON.stringify({ blob: 'x'.repeat(21 * 1024 * 1024 + 12345), u: 'ñ地' });
