@@ -217,3 +217,23 @@ test('the Project menu\'s items end without an ellipsis', () => {
   assert.ok(labels.length >= 10, 'the menu\'s labels found');
   assert.deepEqual(labels.filter(l => /(…|\.\.\.)$/.test(l)), [], 'menu labels ending in an ellipsis');
 });
+
+test('the cloud dialog deletes a project from the cloud only after a red confirm, with finger-sized buttons', () => {
+  const ui = js['cloudui.js'];
+  assert.ok(ui.includes("MB.iconBtn('trash', 'Delete from '"), 'a bin per cloud project');
+  const del = ui.split('async function deleteRemote(')[1] || '';
+  assert.ok(del.indexOf('await MB.ask(') >= 0 && del.indexOf('await MB.ask(') < del.indexOf('C().deleteRemote('), 'asked first');
+  assert.match(del, /MB\.ask\([^;]*\{ danger: true \}\)/, 'the confirm is a delete\'s');
+  assert.match(js['util.js'], /MB\.ask = function \(message, yes, no, opts\)/);
+  assert.match(js['util.js'], /if \(opts && opts\.danger\) yesBtn\.classList\.replace\('primary', 'danger'\);/);
+  assert.match(js['util.js'], /\(opts && opts\.danger \? noBtn : yesBtn\)\.focus\(\);/, 'Cancel has the focus');
+  assert.match(css, /\.cloud-row \.icon-btn\.mini, \.cloud-h-row \.icon-btn\.mini \{ width: 36px; height: 36px; \}/);
+});
+
+test('Recent projects deletes a synced project from the cloud first, and from this device only once that went through', () => {
+  const ps = js['projectstore.js'];
+  assert.match(ps, /const cloud = MB\.cloud && MB\.cloud\.linkOf \? await MB\.cloud\.linkOf\(id\) : null;/);
+  assert.match(ps, /try \{ await MB\.cloud\.deleteRemote\(cloud\.accountId, cloud\.fileId\); \}\s*catch \(err\) \{[\s\S]*?Nothing was deleted\.[\s\S]*?return;\s*\}\s*await P\.remove\(id\);/,
+    'a failed cloud delete returns before anything here is deleted');
+  assert.match(ps, /'Delete it and its earlier copies\?', 'Delete'/, 'a project that does not sync: this device only, as before');
+});

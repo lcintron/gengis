@@ -1,6 +1,7 @@
 /* GenGIS - cloud sync, what the user sees (cloudsync.js does the work):
  * - Project → Cloud sync…: the accounts (connect, sign in again, disconnect, sync all named projects), each project's
- *   state and where it syncs, a conflict's three choices, and the cloud's projects that are not on this device
+ *   state and where it syncs, a conflict's three choices, and every project in each account's cloud folder: open any
+ *   of them, or delete one from the cloud (to the provider's recycle bin; a copy on this device stays, sync off)
  * - a cloud beside the save status: the open project's sync state; a click opens the dialog, and a conflict or an
  *   expired sign-in adds a button there
  * - Settings → Project: one line with the account and the open project's state
@@ -30,6 +31,7 @@ window.MB = window.MB || {};
     file: svg('<path d="M6 3h8l4 4v14H6z M14 3v4h4"/>')
   };
   const when = ts => { if (!ts) return ''; const m = Math.round((Date.now() - ts) / 60000); return m < 1 ? 'now' : (m < 60 ? m + ' min' : (m < 1440 ? Math.round(m / 60) + ' h' : new Date(ts).toLocaleDateString())); };
+  const size = n => (!n ? '' : (n < 1024 ? n + ' B' : (n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB')));
   const provName = id => ((MB.cloudProviders || {})[id] || {}).name || id;
   const accLabel = a => a ? provName(a.provider) + (a.email ? ' (' + a.email + ')' : '') : '';
   const tip = text => `<span class="ds-info" tabindex="0" role="img" aria-label="${esc(text)}">i</span><span class="ds-tip" role="tooltip">${esc(text)}</span>`;
@@ -37,7 +39,9 @@ window.MB = window.MB || {};
   const toggle = (attr, on, label, disabled) => `<label class="mb-switch" title="${esc(label)}"><input type="checkbox" role="switch" ${attr}${on ? ' checked' : ''}${disabled ? ' disabled' : ''} aria-label="${esc(label)}"><span aria-hidden="true"></span></label>`;
 
   const U = MB.cloudUI = {};
-  let dlg = null, renderTimer = null, remote = {}; // accountId -> { files, loading, error }
+  let dlg = null, renderTimer = null;
+  const remote = {}; // accountId -> { files, loading, error, seq }: the account's cloud folder as last listed
+  const busy = {};   // fileId -> 'open' | 'delete' while that is under way (kept here: every render rebuilds the rows)
 
   /* ---------- the dialog ---------- */
   U.open = function () {
@@ -48,24 +52,31 @@ window.MB = window.MB || {};
       document.body.appendChild(dlg);
       MB.ui.wireDialog(dlg);
     }
-    remote = {}; query = '';
+    query = '';
     preload(C().offered());
     U.render();
     MB.ui.openDialog(dlg);
     C().pull(false);
-    C().accounts.filter(a => a.state !== 'signin').forEach(a => loadRemote(a.id));
+    loadAll();
   };
   const isOpen = () => dlg && !dlg.classList.contains('hidden');
   // A provider that signs in in a pop-up loads its sign-in beforehand (a pop-up opened after a wait is blocked).
   const preload = ids => ids.forEach(id => { const p = MB.cloudProviders[id]; if (p && p.preload) p.preload(); });
 
-  // The cloud's projects that are not here: listed only when there are some.
+  // The projects in an account's cloud folder, listed again (the last list stays shown meanwhile; an answer overtaken
+  // by a newer request is dropped).
   async function loadRemote(accId) {
-    remote[accId] = { loading: true };
-    try { remote[accId] = { files: await C().listRemote(accId) }; }
-    catch (e) { remote[accId] = { error: true }; }
+    const seq = ((remote[accId] && remote[accId].seq) || 0) + 1;
+    remote[accId] = Object.assign({}, remote[accId], { loading: true, error: '', seq });
+    if (isOpen()) U.render();
+    let out;
+    try { out = { files: await C().listCloud(accId), loading: false }; }
+    catch (e) { out = { loading: false, error: e.code === 'network' ? 'offline' : (e.message || 'error') }; }
+    if (!remote[accId] || remote[accId].seq !== seq) return;
+    remote[accId] = Object.assign({}, remote[accId], out);
     if (isOpen()) U.render();
   }
+  const loadAll = () => C().accounts.filter(a => a.state !== 'signin').forEach(a => loadRemote(a.id));
 
   U.render = async function () {
     if (!dlg) return;
@@ -108,16 +119,8 @@ window.MB = window.MB || {};
         ? `<div class="search-wrap">${SEARCH_ICON}<input class="search-input" type="text" inputmode="search" enterkeyhint="search" data-search data-key="search" placeholder="Search projects" aria-label="Search projects" spellcheck="false" value="${esc(query)}">${CLEAR_BTN}</div>` : ''}</div>
         <div class="cloud-sec"><div class="cloud-list cloud-scroll" data-list="projects">${list.length ? sortRows(list).map(r => projectRow(r, accs)).join('') : '<p class="note">Nothing here yet.</p>'}</div>
         <p class="note cloud-nomatch" hidden>No project matches.</p></div>`;
-      accs.forEach(a => {
-        const rm = remote[a.id];
-        if (!rm || rm.loading || rm.error || !rm.files.length) return;
-        html += `<div class="cloud-sec" data-remote><h3 class="cloud-h">Only in ${esc(provName(a.provider))} <span class="dim">${rm.files.length}</span></h3><div class="cloud-list cloud-scroll" data-list="r-${esc(a.id)}">${rm.files.map(f => {
-          const name = f.name.replace(/\.gengis\.json$|\.json$/i, '');
-          return `<div class="cloud-row" data-name="${esc(name.toLowerCase())}">
-            <span class="cloud-st">${I.file}</span><div class="cloud-main"><b>${esc(name)}</b><small>${esc(when(f.modified))}</small></div>
-            ${MB.iconBtn('open', 'Open', `data-openremote="${esc(a.id)}" data-file="${esc(f.fileId)}"`, '', 'Open ' + name)}</div>`;
-        }).join('')}</div></div>`;
-      });
+      const byId = new Map(list.map(r => [r.id, r]));
+      accs.forEach(a => { if (a.state !== 'signin') html += remoteSection(a, accs, byId); });
     }
     // what the user was doing survives the refresh: the scroll of each list, the field typed in and its caret
     const lists = {};
@@ -176,6 +179,61 @@ window.MB = window.MB || {};
         <div class="cloud-main"><b>${esc(r.name)}</b><small>${sub}</small></div>${where}${conflict}</div>`;
   }
 
+  // An account's cloud folder: every project in it, whether on this device or not, to open or to delete from the cloud.
+  const fileTitle = f => f.name.replace(/\.gengis\.json$|\.json$/i, '');
+  const linkTo = (accId, fileId) => Object.values(C().links).find(l => l.accountId === accId && l.fileId === fileId);
+  function remoteSection(a, accs, byId) {
+    const p = provName(a.provider), rm = remote[a.id] || { loading: true }, files = rm.files || [];
+    const note = rm.error === 'offline' ? `Offline. The projects in ${p} show when you are back online.`
+      : (rm.error ? `Could not list the projects in ${p}.` : (!rm.files ? (rm.loading ? 'Loading…' : '') : (files.length ? '' : `No projects in ${p} yet.`)));
+    return `<div class="cloud-sec" data-remote><div class="cloud-h-row"><h3 class="cloud-h">In ${esc(p)}${accs.length > 1 ? ' · ' + esc(a.email || a.name) : ''} <span class="dim">${rm.files ? files.length : ''}</span></h3>
+        ${MB.iconBtn('refresh', 'Check again', `data-reload="${esc(a.id)}" data-key="r-${esc(a.id)}"`, rm.loading ? 'spin' : '', 'Check ' + p + ' again')}</div>
+      ${note ? `<p class="note"${rm.error && rm.error !== 'offline' ? ` title="${esc(rm.error)}"` : ''}>${esc(note)}</p>` : ''}
+      ${files.length ? `<div class="cloud-list cloud-scroll" data-list="r-${esc(a.id)}">${files.map(f => remoteRow(a, f, byId)).join('')}</div>` : ''}</div>`;
+  }
+  function remoteRow(a, f, byId) {
+    const p = provName(a.provider), name = fileTitle(f), l = linkTo(a.id, f.fileId), rec = l && byId.get(l.projectId);
+    const here = !!rec, current = here && rec.id === MB.state.projectId, b = busy[f.fileId], off = b ? ' disabled' : '';
+    const info = [when(f.modified), size(f.size), here ? (l.excluded ? 'On this device · sync off' : 'On this device') : 'Not on this device'].filter(Boolean).join(' · ');
+    const ids = `data-acc="${esc(a.id)}" data-file="${esc(f.fileId)}"`;
+    return `<div class="cloud-row${current ? ' current' : ''}" data-name="${esc(name.toLowerCase())}">
+        <span class="cloud-st">${I.file}</span><div class="cloud-main"><b title="${esc(name)}">${esc(name)}</b><small>${esc(info)}</small></div>
+        ${current ? '<span class="badge">open</span>' : MB.iconBtn('open', 'Open', `data-openremote ${ids} data-key="o-${esc(f.fileId)}"${off}`, b === 'open' ? 'spin' : '', 'Open ' + name)}
+        ${MB.iconBtn('trash', 'Delete from ' + p, `data-delremote ${ids} data-key="x-${esc(f.fileId)}"${off}`, 'danger', 'Delete ' + name + ' from ' + p)}</div>`;
+  }
+
+  async function openRemote(accId, fileId) {
+    const l = linkTo(accId, fileId);
+    if (l && await MB.projects.get(l.projectId)) { MB.ui.closeDialog(dlg); await MB.projects.open(l.projectId); return; } // here already
+    busy[fileId] = 'open'; U.render();
+    let ok = false;
+    try { ok = await C().openRemote(accId, fileId); } finally { delete busy[fileId]; }
+    if (ok) MB.ui.closeDialog(dlg); else if (isOpen()) U.render();
+  }
+
+  async function deleteRemote(accId, fileId) {
+    const a = C().accounts.find(x => x.id === accId), f = a && ((remote[accId] || {}).files || []).find(x => x.fileId === fileId);
+    if (!f) return;
+    const p = MB.cloudProviders[a.provider], name = fileTitle(f), l = linkTo(accId, fileId);
+    const here = !!(l && await MB.projects.get(l.projectId));
+    const conflict = here && !l.excluded && (l.state === 'conflict' || (l.remoteEtag && l.remoteEtag !== l.etag));
+    const msg = 'Delete "' + name + '" from ' + accLabel(a) + '?\n\n' + p.bin + '\n\n' +
+      (here ? 'The copy on this device is kept and stops syncing.' + (conflict ? ' The cloud version has changes that are not on this device.' : '') : 'It is not on this device.') +
+      ' Other devices that have it keep their copy.';
+    if (!(await MB.ask(msg, 'Delete from ' + p.name, 'Cancel', { danger: true }))) return;
+    busy[fileId] = 'delete'; U.render();
+    try {
+      await C().deleteRemote(accId, fileId);
+      const rm = remote[accId] || {};
+      // (a listing already under way may still hold it: its answer is dropped)
+      remote[accId] = Object.assign({}, rm, { files: (rm.files || []).filter(x => x.fileId !== fileId), loading: false, seq: (rm.seq || 0) + 1 });
+      MB.toast('Deleted "' + name + '" from ' + p.name + '.' + (here ? ' Kept on this device, sync off.' : ''), 5000);
+    } catch (e) {
+      MB.toast('Could not delete "' + name + '" from ' + p.name + ': ' + (e.code === 'network' ? 'you are offline' : (e.message || 'error')) + '.', 6000);
+    } finally { delete busy[fileId]; }
+    if (isOpen()) U.render();
+  }
+
   const connect = (pid, acc) => C().connect(pid, acc).catch(e => MB.toast('Could not start the sign-in: ' + (e.message || e), 6000));
 
   function bind(box) {
@@ -193,7 +251,8 @@ window.MB = window.MB || {};
     });
     on('[data-sync]', el => C().setSync(el.dataset.sync, el.type === 'checkbox' ? (el.checked ? el.dataset.acc : null) : (el.value || null)));
     on('[data-resolve]', b => { box.querySelectorAll(`[data-resolve][data-id="${b.dataset.id}"]`).forEach(x => { x.disabled = true; }); C().resolve(b.dataset.id, b.dataset.resolve); });
-    on('[data-act="syncnow"]', b => { b.disabled = true; b.classList.add('spin'); C().syncNow().finally(() => U.render()); });
+    on('[data-act="syncnow"]', b => { b.disabled = true; b.classList.add('spin'); C().syncNow().finally(() => { U.render(); loadAll(); }); });
+    on('[data-reload]', b => loadRemote(b.dataset.reload));
     on('[data-act="dismiss"]', () => { C().lastError = ''; U.render(); });
     const search = box.querySelector('[data-search]');
     if (search) {
@@ -204,7 +263,8 @@ window.MB = window.MB || {};
       // Esc empties the search first (and only then closes the dialog)
       search.addEventListener('keydown', e => { if (e.key === 'Escape' && search.value) { e.preventDefault(); e.stopPropagation(); search.value = query = ''; filter(box); showClear(); } });
     }
-    on('[data-openremote]', async b => { MB.ui.closeDialog(dlg); await C().openRemote(b.dataset.openremote, b.dataset.file); });
+    on('[data-openremote]', b => openRemote(b.dataset.acc, b.dataset.file));
+    on('[data-delremote]', b => deleteRemote(b.dataset.acc, b.dataset.file));
   }
 
   /* ---------- the cloud beside the save status ---------- */

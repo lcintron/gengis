@@ -686,24 +686,38 @@ window.MB = window.MB || {};
     return acc;
   }
 
-  // The cloud's project files that are not linked to a project here (for "Open from the cloud").
-  C.listRemote = async function (accId) {
+  // Every project file in an account's folder, the newest first ({ fileId, name, etag, size, modified }).
+  C.listCloud = async function (accId) {
     const acc = await rooted(accId);
     if (!acc) return [];
     const files = await call(acc, (p, ctx) => p.list(ctx)).catch(e => { if (e.code === 'rootGone') rootSeen.delete(accId); throw e; });
+    return files.sort((a, b) => b.modified - a.modified);
+  };
+  // The cloud's project files that are not linked to a project here.
+  C.listRemote = async function (accId) {
+    const files = await C.listCloud(accId);
     const linked = new Set((await store().all('links')).filter(l => l.accountId === accId).map(l => l.fileId));
-    return files.filter(f => !linked.has(f.fileId)).sort((a, b) => b.modified - a.modified);
+    return files.filter(f => !linked.has(f.fileId));
   };
 
-  // Open a project from the cloud: it becomes the open project, linked to its file.
+  // Open a project from the cloud: it becomes the open project, linked to its file. One already on this device (synced,
+  // or sync off with its file still there) opens from here, without a download. Resolves whether it opened.
   C.openRemote = async function (accId, fileId) {
     const acc = await store().get('accounts', accId);
-    if (!acc) return;
+    if (!acc) return false;
+    const here = (await store().all('links')).find(l => l.accountId === accId && l.fileId === fileId);
+    if (here && await MB.projects.get(here.projectId)) {
+      await MB.projects.open(here.projectId);
+      return MB.state.projectId === here.projectId;
+    }
     let remote, data;
     try { remote = await call(acc, (p, ctx) => p.get(ctx, fileId)); data = JSON.parse(remote.text); }
-    catch (e) { MB.toast('Could not open it: ' + (e.message || e), 6000); return; }
-    if (!MB.isProject(data)) { MB.toast('That file is not a GenGIS project.', 5000); return; }
-    if (!(await MB.projects.beforeOpen(data))) return;
+    catch (e) {
+      MB.toast(!env.online() || e.code === 'network' ? 'You are offline. Connect to open it from ' + providerOf(acc).name + '.' : 'Could not open it: ' + (e.message || e), 6000);
+      return false;
+    }
+    if (!MB.isProject(data)) { MB.toast('That file is not a GenGIS project.', 5000); return false; }
+    if (!(await MB.projects.beforeOpen(data))) return false;
     const id = data.id;
     MB.loadProject(data);
     MB.projects.markFileBacked();
@@ -711,6 +725,39 @@ window.MB = window.MB || {};
     if (id && id !== l.projectId) l.hash = null; // an id-less (older) file got a new id: synced again as is
     await env.lock(() => saveLink(l));
     emit();
+    return true;
+  };
+
+  // Delete a project's file from the cloud (the provider's recycle bin). A copy on this device stays and stops syncing,
+  // exactly as when it is deleted from another device (removedRemotely): never uploaded again by itself, never removed here.
+  C.deleteRemote = async function (accId, fileId) {
+    const acc = await store().get('accounts', accId);
+    if (!acc) throw new Error('The account is no longer connected');
+    if (!env.online()) throw Object.assign(new Error('You are offline'), { code: 'network' });
+    const kept = [];
+    await env.lock(async () => { // (a push of it under way finishes first; one waiting sees the link below)
+      try { await call(acc, (p, ctx) => p.remove(ctx, fileId)); }
+      catch (e) { if (e.status !== 404) throw e; } // already gone: the same outcome
+      for (const l of await store().all('links')) {
+        if (l.accountId !== accId || l.fileId !== fileId) continue;
+        const id = l.projectId;
+        clearTimeout(timers.get(id)); timers.delete(id); queue.delete(id); retries.delete(id); refused.delete(id);
+        delete C.progress[id]; told[id] = null;
+        await saveLink({ projectId: id, excluded: true, state: '' });
+        kept.push(id);
+      }
+    });
+    emit();
+    return kept; // the projects here that were linked to it (now sync off)
+  };
+
+  // A project's cloud file while it syncs to one ({ accountId, provider, fileId }), else null: Recent projects deletes
+  // that file too when the project is deleted.
+  C.linkOf = async function (id) {
+    if (!C.ready) return null;
+    const l = await store().get('links', id);
+    const acc = l && !l.excluded && l.fileId && await store().get('accounts', l.accountId);
+    return acc ? { accountId: acc.id, provider: acc.provider, fileId: l.fileId } : null;
   };
 
   // A project's state; its account being signed out shows (a conflict still comes first: it is the user's to settle).

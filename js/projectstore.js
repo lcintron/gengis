@@ -542,22 +542,44 @@ window.MB = window.MB || {};
     box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await P.open(b.dataset.open); }));
     // Confirm inside the row: some embedded browsers (and in-app previews) suppress confirm() and read it as Cancel,
     // which made these buttons look dead.
-    const ask = (btn, question, yes, act) => {
+    const ask = (btn, question, yes, act, wide) => {
       const row = btn.closest('.recent-item');
       const actions = Array.from(row.children).filter(el => !el.classList.contains('recent-main'));
       actions.forEach(el => { el.style.display = 'none'; });
       const q = document.createElement('div');
-      q.className = 'recent-ask';
+      q.className = 'recent-ask' + (wide ? ' wide' : ''); // (wide: a longer question, on a line of its own below the name)
       q.innerHTML = `<span>${esc(question)}</span><button class="btn small danger" data-yes>${esc(yes)}</button><button class="btn small" data-no>Cancel</button>`;
       row.appendChild(q);
       q.querySelector('[data-no]').addEventListener('click', () => { q.remove(); actions.forEach(el => { el.style.display = ''; }); btn.focus(); });
       q.querySelector('[data-yes]').addEventListener('click', act);
       q.querySelector('[data-yes]').focus();
     };
-    box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => ask(b, 'Delete it and its earlier copies?', 'Delete', async () => {
-      await P.remove(b.dataset.del);
-      P.openDialog();
-    })));
+    // A project that syncs is deleted everywhere: from the cloud first (the provider's recycle bin; other devices keep
+    // their copy, sync off), and from this device only once that went through.
+    box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      const id = b.dataset.del, name = (list.find(r => r.id === id) || {}).name || 'The project';
+      const cloud = MB.cloud && MB.cloud.linkOf ? await MB.cloud.linkOf(id) : null;
+      const prov = cloud && (MB.cloudProviders || {})[cloud.provider];
+      if (!prov) {
+        ask(b, 'Delete it and its earlier copies?', 'Delete', async () => {
+          await P.remove(id);
+          P.openDialog();
+        });
+        return;
+      }
+      ask(b, 'Delete it from this device (with its earlier copies) and from ' + prov.name + '? ' + prov.bin + ' Other devices that have it keep their copy, sync off.', 'Delete everywhere', async e => {
+        e.currentTarget.disabled = true;
+        try { await MB.cloud.deleteRemote(cloud.accountId, cloud.fileId); }
+        catch (err) {
+          MB.toast('Could not delete "' + name + '" from ' + prov.name + ': ' + (err.code === 'network' ? 'you are offline' : (err.message || 'error')) + '. Nothing was deleted.', 7000);
+          P.openDialog();
+          return;
+        }
+        await P.remove(id);
+        MB.toast('Deleted "' + name + '" from this device and from ' + prov.name + '.', 4000);
+        P.openDialog();
+      }, true);
+    }));
     box.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', () => ask(b, 'Replace the open project with this copy?', 'Restore', async () => {
       dlg.classList.add('hidden');
       await P.restore(b.dataset.restore);

@@ -288,6 +288,7 @@ function makeApp(o) {
     beforeOpen: async () => true,
     markFileBacked: () => { const r = projects.recs.get(state.projectId); if (r) r.fileBacked = true; },
     remove: async id => { projects.recs.delete(id); MB.emit('project-removed', id); },
+    open: async id => { const r = projects.recs.get(id); if (r) MB.loadProject(JSON.parse(JSON.stringify(r.data))); },
     list_: null
   };
   const MB = {
