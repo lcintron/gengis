@@ -211,3 +211,38 @@ test('the clock settings show only what applies: its choices while it is on, the
   assert.match(html, /<script src="js\/clock\.js"><\/script>/);
   assert.match(read('sw.js'), /'\.\/js\/clock\.js'/, 'offline too');
 });
+test('dialogs stay between the system bars (Android edge-to-edge: the insets come as env(safe-area-inset-*))', () => {
+  // the bodies of the rules whose selector list holds exactly this selector (not .modal-box-x, not .x .modal-box)
+  const plain = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = sel => [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(m => m[1].split(',').some(s => s.trim() === sel)).map(m => m[2]);
+  const one = sel => { const r = rules(sel); assert.ok(r.length, sel + ' found'); return r; };
+  const inset = side => new RegExp(String.raw`env\(safe-area-inset-${side}\b`);
+  // a vh max-height, then the same in dvh, both less the top and bottom insets
+  const fits = (body, n, what) => {
+    const less = String.raw`\s*-\s*env\(safe-area-inset-top, 0px\)\s*-\s*env\(safe-area-inset-bottom, 0px\)\)`;
+    assert.match(body, new RegExp(String.raw`max-height: calc\(${n}vh${less};\s*max-height: calc\(${n}dvh${less};`), what);
+  };
+  const modal = one('.modal');
+  assert.ok(modal.some(b => /(^|;)\s*padding:/.test(b) && ['top', 'right', 'bottom', 'left'].every(s => inset(s).test(b))),
+    'the backdrop keeps its box off all four bars');
+  const box = one('.modal-box').filter(b => /max-height/.test(b));
+  assert.equal(box.length, 2, 'a dialog box\'s height: the base rule and the phone one');
+  fits(box[0], 90, 'a dialog box');
+  fits(box[1], 92, 'a dialog box on a phone');
+  assert.ok(box.every(b => !/max-height: \d+vh;/.test(b)), 'no bare vh height left');
+  assert.ok(one('.modal-box').some(b => /overscroll-behavior: contain/.test(b)), 'a dialog\'s scroll stays its own');
+  const attr = one('.attr-box');
+  assert.ok(attr.some(b => /max-height/.test(b)), 'the attribute table\'s height on a phone');
+  attr.filter(b => /max-height/.test(b)).forEach(b => fits(b, 100, 'the attribute table on a phone'));
+  assert.ok(attr.every(b => !/max-height: 100vh;/.test(b)), 'no full-screen attribute table under the bars');
+  assert.ok(attr.some(b => /width: calc\(100vw - env\(safe-area-inset-left, 0px\) - env\(safe-area-inset-right, 0px\)\)/.test(b)),
+    'nor beside them');
+  // a drag on Cloud sync's lists, at their end, scrolls the dialog on
+  assert.ok(one('.cloud-scroll').every(b => !/overscroll-behavior/.test(b)));
+  // and the side menu's last items and the toast stay above the bar too
+  assert.ok(one('.dropdown.more-menu').some(b => /padding:[^;]*calc\(14px \+ env\(safe-area-inset-bottom, 0px\)\)/.test(b)));
+  assert.ok(one('#mb-toast').some(b => /bottom: calc\(24px \+ env\(safe-area-inset-bottom, 0px\)\)/.test(b)));
+  // the export buttons' footer: the box ends above the bar, so no inset again
+  assert.ok(one('.export-actions').every(b => !inset('bottom').test(b)));
+});
