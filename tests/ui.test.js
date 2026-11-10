@@ -241,8 +241,17 @@ test('dialogs stay between the system bars (Android edge-to-edge: the insets com
   // a drag on Cloud sync's lists, at their end, scrolls the dialog on
   assert.ok(one('.cloud-scroll').every(b => !/overscroll-behavior/.test(b)));
   // and the side menu's last items and the toast stay above the bar too
-  assert.ok(one('.dropdown.more-menu').some(b => /padding:[^;]*calc\(14px \+ env\(safe-area-inset-bottom, 0px\)\)/.test(b)));
+  // (top, right, bottom, left: a bar or cutout at the left too, in landscape, the drawer wider by it)
+  const drawer = one('.dropdown.more-menu');
+  assert.ok(drawer.some(b => /padding: 14px 14px calc\(14px \+ env\(safe-area-inset-bottom, 0px\)\) calc\(14px \+ env\(safe-area-inset-left, 0px\)\);/.test(b)));
+  assert.ok(drawer.some(b => /width: min\(calc\(320px \+ env\(safe-area-inset-left, 0px\)\), calc\(100vw - 48px\)\);/.test(b)));
   assert.ok(one('#mb-toast').some(b => /bottom: calc\(24px \+ env\(safe-area-inset-bottom, 0px\)\)/.test(b)));
+  // the new-version and read-only notices
+  for (const sel of ['#mb-update', '#mb-readonly']) {
+    const r = one(sel);
+    assert.ok(r.some(b => /bottom: calc\(22px \+ env\(safe-area-inset-bottom, 0px\)\)/.test(b)), sel);
+    assert.ok(r.every(b => !/bottom: \d+px;/.test(b)), sel + ': no bare bottom left');
+  }
   // the export buttons' footer: the box ends above the bar, so no inset again
   assert.ok(one('.export-actions').every(b => !inset('bottom').test(b)));
 });

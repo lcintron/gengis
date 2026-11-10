@@ -154,9 +154,9 @@ select:focus { outline: none; border-color: var(--accent); }
 #searchInput { min-width: 80px; }
 .topbar-right { margin-left: 32px; }
 .dropdown.more-menu {
-  position: fixed; top: var(--topbar-h); left: 0; right: auto; bottom: 0; width: min(320px, calc(100vw - 48px)); max-height: none;
-  border-radius: 0; border-width: 0 1px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px)); overflow: auto; animation: mb-drawer-in .16s ease-out;
-} /* (its last items scroll clear of the phone's system bar) */
+  position: fixed; top: var(--topbar-h); left: 0; right: auto; bottom: 0; width: min(calc(320px + env(safe-area-inset-left, 0px)), calc(100vw - 48px)); max-height: none;
+  border-radius: 0; border-width: 0 1px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px)) calc(14px + env(safe-area-inset-left, 0px)); overflow: auto; animation: mb-drawer-in .16s ease-out;
+} /* (its items clear of the phone's system bars: above one at the bottom, beside one or a cutout at the left, wider by it) */
 @keyframes mb-drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
 .more-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); margin: 12px 2px 6px; }
 .more-label:first-child { margin-top: 0; }
@@ -902,7 +902,7 @@ button.link:hover { text-decoration: underline; }
 #splash.hide { opacity: 0; pointer-events: none; }
 /* "a new version is ready" notice */
 #mb-update {
-  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 8000; display: flex; align-items: center; gap: 10px;
+  position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 8000; display: flex; align-items: center; gap: 10px;
   background: var(--bg-2); color: var(--text); border: 1px solid var(--accent); border-radius: 10px; padding: 8px 8px 8px 14px;
   box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px);
 }
@@ -963,7 +963,7 @@ button.link:hover { text-decoration: underline; }
 .recent-ask { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
 .recent-ask span { font-size: 12px; color: var(--text-dim); }
 #mb-readonly {
-  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 8000; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
+  position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 8000; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
   background: var(--bg-2); color: var(--text); border: 1px solid var(--warn); border-radius: 10px; padding: 8px 8px 8px 14px;
   box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px);
 }
