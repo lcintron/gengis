@@ -29,7 +29,7 @@
       const el = document.createElement('div');
       el.id = 'mb-update';
       el.setAttribute('role', 'status');
-      el.innerHTML = '<span>A new version of GenGIS is ready.</span><button type="button" class="btn small primary">Reload</button><button type="button" class="icon-btn mini" title="Later" aria-label="Later">&times;</button>';
+      el.innerHTML = '<span>A new version of GenGIS is ready.</span><button type="button" class="btn small primary">Reload</button>' + MB.iconBtn('close', 'Later');
       el.querySelector('.primary').addEventListener('click', () => { MB.projects.flush().finally(() => location.reload()); }); // saved first, also a large project
       el.querySelector('.icon-btn').addEventListener('click', () => el.remove());
       document.body.appendChild(el);
@@ -160,6 +160,7 @@
       .then(() => MB.cloud && MB.cloud.init()).catch(e => console.warn('Cloud sync', e)); // then cloud sync (once the open project is settled)
     if (MB.cloudUI) MB.cloudUI.init();
     MB.data.init();
+    MB.imports.init(); // KML, GeoJSON and shapefiles kept on this device (after the data's panes)
     MB.places.init();
     MB.declination.init();
     MB.grids.init();

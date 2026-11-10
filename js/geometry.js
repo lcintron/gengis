@@ -175,6 +175,12 @@ window.MB = window.MB || {};
     return false;
   };
 
+  // The attributes of joined objects, together: the first one's value where they differ (attrtable.js).
+  function joinedAttrs(layers) {
+    const a = Object.assign({}, ...layers.slice().reverse().map(l => MB.deepClone(l.mb.attrs || {})));
+    return Object.keys(a).length ? a : undefined;
+  }
+
   // Join lines whose endpoints touch (within the snap tolerance) into one line, or a polygon when they close.
   // opts.keepLines: keep the original lines and add a fill-only polygon underneath (requires a closed chain).
   MB.joinLines = function (layers, opts) {
@@ -219,7 +225,7 @@ window.MB = window.MB || {};
     const style = MB.deepClone(first.style);
     if (opts.keepLines) { style.opacity = 0; style.fill = true; } // fill only: the original lines stay as the border
     const d = { type, layerId: first.layerId, name: named ? named.mb.name : '', style, label: first.label ? MB.deepClone(first.label) : undefined,
-      latlngs: closed ? [chain.map(toArr)] : chain.map(toArr) };
+      attrs: joinedAttrs(lines), latlngs: closed ? [chain.map(toArr)] : chain.map(toArr) };
     const idx = Object.keys(MB.featureLayers).indexOf(first.id);
     MB.deselect();
     if (!opts.keepLines) lines.forEach(l => MB.removeFeature(l.mb.id, { silent: true }));
@@ -282,7 +288,7 @@ window.MB = window.MB || {};
     const named = shapes.find(l => l.mb.name);
     const d = { type: shapes.every(l => l.mb.type === 'measure-area') ? 'measure-area' : 'polygon', layerId: first.layerId,
       name: named ? named.mb.name : '', style: MB.deepClone(first.style), label: first.label ? MB.deepClone(first.label) : undefined,
-      showMeasures: first.showMeasures ? first.showMeasures.slice() : undefined, latlngs: rings };
+      showMeasures: first.showMeasures ? first.showMeasures.slice() : undefined, attrs: joinedAttrs(shapes), latlngs: rings };
     MB.deselect();
     shapes.slice(1).forEach(l => MB.removeFeature(l.mb.id, { silent: true }));
     const idx = Object.keys(MB.featureLayers).indexOf(first.id); // where the first shape is, once the others are gone

@@ -690,6 +690,12 @@ window.MB = window.MB || {};
   }
 
   function popupHtml(ds, p) {
+    if (ds.def.popupRows) { // an imported layer: the fields its settings show, under their display names
+      let rows = '';
+      // (a value with formatting: kept, made safe)
+      try { rows = ds.def.popupRows(p).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${MB.richValue(v)}</td></tr>`).join(''); } catch (e) { /* ignore */ }
+      return `<div class="mb-popup"><div class="mb-popup-title">${esc(ds.def.name)}</div><table class="mb-datatable">${rows}</table></div>`;
+    }
     const keys = ds.def.fields || Object.keys(p).filter(k => !/^(OBJECTID|GLOBAL_?ID|Shape__|GlobalID)/i.test(k)).slice(0, 18);
     const row = (k, v) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '';
     let rows = keys.map(k => row(k, fmtVal(k, p[k]))).join('');
@@ -921,7 +927,7 @@ window.MB = window.MB || {};
       if (casing) lines.push(L.polyline(p.lines, Object.assign({ fill: false, lineJoin: 'round' }, casing, { pane: 'mb-data', renderer: dataRenderer(), pmIgnore: true, interactive: false })));
       const line = L.polyline(p.lines, Object.assign({}, style, { pane: 'mb-data', renderer: dataRenderer(), pmIgnore: true, interactive: true }));
       const names = [p.a.label, p.b.label].filter(Boolean);
-      if (names.length) line.bindTooltip(names.join(' / '), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
+      if (names.length) line.bindTooltip(esc(names.join(' / ')), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
       lines.push(line);
     });
     return lines;
@@ -1034,7 +1040,7 @@ window.MB = window.MB || {};
         const p = f.properties || {};
         layer.options.pmIgnore = true;
         const lbl = def.label ? def.label(p) : firstText(p);
-        if (lbl) layer.bindTooltip(String(lbl), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
+        if (lbl) layer.bindTooltip(esc(String(lbl)), { sticky: true, className: 'mb-name-tip', direction: 'top', opacity: .95 });
         layer.on('click', e => {
           const t = MB.tools.current;
           if (t !== 'select' && t !== 'move' && t !== 'present') return;
@@ -1084,7 +1090,15 @@ window.MB = window.MB || {};
         if (hitTest(ds, l, lp, cp)) hits.push({ ds, layer: l, props: l.feature.properties || {} });
       });
     });
-    return hits; // every feature is in the registry once: distinct features are never merged, duplicates never appear
+    // imported files (fileimports.js): drawn after the data, so on top
+    const imported = [];
+    if (MB.imports) MB.imports.sets().slice().reverse().forEach(ds => ds.group.eachLayer(l => {
+      if (!l.feature) return;
+      let hit = false; // a multipoint is a group of points: any of them
+      if (l.eachLayer && !l.getLatLng) l.eachLayer(c => { hit = hit || hitTest(ds, c, lp, cp); }); else hit = hitTest(ds, l, lp, cp);
+      if (hit) imported.push({ ds, layer: l, props: l.feature.properties || {} });
+    }));
+    return imported.concat(hits); // every feature is in the registry once: distinct features are never merged, duplicates never appear
   };
 
   // The user's own objects at this point (shown ones only), top-most first: they draw above every dataset.
@@ -1136,6 +1150,18 @@ window.MB = window.MB || {};
   };
 
   let identifyPopup = null, highlighted = null;
+  // An open popup's Select buttons follow the selection: none on the object selected, back on one no longer selected
+  // (picked elsewhere, Escape, undo) so it can be selected again from here.
+  let selectionHooked = false;
+  function hookSelection() {
+    if (selectionHooked || !MB.on) return;
+    selectionHooked = true;
+    MB.on('selection', () => {
+      const p = identifyPopup, root = p && p.isOpen() && p.getElement();
+      if (!root || !p._mbHits) return;
+      root.querySelectorAll('[data-select]').forEach(b => { const h = p._mbHits[+b.dataset.select]; b.parentNode.hidden = !!h && h.layer === MB.selected; });
+    });
+  }
   function clearHighlight() {
     if (!highlighted) return;
     if (highlighted.own) { // the user's object: a class, so its own style is never touched
@@ -1173,23 +1199,26 @@ window.MB = window.MB || {};
 
   // Everything under a click in one popup. opts.own: the user's objects at the point, listed first (their objects
   // draw above the data, so a click on one never reaches the data under it). opts.declination: the magnetic
-  // declination at the point too, whether or not its source is on (right-click → Other info). It opens only when there is data at the
-  // point; the return value says whether it did.
+  // declination at the point too, whether or not its source is on (right-click → Other info). The object in front
+  // (the one clicked: listed first) opens expanded; of data alone, only a single entry does (several start collapsed,
+  // below). It opens only when there is data at the point, or one of the objects has attributes; the return value
+  // says whether it did.
   MB.data.identify = function (latlng, containerPoint, clicked, opts) {
     opts = opts || {};
     let hits = this.featuresAt(latlng, containerPoint);
     if (clicked && clicked.feature && !hits.some(h => h.layer === clicked)) {
       // the layer the map reported (it may be the neighbour of the square that was tapped, when tiled)
-      const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked));
+      const ds = this.catalog().find(d => d.group && d.group.hasLayer(clicked)) || (MB.imports && MB.imports.sets().find(d => d.group.hasLayer(clicked)));
       if (ds && !ds.def.tiled) hits.unshift({ ds, layer: clicked, props: clicked.feature.properties || {} });
     }
     const point = MB.declination ? MB.declination.identifyHtml(latlng, opts.declination) : ''; // facts about the place itself (opts.declination: also with its source off)
-    if (!hits.length && !point) return false;
+    const hasAttrs = l => !!(l && l.mb && l.mb.attrs && Object.keys(l.mb.attrs).length);
+    if (!hits.length && !point && !(opts.own || []).some(hasAttrs)) return false;
     // Polygons that read the same (a LAANC grid square and its neighbour with the same ceiling, tapped near their
     // shared edge) are one entry; it highlights all of them.
     const byText = new Map();
     hits = hits.filter(h => {
-      const k = h.ds.def.id + '|' + JSON.stringify(h.props);
+      const k = h.ds.def.id + '|' + (h.ds.imp ? MB.uid() : JSON.stringify(h.props)); // (an imported file's features: each its own, however alike)
       const first = byText.get(k);
       if (first) { first.layers.push(h.layer); return false; }
       h.layers = [h.layer];
@@ -1208,9 +1237,12 @@ window.MB = window.MB || {};
       const name = m.name || (m.type === 'text' ? m.text : '') || type;
       let measure = '';
       try { measure = MB.measureText(h.layer); } catch (e) { /* ignore */ }
-      const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('');
-      const act = presenting ? '' : `<div class="btn-row"><button type="button" class="btn small" data-select="${i}">Select</button></div>`;
-      return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
+      const attrs = Object.keys(m.attrs || {}).slice(0, 20).map(k => [k, String(m.attrs[k])]); // its attributes too
+      const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('') +
+        attrs.map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${MB.richValue(v)}</td></tr>` : '').join(''); // (an attribute with formatting: kept, made safe)
+      const act = presenting ? '' : `<div class="btn-row"${h.layer === MB.selected ? ' hidden' : ''}><button type="button" class="btn small" data-select="${i}">Select</button></div>`; // (another object at the point, one under it: to edit it; hidden on the one already selected, while it is: selectionShown)
+      const open = i === 0 ? ' open' : ''; // the one in front (listed first) opens: an object clicked
+      return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"${open}><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
     const sections = hits.map((h, i) => {
       if (h.own) return ownSection(h, i);
@@ -1227,9 +1259,11 @@ window.MB = window.MB || {};
     // Hand Leaflet a DOM node, not the HTML string: popup.update() (called when frequencies arrive) re-renders
     // string content from scratch, which would wipe the loaded frequencies, the listeners and the expanded state.
     const content = document.createElement('div'); content.innerHTML = html;
-    const popup = identifyPopup = L.popup({ maxWidth: Math.max(200, Math.min(400, MB.map.getSize().x - 72)), maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [12, 12] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
+    const popup = identifyPopup = L.popup({ minWidth: Math.max(160, Math.min(280, MB.map.getSize().x - 72)), maxWidth: Math.max(200, Math.min(400, MB.map.getSize().x - 72)), maxHeight: Math.round(MB.map.getSize().y * 0.6), className: 'mb-data-popup', autoPanPadding: [12, 12] }).setLatLng(latlng).setContent(content.firstElementChild).openOn(MB.map);
     let pinned = hits.length === 1 ? hits[0] : null; // the expanded entry stays highlighted when the pointer leaves the list
     popup.on('remove', () => { pinned = null; clearHighlight(); });
+    popup._mbHits = hits;
+    hookSelection();
     const root = popup.getElement();
     root.querySelectorAll('[data-select]').forEach(b => b.addEventListener('click', () => {
       if (MB.presenter && MB.presenter.active) return; // a popup opened before presenting: no editing now
@@ -1278,6 +1312,8 @@ window.MB = window.MB || {};
     this.picked = h ? { ds: h.ds, layer: h.layer, layers: h.layers || [h.layer], props: h.props, html: describe(h) } : null;
     MB.emit('datapick', this.picked);
   };
+  // The picked feature's description again (its values were edited), without drawing Properties again.
+  MB.data.refreshPick = function () { if (this.picked) this.picked.html = describe(this.picked); };
 
   const PUBLISHERS = { faa: 'FAA UAS Data Delivery System (UDDS)', esri: 'Esri Living Atlas of the World' };
   // Fields that are the service's bookkeeping, not data: object ids, global ids, and the service's own shape
@@ -1292,7 +1328,7 @@ window.MB = window.MB || {};
     try { label = def.label ? String(def.label(p)) : firstText(p); } catch (e) { /* ignore */ }
 
     // the source
-    const publisher = def.custom ? 'Custom ArcGIS layer' : PUBLISHERS[def.source || (def.group === 'Boundaries' ? 'esri' : '')] || '';
+    const publisher = def.publisher || (def.custom ? 'Custom ArcGIS layer' : PUBLISHERS[def.source || (def.group === 'Boundaries' ? 'esri' : '')] || '');
     const service = (ds.meta && ds.meta.serviceName) || ((def.url || '').match(/services\/([^/]+)\/(?:Feature|Map)Server/) || [])[1] || '';
     let host = '';
     try { host = def.custom ? new URL(def.url).hostname : ''; } catch (e) { /* ignore */ }
@@ -1330,11 +1366,11 @@ window.MB = window.MB || {};
     let attrs = keys.map(k => row(k, fmtVal(k, p[k]))).join('');
     if (def.rows) { try { attrs += def.rows(p).map(([k, v]) => row(k, v)).join(''); } catch (e) { /* ignore */ } }
 
-    return `<div class="panel-head"><h3>${esc(def.name)}</h3><span class="badge">data</span><button type="button" class="icon-btn mini" data-act="close-data" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
+    return `<div class="panel-head"><h3>${esc(def.name)}</h3><span class="badge">data</span>${MB.iconBtn('close', 'Close', 'data-act="close-data"')}</div>
       ${label ? `<div class="data-pick-label">${esc(label)}</div>` : ''}
       <div class="section"><h3>Source</h3><table class="mb-datatable">${src}</table>${/^https?:\/\//i.test(def.url || '') ? `<div class="btn-row"><a class="btn small" href="${esc(def.url)}" target="_blank" rel="noopener" title="The service's description, fields and extent">Service page</a></div>` : ''}</div>
       <div class="section"><h3>Geometry</h3><table class="mb-datatable">${geom}</table>${generalized ? '<p class="note">Measured on the outline loaded at this zoom, simplified for display: zoom in for full detail.</p>' : ''}</div>
-      <div class="section"><h3>Attributes</h3>${attrs ? `<table class="mb-datatable">${attrs}</table>` : '<p class="note">No attributes.</p>'}</div>`;
+      ${def.attrsHtml ? def.attrsHtml(p) : `<div class="section"><h3>Attributes</h3>${attrs ? `<table class="mb-datatable">${attrs}</table>` : '<p class="note">No attributes.</p>'}</div>`}`;
   }
 
   /* ---------- panel ---------- */
@@ -1360,7 +1396,7 @@ window.MB = window.MB || {};
    * differ, and the drawn panel takes them over, its elements (and their listeners) kept. A slider's number box
    * (ui.js) and what it changes on its slider and readout belong to the drawn panel alone. A status line is one
    * piece: its text and icons (empty, plain, or with a zoom icon) are taken over whole, the line itself kept. */
-  const KEY_ATTRS = ['id', 'data-id', 'data-adsb', 'data-ais', 'data-decl', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'data-ais-type', 'type', 'name'];
+  const KEY_ATTRS = ['id', 'data-id', 'data-imp', 'data-adsb', 'data-ais', 'data-decl', 'data-src', 'data-act', 'data-sub', 'data-adsb-type', 'data-ais-type', 'type', 'name'];
   const kids = (n, drawn) => Array.from(n.childNodes).filter(c => !(drawn && c.nodeType === 1 && c.classList.contains('stepper')));
   const ownAttrs = el => (el.hasAttribute('data-stepper') ? ['step', 'max', 'data-stepper'] : el.classList.contains('val') ? ['hidden'] : []);
   const leaf = el => el.nodeType === 1 && el.classList.contains('dstatus');
@@ -1439,10 +1475,12 @@ window.MB = window.MB || {};
       (bySource[src] = bySource[src] || []).push(ds);
     });
     const zoom = MB.map.getZoom();
-    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.mavlink ? MB.mavlink.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0);
+    const enabledCount = this.catalog().filter(ds => ds.enabled && ds.def.group !== 'Boundaries').length + (MB.adsb ? MB.adsb.enabledCount() : 0) + (MB.ais ? MB.ais.enabledCount() : 0) + (MB.mavlink ? MB.mavlink.enabledCount() : 0) + (MB.declination ? MB.declination.enabledCount() : 0) + (MB.imports ? MB.imports.enabledCount() : 0);
     let html = `<div class="panel-head"><h3>Data sources</h3><span class="badge">${enabledCount} on · ${MB.zoomIcon}${MB.formatZoom(zoom)}</span></div>
       <div class="row ds-tools"><input type="text" inputmode="search" enterkeyhint="search" id="dsSearch" placeholder="Search datasets" value="${esc(ui.q)}" spellcheck="false"><select id="dsFilter"><option value="all"${ui.filter === 'all' ? ' selected' : ''}>All</option><option value="on"${ui.filter === 'on' ? ' selected' : ''}>Enabled</option><option value="off"${ui.filter === 'off' ? ' selected' : ''}>Disabled</option></select>${MB.iconBtn('refresh', 'Refresh', 'data-act="check"', '', 'Refresh: check the data services for updates')}${MB.iconBtn('sweep', 'Clear cache', 'data-act="clear"')}</div>
       <div id="dataCacheStats" class="note" style="margin-bottom:10px">${esc(this._cacheText || ' ')}</div>`; // the last count, until a new one is read (an empty line, or a plain space, would collapse and shift the panel)
+    const impHtml = MB.imports ? MB.imports.panelHtml(q, ui.filter) : ''; // the user's own files (KML, GeoJSON, shapefiles): first
+    html += impHtml;
     const adsbHtml = MB.adsb ? MB.adsb.panelHtml(q, ui.filter) : ''; // live air traffic: its own block, same search and filter
     html += adsbHtml;
     const aisHtml = MB.ais ? MB.ais.panelHtml(q, ui.filter) : ''; // live vessel traffic, the same way
@@ -1516,7 +1554,7 @@ window.MB = window.MB || {};
       </form>
     </div></details>`;
     }
-    if (!shownTotal && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
+    if (!shownTotal && !impHtml && !adsbHtml && !aisHtml && !mavHtml && !bfHtml && !declHtml) html += '<p class="note">No datasets match.</p>';
     // Most redraws only change a status line, a count or a box's state: those are patched in place, so the scroll,
     // an open dropdown and a hovered row stay as they are. A change of what is listed (a search, a filter, a dataset
     // added or removed) builds the panel again.
@@ -1537,6 +1575,7 @@ window.MB = window.MB || {};
     panel.querySelector('#dsFilter').addEventListener('change', e => { ui.filter = e.target.value; this.renderPanel(); });
     panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!this.catalog().some(ds => ds.enabled)) { /* checked now: the panel may have been patched since it was built */ MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
     panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
+    if (MB.imports) MB.imports.bindPanel(panel);
     if (MB.adsb) MB.adsb.bindPanel(panel);
     if (MB.ais) MB.ais.bindPanel(panel);
     if (MB.mavlink) MB.mavlink.bindPanel(panel);

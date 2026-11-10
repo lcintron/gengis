@@ -93,7 +93,7 @@ function createWindow() {
   });
   // The window shows the app and nothing else: links (attribution, about, a provider's own) open in the system
   // browser, never in this window, so no other page ever runs where the project-file bridge is.
-  const external = url => { if (/^https?:\/\//i.test(url)) shell.openExternal(url); };
+  const external = url => { if (/^(https?:\/\/|mailto:)/i.test(url)) shell.openExternal(url); }; // (a web page in the browser, an email address in the mail app)
   win.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
   const stayHome = (e, url) => { if (String(url).split(/[?#]/)[0] !== files.APP_PAGE) { e.preventDefault(); external(url); } };
   win.webContents.on('will-navigate', stayHome);

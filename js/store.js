@@ -151,6 +151,7 @@ window.MB = window.MB || {};
       locked: !!opts.locked,
       grouped: !!opts.grouped // its objects selected, moved, resized and deleted together (geometry.js)
     };
+    if (Array.isArray(opts.fields) && opts.fields.length) layer.fields = opts.fields.map(String); // fields kept with no value yet (attrtable.js)
     MB.state.layers.push(layer);
     const g = L.featureGroup();
     g.options.pmIgnore = true;

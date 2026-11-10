@@ -118,6 +118,9 @@ html.tb-right body.presenting #mapwrap .leaflet-top.leaflet-right { top: max(60p
 .seg button { background: var(--bg); border: 0; padding: 7px 12px; cursor: pointer; color: var(--text-dim); }
 .seg button.active { background: var(--accent); color: #06201e; font-weight: 600; }
 .seg.small button { padding: 4px 10px; font-size: 12px; }
+.marker-shapes button { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; min-height: 30px; padding: 4px 8px; }
+.marker-shapes svg { display: block; pointer-events: none; }
+@media (pointer: coarse) { .marker-shapes button { min-width: 40px; min-height: 40px; } } /* a finger's size */
 /* Settings fields: a small label over a full-width control, evenly spaced (Units, Grid systems) */
 .field { margin-bottom: 14px; }
 .field:last-child { margin-bottom: 0; }
@@ -317,10 +320,12 @@ body.presenting .mb-scale-box { display: none !important; }
 .leaflet-bar a.leaflet-disabled, .leaflet-bar a.leaflet-disabled:hover, .leaflet-bar a.leaflet-disabled:focus { background: var(--bg-2); color: var(--text-dim); opacity: .55; }
 /* my location */
 .mb-locate a { display: flex; align-items: center; justify-content: center; }
+.mb-locate a svg { width: 18px; height: 18px; } /* (the pin's icon is the app's 16px one) */
 .mb-locate.locating a svg { animation: mb-pulse 1.1s ease-in-out infinite; }
 .mb-locate.active a { color: var(--accent); }
 .mb-locate.following a, .mb-locate.following a:hover { background: var(--accent); color: #06201e; }
 .mb-locate a.mb-locate-back { color: var(--accent); } /* under the location button while the map is off the position */
+.mb-locate-pinbar { margin-top: 10px; } /* drop a pin at the position: a button of its own, below the location's */
 /* the heading beam under the location dot (locate.js) */
 .mb-heading { background: transparent; border: 0; }
 .mb-heading-rot { width: 100%; height: 100%; transition: transform .12s linear; }
@@ -448,7 +453,8 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   .leaflet-popup-content { max-width: calc(100vw - 72px); }
   .leaflet-popup-content-wrapper { max-width: calc(100vw - 24px); }
 }
-.leaflet-popup-content .mb-datatable td { overflow-wrap: anywhere; }
+.leaflet-popup-content .mb-datatable td { overflow-wrap: break-word; } /* (between words: "anywhere" let the popup shrink to a letter's width, breaking names and numbers) */
+.leaflet-popup-content .mb-rich { overflow-wrap: break-word; }
 /* a slider's number box with - and + (ui.js) */
 .stepper { flex: 0 0 auto; display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); height: 26px; overflow: hidden; }
 .stepper-arrows { display: flex; flex-direction: column; border-right: 1px solid var(--border); }
@@ -813,6 +819,20 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .mb-datatable { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .mb-datatable td { padding: 2px 6px 2px 0; vertical-align: top; }
 .mb-datatable td:first-child { color: var(--text-dim); white-space: nowrap; }
+.mb-datatable td + td { white-space: pre-line; } /* a value written on several lines (a KML description) keeps them */
+/* a value with formatting (MB.safeHtml): laid out as written, inside the popup's width */
+.mb-rich { white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+.mb-rich > :first-child { margin-top: 0; }
+.mb-rich > :last-child { margin-bottom: 0; }
+.mb-rich p, .mb-rich ul, .mb-rich ol, .mb-rich dl, .mb-rich blockquote, .mb-rich pre, .mb-rich table { margin: 4px 0; }
+.mb-rich ul, .mb-rich ol { padding-left: 18px; }
+.mb-rich h1, .mb-rich h2, .mb-rich h3, .mb-rich h4, .mb-rich h5, .mb-rich h6 { font-size: 13px; margin: 6px 0 2px; }
+.mb-rich a { color: var(--accent); text-decoration: underline; }
+.mb-rich img { max-width: 100%; height: auto; border-radius: 4px; }
+.mb-rich pre { white-space: pre-wrap; }
+.mb-rich table { border-collapse: collapse; }
+.mb-rich td, .mb-rich th, .mb-rich td:first-child { padding: 2px 6px 2px 0; vertical-align: top; color: inherit; white-space: normal; }
+.mb-rich hr { border: 0; border-top: 1px solid var(--border); margin: 6px 0; }
 /* a data feature in Properties (datalayers.js) */
 #propsBody .panel-head .badge + .icon-btn { margin-left: auto; }
 #propsBody .panel-head h3 + .badge { margin-left: 8px; }
@@ -860,8 +880,10 @@ button.link:hover { text-decoration: underline; }
 .mb-name-label-wrap { overflow: visible !important; }
 .mb-name-label {
   position: absolute; white-space: nowrap; background: rgba(27,31,39,.86); color: #fff; padding: 1px 7px; border-radius: 4px;
-  border: 1px solid rgba(255,255,255,.22); font-weight: 600; line-height: 1.35; pointer-events: none;
-}
+  border: 1px solid rgba(255,255,255,.22); font-weight: 600; line-height: 1.35; cursor: pointer;
+} /* (a click on it is a click on its object: features.js) */
+/* ...but a press on it goes through to the object while that is selected, and with the tools that drag or draw */
+:is(.mb-label-held, .mb-move, .mb-scale-tool, .mb-crosshair) .mb-name-label { pointer-events: none; }
 
 /* ---------- snap indicator ---------- */
 .leaflet-tooltip.mb-snap-tip { background: rgba(27,31,39,.9); color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; padding: 1px 6px; font-size: 10px; box-shadow: none; }
@@ -1174,7 +1196,102 @@ body.presenting .mb-ident-own .btn-row { display: none; }
 .data-item .trk-progress .icon-btn.mini, .data-item .trk-acts .icon-btn.mini { position: static; }
 .trk-job { display: flex; align-items: center; gap: 6px; }
 .trk-job .note { flex: 1 1 auto; min-width: 0; margin: 0 !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#mavLogItem.over, #bfItem.over { border-color: var(--accent); border-style: dashed; }
+#mavLogItem.over, #bfItem.over, #impItem.over { border-color: var(--accent); border-style: dashed; }
+.imp-notes:empty { display: none; }
+.imp-notes .imp-note { display: block; }
+.imp-notes .imp-note.err { color: var(--warn); }
+/* an imported layer's symbols in its row and legend (fileimports.js) */
+.imp-ic { display: inline-flex; flex: 0 0 auto; width: 14px; height: 14px; }
+.imp-ic svg { width: 14px; height: 14px; }
+.data-item .legend.imp-legend { margin: 6px 0 0 23px; }
+.data-item .legend.imp-legend .imp-ic { margin-right: 4px; vertical-align: -2px; }
+.mb-imp-icon { background: transparent; border: 0; }
+.mb-imp-icon svg { display: block; overflow: visible; }
+.mb-imp-icon.mb-data-hl svg { filter: drop-shadow(0 0 3px #ffd166) drop-shadow(0 0 2px #ffd166); }
+/* Layer settings (importstyle.js) */
+.look-box { max-width: 520px; }
+.look-tabs, .look-modes { display: flex; margin: 4px 0 12px; }
+.look-tabs button, .look-modes button { flex: 1 1 0; }
+.look-fields { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow: auto; margin: 6px 0; }
+.look-field { display: flex; align-items: center; gap: 6px; }
+.look-field input[type="text"] { flex: 1 1 auto; min-width: 0; height: 30px; }
+.look-field .icon-btn.mini { position: static; flex: 0 0 auto; }
+.look-field .icon-btn.mini:disabled { opacity: .3; }
+.look-cats { display: flex; flex-direction: column; gap: 3px; max-height: 40vh; overflow: auto; margin: 6px 0 10px; }
+.look-cat { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.look-cat input[type="color"] { flex: 0 0 auto; width: 26px; height: 22px; padding: 0; }
+.look-cat .icon-btn.mini { position: static; flex: 0 0 auto; }
+.look-cat-v { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.look-icon { display: inline-flex; align-items: center; gap: 6px; }
+.look-icon svg { width: 18px; height: 18px; }
+/* the attribute table (attrtable.js) and attributes in Properties */
+.attr-box { max-width: min(1100px, 96vw); width: 96vw; } /* (a block, as every dialog: its ✕ floats to the top-right corner) */
+.attr-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.attr-tools #attrSearch { flex: 1 1 200px; min-width: 0; }
+.attr-tools input { height: 32px; }
+.attr-add { display: flex; gap: 6px; flex: 1 1 260px; margin: 0; }
+.attr-add input { flex: 1 1 auto; min-width: 0; }
+.attr-scroll { overflow: auto; max-height: 62vh; border: 1px solid var(--border); border-radius: 8px; }
+.attr-table { border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 100%; }
+.attr-table th { position: sticky; top: 0; z-index: 1; background: var(--bg-3); text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); padding: 0; white-space: nowrap; }
+.attr-th { display: flex; align-items: center; gap: 2px; padding: 2px 2px 2px 6px; }
+.attr-th .icon-btn.mini { position: static; flex: 0 0 auto; }
+.attr-sort { background: none; border: 0; color: var(--text); font: inherit; font-weight: 600; padding: 4px 2px; cursor: pointer; text-align: left; }
+.attr-rename { height: 26px; width: 140px; }
+.attr-table td { border-bottom: 1px solid var(--border); padding: 0; }
+.attr-table td.attr-n, .attr-table th.attr-n { position: sticky; left: 0; z-index: 2; background: var(--bg-2); width: 34px; text-align: center; }
+.attr-table th.attr-n { z-index: 3; background: var(--bg-3); }
+.attr-table td.attr-n .icon-btn.mini { position: static; }
+.attr-cell { width: 100%; min-width: 120px; height: 28px; border: 0; border-radius: 0; background: transparent; color: var(--text); padding: 0 8px; font-size: 12px; }
+.attr-cell:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--bg-3); }
+/* every value shown whole: a box as big as its value (field-sizing; rows where that is unknown), a long one wrapping
+   within the column's widest, its lines kept */
+textarea.attr-multi { display: block; height: auto; min-height: 28px; padding: 5px 8px; line-height: 1.4; font-family: inherit; resize: none; white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; field-sizing: content; }
+.attr-table td { vertical-align: top; }
+.attr-table .attr-cell { field-sizing: content; width: auto; min-width: max(100%, 120px); max-width: 420px; }
+@supports not (field-sizing: content) { /* (an older browser, an Android WebView: the box as tall as its rows, the rest scrolled to, or pulled taller) */
+  .attr-table textarea.attr-multi { overflow: auto; resize: vertical; min-width: 220px; }
+}
+.attr-table tbody tr:hover td { background: rgba(255,255,255,.03); }
+.attr-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.attr-foot .note { margin: 0; }
+.attr-foot .icon-btn.mini { position: static; }
+/* an object's attributes in Properties: field | value | remove, both boxes edited in place */
+.attr-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.attr-head h3 { flex: 1 1 auto; margin: 0; }
+.attr-head .icon-btn.mini { position: static; flex: 0 0 auto; }
+#propsBody .mb-datatable.attr-edit { width: 100%; table-layout: fixed; border: 1px solid var(--border); border-radius: 8px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
+.mb-datatable.attr-edit th { font-size: 11px; font-weight: 600; color: var(--text-dim); text-align: left; padding: 4px 8px; background: var(--bg-3); border-bottom: 1px solid var(--border); }
+.mb-datatable.attr-edit th:last-child { width: 32px; padding: 0; }
+#propsBody .mb-datatable.attr-edit td { padding: 0; width: auto; vertical-align: middle; border-bottom: 1px solid var(--border); }
+#propsBody .mb-datatable.attr-edit tr:last-child td { border-bottom: 0; }
+#propsBody .mb-datatable.attr-edit th:first-child { width: 38%; }
+.mb-datatable.attr-edit td + td { border-left: 1px solid var(--border); }
+.mb-datatable.attr-edit .attr-cell { min-width: 0; height: 28px; }
+.mb-datatable.attr-edit textarea.attr-multi { height: auto; max-height: 16em; overflow: auto; } /* (as tall as its value, a very long one scrolling) */
+.mb-datatable.attr-edit .attr-key { color: var(--text-dim); }
+.mb-datatable.attr-edit .attr-key:focus { color: var(--text); }
+.mb-datatable.attr-edit td:last-child { text-align: center; }
+.mb-datatable.attr-edit td:last-child .icon-btn.mini { position: static; }
+.attr-section .attr-add { margin: 8px 0 0; }
+.attr-section .attr-add .icon-btn { flex: 0 0 auto; }
+@media (max-width: 640px) {
+  .attr-box { width: 100vw; max-height: 100vh; border-radius: 0; }
+  .attr-scroll { max-height: 58vh; }
+  .attr-cell { height: 36px; font-size: 14px; }
+  .attr-tools input { height: 38px; }
+  textarea.attr-multi { min-height: 36px; } /* (no shorter than the other cells) */
+  .attr-table td.attr-n .icon-btn.mini, .attr-th .icon-btn.mini, .look-field .icon-btn.mini, .attr-head .icon-btn.mini, .attr-edit .icon-btn.mini { width: 36px; height: 36px; }
+  .mb-datatable.attr-edit th:last-child { width: 40px; }
+  .look-field input[type="text"] { height: 36px; }
+}
+/* File imports (fileimports.js): each layer's color, a small round swatch among its row's icons */
+.imp-sw { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: 0; cursor: pointer; }
+.imp-sw input[type="color"] { width: 16px; height: 16px; padding: 0; border: 1px solid rgba(255,255,255,.45); border-radius: 50%; background: none; cursor: pointer; }
+.imp-sw input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.imp-sw input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.imp-sw input[type="color"]::-moz-color-swatch { border: 0; border-radius: 50%; }
+.imp-sw:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
 .trk-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .trk-list:empty { display: none; }
 .data-item.trk-item { margin: 0; padding: 6px 6px 7px 8px; }
