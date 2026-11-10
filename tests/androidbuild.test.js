@@ -12,7 +12,10 @@ const jdks = (...list) => list.map(([dir, version]) => ({ dir, version }));
 test('the build takes JAVA_HOME when it is 21 or newer and the project\'s Gradle runs on it', () => {
   const found = jdks(['/jdk17', 17], ['/studio', 21], ['/jdk25', 25], ['/jdk23', 23]);
   assert.equal(chooseJdk(found, '/jdk23', '8.14.3'), '/jdk23');
-  assert.equal(chooseJdk(found, '/jdk25', null), '/jdk25', 'no wrapper yet: only the 21+ rule');
+  assert.equal(chooseJdk(found, '/jdk25', null), '/studio', 'no wrapper known: 21 rather than a newer JAVA_HOME');
+  assert.equal(chooseJdk(found, '/jdk23', null), '/studio');
+  assert.equal(chooseJdk(jdks(['/jdk21', 21], ['/studio', 21]), '/jdk21', null), '/jdk21', 'a JAVA_HOME of 21 still wins');
+  assert.equal(chooseJdk(jdks(['/jdk17', 17], ['/jdk25', 25]), '/jdk25', null), '/jdk25', 'the only one 21+ is used');
   assert.equal(chooseJdk(found, '/jdk25', '8.14.3'), '/studio', 'Gradle 8.14 does not run on Java 25');
   assert.equal(chooseJdk(found, '/jdk25', '9.1.0'), '/jdk25');
   assert.equal(chooseJdk(found, '/jdk17', '8.14.3'), '/studio', 'a JAVA_HOME below 21 is passed over');
@@ -31,7 +34,6 @@ test('which Gradle runs on which Java', () => {
   assert.ok(gradleRunsOn('8.10', 23));
   assert.ok(!gradleRunsOn('8.9', 23));
   assert.ok(!gradleRunsOn('9.4.0', 30), 'a Java newer than the table is not known to work');
-  assert.ok(gradleRunsOn(null, 30), 'unknown Gradle: no limit');
 });
 
 test('`adb devices` is read as serials and states', () => {

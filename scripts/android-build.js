@@ -54,14 +54,15 @@ const versionAtLeast = (v, min) => {
   return true;
 };
 // whether that Gradle runs on that Java (a Java newer than the table: not known to, so no)
-const gradleRunsOn = (gradle, java) => !gradle || (GRADLE_FOR_JAVA[java] ? versionAtLeast(gradle, GRADLE_FOR_JAVA[java]) : false);
+const gradleRunsOn = (gradle, java) => (GRADLE_FOR_JAVA[java] ? versionAtLeast(gradle, GRADLE_FOR_JAVA[java]) : false);
 
-/* The JDK to build with, from [{ dir, version }]: JAVA_HOME when it is 21 or newer and the project's Gradle (when known)
- * runs on it; else exactly 21, else the lowest above 21 (a newer one is likelier to be too new for Gradle). */
+/* The JDK to build with, from [{ dir, version }]: JAVA_HOME when it is 21 or newer and the project's Gradle runs on it
+ * (Gradle not known: only a JAVA_HOME of 21, which every Gradle that builds the project runs on); else exactly 21, else
+ * the lowest above 21 (a newer one is likelier to be too new for Gradle). */
 function chooseJdk(candidates, javaHome, gradle) {
   const ok = candidates.filter(j => j.version >= 21);
   const home = javaHome && ok.find(j => path.resolve(j.dir) === path.resolve(javaHome));
-  if (home && gradleRunsOn(gradle, home.version)) return home.dir;
+  if (home && (gradle ? gradleRunsOn(gradle, home.version) : home.version === 21)) return home.dir;
   const best = ok.slice().sort((a, b) => a.version - b.version)[0];
   return best ? best.dir : null;
 }
@@ -101,9 +102,8 @@ function jdkDirs() {
   const seen = new Set();
   return dirs.filter(d => { const k = WIN ? path.resolve(d).toLowerCase() : path.resolve(d); return !seen.has(k) && seen.add(k); });
 }
-function findJdk() {
-  return chooseJdk(jdkDirs().map(dir => ({ dir, version: javaMajor(dir) })), process.env.JAVA_HOME, wrapperGradle());
-}
+const jdkCandidates = () => jdkDirs().map(dir => ({ dir, version: javaMajor(dir) }));
+const findJdk = (candidates = jdkCandidates()) => chooseJdk(candidates, process.env.JAVA_HOME, wrapperGradle());
 
 /* ---------- Android SDK and its tools ---------- */
 function findSdk() {
@@ -149,12 +149,12 @@ function startEmulator() {
 
 /* ---------- build ---------- */
 function build() {
-  const jdk = findJdk();
-  if (!jdk) fail('no JDK 21 or newer found (the Android build needs it). Install the current Android Studio, which '
+  const jdks = jdkCandidates();
+  if (!jdks.some(j => j.version >= 21)) fail('no JDK 21 or newer found (the Android build needs it). Install the current Android Studio, which '
     + 'brings one, or a JDK 21 (Windows: winget install Microsoft.OpenJDK.21), or set JAVA_HOME to one.');
   if (!fs.existsSync(CAP)) fail('Capacitor is not installed: run npm install (make apk does)');
-  const env = { ...process.env, JAVA_HOME: jdk, ANDROID_HOME: SDK };
-  console.log(`JDK: ${env.JAVA_HOME}\nSDK: ${SDK}`);
+  const env = { ...process.env, ANDROID_HOME: SDK };
+  console.log(`SDK: ${SDK}`);
   step('Web files');
   run(process.execPath, [path.join('scripts', 'build-web.js')]);
   if (!fs.existsSync(path.join(ANDROID, 'app'))) {
@@ -165,7 +165,9 @@ function build() {
   step('Android project sync');
   run(process.execPath, [CAP, 'sync', 'android'], { env });
   run(process.execPath, [path.join('scripts', 'android-prepare.js')]);
-  step('Debug APK (Gradle)');
+  // the JDK is chosen only now, once the project (made by cap add the first time) says which Gradle it uses
+  env.JAVA_HOME = findJdk(jdks);
+  step(`Debug APK (Gradle, JDK ${env.JAVA_HOME})`);
   run(GRADLEW, ['assembleDebug'], { cwd: ANDROID, env });
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.copyFileSync(path.join(ANDROID, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'), OUT);
@@ -178,9 +180,11 @@ function install() {
   if (!list.length) fail('no emulator or phone connected: run `make emulator`, or plug in a phone with USB debugging on');
   if (list.length > 1 && !process.env.ANDROID_SERIAL)
     fail('more than one device connected: set ANDROID_SERIAL to one of\n' + list.map(d => '  ' + d.serial).join('\n'));
-  step('Installing on ' + (process.env.ANDROID_SERIAL || list[0].serial));
-  run(ADB, ['install', '-r', OUT]);
-  run(ADB, ['shell', 'am', 'start', '-n', `${appId}/.MainActivity`]);
+  // by serial, so a second device that isn't ready (offline, unauthorized) doesn't make adb refuse
+  const serial = process.env.ANDROID_SERIAL || list[0].serial;
+  step('Installing on ' + serial);
+  run(ADB, ['-s', serial, 'install', '-r', OUT]);
+  run(ADB, ['-s', serial, 'shell', 'am', 'start', '-n', `${appId}/.MainActivity`]);
   console.log('Opened. Its console: chrome://inspect in desktop Chrome. Native errors: adb logcat');
 }
 
