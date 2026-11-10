@@ -115,6 +115,15 @@ test("a phone's panel never grows under the top bar (its grip and tabs stay reac
   assert.match(js['ui.js'], /setProperty\('--sheet-user', [^;]*'dvh'\); else bar\.style\.removeProperty\('--sheet-user'\);/, 'its size is a share of the screen as shown; the default clears it');
 });
 
+test("the menu drawer slides in without flicker on Android's WebView, and keeps its scroll to itself", () => {
+  const menu = /\.dropdown\.more-menu \{([^}]*)\}/.exec(css);
+  assert.ok(menu, 'css/app.css has .dropdown.more-menu');
+  assert.match(menu[1], /will-change: transform;/, 'one layer for as long as it shows, not one made and dropped on each opening');
+  assert.match(menu[1], /overscroll-behavior: contain;/, 'its scroll does not carry on to the sheet or page');
+  assert.doesNotMatch(menu[1], /contain: paint/, 'its shadow is not clipped');
+  assert.match(css, /@keyframes mb-drawer-in \{ from \{ transform: translateX\(-100%\); \} to \{ transform: translateX\(0\); \} \}/, 'it ends on a translate, not transform: none');
+});
+
 test('LAANC ceilings show from zoom 8, in 1° cells there so a view fits the cell limit', () => {
   assert.match(js['datalayers.js'], /id: 'uasfm', [^\n]*minZoom: 8,\r?\n[^\n]*\r?\n\s*levels: \[\{ maxZoom: 9, cellSize: 1 \}, \{ cellSize: CELL \}\], maxCells: 64,\r?\n\s*rev: 1,/);
 });
