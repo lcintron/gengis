@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { makeServer, makeApp, project } = require('./harness');
+const { makeGoogle } = require('./fake-google');
 
 const fileOf = (server, name) => server.live().find(f => f.name === name);
 const content = (server, name) => { const f = fileOf(server, name); return f && JSON.parse(f.content.toString()); };
@@ -550,6 +551,84 @@ test('a deleted file back in the cloud (restored, or written again elsewhere) ne
   assert.ok(app.device.projects.copies.some(c => c.id === 'p1' && c.data.features.length === 3));
   assert.equal(linkOf(app, 'p1').fileId, other.id);
   assert.notEqual(linkOf(app, 'p1').excluded, true);
+});
+
+/* ---------- the Android app: the same list, open and delete, signed in through the app ---------- */
+// GenGIS's own Android plugin (android-src/CloudPlugin.java, through js/native.js): it signs in and hands out the
+// access tokens, the page makes every request itself (an account whose source is 'desktop', no fetch of its own).
+function androidCloud(server, google) {
+  const b = {
+    calls: [], providers: ['onedrive', 'gdrive'],
+    async signIn(provider, hint) {
+      b.calls.push(['signIn', provider, hint]);
+      return provider === 'gdrive'
+        ? { account: { id: 'gdrive:g-user-1', provider, name: 'Test G', email: 'test@gmail.com', kind: 'personal' }, accessToken: google.issue(), expiresIn: 3599, kept: true }
+        : { account: { id: 'onedrive:user-1@9188040d-6c67-4c5b-b112-36a304b66dad', provider, name: 'Test User', email: 'test@example.com', kind: 'personal' }, accessToken: server.issueAccess(), expiresIn: 3599, kept: true };
+    },
+    async token(accountId) {
+      b.calls.push(['token', accountId]);
+      return { accessToken: accountId.startsWith('gdrive') ? google.issue() : server.issueAccess(), expiresIn: 3599 };
+    },
+    async signOut(accountId) { b.calls.push(['signOut', accountId]); return { ok: true }; }
+  };
+  return b;
+}
+
+test('Android: the cloud\'s projects are listed, one opens and one is deleted, all through the app\'s sign-in', async () => {
+  const google = makeGoogle(), server = makeServer();
+  const native = androidCloud(server, google);
+  const app = makeApp({ server, google, native });
+  app.device.projects.put(project('p1', 'Alpha', 3));
+  await app.connectDirect('onedrive'); await app.settle();
+  const accId = app.C.accounts[0].id;
+  const acc = await app.device.store.get('accounts', accId);
+  assert.equal(acc.source, 'desktop');
+  assert.ok(!acc.refreshToken && !acc.accessToken, 'nothing long-lived on this device');
+  server.create('From phone.gengis.json', JSON.stringify(project('px', 'From phone', 4)));
+  // the app's hour is up: a new token comes from the bridge, no sign-in and no refresh token of the page's own
+  server.expireAccessTokens();
+  native.calls.length = 0; server.calls.length = 0;
+  const all = await app.C.listCloud(accId);
+  assert.deepEqual(Array.from(all, f => f.name).sort(), ['Alpha.gengis.json', 'From phone.gengis.json']);
+  assert.deepEqual(native.calls, [['token', accId]], 'renewed through the app');
+  assert.ok(!server.calls.some(c => /oauth2/.test(c.url)), 'the page asks Microsoft for no token');
+  assert.ok(server.calls.some(c => c.url.includes('/children')), 'the listing is the page\'s own request');
+  // the one only in the cloud opens, linked to its file
+  const remote = all.find(f => f.name === 'From phone.gengis.json');
+  assert.equal(await app.C.openRemote(accId, remote.fileId), true);
+  assert.equal(app.MB.state.projectId, 'px');
+  assert.equal(linkOf(app, 'px').fileId, remote.fileId);
+  assert.equal(linkOf(app, 'px').state, 'synced');
+  // and the synced one is deleted from the cloud: the file goes, the copy here stays with sync off
+  const f = fileOf(server, 'Alpha.gengis.json');
+  server.calls.length = 0;
+  assert.deepEqual(Array.from(await app.C.deleteRemote(accId, f.id)), ['p1']);
+  assert.ok(server.calls.some(c => c.method === 'DELETE' && c.url.endsWith('/me/drive/items/' + f.id)));
+  assert.ok(!server.live().some(x => x.id === f.id), 'gone from the cloud');
+  assert.ok(app.device.projects.recs.get('p1'), 'kept here');
+  assert.equal(linkOf(app, 'p1').excluded, true);
+  assert.ok(!(await app.C.listCloud(accId)).some(x => x.fileId === f.id));
+});
+
+test('Android: deleting from Google Drive sends the file to its trash, with a token from the app', async () => {
+  const google = makeGoogle(), server = makeServer();
+  const native = androidCloud(server, google);
+  const app = makeApp({ server, google, native });
+  app.device.projects.put(project('p1', 'Alpha', 3));
+  await app.connectDirect('gdrive'); await app.settle();
+  assert.equal(app.popups.length, 0, 'no Google pop-up: the app signs in itself');
+  const accId = app.C.accounts[0].id, f = google.byName('Alpha.gengis.json');
+  google.expireAccessTokens();
+  native.calls.length = 0; google.calls.length = 0;
+  assert.deepEqual(Array.from(await app.C.deleteRemote(accId, f.id)), ['p1']);
+  assert.deepEqual(native.calls, [['token', accId]], 'renewed through the app');
+  assert.ok(google.calls.some(c => c.method === 'PATCH' && c.url.includes('/files/' + f.id)), 'a PATCH to the trash');
+  assert.ok(!google.calls.some(c => c.method === 'DELETE'), 'never deleted for good');
+  assert.ok(!google.calls.some(c => /oauth2\.googleapis\.com/.test(c.url)), 'the page asks Google for no token');
+  assert.equal(google.files.get(f.id).trashed, true);
+  assert.ok(!(await app.C.listCloud(accId)).some(x => x.fileId === f.id));
+  assert.ok(app.device.projects.recs.get('p1'), 'kept here');
+  assert.equal(linkOf(app, 'p1').excluded, true);
 });
 
 test('Recent projects learns what a delete there takes with it: the account, the file, and cloud changes not here', async () => {

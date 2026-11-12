@@ -43,7 +43,7 @@ const output = (cmd, list, env) => {
   const r = spawnSync(cmd, list, { encoding: 'utf8', env: env || process.env });
   return r.error ? null : (r.stdout || '') + (r.stderr || '');
 };
-const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /* ---------- JDK 21+ ---------- */
 // the newest Java each Gradle version runs on (docs.gradle.org/current/userguide/compatibility.html)
@@ -80,6 +80,12 @@ function wrapperGradle() {
     return (/gradle-([\d.]+)-(?:all|bin)\.zip/.exec(p) || [])[1] || null;
   } catch { return null; }
 }
+// the JDK paths in `/usr/libexec/java_home` output: `-V` lists one per line, its path last (after the quoted name),
+// `-v 21` answers with the path alone; any other line, an error message included, holds none
+const javaHomePaths = text => String(text == null ? '' : text).split(/\r?\n/)
+  .map(l => (/^\s*\//.test(l) ? l.trim() : (/"\s+(\/\S.*?)\s*$/.exec(l) || [])[1]))
+  .filter(Boolean);
+
 // the JDK folders on this machine: JAVA_HOME, Android Studio's own (every install), the usual JDK folders, the java on PATH
 function jdkDirs() {
   const dirs = [];
@@ -93,10 +99,16 @@ function jdkDirs() {
   } else if (process.platform === 'darwin') {
     dirs.push('/Applications/Android Studio.app/Contents/jbr/Contents/Home');
     under('/Library/Java/JavaVirtualMachines', path.join('Contents', 'Home'));
+    under(path.join(os.homedir(), 'Library', 'Java', 'JavaVirtualMachines'), path.join('Contents', 'Home'));   // one the user unpacked
+    const listed = javaHomePaths(output('/usr/libexec/java_home', ['-V']));   // macOS's own list of them
+    dirs.push(...(listed.length ? listed : javaHomePaths(output('/usr/libexec/java_home', ['-v', '21']))));   // (-V said nothing: the 21 it knows)
+    for (const b of ['/opt/homebrew/opt/openjdk@21', '/usr/local/opt/openjdk@21'])   // Homebrew: a keg of its own, not in /Library
+      dirs.push(b, path.join(b, 'libexec', 'openjdk.jdk', 'Contents', 'Home'));
   } else {
     dirs.push('/opt/android-studio/jbr', path.join(os.homedir(), 'android-studio', 'jbr'));
     under('/usr/lib/jvm');
   }
+  if (!WIN) under(path.join(os.homedir(), '.sdkman', 'candidates', 'java'));   // sdkman (macOS and Linux)
   const home = /java\.home = (.+)/.exec(output('java', ['-XshowSettings:properties', '-version']) || '');
   if (home) dirs.push(home[1].trim());
   const seen = new Set();
@@ -126,7 +138,13 @@ function sdkTools() {
 const devices = () => parseDevices(output(ADB, ['devices']));
 
 /* ---------- emulator ---------- */
-function startEmulator() {
+// why it stopped before Android had started (a broken AVD, one already running, no room on the disk): its exit code,
+// the signal that killed it, or the error that means it never ran
+const emulatorStopped = (avd, r) => `the emulator (${avd}) stopped before Android finished starting `
+  + `(${r.error ? r.error.message : (r.signal ? 'killed by ' + r.signal : 'exit ' + r.code)}).`
+  + '\nStart it in Android Studio (Device Manager) to see what it says of itself.';
+
+async function startEmulator() {
   if (!fs.existsSync(EMULATOR)) fail('no emulator in the SDK: add it in Android Studio (SDK Manager > SDK Tools)');
   if (devices().some(d => d.serial.startsWith('emulator-'))) { console.log('An emulator is already running.'); return; }
   const avds = (output(EMULATOR, ['-list-avds']) || '').split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('INFO'));
@@ -134,7 +152,11 @@ function startEmulator() {
   if (!avd) fail('no virtual device: make one in Android Studio (Device Manager)');
   if (!avds.includes(avd)) fail(`no virtual device called ${avd}. There are: ${avds.join(', ') || 'none'}`);
   step(`Starting the emulator (${avd})`);
-  spawn(EMULATOR, ['-avd', avd], { detached: true, stdio: 'ignore' }).unref();
+  const proc = spawn(EMULATOR, ['-avd', avd], { detached: true, stdio: 'ignore' });
+  let stopped = null;   // it gave up (or never ran): said at once, rather than waiting the three minutes out
+  proc.on('exit', (code, signal) => { stopped = { code, signal }; });
+  proc.on('error', error => { stopped = { error }; });
+  proc.unref();
   // only the new emulator is asked (by its serial, which also overrides ANDROID_SERIAL), never a phone plugged in
   for (let i = 0; i < 180; i++) {   // up to 3 minutes for it to appear and Android to finish starting
     const emu = devices().find(d => d.serial.startsWith('emulator-'));
@@ -142,7 +164,8 @@ function startEmulator() {
       && (output(ADB, ['-s', emu.serial, 'shell', 'getprop', 'sys.boot_completed']) || '').trim() === '1') {
       console.log(`Ready (${emu.serial}).`); return;
     }
-    pause(1000);
+    if (stopped) fail(emulatorStopped(avd, stopped));
+    await sleep(1000);
   }
   fail('the emulator did not finish starting in 3 minutes');
 }
@@ -207,7 +230,7 @@ if (require.main === module) {
   if (args.has('--clean')) clean();
   else {
     sdkTools();
-    if (args.has('--emulator')) startEmulator();
+    if (args.has('--emulator')) startEmulator().catch(e => fail(e.message || String(e)));
     else {
       build();
       if (args.has('--install')) install();
@@ -215,4 +238,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { chooseJdk, gradleRunsOn, parseDevices, cmdQuote };
+module.exports = { chooseJdk, gradleRunsOn, parseDevices, cmdQuote, javaHomePaths, emulatorStopped };

@@ -1831,8 +1831,8 @@ window.MB = window.MB || {};
           <span class="file-ic">${fileIcons.file}</span>
           <span class="file-name"${B.name ? ` title="${esc(B.name)}"` : ''}>${B.name ? esc(B.name) : '<span class="dim">No file</span>'}</span>
           ${B.name && st ? `<span class="file-state ${esc(B.state)}" title="${esc(st[1])}" role="img" aria-label="${esc(st[1])}">${fileIcons[st[0]]}</span>` : ''}
-          ${resume}${iconBtn('data-bf="saveas"', 'saveAs', 'Save as… (pick a file to keep this project in)')}${B.name ? iconBtn('data-bf="unlink"', 'unlink', 'Stop saving to this file (the file stays as it is)') : ''}
-          ${infoTip('Pick a file with Save as… (or open one) and this project is also saved to it, a moment after every change. After the browser restarts it asks once before writing again.')}
+          ${resume}${iconBtn('data-bf="saveas"', 'saveAs', 'Save as (pick a file to keep this project in)')}${B.name ? iconBtn('data-bf="unlink"', 'unlink', 'Stop saving to this file (the file stays as it is)') : ''}
+          ${infoTip('Pick a file with Save as (or open one) and this project is also saved to it, a moment after every change. After the browser restarts it asks once before writing again.')}
         </div></div>`;
       const on = (k, fn) => { const b = box.querySelector('[data-bf="' + k + '"]'); if (b) b.addEventListener('click', fn); };
       on('saveas', () => B.saveAs()); on('resume', () => B.resume()); on('unlink', () => B.unlink());
@@ -1843,7 +1843,7 @@ window.MB = window.MB || {};
         <div class="info-line"><span class="file-ic">${fileIcons.folder}</span><span class="path" title="${esc(F.folder || '')}">${esc(F.folder || '…')}</span>
           ${iconBtn('data-df="folder"', 'choose', 'Change the projects folder…')}${iconBtn('data-df="show"', 'reveal', 'Show in folder')}</div>
         <div class="info-line"><span class="file-ic">${fileIcons.file}</span><span class="file-name"${F.file ? ` title="${esc(F.file)}"` : ''}>${F.file ? esc(baseName(F.file)) : '<span class="dim">No file yet</span>'}</span>
-          ${iconBtn('data-df="saveas"', 'saveAs', 'Save as…')}${infoTip('Each named project is also kept as a file in this folder, saved a moment after every change. An untitled map gets one once it is named or saved.')}</div>
+          ${iconBtn('data-df="saveas"', 'saveAs', 'Save as')}${infoTip('Each named project is also kept as a file in this folder, saved a moment after every change. An untitled map gets one once it is named or saved.')}</div>
       </div>`;
     box.querySelector('[data-df="folder"]').addEventListener('click', () => F.chooseFolder());
     box.querySelector('[data-df="show"]').addEventListener('click', () => F.reveal());

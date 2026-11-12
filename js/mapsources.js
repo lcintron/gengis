@@ -311,7 +311,7 @@ window.MB = window.MB || {};
         dlg = document.createElement('div');
         dlg.id = 'mapImportDialog'; dlg.className = 'modal hidden';
         dlg.innerHTML = `<div class="modal-box map-import-box" role="dialog" aria-modal="true" aria-labelledby="mapImportTitle">${MB.modalCloseHtml}<h2 id="mapImportTitle">Map sources imported</h2><div class="map-import-body"></div>
-          <div class="btn-row right"><button type="button" class="btn" data-act="keys">Map &amp; search APIs…</button><button type="button" class="btn primary" data-act="close">Done</button></div></div>`;
+          <div class="btn-row right"><button type="button" class="btn" data-act="keys">Map &amp; search APIs</button><button type="button" class="btn primary" data-act="close">Done</button></div></div>`;
         document.body.appendChild(dlg);
         MB.ui.wireDialog(dlg);
         dlg.querySelector('[data-act="keys"]').addEventListener('click', () => { MB.ui.closeDialog(dlg); MB.settingsDialog.open(); });
