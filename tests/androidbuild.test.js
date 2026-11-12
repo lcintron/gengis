@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 
 const ROOT = process.env.GENGIS_ROOT || path.join(__dirname, '..');
-const { chooseJdk, gradleRunsOn, parseDevices, cmdQuote } = require(path.join(ROOT, 'scripts', 'android-build.js'));
+const { chooseJdk, gradleRunsOn, parseDevices, cmdQuote, javaHomePaths, emulatorStopped } = require(path.join(ROOT, 'scripts', 'android-build.js'));
 
 const jdks = (...list) => list.map(([dir, version]) => ({ dir, version }));
 
@@ -42,6 +42,26 @@ test('`adb devices` is read as serials and states', () => {
     { serial: 'R58M12345', state: 'device' }, { serial: 'emulator-5554', state: 'offline' }, { serial: 'ZY22', state: 'unauthorized' }]);
   assert.deepEqual(parseDevices('* daemon started successfully\nList of devices attached\n'), []);
   assert.deepEqual(parseDevices(null), []);
+});
+
+test('on macOS the JDKs java_home knows are read from its output, whichever way it was asked', () => {
+  const list = 'Matching Java Virtual Machines (3):\n'
+    + '    25.0.1 (arm64) "Homebrew" - "OpenJDK 25.0.1" /opt/homebrew/Cellar/openjdk/25.0.1/libexec/openjdk.jdk/Contents/Home\n'
+    + '    21.0.5 (arm64) "Eclipse Adoptium" - "OpenJDK 21.0.5" /Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home\n'
+    + '    1.8.0_412, x86_64:\t"Java SE 8"\t/Library/Java/JavaVirtualMachines/jdk1.8.0_412.jdk/Contents/Home\n';
+  assert.deepEqual(javaHomePaths(list), ['/opt/homebrew/Cellar/openjdk/25.0.1/libexec/openjdk.jdk/Contents/Home',
+    '/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home', '/Library/Java/JavaVirtualMachines/jdk1.8.0_412.jdk/Contents/Home']);
+  assert.deepEqual(javaHomePaths('/Users/me/Library/Java/JavaVirtualMachines/jdk-21 one/Contents/Home\n'),
+    ['/Users/me/Library/Java/JavaVirtualMachines/jdk-21 one/Contents/Home'], '`-v 21`: the path alone, spaces in it kept');
+  assert.deepEqual(javaHomePaths('Unable to find any JVMs matching version "21".'), [], 'an error message holds none');
+  assert.deepEqual(javaHomePaths(null), []);
+});
+
+test('an emulator that stops before Android starts says so at once, with what it exited with', () => {
+  assert.match(emulatorStopped('Pixel_7', { code: 1, signal: null }), /^the emulator \(Pixel_7\) stopped before Android finished starting \(exit 1\)\./);
+  assert.match(emulatorStopped('Pixel_7', { code: null, signal: 'SIGKILL' }), /\(killed by SIGKILL\)/);
+  assert.match(emulatorStopped('Pixel_7', { error: new Error('spawn ENOENT') }), /\(spawn ENOENT\)/);
+  assert.match(emulatorStopped('Pixel_7', { code: 1 }), /Device Manager/, 'and where to look');
 });
 
 test('arguments for cmd.exe are quoted when they need it', () => {

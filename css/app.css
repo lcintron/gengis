@@ -529,11 +529,12 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
 .poi-item .pkind { color: var(--text-dim); font-size: 11px; }
 .poi-item .pdist { color: var(--text-dim); font-size: 11px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 
-/* toast, modal */
+/* toast (centred between the phone's side bars: in landscape there is one, or a cutout, at one side only), modal */
 #mb-toast {
-  position: fixed; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translate(-50%, 20px); background: var(--bg-2); border: 1px solid var(--border);
+  position: fixed; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: calc(50% + (env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) / 2);
+  transform: translate(-50%, 20px); background: var(--bg-2); border: 1px solid var(--border);
   color: var(--text); padding: 8px 14px; border-radius: 8px; opacity: 0; transition: all .2s; z-index: 5000; pointer-events: none;
-  box-shadow: 0 8px 24px rgba(0,0,0,.5); max-width: 80vw;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5); max-width: calc(80vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
 }
 #mb-toast.show { opacity: 1; transform: translate(-50%, 0); }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 4000;
@@ -597,7 +598,8 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   #main { position: relative; }
   /* side panel becomes a bottom sheet */
   #sidebar { position: absolute; left: 0; right: 0; bottom: 0; top: auto; width: 100%; height: max(56%, var(--sheet-user, 0px)); max-height: 88%; border-left: 0; border-top: 1px solid var(--border);
-    border-radius: 14px 14px 0 0; z-index: 30; box-shadow: 0 -8px 24px rgba(0,0,0,.5); padding-top: 14px; padding-bottom: env(safe-area-inset-bottom); }
+    border-radius: 14px 14px 0 0; z-index: 30; box-shadow: 0 -8px 24px rgba(0,0,0,.5); padding-top: 14px; padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); } /* (landscape: its content clear of a side bar or cutout) */
   .sidebar-grip { left: 0; right: 0; top: 0; bottom: auto; width: auto; height: 14px; cursor: row-resize; } /* (the sheet's top padding: the tabs below stay tappable) */
   .sidebar-grip::after { left: 50%; top: 5px; bottom: auto; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
   .tabs { position: relative; }
@@ -685,7 +687,7 @@ body.presenting .mb-measure-tip { display: none !important; }   /* (the clock st
 .mb-present-ctl, #presentDrag, .present-logo { display: none; }
 body.presenting .mb-present-ctl, body.presenting .present-logo { display: block; }
 .mb-present-ctl a { display: flex; align-items: center; justify-content: center; }
-.present-logo { position: fixed; top: 12px; left: 12px; z-index: 3000; height: 40px; width: auto; pointer-events: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
+.present-logo { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); z-index: 3000; height: 40px; width: auto; pointer-events: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
 
 /* ---------- context menu ---------- */
 .mb-ctx {
@@ -904,12 +906,14 @@ button.link:hover { text-decoration: underline; }
 #splash.hide { opacity: 0; pointer-events: none; }
 /* "a new version is ready" notice */
 #mb-update {
-  position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 8000; display: flex; align-items: center; gap: 10px;
+  position: fixed; left: calc(50% + (env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) / 2); bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%); z-index: 8000; display: flex; align-items: center; gap: 10px;
   background: var(--bg-2); color: var(--text); border: 1px solid var(--accent); border-radius: 10px; padding: 8px 8px 8px 14px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
 }
 #mb-update span { flex: 1 1 auto; }
-@media (max-width: 640px) { #mb-update { width: calc(100vw - 24px); } } /* the phone's full width, not a narrow column of text */
+/* the phone's full width, not a narrow column of text (less its side bars) */
+@media (max-width: 640px) { #mb-update { width: calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); } }
 .about-head { text-align: center; margin-bottom: 14px; }
 .about-head .about-logo { width: 72px; height: auto; display: block; margin: 4px auto 10px; }
 .about-head h2 { margin: 0 0 2px; }
@@ -969,9 +973,10 @@ button.link:hover { text-decoration: underline; }
 .recent-ask.wide { flex: 1 1 100%; }
 .recent-ask.wide span { flex: 1 1 100%; }
 #mb-readonly {
-  position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 8000; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
+  position: fixed; left: calc(50% + (env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) / 2); bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%); z-index: 8000; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
   background: var(--bg-2); color: var(--text); border: 1px solid var(--warn); border-radius: 10px; padding: 8px 8px 8px 14px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 13px; max-width: calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
 }
 
 /* ---------- airport frequencies in popups ---------- */
@@ -1326,9 +1331,10 @@ textarea.attr-multi { display: block; height: auto; min-height: 28px; padding: 5
 .trk-craft svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .trk-craft svg path { fill: currentColor; stroke: #0b1118; stroke-width: 1.6; stroke-linejoin: round; paint-order: stroke; }
 .trk-craft.out { opacity: .4; }
-/* the time bar: over the map, clear of the coordinates (and their loading line) and the scale */
+/* the time bar: over the map, clear of the coordinates (and their loading line) and the scale (--trk-inset: the
+   phone's bottom bar, which the coordinates below it also move above, set in the Android app's rules) */
 .trk-bar {
-  position: absolute; z-index: 900; left: 50%; bottom: 66px; transform: translateX(-50%); width: min(560px, calc(100% - 24px)); box-sizing: border-box;
+  position: absolute; z-index: 900; left: 50%; bottom: calc(66px + var(--trk-inset, 0px)); transform: translateX(-50%); width: min(560px, calc(100% - 24px)); box-sizing: border-box;
   background: rgba(27,31,39,.92); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.45); padding: 6px 8px; font-size: 11px; color: var(--text);
 }
 .trk-ctl { display: flex; align-items: center; gap: 8px; }
@@ -1349,7 +1355,7 @@ select.trk-rate { flex: 0 0 auto; height: 30px; padding: 0 4px; font-size: 12px;
 .trk-lg.chips span { display: inline-flex; align-items: center; gap: 4px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trk-lg.chips i { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 2px; border: 1px solid rgba(255,255,255,.25); }
 @media (max-width: 640px) {
-  .trk-bar { bottom: 64px; width: calc(100% - 16px); padding: 6px; }
+  .trk-bar { bottom: calc(64px + var(--trk-inset, 0px)); width: calc(100% - 16px); padding: 6px; }
   .trk-ctl { gap: 6px; }
   .trk-btn, select.trk-rate { width: 36px; height: 36px; }
   select.trk-rate { width: auto; }
@@ -1383,6 +1389,7 @@ html.native-app #mapwrap.tb-right #toolbar { margin-left: 0; margin-right: env(s
 html.native-app .leaflet-bottom { margin-bottom: env(safe-area-inset-bottom, 0px); }
 html.native-app .leaflet-left { margin-left: env(safe-area-inset-left, 0px); }
 html.native-app .leaflet-right { margin-right: env(safe-area-inset-right, 0px); }
+html.native-app .trk-bar { --trk-inset: env(safe-area-inset-bottom, 0px); } /* above the gesture bar, as the coordinates it sits over are */
 
 /* ---------- cloud sync (cloudui.js) ---------- */
 /* an on/off switch (a checkbox underneath: keyboard, screen readers and forms as usual) */
@@ -1451,7 +1458,8 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 .cloud-h-row .cloud-h { margin: 0; flex: 1 1 auto; }
 .cloud-h-row .search-wrap { flex: 0 1 220px; min-width: 0; max-width: 220px; margin: 0; }
 .cloud-h-row .icon-btn.mini, .cloud-row .icon-btn.mini, .cloud-row .badge { flex: 0 0 auto; }
-.cloud-scroll { max-height: min(330px, 42vh); overflow-y: auto; padding-right: 2px; scrollbar-width: thin; } /* (at its end, a drag scrolls the dialog on) */
+/* (at its end, a drag scrolls the dialog on; dvh where known, vh before it, as the dialog box's own height) */
+.cloud-scroll { max-height: min(330px, 42vh); max-height: min(330px, 42dvh); overflow-y: auto; padding-right: 2px; scrollbar-width: thin; }
 .cloud-nomatch { margin: 6px 2px 0; }
 .cloud-list { display: flex; flex-direction: column; gap: 6px; }
 .cloud-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
@@ -1476,7 +1484,7 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
   .cloud-row { padding: 10px; }
   .cloud-row select { flex: 1 0 100%; max-width: none; height: 38px; }
   .cloud-h-row .search-wrap { flex-basis: 175px; }
-  .cloud-scroll { max-height: 46vh; }
+  .cloud-scroll { max-height: 46vh; max-height: 46dvh; }
   .cloud-auto { flex-wrap: wrap; padding-right: 12px; }
   .cloud-auto select { flex: 1 0 100%; max-width: none; height: 38px; margin-left: 0; }
   .cloud-conflict .btn { min-height: 38px; }

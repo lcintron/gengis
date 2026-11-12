@@ -247,8 +247,13 @@ test('dialogs stay between the system bars (Android edge-to-edge: the insets com
   assert.ok(attr.every(b => !/max-height: 100vh;/.test(b)), 'no full-screen attribute table under the bars');
   assert.ok(attr.some(b => /width: calc\(100vw - env\(safe-area-inset-left, 0px\) - env\(safe-area-inset-right, 0px\)\)/.test(b)),
     'nor beside them');
-  // a drag on Cloud sync's lists, at their end, scrolls the dialog on
-  assert.ok(one('.cloud-scroll').every(b => !/overscroll-behavior/.test(b)));
+  // Cloud sync's lists: as tall as the screen allows (dvh where known, vh before it, as the box itself), and a drag
+  // on them, at their end, scrolls the dialog on
+  const scroll = one('.cloud-scroll');
+  assert.equal(scroll.length, 2, 'the cloud list\'s height: the base rule and the phone one');
+  assert.match(scroll[0], /max-height: min\(330px, 42vh\); max-height: min\(330px, 42dvh\);/);
+  assert.match(scroll[1], /max-height: 46vh; max-height: 46dvh;/);
+  assert.ok(scroll.every(b => !/overscroll-behavior/.test(b)));
   // and the side menu's last items and the toast stay above the bar too
   // (top, right, bottom, left: a bar or cutout at the left too, in landscape, the drawer wider by it)
   const drawer = one('.dropdown.more-menu');
@@ -261,14 +266,47 @@ test('dialogs stay between the system bars (Android edge-to-edge: the insets com
     assert.ok(r.some(b => /bottom: calc\(22px \+ env\(safe-area-inset-bottom, 0px\)\)/.test(b)), sel);
     assert.ok(r.every(b => !/bottom: \d+px;/.test(b)), sel + ': no bare bottom left');
   }
+  // the three of them centred between the side bars (landscape: a bar or cutout at one side only), never under them
+  const centred = String.raw`left: calc\(50% \+ \(env\(safe-area-inset-left, 0px\) - env\(safe-area-inset-right, 0px\)\) / 2\)`;
+  const narrower = String.raw`- env\(safe-area-inset-left, 0px\) - env\(safe-area-inset-right, 0px\)\)`;
+  for (const sel of ['#mb-toast', '#mb-update', '#mb-readonly']) {
+    const r = one(sel);
+    assert.ok(r.some(b => new RegExp(centred).test(b)), sel + ': centred between the side bars');
+    assert.ok(r.some(b => new RegExp(String.raw`(max-)?width: calc\([^;]*${narrower};`).test(b)), sel + ': no wider than the room between them');
+    assert.ok(r.every(b => !/(max-)?width: (calc\(\d+vw - \d+px\)|\d+vw);/.test(b)), sel + ': no full viewport width left');
+  }
+  assert.equal(one('#mb-update').filter(b => new RegExp(narrower).test(b)).length, 2, 'the new-version notice: the base rule and the phone one');
+  // the presenter's logo in the top left corner, and the phone's bottom sheet
+  assert.ok(one('.present-logo').some(b => /top: calc\(12px \+ env\(safe-area-inset-top, 0px\)\); left: calc\(12px \+ env\(safe-area-inset-left, 0px\)\);/.test(b)),
+    'the presenter logo stays clear of the status bar and of a cutout');
+  assert.ok(one('#sidebar').some(b => ['bottom', 'left', 'right'].every(s => inset(s).test(b))),
+    'the bottom sheet\'s content clears the bar below it and a bar or cutout beside it');
+  // the tracking bar over the map: in the Android app above the gesture bar, as the coordinates below it are
+  // (it sits in #mapwrap, not in a Leaflet corner, so the inset is its own and counted once)
+  const trk = one('.trk-bar');
+  assert.equal(trk.length, 2, 'the tracking bar: the base rule and the phone one');
+  assert.ok(trk.every(b => /bottom: calc\(\d+px \+ var\(--trk-inset, 0px\)\);/.test(b) && !inset('bottom').test(b)));
+  assert.ok(rules('html.native-app .trk-bar').some(b => /--trk-inset: env\(safe-area-inset-bottom, 0px\);/.test(b)), 'the inset only in the Android app');
+  assert.ok(rules('html.native-app .leaflet-bottom').some(b => /margin-bottom: env\(safe-area-inset-bottom, 0px\);/.test(b)), 'the same room the map\'s corners get');
   // the export buttons' footer: the box ends above the bar, so no inset again
   assert.ok(one('.export-actions').every(b => !inset('bottom').test(b)));
 });
-test('the Project menu\'s items end without an ellipsis', () => {
+test('the Project menu\'s items end without an ellipsis, and so does every label that names one of them', () => {
   const menu = (html.split('<div id="menu"')[1] || '').split('</div>')[0];
   const labels = [...menu.matchAll(/<span>([^<]*)<\/span>/g)].map(m => m[1].trim());
   assert.ok(labels.length >= 10, 'the menu\'s labels found');
   assert.deepEqual(labels.filter(l => /(…|\.\.\.)$/.test(l)), [], 'menu labels ending in an ellipsis');
+  // the same actions named elsewhere (a button, a tooltip, an explanation) are the same words: "Save as", not
+  // "Save as…" (a line of comment says what it likes; a status, a placeholder and a context menu are not these)
+  const rx = l => new RegExp(l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(…|\\.\\.\\.)');
+  const trailing = [];
+  for (const [f, src] of [['index.html', html], ...Object.entries(js).map(([n, s]) => ['js/' + n, s])]) {
+    src.split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\/\*|\*|<!--)/.test(line)) return;
+      labels.filter(l => rx(l).test(line)).forEach(l => trailing.push(`${f}:${i + 1} ${l}…`));
+    });
+  }
+  assert.deepEqual(trailing, [], 'labels naming a menu item but ending in an ellipsis');
 });
 
 test('the cloud dialog deletes a project from the cloud only after a red confirm, with finger-sized buttons', () => {
