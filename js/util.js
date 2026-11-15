@@ -53,8 +53,11 @@ window.MB = window.MB || {};
     doc.addEventListener('contextmenu', release, true);
     if (win && typeof win.addEventListener === 'function') win.addEventListener('blur', release);
   }
+  // (listened to as the page loads, never on the first whenReleased: a press is seen before anything asks about it -
+  //  a change or focusout event fires after the pointerdown that caused it, so the first redraw of a session would
+  //  otherwise find nothing held down and eat the click)
+  if (typeof document !== 'undefined' && document.addEventListener) hookPress();
   MB.whenReleased = function (fn) {
-    hookPress();
     if (press.down) press.waiting.push(fn); else setTimeout(fn);
   };
   MB.press = { hook: hookPress, state: press }; // (the tests)

@@ -99,7 +99,11 @@ window.MB = window.MB || {};
       },
       renameField(from, to) {
         if (to === from) return ''; // (a rename given up on: nothing to say, whatever the name is)
-        const l = lay(), why = !l ? 'The layer is gone' : badKey(to) || (fieldsOf(layerId).includes(to) ? 'There is a field of that name already' : '');
+        const l = lay(), fields = fieldsOf(layerId);
+        // the field is no longer there (a rename that waited for a pointer to be released, its row removed by the
+        // click that ended it): nothing to rename, and no undo step for it
+        if (!fields.includes(from)) return '';
+        const why = !l ? 'The layer is gone' : badKey(to) || (fields.includes(to) ? 'There is a field of that name already' : '');
         if (why) return why;
         objectsOf(layerId).forEach(f => { const a = f.mb.attrs; if (a && Object.hasOwn(a, from)) { const v = a[from]; delete a[from]; put(a, to, v); } });
         if (l.fields) l.fields = l.fields.map(k => (k === from ? to : k));

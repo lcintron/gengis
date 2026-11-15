@@ -64,7 +64,9 @@ function saveRefresh(accountId, provider, refresh) {
   if (!canEncrypt()) { memory.set(accountId, { provider, refresh }); return false; }
   const all = readAll();
   all[accountId] = { provider, refresh: enc(refresh), at: Date.now() };
-  files.writeAtomic(storeFile(), JSON.stringify(all, null, 1));
+  // inPlace: a file this one cannot be renamed over is written over rather than the sign-in lost; an unreadable one
+  // is read as no account kept (readAll), which only means signing in again
+  files.writeAtomic(storeFile(), JSON.stringify(all, null, 1), { inPlace: true });
   return true;
 }
 function loadRefresh(accountId) {
@@ -76,7 +78,7 @@ function loadRefresh(accountId) {
 function forget(accountId) {
   memory.delete(accountId);
   const all = readAll();
-  if (accountId in all) { delete all[accountId]; files.writeAtomic(storeFile(), JSON.stringify(all, null, 1)); }
+  if (accountId in all) { delete all[accountId]; files.writeAtomic(storeFile(), JSON.stringify(all, null, 1), { inPlace: true }); }
 }
 
 /* ---------- the token endpoint ---------- */

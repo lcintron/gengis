@@ -501,7 +501,7 @@ test('crafted text is read in one pass: attribute names with no value, a run of 
   assert.match(fs.readFileSync(path.join(ROOT, 'js/fileimports.js'), 'utf8'), /const htmlText = s => \(!s \? '' : MB\.htmlText \? MB\.htmlText\(s\) : String\(s\)\.trim\(\)\);/);
 });
 
-test('crafted markup is read in one pass too: stray closing tags are skipped at once, deep nesting is refused by name', () => {
+test('crafted markup is read in one pass too: stray closing tags are skipped at once', () => {
   const ms = fn => { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; };
   // 999 tags left open and a million closing tags that match none of them: each used to be looked for down the whole
   // stack (0.8 s here, 3.3 s for 40,000 of each in a KML file)
@@ -513,10 +513,38 @@ test('crafted markup is read in one pass too: stray closing tags are skipped at 
   const kml = doc.kids[0], folder = kml.kids[0].kids[0];
   assert.deepEqual(plain(folder.kids.map(k => k.name)), ['Placemark'], '</b> and </unopened> closed nothing');
   assert.deepEqual(plain(kml.kids[0].kids.map(k => k.name)), ['Folder', 'Placemark'], 'and the Placemark after </Folder> is the Document\'s');
-  // a file nested deeper than the readers can walk says so, instead of "Maximum call stack size exceeded"
-  assert.throws(() => R.kml('<kml>' + '<Folder>'.repeat(2000) + '</Folder>'.repeat(2000) + '</kml>'), /nested too deeply/);
-  const deep = ms(() => { try { R.kml('<kml>' + '<Folder>'.repeat(200000) + '</kml>'); } catch (e) { /* said above */ } });
-  assert.ok(deep < 200, 'and it is refused at once (' + deep.toFixed(0) + ' ms)');
+});
+
+test('a deeply nested file is read, not refused: a description of raw <p> and <br> tags, and thousands of folders', () => {
+  const ms = fn => { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; };
+  // a description written as markup without CDATA: every tag that never closes nests one deeper (600 of them here).
+  // Its text is what the file has between the tags, as before.
+  const desc = '<p>line<br>'.repeat(600);
+  const kml = `<kml><Placemark><name>N</name><description>${desc}</description><Point><coordinates>1,2</coordinates></Point></Placemark></kml>`;
+  const [f] = R.kml(kml).features;
+  assert.equal(f.properties.name, 'N');
+  assert.equal(f.properties.description, 'line'.repeat(600), 'the description is read, tags and all');
+  assert.deepEqual(plain(f.geometry.coordinates), [1, 2], 'and so is the point after it');
+
+  // 5,000 folders inside one another, each with a placemark: every one read, with its folder path
+  const n = 5000;
+  const nest = (i) => `<Folder><name>F${i}</name><Placemark><name>P${i}</name><Point><coordinates>${i % 100},1</coordinates></Point></Placemark>`;
+  let body = '';
+  for (let i = 0; i < n; i++) body += nest(i);
+  const t = ms(() => {
+    const res = R.kml('<kml><Document>' + body + '</Document></kml>'); // (the folders never close: the Document's end closes them)
+    assert.equal(res.features.length, n, 'a placemark from every folder');
+    assert.equal(res.features[0].properties.name, 'P0');
+    assert.equal(res.features[n - 1].properties.folder.split(' / ').length, n, 'the deepest one knows every folder above it');
+  });
+  assert.ok(t < 5000, '5,000 deep read in ' + t.toFixed(0) + ' ms');
+  // a MultiGeometry nested as deep still gives its parts
+  const multi = '<MultiGeometry>'.repeat(3000) + '<Point><coordinates>3,4</coordinates></Point>';
+  const [m] = R.kml('<kml><Placemark>' + multi + '</Placemark></kml>').features;
+  assert.deepEqual(plain(m.geometry.coordinates), [3, 4]);
+  // only a crafted file of nothing but open tags is refused, at once and by name (100,000 deep: no real file is near)
+  const crafted = ms(() => assert.throws(() => R.kml('<kml>' + '<Folder>'.repeat(200000) + '</kml>'), /nested too deeply/));
+  assert.ok(crafted < 500, 'refused in ' + crafted.toFixed(0) + ' ms');
 });
 
 // A stand-in IndexedDB: a request answers, and then the transaction either commits or, with abort, is rolled back
@@ -613,8 +641,15 @@ test('an edit waiting to be kept is written when the page is hidden or closed, n
   t.fire('pagehide');
   await tick(20);
   assert.equal(rec.fcDirty, true, 'still owed');
-  assert.ok(t.imp.notes.some(n => /a change could not be kept/.test(n.text)), t.imp.notes.map(n => n.text).join(' | '));
+  const failed = () => t.imp.notes.filter(n => /a change could not be kept/.test(n.text)).length;
+  assert.equal(failed(), 1, t.imp.notes.map(n => n.text).join(' | '));
   assert.ok(t.events.includes('data'), 'the panel is drawn anew, so the note shows');
+  // hidden again, and again: it is tried again each time, and said once
+  t.fire('pagehide');
+  await tick(20);
+  t.fire('pagehide');
+  await tick(20);
+  assert.equal(failed(), 1, 'said once, however many times it was tried: ' + t.imp.notes.map(n => n.text).join(' | '));
   store.abort = false;
   t.fire('pagehide');
   await tick(20);
@@ -626,11 +661,15 @@ test('a panel redraw waits for a press to end: its release, a context menu, the 
   // a fresh copy, its own press state, with a stand-in page (util.js keeps it: Properties uses it for the project's
   // own fields, the imported layers' panel for theirs)
   const MB2 = { escapeHtml: s => String(s) };
-  const ctx = { window: { MB: MB2 }, TextDecoder, Blob, DecompressionStream, console, Date, Math, setTimeout, clearTimeout };
+  const doc = new EventTarget(), win = new EventTarget();
+  win.MB = MB2;
+  const ctx = { window: win, document: doc, TextDecoder, Blob, DecompressionStream, console, Date, Math, setTimeout, clearTimeout };
   vm.createContext(ctx);
   for (const f of ['js/util.js', 'js/fileimports.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
-  const P = { whenReleased: MB2.whenReleased, state: MB2.press.state }, doc = new EventTarget(), win = new EventTarget();
-  MB2.press.hook(doc, win);
+  const P = { whenReleased: MB2.whenReleased, state: MB2.press.state };
+  // listened to as soon as util.js loads: the first redraw asked for in a session comes from a change or focusout
+  // event, which fires after the pointerdown that caused it - the press must already be known then
+  assert.equal(P.state.hooked, true, 'hooked at load, not on the first whenReleased');
   P.state.giveUp = 60; // (2 s in the app)
   const fire = (t, init) => { const e = new Event(t); Object.assign(e, init || {}); (t === 'blur' ? win : doc).dispatchEvent(e); };
   const tick = ms => new Promise(r => setTimeout(r, ms || 0));

@@ -1391,8 +1391,9 @@ html.native-app .leaflet-bottom { margin-bottom: env(safe-area-inset-bottom, 0px
 html.native-app .leaflet-left { margin-left: env(safe-area-inset-left, 0px); }
 html.native-app .leaflet-right { margin-right: env(safe-area-inset-right, 0px); }
 /* unless the side panel is docked beside the map (a phone's sheet lies over it instead): the map ends at the panel,
-   which is the one keeping clear of that bar */
-@media (min-width: 641px) { html.native-app #main:has(> #sidebar:not(.collapsed)) .leaflet-right { margin-right: 0; } }
+   which is the one keeping clear of that bar. Presenting, the panel is hidden (display: none) and the map has the
+   window to itself again, so the margin stays. */
+@media (min-width: 641px) { html.native-app body:not(.presenting) #main:has(> #sidebar:not(.collapsed)) .leaflet-right { margin-right: 0; } }
 html.native-app .trk-bar { --trk-inset: env(safe-area-inset-bottom, 0px); } /* above the gesture bar, as the coordinates it sits over are */
 
 /* ---------- cloud sync (cloudui.js) ---------- */

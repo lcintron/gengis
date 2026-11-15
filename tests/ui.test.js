@@ -290,8 +290,16 @@ test('dialogs stay between the system bars (Android edge-to-edge: the insets com
     'the bottom sheet\'s content clears the bar below it and a bar or cutout beside it');
   // the map's right-hand controls take that room only while the map reaches that edge (no panel docked beside it)
   assert.ok(rules('html.native-app .leaflet-right').some(b => /margin-right: env\(safe-area-inset-right, 0px\);/.test(b)));
-  assert.ok(rules('html.native-app #main:has(> #sidebar:not(.collapsed)) .leaflet-right').some(b => /margin-right: 0;/.test(b)),
+  const docked = 'html.native-app body:not(.presenting) #main:has(> #sidebar:not(.collapsed)) .leaflet-right';
+  assert.ok(rules(docked).some(b => /margin-right: 0;/.test(b)),
     'with the panel docked beside it the map ends at the panel, which keeps that room itself');
+  // presenting hides the panel with display: none, without adding .collapsed, and the map has the window to itself
+  // again: every rule that gives up that room must leave presenter mode out, or its controls sit under the bar
+  assert.match(css, /body\.presenting [^{]*#sidebar[^{]*\{ display: none !important; \}/, 'presenting hides the panel, .collapsed or not');
+  const gaveUp = [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(m => /html\.native-app/.test(m[1]) && /\.leaflet-right/.test(m[1]) && /margin-right: 0;/.test(m[2])).map(m => m[1].trim());
+  assert.ok(gaveUp.length, 'the docked-panel rule found');
+  assert.ok(gaveUp.every(s => s.includes('body:not(.presenting)')), 'not while presenting: ' + gaveUp.join(' | '));
   // the tracking bar over the map: in the Android app above the gesture bar, as the coordinates below it are
   // (it sits in #mapwrap, not in a Leaflet corner, so the inset is its own and counted once)
   const trk = one('.trk-bar');
@@ -505,15 +513,23 @@ test('the attribute table counts the fields it shows, sorts with one collator, a
 });
 
 test('a redraw never swallows the click that follows a press: Properties waits for the pointer to be released', () => {
-  // one helper for the page, in util.js (the imported values in Properties used to keep their own)
-  assert.match(js['util.js'], /MB\.whenReleased = function \(fn\) \{\s*\r?\n\s*hookPress\(\);\s*\r?\n\s*if \(press\.down\) press\.waiting\.push\(fn\); else setTimeout\(fn\);/);
+  // one helper for the page, in util.js (the imported values in Properties used to keep their own), listening from
+  // the moment it loads: a press that has already begun when the first redraw is asked for must be seen
+  assert.match(js['util.js'], /if \(typeof document !== 'undefined' && document\.addEventListener\) hookPress\(\);/);
+  assert.match(js['util.js'], /MB\.whenReleased = function \(fn\) \{\s*\r?\n\s*if \(press\.down\) press\.waiting\.push\(fn\); else setTimeout\(fn\);/);
+  assert.doesNotMatch(js['util.js'], /MB\.whenReleased = function \(fn\) \{\s*\r?\n\s*hookPress\(\);/, 'not hooked on first use');
   assert.match(js['fileimports.js'], /const whenReleased = fn => MB\.whenReleased\(fn\);/);
   assert.doesNotMatch(js['fileimports.js'], /const press = \{ down: false/, 'and no press state of its own there');
   // a field renamed in Properties draws it anew (the attribute table's commit): after the release, so a click on
   // another row's trash button is not lost
   const ui = js['ui.js'], af = ui.slice(ui.indexOf('function attrForm(f)'), ui.indexOf('function bindNameTip(f)'));
-  assert.match(af, /MB\.whenReleased\(\(\) => \{\s*\r?\n\s*const why = table\(\)\.renameField\(from, to\);/);
-  assert.ok(af.indexOf("focusRow('[data-av]', to);") > af.indexOf('MB.whenReleased'), 'the keyboard is placed once it is done');
+  assert.match(af, /MB\.whenReleased\(\(\) => \{[\s\S]{0,200}const why = table\(\)\.renameField\(from, to\);/);
+  // and the keyboard is only put back in a value box when that click left it in the attributes, or nowhere, and the
+  // same object is still the one shown (never stolen from a tool, a Layers control or another object)
+  assert.match(af, /const was = document\.activeElement, here = !was \|\| was === document\.body \|\| wrap\.contains\(was\);/);
+  assert.match(af, /if \(MB\.selected === f && \(here \|\| !at \|\| at === document\.body\)\) focusRow\('\[data-av\]', to\);/);
+  // a rename that waited while its own field was removed is dropped, undo step and all
+  assert.match(js['attrtable.js'], /if \(!fields\.includes\(from\)\) return '';/);
 });
 
 test('an imported layer\'s last edit is written when the page is hidden or closed, as the project\'s is', () => {
@@ -522,8 +538,10 @@ test('an imported layer\'s last edit is written when the page is hidden or close
   assert.match(imp, /doc\.addEventListener\('visibilitychange', \(\) => \{ if \(doc\.visibilityState === 'hidden'\) MB\.imports\.flushSaves\(\); \}\);/);
   assert.match(imp, /async init\(\) \{\s*\r?\n\s*hookSaves\(\);/, 'hooked as the imports start');
   assert.match(imp, /flushSaves\(\) \{ layers\.forEach\(rec => \{ if \(rec\.saveTimer \|\| rec\.fcDirty\) this\.saveNow\(rec\); \}\); \}/);
-  // a write that fails leaves the features to be written again, and says so where the panel shows it
-  assert.match(imp, /rec\.fcDirty = true;\s*\r?\n\s*this\.note\(rec\.meta\.name \+ ': a change could not be kept/);
+  // a write that fails leaves the features to be written again, and says so where the panel shows it - once, not
+  // once per hide
+  assert.match(imp, /rec\.fcDirty = true;\s*\r?\n\s*if \(rec\.saveFailed\) return;[^\n]*\r?\n\s*rec\.saveFailed = true;\s*\r?\n\s*this\.note\(rec\.meta\.name \+ ': a change could not be kept/);
+  assert.match(imp, /\.then\(\(\) => \{ rec\.saveFailed = false; \}/, 'and a write that goes through clears it');
   assert.match(imp, /this\.changed\(\);\s*\r?\n\s*\}\);\s*\r?\n\s*\}\s*\r?\n\s*\},/, 'and the panel is drawn anew, so the note shows');
   // the project does the same (js/app.js)
   assert.match(js['app.js'], /window\.addEventListener\('pagehide', \(\) => MB\.saveNow\(\)\);/);

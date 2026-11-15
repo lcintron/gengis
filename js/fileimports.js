@@ -55,7 +55,9 @@ window.MB = window.MB || {};
   /* ---------- XML (KML) ----------
    * A small, forgiving reader: elements by their local name (gx:Track is Track), attributes, and text (CDATA as it
    * is, entities decoded). Comments, processing instructions and a DOCTYPE are skipped; a stray closing tag is
-   * ignored. Faster than DOMParser on large files, and it works without a DOM (the tests). */
+   * ignored. Faster than DOMParser on large files, and it works without a DOM (the tests).
+   * Nothing here or below walks the tree by recursion: a description with raw <p> and <br> tags in it (not wrapped in
+   * CDATA) nests as deep as it has tags, and a few hundred of them would overflow the stack. */
   const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
   function decode(s) {
     if (s.indexOf('&') < 0) return s;
@@ -86,7 +88,7 @@ window.MB = window.MB || {};
     }
     return a;
   }
-  const MAX_DEPTH = 1000; // elements inside one another (KML nests a few dozen deep; the readers below walk a tree by recursion)
+  const MAX_DEPTH = 100000; // elements inside one another: a sanity bound on a crafted file of nothing but open tags, far above any real one
   function parseXml(s) {
     const root = { name: '#document', attrs: {}, kids: [], text: '' };
     const stack = [root], n = s.length;
@@ -138,9 +140,22 @@ window.MB = window.MB || {};
   }
   const kid = (n, name) => (n ? n.kids.find(k => k.name === name) : undefined);
   const kidsOf = (n, name) => (n ? n.kids.filter(k => k.name === name) : []);
-  function textOf(n) { if (!n) return ''; let t = n.text; for (const k of n.kids) t += textOf(k); return t; }
+  // An element's own text and all the text inside it, in the file's order; and the first element of a name, itself or
+  // inside it. Both walk the tree with a stack of their own (a deeply nested one must not overflow the call stack).
+  const pushKids = (stack, n) => { for (let i = n.kids.length - 1; i >= 0; i--) stack.push(n.kids[i]); };
+  function textOf(n) {
+    if (!n) return '';
+    let t = '';
+    const stack = [n];
+    while (stack.length) { const x = stack.pop(); t += x.text; pushKids(stack, x); }
+    return t;
+  }
   const val = (n, name) => textOf(kid(n, name)).trim();
-  function findDeep(n, name) { if (n.name === name) return n; for (const k of n.kids) { const f = findDeep(k, name); if (f) return f; } return null; }
+  function findDeep(n, name) {
+    const stack = [n];
+    while (stack.length) { const x = stack.pop(); if (x.name === name) return x; pushKids(stack, x); }
+    return null;
+  }
 
   // A description with no formatting, as text (its entities read). One with formatting is kept as the file has it:
   // popups show it made safe (MB.safeHtml), labels and titles as text (MB.htmlText, util.js, always loaded with this;
@@ -251,25 +266,31 @@ window.MB = window.MB || {};
     take();
     return out;
   }
-  function kmlGeom(n, out) {
-    switch (n.name) {
-      case 'Point': { const c = kmlCoords(val(n, 'coordinates')); if (c.length) out.push({ type: 'Point', coordinates: c[0] }); break; }
-      case 'LineString': case 'LinearRing': { const c = kmlCoords(val(n, 'coordinates')); if (c.length > 1) out.push({ type: 'LineString', coordinates: c }); break; }
-      case 'Polygon': {
-        const ob = kid(n, 'outerBoundaryIs'), outer = kmlCoords(val(kid(ob, 'LinearRing'), 'coordinates'));
-        if (outer.length < 3) break;
-        const holes = [];
-        for (const ib of kidsOf(n, 'innerBoundaryIs')) for (const lr of kidsOf(ib, 'LinearRing')) { const h = kmlCoords(val(lr, 'coordinates')); if (h.length >= 3) holes.push(h); }
-        out.push({ type: 'Polygon', coordinates: [outer].concat(holes) });
-        break;
+  // The geometries in an element, in the file's order (a MultiGeometry's parts with a stack of their own, however
+  // deeply they are nested).
+  function kmlGeom(node, out) {
+    const stack = [node];
+    while (stack.length) {
+      const n = stack.pop();
+      switch (n.name) {
+        case 'Point': { const c = kmlCoords(val(n, 'coordinates')); if (c.length) out.push({ type: 'Point', coordinates: c[0] }); break; }
+        case 'LineString': case 'LinearRing': { const c = kmlCoords(val(n, 'coordinates')); if (c.length > 1) out.push({ type: 'LineString', coordinates: c }); break; }
+        case 'Polygon': {
+          const ob = kid(n, 'outerBoundaryIs'), outer = kmlCoords(val(kid(ob, 'LinearRing'), 'coordinates'));
+          if (outer.length < 3) break;
+          const holes = [];
+          for (const ib of kidsOf(n, 'innerBoundaryIs')) for (const lr of kidsOf(ib, 'LinearRing')) { const h = kmlCoords(val(lr, 'coordinates')); if (h.length >= 3) holes.push(h); }
+          out.push({ type: 'Polygon', coordinates: [outer].concat(holes) });
+          break;
+        }
+        case 'Track': {
+          const c = kidsOf(n, 'coord').map(k => textOf(k).trim().split(/\s+/)).map(p => pt(p)).filter(Boolean);
+          if (c.length > 1) out.push({ type: 'LineString', coordinates: c });
+          else if (c.length) out.push({ type: 'Point', coordinates: c[0] });
+          break;
+        }
+        case 'MultiGeometry': case 'MultiTrack': pushKids(stack, n); break;
       }
-      case 'Track': {
-        const c = kidsOf(n, 'coord').map(k => textOf(k).trim().split(/\s+/)).map(p => pt(p)).filter(Boolean);
-        if (c.length > 1) out.push({ type: 'LineString', coordinates: c });
-        else if (c.length) out.push({ type: 'Point', coordinates: c[0] });
-        break;
-      }
-      case 'MultiGeometry': case 'MultiTrack': n.kids.forEach(k => kmlGeom(k, out)); break;
     }
     return out;
   }
@@ -279,16 +300,17 @@ window.MB = window.MB || {};
     const kml = findDeep(doc, 'kml');
     if (!kml) throw new Error('it is not a KML file');
     const styles = new Map(), maps = new Map(); // (by the file's own ids: a style called "constructor" is no object's own)
-    (function collect(n) {
-      for (const k of n.kids) {
-        if (k.name === 'Style' && k.attrs.id) styles.set(k.attrs.id, kmlStyle(k));
-        else if (k.name === 'StyleMap' && k.attrs.id) {
-          const pair = kidsOf(k, 'Pair').find(p => val(p, 'key') === 'normal') || kid(k, 'Pair');
-          if (pair) maps.set(k.attrs.id, { url: val(pair, 'styleUrl'), inline: kid(pair, 'Style') });
-        }
-        if (k.kids.length && k.name !== 'Placemark') collect(k);
+    const collect = [];
+    pushKids(collect, kml);
+    while (collect.length) { // the file's styles, wherever they are (a stack of its own: the tree can be deep)
+      const k = collect.pop();
+      if (k.name === 'Style' && k.attrs.id) styles.set(k.attrs.id, kmlStyle(k));
+      else if (k.name === 'StyleMap' && k.attrs.id) {
+        const pair = kidsOf(k, 'Pair').find(p => val(p, 'key') === 'normal') || kid(k, 'Pair');
+        if (pair) maps.set(k.attrs.id, { url: val(pair, 'styleUrl'), inline: kid(pair, 'Style') });
       }
-    })(kml);
+      if (k.kids.length && k.name !== 'Placemark') pushKids(collect, k);
+    }
     const styleAt = (url, depth) => {
       const id = String(url || '').split('#').pop();
       if (!id) return null;
@@ -319,14 +341,17 @@ window.MB = window.MB || {};
       if (!parts.length) { bare++; return; }
       featuresFor(parts, props, style, features);
     };
-    (function walk(n, folders) {
-      for (const k of n.kids) {
-        if (k.name === 'Placemark') placemark(k, folders);
-        else if (k.name === 'Folder') { const nm = val(k, 'name'); walk(k, nm ? folders.concat(nm) : folders); }
-        else if (k.name === 'Document' || k.name === 'kml') walk(k, folders);
-        else if (Object.hasOwn(KML_SKIP, k.name)) skipped.set(k.name, (skipped.get(k.name) || 0) + 1);
-      }
-    })(kml, []);
+    // the placemarks, in the file's order, with the folders they are in (a stack of its own again)
+    const walk = [];
+    const into = (n, folders) => { for (let i = n.kids.length - 1; i >= 0; i--) walk.push({ k: n.kids[i], folders }); };
+    into(kml, []);
+    while (walk.length) {
+      const { k, folders } = walk.pop();
+      if (k.name === 'Placemark') placemark(k, folders);
+      else if (k.name === 'Folder') { const nm = val(k, 'name'); into(k, nm ? folders.concat(nm) : folders); }
+      else if (k.name === 'Document' || k.name === 'kml') into(k, folders);
+      else if (Object.hasOwn(KML_SKIP, k.name)) skipped.set(k.name, (skipped.get(k.name) || 0) + 1);
+    }
     const notes = Array.from(skipped, ([k, n]) => plural(n, KML_SKIP[k][0]));
     if (bare) notes.push(plural(bare, 'placemark') + ' with no point, line or polygon (a 3D model, or empty)');
     return { features, notes: notes.length ? [notes.join(', ') + ' left out'] : [] };
@@ -1186,7 +1211,7 @@ window.MB = window.MB || {};
     },
     // What one layer owes, written now. The features are marked clean before the write, so a change made while it is
     // in flight is written again; a write that fails marks them dirty once more (the next change, or the page being
-    // hidden, tries again) and says so in the panel.
+    // hidden, tries again) and says so in the panel - once, however many times it is tried again.
     saveNow(rec) {
       clearTimeout(rec.saveTimer);
       rec.saveTimer = null;
@@ -1194,8 +1219,10 @@ window.MB = window.MB || {};
       DB.set('meta', rec.meta.id, rec.meta).catch(e => console.warn('File imports', e));
       if (rec.fcDirty && rec.fc) {
         rec.fcDirty = false;
-        DB.set('geo', rec.meta.id, rec.fc).catch(e => {
+        DB.set('geo', rec.meta.id, rec.fc).then(() => { rec.saveFailed = false; }, e => {
           rec.fcDirty = true;
+          if (rec.saveFailed) return; // (said already: every hide would try again and say it again)
+          rec.saveFailed = true;
           this.note(rec.meta.name + ': a change could not be kept (' + (e.message || e) + ').', true);
           this.changed();
         });
