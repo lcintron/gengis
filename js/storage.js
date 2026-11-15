@@ -3,6 +3,9 @@ window.MB = window.MB || {};
 (function (MB) {
   'use strict';
 
+  // A field of an object's own, whatever its name ("__proto__" too: plain assignment would set the prototype instead).
+  const put = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
+
   // Saving in the background lives in projectstore.js; these are the names the rest of the app calls.
   MB.autosave = kind => MB.projects.schedule(kind); // kind 'view': only the map view changed
   MB.saveNow = () => MB.projects.saveNow(); // the page is being hidden or closed
@@ -46,7 +49,7 @@ window.MB = window.MB || {};
       const lay = MB.getLayer(m.layerId);
       const props = { id: m.id, name: m.name || '', layer: lay ? lay.name : '', type: m.type, style: m.style };
       // its attributes as properties of their own, as other tools read them (one named as GenGIS's own: in "attributes")
-      Object.keys(m.attrs || {}).forEach(k => { if (k in props || GJ_OWN.has(k)) (props.attributes = props.attributes || {})[k] = m.attrs[k]; else props[k] = m.attrs[k]; });
+      Object.keys(m.attrs || {}).forEach(k => { if (k in props || GJ_OWN.has(k)) put(props.attributes = props.attributes || {}, k, m.attrs[k]); else put(props, k, m.attrs[k]); });
       let geometry = null;
       switch (m.type) {
         case 'marker': case 'text': case 'svg': {
@@ -76,8 +79,8 @@ window.MB = window.MB || {};
   const GJ_OWN = new Set(['id', 'name', 'layer', 'type', 'style', 'text', 'svg', 'radius', 'attributes', 'stroke', 'stroke-width', 'stroke-opacity', 'fill', 'fill-opacity', 'marker-color', 'marker-size', 'marker-symbol']);
   function attrsOf(p) {
     const a = {};
-    Object.keys(p).forEach(k => { const v = p[k]; if (!GJ_OWN.has(k) && !(k === 'title' && p.name == null) && v != null && v !== '' && typeof v !== 'object') a[k] = v; }); // (a title without a name is the name)
-    if (p.attributes && typeof p.attributes === 'object') Object.keys(p.attributes).forEach(k => { const v = p.attributes[k]; if (v != null && v !== '' && typeof v !== 'object') a[k] = v; });
+    Object.keys(p).forEach(k => { const v = p[k]; if (!GJ_OWN.has(k) && !(k === 'title' && p.name == null) && v != null && v !== '' && typeof v !== 'object') put(a, k, v); }); // (a title without a name is the name)
+    if (p.attributes && typeof p.attributes === 'object') Object.keys(p.attributes).forEach(k => { const v = p.attributes[k]; if (v != null && v !== '' && typeof v !== 'object') put(a, k, v); });
     return Object.keys(a).length ? a : undefined;
   }
   MB.importGeoJSON = (gj, sourceName) => MB.batch(() => importGeoJSON(gj, sourceName)); // one redraw at the end

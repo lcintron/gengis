@@ -130,7 +130,7 @@ test('the project\'s objects carry attributes: kept and saved, edited in Propert
   assert.match(ui, /panel\.appendChild\(attrForm\(f\)\);/);
   assert.match(ui, /\{ label: 'Attribute table', [^}]*MB\.attrTable\.open\(MB\.attrs\.tableFor\(id\)\)/);
   assert.match(ui, /if \(MB\.data\.picked\.ds\.imp && MB\.imports\) MB\.imports\.bindPicked\(panel, MB\.data\.picked\);/);
-  assert.match(storage, /Object\.keys\(m\.attrs \|\| \{\}\)\.forEach\(k => \{ if \(k in props \|\| GJ_OWN\.has\(k\)\) \(props\.attributes = props\.attributes \|\| \{\}\)\[k\] = m\.attrs\[k\]; else props\[k\] = m\.attrs\[k\]; \}\);/);
+  assert.match(storage, /Object\.keys\(m\.attrs \|\| \{\}\)\.forEach\(k => \{ if \(k in props \|\| GJ_OWN\.has\(k\)\) put\(props\.attributes = props\.attributes \|\| \{\}, k, m\.attrs\[k\]\); else put\(props, k, m\.attrs\[k\]\); \}\);/);
   assert.match(storage, /const base = \{ layerId: targetId, name: p\.name != null \? String\(p\.name\) : \(p\.title != null \? String\(p\.title\) : ''\), style, attrs: attrsOf\(p\) \};/);
   assert.match(storage, /!\(k === 'title' && p\.name == null\)/, 'a title attribute of an unnamed object survives export and import');
   const dl = read('js/datalayers.js');
@@ -199,6 +199,35 @@ test('a field named after something every object has ("constructor"): a value on
   assert.doesNotThrow(() => structuredClone(rec.fc), 'nothing in the layer that cannot be saved');
   assert.equal(ad.renameField('builder', 'constructor'), 'That name is reserved: choose another');
   assert.equal(MB.attrs.badKey('constructor'), 'That name is reserved: choose another', 'the project\'s own objects say the same');
+});
+
+test('a field named "__proto__" is written out as a field of its own, not as the copy\'s prototype', () => {
+  const feats = [{ type: 'Feature', properties: JSON.parse('{"__proto__":"p","name":"A"}'), geometry: { type: 'Point', coordinates: [1, 2] } }];
+  const look = S.defaults(feats, '#ff8a3d');
+  const rec = { meta: { id: 'p', name: 'Sites', look }, fc: { type: 'FeatureCollection', features: feats } };
+  const gj = MB.imports.read.toGeoJson(rec), p = gj.features[0].properties;
+  assert.equal(Object.hasOwn(p, '__proto__'), true, 'the field is in the exported feature');
+  assert.equal(Object.getOwnPropertyDescriptor(p, '__proto__').value, 'p');
+  assert.equal(Object.getPrototypeOf(p), Object.getPrototypeOf(gj.features[0]), 'a plain object: nothing set its prototype');
+  assert.equal(JSON.parse(JSON.stringify(gj)).features[0].properties['__proto__'], 'p', 'and it survives the file');
+  assert.equal(p['marker-color'], MB.imports.read.paint(rec, feats[0]).style.fillColor, 'the colors are there as always');
+});
+
+test('the attribute table sorts a large layer in a moment: one collator for the sort, each value read and shown once', () => {
+  const sortBy = MB.attrs.sortBy, ad = { get: (r, k) => r[k] };
+  const rows = [];
+  for (let i = 0; i < 100000; i++) rows.push({ v: 'Site ' + ((i * 7919) % 100000) }); // 100,000 names, shuffled
+  const t0 = process.hrtime.bigint();
+  const out = sortBy(ad, rows, 'v', 1);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.deepEqual(plain(out.slice(0, 3).map(r => r.v)), ['Site 0', 'Site 1', 'Site 2'], '"Site 2" before "Site 10"');
+  assert.equal(out.length, rows.length);
+  assert.ok(ms < 2000, '100,000 rows sorted in ' + ms.toFixed(0) + ' ms'); // (a collator built for each comparison: 6 s)
+  // empty values last whichever way it is sorted, numbers as numbers, case and accents alike
+  const mix = [{ v: 10 }, { v: null }, { v: 2 }, { v: '' }, { v: 'é' }, { v: 'E' }];
+  assert.deepEqual(plain(sortBy(ad, mix, 'v', 1).map(r => r.v)), [2, 10, 'é', 'E', null, '']);
+  assert.deepEqual(plain(sortBy(ad, mix, 'v', -1).map(r => r.v)), ['é', 'E', 10, 2, null, ''], 'the empty ones stay last');
+  assert.deepEqual(plain(sortBy(ad, [{ v: true }, { v: false }], 'v', 1).map(r => r.v)), [false, true], 'true/false as the cells show them');
 });
 
 test('the attribute table names its columns by their index: no field name goes into the page and back', () => {

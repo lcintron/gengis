@@ -24,6 +24,44 @@ window.MB = window.MB || {};
 
   MB.clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
+  /* ---------- a pointer being held down ----------
+   * Anything that draws a panel anew waits for the press to end with MB.whenReleased(fn): drawn between a button's
+   * press and its release, the button would be gone and its click lost (a field renamed in Properties, an imported
+   * value edited there). Listened to once, for the page. Only the main button's press counts (a right-click's menu
+   * may swallow its release); the window losing focus, or a context menu, ends a press too, and a release that never
+   * comes is given up on after 2 s, so nothing waits for good. */
+  const press = { down: false, waiting: [], hooked: false, timer: null, giveUp: 2000 }; // (giveUp: ms; the tests shorten it)
+  function release() {
+    press.down = false;
+    clearTimeout(press.timer);
+    const w = press.waiting.splice(0);
+    if (w.length) setTimeout(() => w.forEach(fn => fn())); // (after the click)
+  }
+  function hookPress(doc, win) {
+    doc = doc || (typeof document !== 'undefined' ? document : null);
+    win = win || (typeof window !== 'undefined' ? window : null);
+    if (press.hooked || !doc) return;
+    press.hooked = true;
+    doc.addEventListener('pointerdown', e => {
+      if (e.button > 0 || e.isPrimary === false) return;
+      press.down = true;
+      clearTimeout(press.timer);
+      press.timer = setTimeout(release, press.giveUp);
+    }, true);
+    const end = e => { if (e.isPrimary !== false) release(); }; // (a second finger lifting is not the press ending)
+    ['pointerup', 'pointercancel'].forEach(t => doc.addEventListener(t, end, true));
+    doc.addEventListener('contextmenu', release, true);
+    if (win && typeof win.addEventListener === 'function') win.addEventListener('blur', release);
+  }
+  // (listened to as the page loads, never on the first whenReleased: a press is seen before anything asks about it -
+  //  a change or focusout event fires after the pointerdown that caused it, so the first redraw of a session would
+  //  otherwise find nothing held down and eat the click)
+  if (typeof document !== 'undefined' && document.addEventListener) hookPress();
+  MB.whenReleased = function (fn) {
+    if (press.down) press.waiting.push(fn); else setTimeout(fn);
+  };
+  MB.press = { hook: hookPress, state: press }; // (the tests)
+
   // A map's credits as HTML that can do no harm: its text, and links to http(s) addresses (opening a new tab);
   // anything else (scripts, handlers, other elements) is left out, its text kept.
   MB.safeAttribution = function (html) {

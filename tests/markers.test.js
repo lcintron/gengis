@@ -232,12 +232,36 @@ test('attribute fields: reserved names refused, values read as the object\'s own
   assert.match(A.tableFor('l1').renameField('b', '__proto__'), /reserved/, 'but renaming a field to one is still refused');
 });
 
+test('a field rename that waited for a pointer does nothing once its field is gone: no empty undo step', () => {
+  const lay = { id: 'l1', name: 'L', fields: ['a', 'keep'] }, commits = [];
+  const M = { escapeHtml: s => String(s), featureLayers: {}, getLayer: id => (id === 'l1' ? lay : null), on() {}, emit() {}, commit: w => commits.push(w), ui: {} };
+  const ctx = { window: { MB: M }, console };
+  vm.createContext(ctx);
+  vm.runInContext(read('js/attrtable.js'), ctx, { filename: 'js/attrtable.js' });
+  const f = { mb: { layerId: 'l1', attrs: { a: 1 } } };
+  M.featureLayers = { x: f };
+  const t = M.attrs.tableFor('l1');
+  // the rename waits for the pointer to be released (Properties, js/ui.js), and the click that ended the edit
+  // removed that very field
+  t.deleteField('a');
+  assert.deepEqual(commits, ['delete field']);
+  assert.equal(t.renameField('a', 'b'), '', 'nothing to say about a field that is no longer there');
+  assert.deepEqual(commits, ['delete field'], 'and nothing to undo either');
+  assert.deepEqual(lay.fields, ['keep']);
+  // a field still there is renamed as always
+  assert.equal(t.renameField('keep', 'kept'), '');
+  assert.deepEqual(commits, ['delete field', 'rename field']);
+  assert.deepEqual(lay.fields, ['kept']);
+});
+
 test('copied into the project, every property is its own field ("__proto__" too)', () => {
   assert.match(read('js/fileimports.js'), /Object\.defineProperty\(attrs, k, \{ value: typeof v === 'object' \? JSON\.stringify\(v\) : v, writable: true, enumerable: true, configurable: true \}\)/);
   const form = read('js/ui.js');
   const af = form.slice(form.indexOf('function attrForm(f)'), form.indexOf('function bindNameTip(f)'));
   assert.match(af, /table\(\)\.deleteField\(k\); \/\/ \(Properties drawn anew by the table's commit\)\n\s*\/\/ the keyboard/, 'a remove drawn once');
-  assert.match(af, /return; \} \/\/ \(done: Properties drawn anew by the table's commit\)\n\s*focusRow/, 'a rename drawn once');
+  const ren = af.slice(af.indexOf('MB.whenReleased'), af.indexOf("$$('[data-adel]")); // the rename, once the pointer is released
+  assert.match(ren, /return; \} \/\/ \(done: Properties drawn anew by the table's commit\)/, 'a rename drawn once');
+  assert.doesNotMatch(ren, /renderProps/, 'and never a second time by hand');
 });
 
 test('a value\'s box shows all of it and keeps its lines (Properties and the table alike)', () => {

@@ -281,8 +281,25 @@ test('dialogs stay between the system bars (Android edge-to-edge: the insets com
   // the presenter's logo in the top left corner, and the phone's bottom sheet
   assert.ok(one('.present-logo').some(b => /top: calc\(12px \+ env\(safe-area-inset-top, 0px\)\); left: calc\(12px \+ env\(safe-area-inset-left, 0px\)\);/.test(b)),
     'the presenter logo stays clear of the status bar and of a cutout');
-  assert.ok(one('#sidebar').some(b => ['bottom', 'left', 'right'].every(s => inset(s).test(b))),
+  // the side panel: docked at the right above 640px (a phone in landscape too), a sheet at the bottom below that
+  const side = one('#sidebar');
+  assert.equal(side.length, 2, 'the side panel: the docked column and the phone\'s sheet');
+  assert.ok(side.every(b => inset('right').test(b) && inset('bottom').test(b)),
+    'the side panel clears a bar or cutout at its right and the bar below it, docked or as a sheet');
+  assert.ok(side.some(b => ['bottom', 'left', 'right'].every(s => inset(s).test(b))),
     'the bottom sheet\'s content clears the bar below it and a bar or cutout beside it');
+  // the map's right-hand controls take that room only while the map reaches that edge (no panel docked beside it)
+  assert.ok(rules('html.native-app .leaflet-right').some(b => /margin-right: env\(safe-area-inset-right, 0px\);/.test(b)));
+  const docked = 'html.native-app body:not(.presenting) #main:has(> #sidebar:not(.collapsed)) .leaflet-right';
+  assert.ok(rules(docked).some(b => /margin-right: 0;/.test(b)),
+    'with the panel docked beside it the map ends at the panel, which keeps that room itself');
+  // presenting hides the panel with display: none, without adding .collapsed, and the map has the window to itself
+  // again: every rule that gives up that room must leave presenter mode out, or its controls sit under the bar
+  assert.match(css, /body\.presenting [^{]*#sidebar[^{]*\{ display: none !important; \}/, 'presenting hides the panel, .collapsed or not');
+  const gaveUp = [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(m => /html\.native-app/.test(m[1]) && /\.leaflet-right/.test(m[1]) && /margin-right: 0;/.test(m[2])).map(m => m[1].trim());
+  assert.ok(gaveUp.length, 'the docked-panel rule found');
+  assert.ok(gaveUp.every(s => s.includes('body:not(.presenting)')), 'not while presenting: ' + gaveUp.join(' | '));
   // the tracking bar over the map: in the Android app above the gesture bar, as the coordinates below it are
   // (it sits in #mapwrap, not in a Leaflet corner, so the inset is its own and counted once)
   const trk = one('.trk-bar');
@@ -326,6 +343,25 @@ test('the cloud dialog deletes a project from the cloud only after a red confirm
   assert.match(del, /if \(!f \|\| busy\[fileId\]\) return;/);
   assert.match(del, /const el = near \? rowButton\(accId, near\.fileId[^;]*: dlg\.querySelector\(`\[data-reload=/);
   assert.match(ui, /try \{ ok = await C\(\)\.openRemote\(accId, fileId\); \}\s*catch \(e\) \{[^}]*\}\s*finally \{ delete busy\[fileId\]; \}/);
+  // and while the delete runs (the row's buttons disabled, so the render cannot give the focus back to them) the
+  // focus stays in the dialog rather than falling to the page behind it
+  assert.ok(del.indexOf('await U.render();') < del.indexOf('holdFocus();'), 'the row is drawn quiet, then the focus is seen to');
+  assert.ok(del.indexOf('holdFocus();') < del.indexOf('C().deleteRemote('), 'before the delete, not after it');
+  assert.match(ui, /function holdFocus\(\) \{\s*if \(!isOpen\(\) \|\| dlg\.contains\(document\.activeElement\)\) return;[\s\S]{0,120}?dlg\.querySelector\('\.modal-x'\)/,
+    'on the dialog\'s close button, and only once the focus has fallen out of the dialog');
+});
+
+test('a cloud project already on this device: the dialog closes once it is open, never before (an open called off leaves it up)', () => {
+  const open = js['cloudui.js'].split('async function openRemote(')[1] || '';
+  assert.ok(open, 'openRemote found');
+  assert.match(open, /if \(await MB\.projects\.open\(l\.projectId\)\) MB\.ui\.closeDialog\(dlg\);/, 'opened first, closed after');
+  assert.doesNotMatch(open, /MB\.ui\.closeDialog\(dlg\);\s*await MB\.projects\.open\(/, 'not closed before the open');
+  // which means MB.projects.open says whether it opened: the user may keep what is open now instead
+  const p = (js['projectstore.js'].split('P.open = async function (id) {')[1] || '').split('};')[0];
+  assert.ok(p, 'P.open found');
+  assert.match(p, /confirmReplace\('Open the other project'\)\)\) return false;/, 'called off: false');
+  assert.match(p, /if \(!rec\) \{ MB\.toast\([^)]*\); return false; \}/, 'no longer saved here: false');
+  assert.match(p, /return true;\s*$/, 'true once the project is loaded');
 });
 
 test('the cloud dialog\'s search: gone with its box, and a cloud section saying why it is empty stays shown', () => {
@@ -459,6 +495,66 @@ test('the attribute table keeps the keyboard: focus is given back after it is dr
   assert.ok(at.indexOf('if (b.disabled && (document.activeElement === b') > at.indexOf("d.querySelector('#attrScroll').scrollTop = 0;"), 'after the page is drawn anew');
   // a box visited and left unchanged is no edit (Enter commits, and the change event that follows must not add a second undo step)
   assert.match(at, /const same = v === was \|\| \(\(v == null \|\| v === ''\) && \(was == null \|\| was === ''\)\);\s*\r?\n\s*if \(!same\) T\.ad\.set\(row, k, v\);/);
+});
+
+test('the attribute table counts the fields it shows, sorts with one collator, and keeps the keyboard after a column menu sort', () => {
+  const at = js['attrtable.js'];
+  // the fixed "Object name" column is no field: "1 field", not "1 fields"
+  assert.match(at, /const nFields = fields\.length - fields\.filter\(f => f\.fixed\)\.length;/);
+  assert.match(at, /\$\{nFields\} field\$\{nFields === 1 \? '' : 's'\}/, 'the plural follows the count shown');
+  // one collator for a whole sort (a new one per comparison took 20 s for 250,000 rows), each value read once
+  assert.match(at, /const COLLATOR = new Intl\.Collator\(undefined, \{ numeric: true, sensitivity: 'base' \}\);/);
+  assert.doesNotMatch(at, /localeCompare/, 'nothing builds a collator inside the comparator');
+  assert.match(at, /const rows = list\.map\(r => \{ const v = ad\.get\(r, key\)/, 'the values are read before the sort, not in it');
+  // the menu is gone when its action runs, and focus with it: that column's sort button takes it (the page body
+  // behind the dialog must not have it)
+  assert.ok(at.includes("T.sort = key; T.dir = 1; build(); if (!insideDialog()) focusColumn(key);"), 'sort ascending');
+  assert.ok(at.includes("T.sort = key; T.dir = -1; build(); if (!insideDialog()) focusColumn(key);"), 'sort descending');
+});
+
+test('a redraw never swallows the click that follows a press: Properties waits for the pointer to be released', () => {
+  // one helper for the page, in util.js (the imported values in Properties used to keep their own), listening from
+  // the moment it loads: a press that has already begun when the first redraw is asked for must be seen
+  assert.match(js['util.js'], /if \(typeof document !== 'undefined' && document\.addEventListener\) hookPress\(\);/);
+  assert.match(js['util.js'], /MB\.whenReleased = function \(fn\) \{\s*\r?\n\s*if \(press\.down\) press\.waiting\.push\(fn\); else setTimeout\(fn\);/);
+  assert.doesNotMatch(js['util.js'], /MB\.whenReleased = function \(fn\) \{\s*\r?\n\s*hookPress\(\);/, 'not hooked on first use');
+  assert.match(js['fileimports.js'], /const whenReleased = fn => MB\.whenReleased\(fn\);/);
+  assert.doesNotMatch(js['fileimports.js'], /const press = \{ down: false/, 'and no press state of its own there');
+  // a field renamed in Properties draws it anew (the attribute table's commit): after the release, so a click on
+  // another row's trash button is not lost
+  const ui = js['ui.js'], af = ui.slice(ui.indexOf('function attrForm(f)'), ui.indexOf('function bindNameTip(f)'));
+  assert.match(af, /MB\.whenReleased\(\(\) => \{[\s\S]{0,200}const why = table\(\)\.renameField\(from, to\);/);
+  // and the keyboard is only put back in a value box when that click left it in the attributes, or nowhere, and the
+  // same object is still the one shown (never stolen from a tool, a Layers control or another object)
+  assert.match(af, /const was = document\.activeElement, here = !was \|\| was === document\.body \|\| wrap\.contains\(was\);/);
+  assert.match(af, /if \(MB\.selected === f && \(here \|\| !at \|\| at === document\.body\)\) focusRow\('\[data-av\]', to\);/);
+  // a rename that waited while its own field was removed is dropped, undo step and all
+  assert.match(js['attrtable.js'], /if \(!fields\.includes\(from\)\) return '';/);
+});
+
+test('an imported layer\'s last edit is written when the page is hidden or closed, as the project\'s is', () => {
+  const imp = js['fileimports.js'];
+  assert.match(imp, /win\.addEventListener\('pagehide', \(\) => MB\.imports\.flushSaves\(\)\);/);
+  assert.match(imp, /doc\.addEventListener\('visibilitychange', \(\) => \{ if \(doc\.visibilityState === 'hidden'\) MB\.imports\.flushSaves\(\); \}\);/);
+  assert.match(imp, /async init\(\) \{\s*\r?\n\s*hookSaves\(\);/, 'hooked as the imports start');
+  assert.match(imp, /flushSaves\(\) \{ layers\.forEach\(rec => \{ if \(rec\.saveTimer \|\| rec\.fcDirty\) this\.saveNow\(rec\); \}\); \}/);
+  // a write that fails leaves the features to be written again, and says so where the panel shows it - once, not
+  // once per hide
+  assert.match(imp, /rec\.fcDirty = true;\s*\r?\n\s*if \(rec\.saveFailed\) return;[^\n]*\r?\n\s*rec\.saveFailed = true;\s*\r?\n\s*this\.note\(rec\.meta\.name \+ ': a change could not be kept/);
+  assert.match(imp, /\.then\(\(\) => \{ rec\.saveFailed = false; \}/, 'and a write that goes through clears it');
+  assert.match(imp, /this\.changed\(\);\s*\r?\n\s*\}\);\s*\r?\n\s*\}\s*\r?\n\s*\},/, 'and the panel is drawn anew, so the note shows');
+  // the project does the same (js/app.js)
+  assert.match(js['app.js'], /window\.addEventListener\('pagehide', \(\) => MB\.saveNow\(\)\);/);
+});
+
+test('a field named "__proto__" is copied as a field of its own, never through Object.assign or a plain set', () => {
+  const imp = js['fileimports.js'];
+  assert.match(imp, /const copyOwn = o => Object\.fromEntries\(Object\.entries\(o \|\| \{\}\)\);/);
+  assert.ok(imp.includes('properties: i ? copyOwn(props) : props'), 'the parts of one record');
+  assert.ok(imp.includes('props = copyOwn(f.properties)'), 'and the layer written out as GeoJSON');
+  assert.match(js['geometry.js'], /Object\.keys\(attrs\)\.forEach\(k => Object\.defineProperty\(a, k, \{ value: attrs\[k\], writable: true, enumerable: true, configurable: true \}\)\);/, 'objects joined');
+  assert.doesNotMatch(js['geometry.js'], /Object\.assign\(\{\}, \.\.\.layers/);
+  assert.match(js['storage.js'], /const put = \(o, k, v\) => Object\.defineProperty\(o, k, \{ value: v, writable: true, enumerable: true, configurable: true \}\);/, 'the GeoJSON export and import');
 });
 
 test('the attribute table\'s page button rescues the keyboard in Chromium too, where the disabled button is still the active element', () => {

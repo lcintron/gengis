@@ -40,15 +40,34 @@ function load() {
   return state;
 }
 function persist() {
-  try { writeAtomic(stateFile(), JSON.stringify(state, null, 1)); } catch (e) { console.warn('desktop-files.json not saved', e); }
+  // (which file belongs to which project: worth keeping even if it can only be written over in place)
+  try { writeAtomic(stateFile(), JSON.stringify(state, null, 1), { inPlace: true }); } catch (e) { console.warn('desktop-files.json not saved', e); }
 }
 
-// Write a file so that it is either the old one or the new one, never half of either.
-function writeAtomic(file, text) {
+// Another process holding the file open for a moment (on Windows: an antivirus scanning what was just written, the
+// search indexer, a backup tool) makes the rename below fail with one of these: it is worth trying again.
+const LOCKED = ['EPERM', 'EACCES', 'EBUSY'];
+const RETRIES = [5, 10, 20, 40, 80]; // ms between tries (~155ms in all, short enough for a save on the way out)
+const nap = ms => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch (e) { /* cannot wait here: try again at once */ } };
+
+// Write a file so that it is either the old one or the new one, never half of either. A file still held after the
+// tries above fails the write, and the file on disk stays whole: a project is saved this way, so a crash while it was
+// being written over in place must not be able to truncate it (the page is told and keeps the project in its own
+// database). Only the app's own small state files pass { inPlace: true }: they are written over as a last resort
+// rather than lost, and a half-written one is read as "nothing kept" (a folder choice remade, a sign-in done again).
+function writeAtomic(file, text, opts) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = file + '.' + process.pid + '.' + Date.now().toString(36) + '.tmp';
   fs.writeFileSync(tmp, text, 'utf8');
-  try { fs.renameSync(tmp, file); } catch (e) { try { fs.unlinkSync(tmp); } catch (x) { /* ignore */ } throw e; }
+  let err = null;
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, file); return; } catch (e) { err = e; }
+    if (!LOCKED.includes(err.code) || i >= RETRIES.length) break;
+    nap(RETRIES[i]);
+  }
+  if (opts && opts.inPlace && LOCKED.includes(err.code)) { try { fs.writeFileSync(file, text, 'utf8'); err = null; } catch (e) { /* the rename's error is the one that counts */ } }
+  try { fs.unlinkSync(tmp); } catch (e) { /* ignore */ }
+  if (err) throw err;
 }
 
 /* ----- where a path really is ----- */

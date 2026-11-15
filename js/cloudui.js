@@ -205,7 +205,9 @@ window.MB = window.MB || {};
 
   async function openRemote(accId, fileId) {
     const l = linkTo(accId, fileId);
-    if (l && await MB.projects.get(l.projectId)) { MB.ui.closeDialog(dlg); await MB.projects.open(l.projectId); return; } // here already
+    // here already: the dialog closes once it is open, so an open the user calls off (what is open now cannot be
+    // kept) leaves them where they were, with the dialog still up
+    if (l && await MB.projects.get(l.projectId)) { if (await MB.projects.open(l.projectId)) MB.ui.closeDialog(dlg); return; }
     if (busy[fileId]) return;
     busy[fileId] = 'open'; U.render();
     let ok = false;
@@ -216,6 +218,13 @@ window.MB = window.MB || {};
   }
 
   const rowButton = (accId, fileId, sel) => dlg.querySelector(`${sel || ''}[data-acc="${CSS.escape(accId)}"][data-file="${CSS.escape(fileId)}"]`);
+  // A row whose buttons are disabled (a delete under way) cannot take the focus back after the render, and it would
+  // fall to the page behind the dialog: the dialog's close button holds it until the row's turn comes again.
+  function holdFocus() {
+    if (!isOpen() || dlg.contains(document.activeElement)) return;
+    const el = dlg.querySelector('.modal-x');
+    if (el) el.focus();
+  }
   async function deleteRemote(accId, fileId) {
     const a = C().accounts.find(x => x.id === accId), f = a && ((remote[accId] || {}).files || []).find(x => x.fileId === fileId);
     if (!f || busy[fileId]) return;
@@ -229,7 +238,8 @@ window.MB = window.MB || {};
         (here ? 'The copy on this device is kept and stops syncing.' + (conflict ? ' The cloud version has changes that are not on this device.' : '') : 'It is not on this device.') +
         ' Other devices that have it keep their copy.';
       if (await MB.ask(msg, 'Delete from ' + p.name, 'Cancel', { danger: true })) {
-        U.render();
+        await U.render(); // the row's buttons go quiet while it is deleted: the focus would fall out of the dialog
+        holdFocus();
         await C().deleteRemote(accId, fileId);
         gone = true;
         const rm = remote[accId] || {}, files = rm.files || [];

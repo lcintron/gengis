@@ -405,6 +405,9 @@ path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 #sidebar {
   width: max(var(--sidebar-w), var(--sidebar-user, 0px)); flex: 0 0 auto; background: var(--bg-2); border-left: 1px solid var(--border); /* (the default is the least: ui.js) */
   display: flex; flex-direction: column; min-height: 0; position: relative;
+  /* docked at the right: its content clear of a nav bar or cutout there and of the gesture bar below, in the Android
+     app's edge-to-edge window (0 everywhere else; the width is the panel's whole width, box-sizing: border-box) */
+  padding-right: env(safe-area-inset-right, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 /* its grip: the left edge beside the map (drag for the width); a phone's sheet: a handle at the top (for the height) */
 .sidebar-grip { position: absolute; z-index: 5; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; touch-action: none; }
@@ -1387,6 +1390,10 @@ html.native-app #mapwrap.tb-right #toolbar { margin-left: 0; margin-right: env(s
 html.native-app .leaflet-bottom { margin-bottom: env(safe-area-inset-bottom, 0px); }
 html.native-app .leaflet-left { margin-left: env(safe-area-inset-left, 0px); }
 html.native-app .leaflet-right { margin-right: env(safe-area-inset-right, 0px); }
+/* unless the side panel is docked beside the map (a phone's sheet lies over it instead): the map ends at the panel,
+   which is the one keeping clear of that bar. Presenting, the panel is hidden (display: none) and the map has the
+   window to itself again, so the margin stays. */
+@media (min-width: 641px) { html.native-app body:not(.presenting) #main:has(> #sidebar:not(.collapsed)) .leaflet-right { margin-right: 0; } }
 html.native-app .trk-bar { --trk-inset: env(safe-area-inset-bottom, 0px); } /* above the gesture bar, as the coordinates it sits over are */
 
 /* ---------- cloud sync (cloudui.js) ---------- */

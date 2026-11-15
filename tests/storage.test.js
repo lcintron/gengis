@@ -110,6 +110,36 @@ test('the map export and a layer export wait for the file too', () => {
   assert.match(body, /return MB\.download\(name \+ '\.geojson'/);
 });
 
+test('an attribute named "__proto__" survives the GeoJSON export and import as a field of the object\'s own', async () => {
+  const { MB } = load();
+  const seen = project(MB);
+  const attrs = JSON.parse('{"__proto__":"p","note":"n"}'); // a file's own field, named after what every object has
+  MB.featureLayers = { f1: { mb: { id: 'f1', name: 'A', layerId: 'L1', type: 'marker', style: {}, attrs } } };
+  MB.getLayer = () => ({ name: 'Layer 1' });
+  MB.svgCenter = () => ({ lat: 1, lng: 2 });
+  let text = '';
+  MB.download = async (name, t) => { text = t; return true; };
+  await MB.exportGeoJSON();
+  const p = JSON.parse(text).features[0].properties;
+  // "__proto__" is a name GenGIS reads itself, so it travels in "attributes" - as a field, not as a prototype
+  assert.equal(Object.getOwnPropertyDescriptor(p.attributes, '__proto__').value, 'p');
+  assert.equal(p.note, 'n');
+
+  // and back in: each one the object's own field again
+  const made = [];
+  Object.assign(MB, {
+    batch: fn => fn(), createLayer: name => ({ id: 'L-' + name }), restoreFeature: d => { made.push(d); return d; },
+    applyZOrder() {}, emit() {}, commit() {}, currentStyle: {}, groups: {}, state: { projectName: 'My map', svgLibrary: {} }
+  });
+  MB.importGeoJSON(JSON.parse(text), 'map.geojson');
+  const a = made[0].attrs;
+  assert.equal(Object.hasOwn(a, '__proto__'), true, 'the field is kept, not dropped into the prototype');
+  assert.equal(Object.getOwnPropertyDescriptor(a, '__proto__').value, 'p');
+  assert.equal(Object.getPrototypeOf(a), Object.getPrototypeOf(made[0]), 'a plain object: nothing polluted');
+  assert.equal(a.note, 'n');
+  assert.equal(seen.toasts.pop(), 'Imported 1 features into "map"');
+});
+
 test('a file that cannot even be read says so: never an unanswered failure with nothing on screen', async () => {
   const { MB } = load();
   const seen = project(MB);

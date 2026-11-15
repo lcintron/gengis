@@ -324,12 +324,15 @@ window.MB = window.MB || {};
     return true;
   };
 
+  // Open a project saved here. Resolves whether it was opened: the user may call it off (what is open now cannot be
+  // kept), and then whoever asked stays as it was (cloudui.js keeps its dialog up).
   P.open = async function (id) {
-    if (!(await P.confirmReplace('Open the other project'))) return;
+    if (!(await P.confirmReplace('Open the other project'))) return false;
     const rec = await run('projects', 'readonly', s => done(s.get(id)));
-    if (!rec) { MB.toast('That project is no longer saved here.'); return; }
+    if (!rec) { MB.toast('That project is no longer saved here.'); return false; }
     MB.loadProject(rec.data);
     P.fileBacked = !!rec.fileBacked;
+    return true;
   };
 
   P.restore = async function (key) {
