@@ -535,13 +535,47 @@ test('a deeply nested file is read, not refused: a description of raw <p> and <b
     const res = R.kml('<kml><Document>' + body + '</Document></kml>'); // (the folders never close: the Document's end closes them)
     assert.equal(res.features.length, n, 'a placemark from every folder');
     assert.equal(res.features[0].properties.name, 'P0');
-    assert.equal(res.features[n - 1].properties.folder.split(' / ').length, n, 'the deepest one knows every folder above it');
+    assert.equal(res.features[99].properties.folder.split(' / ').length, 100, 'up to 100 levels: every folder above it');
+    // deeper than that, the path keeps its outermost and innermost 50 levels (a path of every level of a crafted
+    // file 99,000 deep would be hundreds of thousands of characters, at every one of them)
+    const deepest = res.features[n - 1].properties.folder;
+    assert.equal(deepest.split(' / ').length, 101, 'the outermost 50 and the innermost 50, with one … between');
+    assert.ok(deepest.startsWith('F0 / F1 / '), deepest.slice(0, 40));
+    assert.ok(deepest.endsWith(' / F4998 / F4999'), deepest.slice(-40));
+    assert.equal(deepest.split(' / ')[50], '…');
   });
   assert.ok(t < 5000, '5,000 deep read in ' + t.toFixed(0) + ' ms');
   // a MultiGeometry nested as deep still gives its parts
   const multi = '<MultiGeometry>'.repeat(3000) + '<Point><coordinates>3,4</coordinates></Point>';
   const [m] = R.kml('<kml><Placemark>' + multi + '</Placemark></kml>').features;
   assert.deepEqual(plain(m.geometry.coordinates), [3, 4]);
+
+  // 99,000 named folders around one placemark: a folder path costs nothing until a placemark asks for it (copying
+  // the path at every level took 34.5 s)
+  const deep = '<Folder><name>a</name>'.repeat(99000);
+  const one = ms(() => {
+    const [p] = R.kml('<kml>' + deep + '<Placemark><name>P</name><Point><coordinates>5,6</coordinates></Point></Placemark></kml>').features;
+    assert.equal(p.properties.name, 'P');
+    assert.equal(p.properties.folder.split(' / ').length, 101, 'its path kept to the outermost and innermost 50 levels');
+  });
+  assert.ok(one < 500, '99,000 folders around one placemark read in ' + one.toFixed(0) + ' ms');
+  // and a placemark at every one of 50,000 levels: each path is written out in full before it is cut to size, so
+  // this must stay a matter of the levels kept, not of the depth
+  const each = ms(() => {
+    let nested = '';
+    for (let i = 0; i < 50000; i++) nested += `<Folder><name>F${i}</name><Placemark><Point><coordinates>1,1</coordinates></Point></Placemark>`;
+    const res = R.kml('<kml>' + nested + '</kml>');
+    assert.equal(res.features.length, 50000);
+    assert.equal(res.features[49999].properties.folder.split(' / ').length, 101);
+  });
+  assert.ok(each < 2000, 'a placemark at every one of 50,000 levels read in ' + each.toFixed(0) + ' ms');
+  // many placemarks in one deep folder: its path is written out once, not once each
+  const many = ms(() => {
+    const res = R.kml('<kml>' + '<Folder><name>a</name>'.repeat(20000) + '<Placemark><Point><coordinates>7,8</coordinates></Point></Placemark>'.repeat(2000) + '</kml>');
+    assert.equal(res.features.length, 2000);
+    assert.equal(res.features[1999].properties.folder, res.features[0].properties.folder);
+  });
+  assert.ok(many < 500, '2,000 placemarks 20,000 folders deep read in ' + many.toFixed(0) + ' ms');
   // only a crafted file of nothing but open tags is refused, at once and by name (100,000 deep: no real file is near)
   const crafted = ms(() => assert.throws(() => R.kml('<kml>' + '<Folder>'.repeat(200000) + '</kml>'), /nested too deeply/));
   assert.ok(crafted < 500, 'refused in ' + crafted.toFixed(0) + ' ms');

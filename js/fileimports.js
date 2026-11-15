@@ -295,6 +295,7 @@ window.MB = window.MB || {};
     return out;
   }
   const KML_SKIP = { GroundOverlay: ['ground overlay'], ScreenOverlay: ['screen overlay'], PhotoOverlay: ['photo overlay'], NetworkLink: ['network link'] };
+  const PATH_MAX = 100, PATH_KEEP = 50; // folder levels in a placemark's path: a longer one keeps its outermost and innermost PATH_KEEP
   function readKml(text) {
     const doc = parseXml(text);
     const kml = findDeep(doc, 'kml');
@@ -320,12 +321,34 @@ window.MB = window.MB || {};
     };
     const features = [], skipped = new Map();
     let bare = 0;
-    const placemark = (pm, folders) => {
+    // The folders a placemark is in, as text: the path is a chain of { name, up } nodes carried on the walk below,
+    // written out here and kept on the node it belongs to - so going a folder deeper costs nothing, and the text is
+    // written once per folder, however many placemarks are in it (a copy of the whole path at every level took 34 s
+    // for a crafted file of 99,000 nested folders).
+    // A path deeper than PATH_MAX keeps its outermost and innermost PATH_KEEP levels with … between them: every path
+    // of a real file (a handful of levels) reads as it always did, and a crafted file with a placemark at every one
+    // of 99,000 levels does not write out billions of characters of folder names.
+    const pathText = p => {
+      if (!p) return '';
+      if (p.text == null) {
+        const names = [];
+        if (p.depth <= PATH_MAX) {
+          for (let x = p; x; x = x.up) names.push(x.name);
+          p.text = names.reverse().join(' / ');
+        } else {
+          for (let x = p, k = 0; k < PATH_KEEP; x = x.up, k++) names.push(x.name);
+          p.text = pathText(p.head) + ' / … / ' + names.reverse().join(' / '); // (p.head: the PATH_KEEP-th level, its own text written once for every path below it)
+        }
+      }
+      return p.text;
+    };
+    const placemark = (pm, path) => {
       const props = {};
       const name = val(pm, 'name'), rawDesc = val(pm, 'description'), desc = MB.isHtml && MB.isHtml(rawDesc) ? rawDesc : htmlText(rawDesc);
+      const folder = pathText(path);
       if (name) props.name = name;
       if (desc) props.description = desc;
-      if (folders.length) props.folder = folders.join(' / ');
+      if (folder) props.folder = folder;
       const ext = kid(pm, 'ExtendedData');
       if (ext) {
         for (const d of kidsOf(ext, 'Data')) if (d.attrs.name) { const v = val(d, 'value'); if (v !== '') put(props, d.attrs.name, v); }
@@ -341,15 +364,18 @@ window.MB = window.MB || {};
       if (!parts.length) { bare++; return; }
       featuresFor(parts, props, style, features);
     };
-    // the placemarks, in the file's order, with the folders they are in (a stack of its own again)
+    // one folder level: its name, the folder around it, how deep it is, and the level whose text heads a long path
+    const level = (name, up) => ({ name, up, depth: up ? up.depth + 1 : 1, head: !up ? null : up.depth === PATH_KEEP ? up : up.head, text: null });
+    // the placemarks, in the file's order, each with the folder it is in (a stack of its own again; a folder only
+    // links to the one around it, so going one deeper costs nothing)
     const walk = [];
-    const into = (n, folders) => { for (let i = n.kids.length - 1; i >= 0; i--) walk.push({ k: n.kids[i], folders }); };
-    into(kml, []);
+    const into = (n, path) => { for (let i = n.kids.length - 1; i >= 0; i--) walk.push({ k: n.kids[i], path }); };
+    into(kml, null);
     while (walk.length) {
-      const { k, folders } = walk.pop();
-      if (k.name === 'Placemark') placemark(k, folders);
-      else if (k.name === 'Folder') { const nm = val(k, 'name'); into(k, nm ? folders.concat(nm) : folders); }
-      else if (k.name === 'Document' || k.name === 'kml') into(k, folders);
+      const { k, path } = walk.pop();
+      if (k.name === 'Placemark') placemark(k, path);
+      else if (k.name === 'Folder') { const nm = val(k, 'name'); into(k, nm ? level(nm, path) : path); }
+      else if (k.name === 'Document' || k.name === 'kml') into(k, path);
       else if (Object.hasOwn(KML_SKIP, k.name)) skipped.set(k.name, (skipped.get(k.name) || 0) + 1);
     }
     const notes = Array.from(skipped, ([k, n]) => plural(n, KML_SKIP[k][0]));
