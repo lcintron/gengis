@@ -246,6 +246,20 @@ test('one device deletes the file while another was editing: the second writes n
   assert.ok(b.toasts.some(t => /"Alpha" was deleted from the cloud\. Kept here, sync off\./.test(t)));
 });
 
+test('a 404 from an upload while the file is still there (an expired upload session, a passing one): tried again, sync stays on', async () => {
+  const { server, app } = await connected();
+  app.C.env.backoffBase = 20;
+  let n = 0;
+  server.fail = r => (r.method === 'PUT' && /\/content/.test(r.url) && n++ === 0 ? failWith(404, 'itemNotFound') : null);
+  app.save(project('p1', 'Alpha', 4));
+  await new Promise(r => setTimeout(r, 1200)); await app.settle();
+  assert.equal(linkOf(app, 'p1').excluded, undefined, 'sync is not turned off: the file was asked about and is there');
+  assert.equal(linkOf(app, 'p1').state, 'synced');
+  assert.equal(server.live().length, 1, 'the one file, written again');
+  assert.equal(content(server, 'Alpha.gengis.json').features.length, 4);
+  assert.ok(!app.toasts.some(t => /deleted from the cloud/.test(t)));
+});
+
 test('offline: waits, then uploads when the network returns', async () => {
   const { server, app } = await connected();
   app.setOnline(false);

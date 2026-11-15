@@ -4,8 +4,9 @@
  *   in the web app and the desktop app it is plain fetch.
  * - saving a file (project, GeoJSON, an exported image or PDF): written to the app's cache and handed to Android's
  *   share sheet (Save to Files, Drive, email...), since a download link does nothing in an app
- * - picking a file: the input's accept is dropped, since Android's picker greys out every extension it has no MIME
- *   type for (.gengis, the shapefile parts, the Betaflight logs)
+ * - picking a file: an accept naming an extension Android has no MIME type for (.gengis, the shapefile parts, the
+ *   Betaflight logs) is dropped, since the picker would grey those files out; one Android can read whole (the SVG
+ *   and image picker) keeps its filter
  * - the back button: closes what is open (a dialog, the menu, the side panel, presenter mode, a selection) before
  *   leaving the app
  * - cloud sync's sign-in, kept by the app (MB.native.cloud: android-src/CloudPlugin.java)
@@ -73,10 +74,18 @@ window.MB = window.MB || {};
 
   /* ---------- picking files: Android's own picker ----------
    * Capacitor's bridge turns an <input accept> into MIME types and leaves out the extensions Android does not know
-   * (.gengis, .shp, .dbf, .prj, .cpg, .shx, .bbl, .bfl), so the picker greys those files out. The accept is dropped
-   * before the picker opens; every opener checks the file it is given by its name and its content anyway. (capture,
-   * which asks for the camera, is left as it is.) */
-  const dropAccept = el => { if (el && el.tagName === 'INPUT' && el.type === 'file' && el.hasAttribute('accept')) el.removeAttribute('accept'); };
+   * (.gengis, .shp, .dbf, .prj, .cpg, .shx, .bbl, .bfl, .kml, .geojson…), so the picker greys those files out. Such
+   * an accept is dropped before the picker opens, and the opener checks the file it is given by its name and its
+   * content anyway. An accept of nothing but MIME types and the few extensions Android does map (the SVG and image
+   * picker) keeps its filter: there the list loses nothing in the crossing. (capture, which asks Android for a
+   * camera or a microphone instead of a file, is not touched: GenGIS has no such input.) */
+  const ANDROID_EXT = /^\.(svg|png|jpe?g|webp|gif|bmp|txt|csv|xml|zip|pdf)$/i; // extensions Android has a MIME type for
+  const MIME = /^[\w.+-]+\/[\w.*+-]+$/;
+  const keepsFilter = a => a.split(',').map(s => s.trim()).filter(Boolean).every(t => (t[0] === '.' ? ANDROID_EXT.test(t) : MIME.test(t)));
+  const dropAccept = el => {
+    if (!el || el.tagName !== 'INPUT' || el.type !== 'file' || !el.hasAttribute('accept')) return;
+    if (!keepsFilter(el.getAttribute('accept') || '')) el.removeAttribute('accept');
+  };
   const Input = window.HTMLInputElement;
   if (Input && Input.prototype && Input.prototype.click) {
     const click = Input.prototype.click;

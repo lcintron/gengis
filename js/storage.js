@@ -19,8 +19,11 @@ window.MB = window.MB || {};
     MB.toast('Project saved');
   };
 
+  // A file from a picker or a drop. openText says what it could not make of the text; a file that cannot be read at
+  // all (gone, not allowed, too large for the browser to hold) is said here, never left as an unanswered failure.
   MB.openFile = function (file) {
-    return file.text().then(txt => MB.openText(txt, file.name));
+    return file.text().then(txt => MB.openText(txt, file.name),
+      e => { MB.toast('Could not open file: ' + ((e && e.message) || e)); return null; });
   };
 
   // A project or GeoJSON file's text (from a file picker, or the desktop app's own dialogs). Resolves 'project' or

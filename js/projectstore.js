@@ -585,7 +585,8 @@ window.MB = window.MB || {};
         // the link as it is now, not as the question was asked: its sync may have been turned off, or its account
         // changed, meanwhile (no link left: a delete from this device only, as for a project that never synced)
         const link = MB.cloud && MB.cloud.linkOf ? await MB.cloud.linkOf(id) : null;
-        if (!link) { await P.remove(id); refresh(); return; }
+        // (the button said "everywhere", so what did happen is said)
+        if (!link) { await P.remove(id); MB.toast('Deleted "' + name + '" from this device. It no longer syncs, so nothing was deleted in the cloud.', 6000); refresh(); return; }
         const p = (MB.cloudProviders || {})[link.provider] || prov;
         try { await MB.cloud.deleteRemote(link.accountId, link.fileId); }
         catch (err) {

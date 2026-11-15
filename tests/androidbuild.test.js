@@ -79,15 +79,35 @@ test('a launcher that exits cleanly is no failure: only a code, a signal or a sp
 });
 
 test('every Android versionCode grows with the version, and a pre-release comes before its release', () => {
-  assert.equal(versionCode('0.19.0-Beta.0'), 1900000);
-  assert.equal(versionCode('0.19.0-Beta.1'), 1900001);
+  assert.equal(versionCode('0.19.0-Beta.0'), 1900030);
+  assert.equal(versionCode('0.19.0-Beta.1'), 1900031);
   assert.equal(versionCode('0.19.0'), 1900099);
   assert.equal(versionCode('0.19.1'), 1900199);
-  const order = ['0.19.0-Beta.0', '0.19.0-Beta.1', '0.19.0', '0.19.1', '0.20.0-Beta.0', '1.0.0'].map(versionCode);
+  const order = ['0.19.0-alpha.0', '0.19.0-Beta.0', '0.19.0-Beta.1', '0.19.0-rc.0', '0.19.0-rc.1', '0.19.0', '0.19.1', '0.20.0-Beta.0', '1.0.0'].map(versionCode);
   assert.deepEqual(order.slice().sort((a, b) => a - b), order, 'in order, and never two the same');
   assert.ok(versionCode('0.19.0') > 18003, 'above the codes of the releases up to 0.18.3 (Play refuses one that is not)');
-  assert.equal(versionCode('0.19.0-Beta.123'), 1900098, 'at most 98: still below the release');
-  assert.equal(versionCode('0.19.0-rc'), 1900000, 'a label without a number');
+  assert.equal(versionCode('0.19.0-rc'), 1900060, 'a label without a number');
+  assert.equal(versionCode('0.19.0-BETA.2'), 1900032, 'however the label is written');
+  assert.equal(versionCode('0.19.0-Beta.2+sha.5'), 1900032, 'build metadata orders nothing');
+  assert.equal(versionCode('0.19.0+sha.5'), 1900099);
+});
+
+test('an Android versionCode that could not keep its order is refused, never quietly wrong (android-prepare exits)', () => {
+  // the label changed part way through a cycle used to go backwards (Beta.3 -> 1900003, then rc.0 -> 1900000)
+  assert.ok(versionCode('0.19.0-rc.0') > versionCode('0.19.0-Beta.3'), 'a later label still counts up');
+  assert.throws(() => versionCode('0.19'), /not MAJOR\.MINOR\.PATCH/, 'a version of two numbers (it used to give NaN)');
+  assert.throws(() => versionCode('0.19.0.1'), /not MAJOR\.MINOR\.PATCH/);
+  assert.throws(() => versionCode(''), /not MAJOR\.MINOR\.PATCH/);
+  assert.throws(() => versionCode('0.19.0-Beta.30'), /goes up to 29/, 'past its band: it would reach the next label');
+  assert.throws(() => versionCode('0.19.0-preview.1'), /must be one of alpha, beta, rc/, 'a label this does not know how to order');
+  assert.throws(() => versionCode('0.19.0-Beta.1.2'), /a label and a number/);
+  assert.throws(() => versionCode('0.19.1000'), /up to 999/);
+  assert.throws(() => versionCode('0.1000.0'), /up to 999/, 'a number that would run into the one above it');
+  assert.throws(() => versionCode('21.0.0'), /major versions stop at 20/, 'Play takes no code above 2100000000');
+  assert.ok(versionCode('20.999.999') < 2100000000);
+  // and the script stops rather than writing that code into build.gradle
+  const prep = fs.readFileSync(path.join(ROOT, 'scripts', 'android-prepare.js'), 'utf8');
+  assert.match(prep, /try \{ code = versionCode\(pkg\.version\); \} catch \(e\) \{ fail\(e\.message\); \}/);
 });
 
 test('the Android project is not published with the site', () => {

@@ -109,3 +109,21 @@ test('the map export and a layer export wait for the file too', () => {
   assert.match(body, /return MB\.download\(name \+ '\.kml'/, 'its answer is the download\'s: it resolves once the file is out');
   assert.match(body, /return MB\.download\(name \+ '\.geojson'/);
 });
+
+test('a file that cannot even be read says so: never an unanswered failure with nothing on screen', async () => {
+  const { MB } = load();
+  const seen = project(MB);
+  MB.isProject = () => false;
+  const bad = { name: 'huge.gengis', text: async () => { throw new Error('The file is too large to read'); } };
+  assert.equal(await MB.openFile(bad), null, 'nothing was opened');
+  assert.deepEqual(seen.toasts, ['Could not open file: The file is too large to read']);
+  // a file that reads but holds something else is still said once, by openText
+  seen.toasts.length = 0;
+  assert.equal(await MB.openFile({ name: 'notes.txt', text: async () => 'hello' }), null);
+  assert.equal(seen.toasts.length, 1, 'said once, not twice');
+  assert.match(seen.toasts[0], /^Could not open file: /);
+  // and where the page hands the file over (the picker and a drop) nothing else catches it
+  const ui = read('js/ui.js');
+  assert.match(ui, /if \(f\) MB\.openFile\(f\);/);
+  assert.match(read('js/storage.js'), /e => \{ MB\.toast\('Could not open file: ' \+ \(\(e && e\.message\) \|\| e\)\); return null; \}\);/);
+});

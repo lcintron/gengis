@@ -131,7 +131,28 @@ test('in the app a file picker is opened without its accept list, so Android sho
   imports.setAttribute('capture', 'environment');
   imports.click();
   assert.equal(imports.accept, '');
-  assert.equal(imports.getAttribute('capture'), 'environment', 'asking for the camera is left alone');
+  assert.equal(imports.getAttribute('capture'), 'environment', 'asking Android for a camera is left alone');
+});
+
+test('a picker whose accept Android can read whole keeps its filter (the SVG and image picker)', () => {
+  const { dom } = env({});
+  const svg = dom.input('file', '.svg,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif');
+  const was = svg.accept;
+  svg.click();
+  assert.equal(svg.accept, was, 'MIME types and extensions Android maps itself: the picker still shows images only');
+  assert.deepEqual(svg.clicks, [was]);
+  const any = dom.input('file', 'image/*');
+  any.click();
+  assert.equal(any.accept, 'image/*');
+  // the page's own two pickers, as index.html writes them
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const acceptOf = id => (new RegExp('<input type="file" id="' + id + '"[^>]*accept="([^"]*)"').exec(html) || [])[1];
+  const open = dom.input('file', acceptOf('fileOpen'));
+  open.click();
+  assert.equal(open.accept, '', '.gengis is an extension Android has no type for');
+  const up = dom.input('file', acceptOf('svgUpload'));
+  up.click();
+  assert.equal(up.accept, acceptOf('svgUpload'), 'the image picker keeps its own list');
 });
 
 test('a picker opened by its label loses its accept too, and nothing else is touched', () => {
@@ -140,7 +161,7 @@ test('a picker opened by its label loses its accept too, and nothing else is tou
   dom.ids.set('bfOpen', inp);
   dom.click(dom.label('bfOpen'));
   assert.equal(inp.accept, '', 'a label with for=');
-  const wrapping = dom.label(), inside = dom.input('file', '.svg,image/svg+xml');
+  const wrapping = dom.label(), inside = dom.input('file', '.kml,.kmz,application/vnd.google-earth.kml+xml');
   wrapping.append(inside);
   dom.click(inside); // the click starts at the input inside the label
   assert.equal(inside.accept, '');

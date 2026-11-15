@@ -66,11 +66,15 @@ window.MB = window.MB || {};
   }
   const localName = n => { const i = n.indexOf(':'); return i < 0 ? n : n.slice(i + 1); };
   // A tag's attributes: name="value" or name='value', a name without a value ignored. Sticky, so each character of
-  // the tag is read once (a name 80 kB long with no '=' in it would make a searching regex quadratic).
+  // the tag is read once (a name 80 kB long with no '=' in it would make a searching regex quadratic). A run of
+  // whitespace is stepped over in one go, and never by the name's own pattern (a run of 20 kB inside a tag would make
+  // that one quadratic in its turn: it would eat the run at every position, then give it back again).
   function attrsOf(s) {
-    const a = {}, re = /\s*([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/y;
+    const a = {}, ws = /\s*/y, re = /([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/y;
     let i = 0;
     while (i < s.length) {
+      ws.lastIndex = i; ws.exec(s); i = ws.lastIndex;
+      if (i >= s.length) break;
       re.lastIndex = i;
       const m = re.exec(s);
       if (!m) { i++; continue; } // (a stray '=': on to the next character)
@@ -218,7 +222,11 @@ window.MB = window.MB || {};
   }
   // "lon,lat,alt lon,lat,alt …" (spaces around the commas forgiven) as points. Read character by character, each one
   // once: a regex for the commas would be quadratic on a long run of spaces.
-  const WS = c => c === ' ' || c === '\n' || c === '\r' || c === '\t' || c === '\f' || c === '\v' || c === '\u00a0';
+  // (everything a regex's \s separated tuples by before: the ASCII ones by hand, and the other space separators
+  //  (U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF) by a test on the one
+  //  character, which the ASCII path never reaches)
+  const SPACE = /\s/;
+  const WS = c => c === ' ' || c === '\n' || c === '\r' || c === '\t' || c === '\f' || c === '\v' || (c > '\u007f' && SPACE.test(c));
   function kmlCoords(s) {
     const str = String(s || ''), n = str.length, out = [];
     let i = 0, tuple = [];
@@ -523,7 +531,7 @@ window.MB = window.MB || {};
       if (u8[s] === 0x2a) { rows.push(null); continue; } // '*': deleted
       const row = {};
       let at = s + 1;
-      for (const f of fields) { const v = value(f, u8.subarray(at, at + f.len)); at += f.len; if (v !== null) row[f.name] = v; }
+      for (const f of fields) { const v = value(f, u8.subarray(at, at + f.len)); at += f.len; if (v !== null) put(row, f.name, v); } // (put: a field named "__proto__" too)
       rows.push(row);
     }
     return rows;

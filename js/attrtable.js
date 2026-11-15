@@ -84,9 +84,9 @@ window.MB = window.MB || {};
         return '';
       },
       renameField(from, to) {
-        const l = lay(), why = !l ? 'The layer is gone' : badKey(to) || (to !== from && fieldsOf(layerId).includes(to) ? 'There is a field of that name already' : '');
+        if (to === from) return ''; // (a rename given up on: nothing to say, whatever the name is)
+        const l = lay(), why = !l ? 'The layer is gone' : badKey(to) || (fieldsOf(layerId).includes(to) ? 'There is a field of that name already' : '');
         if (why) return why;
-        if (to === from) return '';
         objectsOf(layerId).forEach(f => { const a = f.mb.attrs; if (a && Object.hasOwn(a, from)) { const v = a[from]; delete a[from]; put(a, to, v); } });
         if (l.fields) l.fields = l.fields.map(k => (k === from ? to : k));
         commit('rename field');
@@ -189,7 +189,9 @@ window.MB = window.MB || {};
       paint();
       d.querySelector('#attrScroll').scrollTop = 0;
       // the first or last page: the button just pressed is disabled now, and focus would fall to the page body
-      if (b.disabled && !insideDialog()) {
+      // (Chromium still names the disabled button as the active element until the next rendering step: it counts as
+      //  focus about to be lost, not as focus still inside the dialog)
+      if (b.disabled && (document.activeElement === b || !insideDialog())) {
         const other = d.querySelector(`.attr-foot [data-at="${b.dataset.at === 'next' ? 'prev' : 'next'}"]`);
         const el = (other && !other.disabled && !other.hidden && other) || d.querySelector('#attrBody [data-c]') || d.querySelector('.modal-x');
         if (el) el.focus();

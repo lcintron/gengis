@@ -302,8 +302,13 @@ window.MB = window.MB || {};
         // the whole folder may be the one that is gone (it was deleted or moved, and the provider has a new one):
         // then every project goes to it again, as after any other full re-check
         if (await checkRoot(acc)) { C.schedule(projectId, 0); return; }
-        // the file itself was deleted from the cloud: the same outcome as when a check finds it gone (the project
-        // stays here, sync off), never a new file nobody asked for
+        // not the folder: only the file itself saying it is gone turns sync off (as a check does), never a 404 that
+        // was about something else — an upload session that expired (Drive), or one that passes — which is tried again
+        let missing = false;
+        try { await call(acc, (prov, ctx) => prov.meta(ctx, l.fileId)); }
+        catch (e) { if (e.status !== 404) throw e; missing = true; }
+        if (!missing) throw Object.assign(new Error('The upload did not go through'), { status: 503 });
+        // the file was deleted from the cloud: the project stays here, sync off, never a new file nobody asked for
         retries.delete(projectId); refused.delete(projectId);
         await removedRemotely(l);
         emit();

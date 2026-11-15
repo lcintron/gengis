@@ -369,7 +369,8 @@ test('Recent projects reads the link again when the delete is confirmed, and nev
   const reread = del.indexOf('const link = MB.cloud && MB.cloud.linkOf ? await MB.cloud.linkOf(id) : null;');
   assert.ok(reread > 0, 'the link is read again inside the confirm');
   assert.ok(reread < del.indexOf('MB.cloud.deleteRemote('), 'before the cloud delete');
-  assert.match(del, /if \(!link\) \{ await P\.remove\(id\); refresh\(\); return; \}/, 'no link left: a delete from this device only');
+  // no link left: a delete from this device only — and it says so, the button having said "everywhere"
+  assert.match(del, /if \(!link\) \{ await P\.remove\(id\); MB\.toast\('Deleted "' \+ name \+ '" from this device\. It no longer syncs, so nothing was deleted in the cloud\.', 6000\); refresh\(\); return; \}/);
   assert.match(del, /const p = \(MB\.cloudProviders \|\| \{\}\)\[link\.provider\] \|\| prov;/, 'and the provider named is that link\'s');
   // P.remove swallows what it cannot delete: checked, rather than saying it is gone from here
   assert.match(del, /await P\.remove\(id\);\s*\/\/[^\n]*\n\s*if \(await P\.get\(id\)\) \{ MB\.toast\('Deleted "' \+ name \+ '" from ' \+ p\.name \+ '; could not delete it from this device\.', 9000\); refresh\(\); return; \}/);
@@ -452,12 +453,25 @@ test('the attribute table keeps the keyboard: focus is given back after it is dr
   assert.match(at, /const el = \(c >= 0 && T\.dlg\.querySelector\(`#attrHead \[data-sort\]\[data-c="\$\{c\}"\]`\)\) \|\| T\.dlg\.querySelector\('\.modal-x'\);/);
   // the page buttons: the one pressed is disabled on the first or last page, so focus goes to the other one (or to
   // the first cell), never to the page body
-  assert.match(at, /if \(b\.disabled && !insideDialog\(\)\) \{/);
+  assert.match(at, /if \(b\.disabled && \(document\.activeElement === b \|\| !insideDialog\(\)\)\) \{/);
   assert.match(at, /const other = d\.querySelector\(`\.attr-foot \[data-at="\$\{b\.dataset\.at === 'next' \? 'prev' : 'next'\}"\]`\);/);
   assert.match(at, /const el = \(other && !other\.disabled && !other\.hidden && other\) \|\| d\.querySelector\('#attrBody \[data-c\]'\) \|\| d\.querySelector\('\.modal-x'\);/);
-  assert.ok(at.indexOf('if (b.disabled && !insideDialog())') > at.indexOf("d.querySelector('#attrScroll').scrollTop = 0;"), 'after the page is drawn anew');
+  assert.ok(at.indexOf('if (b.disabled && (document.activeElement === b') > at.indexOf("d.querySelector('#attrScroll').scrollTop = 0;"), 'after the page is drawn anew');
   // a box visited and left unchanged is no edit (Enter commits, and the change event that follows must not add a second undo step)
   assert.match(at, /const same = v === was \|\| \(\(v == null \|\| v === ''\) && \(was == null \|\| was === ''\)\);\s*\r?\n\s*if \(!same\) T\.ad\.set\(row, k, v\);/);
+});
+
+test('the attribute table\'s page button rescues the keyboard in Chromium too, where the disabled button is still the active element', () => {
+  const cond = (/if \(b\.disabled && (\(.+?\))\) \{/.exec(js['attrtable.js']) || [])[1];
+  assert.ok(cond, 'the rescue\'s condition found');
+  const rescued = new Function('b', 'document', 'insideDialog', 'return !!(b.disabled && ' + cond + ');'); // the real condition, on fakes
+  const btn = { disabled: true }, cell = {}, body = {};
+  // Chromium (Electron and the Android WebView too): just after the button is disabled it is still the active
+  // element, and the focus is about to fall to the page body — the rescue has to run
+  assert.equal(rescued(btn, { activeElement: btn }, () => true), true, 'focus still on the disabled button');
+  assert.equal(rescued(btn, { activeElement: body }, () => false), true, 'focus already dropped to the page body');
+  assert.equal(rescued(btn, { activeElement: cell }, () => true), false, 'focus moved elsewhere in the dialog: left alone');
+  assert.equal(rescued({ disabled: false }, { activeElement: body }, () => false), false, 'another page to go to: nothing to rescue');
 });
 
 test('with a dialog up, the app\'s own keys do nothing on the map behind it (Delete, f, Ctrl+Z…)', () => {
@@ -471,6 +485,13 @@ test('with a dialog up, the app\'s own keys do nothing on the map behind it (Del
   for (const after of ["=== 'z'", "=== 'y'", "=== 's'", "=== 'd'", "e.key === 'Delete'", "e.key === '/'", 'MB.presenter.enter()', 'MB.icons.open()', 'MB.tools.set(tool)']) {
     assert.ok(keys.indexOf(after) > gate, 'behind the gate: ' + after);
   }
+  // Escape with a dialog up and focus outside it (on <body>, a list drawn anew): the top-most dialog closes, as its
+  // own ✕ does, and none of the map chain runs (the tool, the selection, the search marker)
+  assert.match(keys, /if \(covered\(\)\) \{ const top = \$\$\('\.modal:not\(\.hidden\)'\)\.filter\(m => m\.getClientRects\(\)\.length\)\.pop\(\), x = top && top\.querySelector\('\.modal-x'\); if \(x\) x\.click\(\); return; \}/);
+  const close = keys.indexOf('if (covered()) { const top =');
+  assert.ok(close > esc && close < keys.indexOf('MB.measure.cancel()'), 'in the Escape branch, before the map chain');
+  assert.ok(keys.indexOf('MB.presenter.exit()') < close, 'presenter mode still has its own Escape');
+  assert.ok(keys.indexOf('if (typing) { t.blur(); return; }') < close, 'a box being typed in is blurred first');
   assert.ok(keys.indexOf('if (typing) return;') < gate, 'typing in a box is still answered first');
   assert.ok(!/if \(MB\.presenter && MB\.presenter\.active\) return;/.test(keys.slice(gate)), 'the presenter check is the gate\'s own');
   // the desktop app's Ctrl+F uses the same reading

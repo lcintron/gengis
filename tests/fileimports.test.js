@@ -279,6 +279,12 @@ test('shapefile text: UTF-8 when it reads as UTF-8, Windows-1252 when not, the .
   assert.equal(R.dbf(dbf(f1, [['Zürich']], 'utf8'))[0].N, 'Zürich');
   assert.equal(R.dbf(dbf(f1, [['Zürich']], 'latin1'))[0].N, 'Zürich');
   assert.equal(R.dbf(dbf(f1, [['Zürich']], 'utf8'), 'UTF-8')[0].N, 'Zürich');
+  // a field with a name every object already has is the record's own field, not the function behind it
+  const odd = [{ name: '__proto__', type: 'C', len: 4 }, { name: 'toString', type: 'C', len: 4 }];
+  const row = R.dbf(dbf(odd, [['x', 'y']]))[0];
+  assert.equal(Object.hasOwn(row, '__proto__'), true, 'a field called "__proto__" is kept');
+  assert.equal(Object.getOwnPropertyDescriptor(row, '__proto__').value, 'x', 'as a plain field of its own');
+  assert.equal(row.toString, 'y');
 });
 
 /* ---------- files and zips ---------- */
@@ -393,6 +399,14 @@ test('KML: a name every object already has is no field, no style, no entity and 
   assert.equal(ent.features[0].properties.name, '&constructor; & &toString;');
 });
 
+test('KML coordinates: tuples are split on every kind of space, not the ASCII ones alone', () => {
+  const seps = [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '　', '﻿'];
+  const text = '1,2' + seps.map((s, i) => s + (i + 3) + ',' + (i + 4)).join('');
+  const g = R.kml(`<kml><Placemark><LineString><coordinates>${text}</coordinates></LineString></Placemark></kml>`).features[0].geometry;
+  assert.equal(g.coordinates.length, seps.length + 1, 'one point per tuple');
+  assert.deepEqual(plain(g.coordinates.slice(0, 3)), [[1, 2], [3, 4], [4, 5]]);
+});
+
 test('shapefile rings: the same nesting however they are wound, and thousands of separate outlines stay quick', () => {
   const ccw = r => r.slice().reverse();
   const ringsOf = parts => {
@@ -433,6 +447,12 @@ test('crafted text is read in one pass: attribute names with no value, a run of 
   const names = ('a'.repeat(5000) + ' ').repeat(40);
   const t1 = ms(() => assert.deepEqual(plain(R.parseXml(`<kml><Placemark ${names}><Point><coordinates>1,2</coordinates></Point></Placemark></kml>`).kids[0].kids[0].attrs), {}));
   under('a tag of names with no values', t1);
+  // 200 kB of spaces inside one tag, with and without a stray '=' after them (the name's pattern used to eat the run
+  // at every position and give it back again: 19 s for 160 kB)
+  const run = ' '.repeat(200000);
+  const attrs = s => R.parseXml(`<kml><Placemark ${s}><Point><coordinates>1,2</coordinates></Point></Placemark></kml>`).kids[0].kids[0].attrs;
+  under('a tag ending in a run of spaces', ms(() => assert.deepEqual(plain(attrs('a="1"' + run)), { a: '1' })));
+  under('a run of spaces and a stray =', ms(() => assert.deepEqual(plain(attrs('a="1"' + run + '= b="2"')), { a: '1', b: '2' })));
   // 200 kB of spaces in a coordinate list (each a search for the next comma: 0.5 s)
   const spaces = (' '.repeat(5000) + ' 3,4').repeat(40);
   const t2 = ms(() => assert.equal(R.kml(`<kml><Placemark><LineString><coordinates>1,2${spaces}</coordinates></LineString></Placemark></kml>`).features[0].geometry.coordinates.length, 41));
