@@ -65,7 +65,10 @@ window.MB = window.MB || {};
     // shown or not, as the settings say
     apply() {
       const cfg = C.config();
-      if (!cfg.show || !MB.map) {
+      const on = !!(cfg.show && MB.map);
+      const wrap = document.getElementById('mapwrap');
+      if (wrap) wrap.classList.toggle('clock-on', on); // (css: the track-log bar sits above the clock, not over it)
+      if (!on) {
         clearTimeout(C.timer); C.timer = 0;
         if (C.control) { C.control.remove(); C.control = null; }
         return;

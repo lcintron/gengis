@@ -281,14 +281,14 @@ window.MB = window.MB || {};
       // the account's folder, found first when this session has not yet (a new one: checkRoot has every project
       // uploaded to it again, and this one goes with them)
       if (!acc.rootId || !rootSeen.has(acc.id)) { if (await checkRoot(acc)) { C.schedule(projectId, 0); return; } }
-      let out;
+      let out, gone = false;
       await call(acc, async (prov, ctx) => {
         const onProgress = (d, t) => { C.progress[projectId] = { done: d, total: t }; emit(); };
         if (l.fileId && (force || hash !== l.hash)) {
           try { out = await prov.put(ctx, { fileId: l.fileId, text, ifMatch: force ? force.ifMatch : l.etag, onProgress }); }
           catch (e) {
             if (e.status !== 404) throw e;
-            l.fileId = null; // deleted in the cloud while edited here: written again as a new file
+            gone = true; return; // deleted from the cloud while edited here (Drive: in its trash): not written again
           }
         }
         if (!l.fileId) out = await create(prov, ctx, rec, text, onProgress);
@@ -298,6 +298,17 @@ window.MB = window.MB || {};
         if (!out.etag) out = Object.assign(out, await prov.meta(ctx, out.fileId)); // never left without the version to guard the next write
       });
       delete C.progress[projectId];
+      if (gone) {
+        // the whole folder may be the one that is gone (it was deleted or moved, and the provider has a new one):
+        // then every project goes to it again, as after any other full re-check
+        if (await checkRoot(acc)) { C.schedule(projectId, 0); return; }
+        // the file itself was deleted from the cloud: the same outcome as when a check finds it gone (the project
+        // stays here, sync off), never a new file nobody asked for
+        retries.delete(projectId); refused.delete(projectId);
+        await removedRemotely(l);
+        emit();
+        return;
+      }
       if (out.adopted) { // this project's own file was already there (another device, or before a reconnect)
         Object.assign(l, { fileId: out.fileId, name: out.name, nameFor: rec.name, etag: out.etag, remoteEtag: null });
         if (out.hash === hash) { Object.assign(l, { hash, syncedAt: env.now() }); retries.delete(projectId); refused.delete(projectId); setState(l, 'synced'); await saveLink(l); return; }
@@ -442,7 +453,9 @@ window.MB = window.MB || {};
     }
     let full = !acc.cursor || res.reset || res.full; // everything in the folder, not just what changed
     if (res.reset) { acc.cursor = null; res = await call(acc, (prov, ctx) => prov.changes(ctx, null)); full = true; }
-    const links = (await store().all('links')).filter(l => l.accountId === acc.id && l.fileId);
+    // (a project whose sync the user turned off keeps its file's id, for the cloud dialog; its file's changes and its
+    //  deletion are none of this device's business any more)
+    const links = (await store().all('links')).filter(l => l.accountId === acc.id && l.fileId && !l.excluded);
     if (full) { // a linked file missing from the whole folder may have been deleted while no feed reported it:
       const live = new Set(res.items.filter(it => !it.deleted).map(it => it.fileId));
       for (const l of links) {
@@ -470,7 +483,7 @@ window.MB = window.MB || {};
   // Links whose cloud file changed: taken here when this tab may (the project is not open in another tab).
   async function settleRemote() {
     for (const l of await store().all('links')) {
-      if (!l.remoteEtag || l.remoteEtag === l.etag || l.state === 'conflict') continue;
+      if (l.excluded || !l.remoteEtag || l.remoteEtag === l.etag || l.state === 'conflict') continue; // (sync off: never taken here)
       const mine = MB.state.projectId === l.projectId && MB.projects.owns();
       if (!mine && await MB.projects.openElsewhere(l.projectId)) continue; // another tab edits it: that tab takes it
       const acc = await store().get('accounts', l.accountId);
@@ -727,8 +740,9 @@ window.MB = window.MB || {};
     if (mine) {
       const ml = await store().get('links', mine.id), syncing = !!(ml && !ml.excluded && ml.fileId);
       const hash = await hashOf(data), same = (await hashOf(mine.data)) === hash;
-      const cloud = !same && await MB.ask('"' + (mine.name || data.name) + '" is also on this device' + (syncing ? '' : ', with sync off') + '. Open the version from ' +
-        providerOf(acc).name + ' instead? The copy on this device is kept in its earlier copies.', 'Open the cloud version', 'Keep this device\'s copy');
+      const cloud = same ? false : await MB.ask('"' + (mine.name || data.name) + '" is also on this device' + (syncing ? '' : ', with sync off') + '. Open the version from ' +
+        providerOf(acc).name + ' instead? The copy on this device is kept in its earlier copies.', 'Open the cloud version', 'Keep this device\'s copy', { dismiss: true });
+      if (cloud === null) return false; // the question was dismissed (✕, Escape, back): neither copy opens
       if (!cloud) {
         await MB.projects.open(mine.id);
         if (MB.state.projectId !== mine.id) return false;
@@ -738,6 +752,8 @@ window.MB = window.MB || {};
         }
         return true;
       }
+      // the cloud version was chosen: not while another tab edits the copy here, which it would save over it again
+      if (await MB.projects.openElsewhere(mine.id)) { MB.toast('This map is open in another tab. Open it there.', 5000); return false; }
     }
     if (!(await MB.projects.beforeOpen(data))) return false; // (a project saved here is kept in its earlier copies first)
     const id = data.id;

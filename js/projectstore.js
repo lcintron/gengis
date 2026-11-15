@@ -582,17 +582,26 @@ window.MB = window.MB || {};
         e.currentTarget.closest('.recent-ask').querySelectorAll('button').forEach(x => { x.disabled = true; }); // (Cancel too, while it goes)
         // another tab edits it: that tab would save it again
         if (await P.openElsewhere(id)) { MB.toast('This map is open in another tab. Open another map there, then delete it.', 6000); refresh(); return; }
-        try { await MB.cloud.deleteRemote(cloud.accountId, cloud.fileId); }
+        // the link as it is now, not as the question was asked: its sync may have been turned off, or its account
+        // changed, meanwhile (no link left: a delete from this device only, as for a project that never synced)
+        const link = MB.cloud && MB.cloud.linkOf ? await MB.cloud.linkOf(id) : null;
+        if (!link) { await P.remove(id); refresh(); return; }
+        const p = (MB.cloudProviders || {})[link.provider] || prov;
+        try { await MB.cloud.deleteRemote(link.accountId, link.fileId); }
         catch (err) {
-          const how = err.code === 'signin' ? 'signed out. Nothing was deleted. Sign in to ' + prov.name + ' (Cloud sync), or turn its sync off there, to delete it from this device only.'
-            : (err.code === 'network' ? 'you are offline. Nothing was deleted. Connect, or turn its sync off in Cloud sync, to delete it from this device only.'
+          const how = err.code === 'signin' ? 'signed out. Nothing was deleted. Sign in to ' + p.name + ' (Cloud sync), or turn its sync off there, to delete it from this device only.'
+            : (err.code === 'network' ? (navigator.onLine === false
+              ? 'you are offline. Nothing was deleted. Connect, or turn its sync off in Cloud sync, to delete it from this device only.'
+              : 'the connection failed. It may not have been deleted: try again.')
               : (err.message || 'error') + '. Nothing was deleted.');
-          MB.toast('Could not delete "' + name + '" from ' + prov.name + ': ' + how, 9000);
+          MB.toast('Could not delete "' + name + '" from ' + p.name + ': ' + how, 9000);
           refresh();
           return;
         }
         await P.remove(id);
-        MB.toast('Deleted "' + name + '" from this device and from ' + prov.name + '.', 4000);
+        // a removal this device refuses (P.remove keeps no error): said, rather than claiming it is gone from here
+        if (await P.get(id)) { MB.toast('Deleted "' + name + '" from ' + p.name + '; could not delete it from this device.', 9000); refresh(); return; }
+        MB.toast('Deleted "' + name + '" from this device and from ' + p.name + '.', 4000);
         refresh();
       }, true);
     }));

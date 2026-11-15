@@ -247,6 +247,8 @@ test('dialogs stay between the system bars (Android edge-to-edge: the insets com
   assert.ok(attr.every(b => !/max-height: 100vh;/.test(b)), 'no full-screen attribute table under the bars');
   assert.ok(attr.some(b => /width: calc\(100vw - env\(safe-area-inset-left, 0px\) - env\(safe-area-inset-right, 0px\)\)/.test(b)),
     'nor beside them');
+  // the phone's width is a full one: the desktop rule's max-width would hold it to 96vw and leave a gap at one side
+  assert.ok(attr.filter(b => /width: calc\(100vw/.test(b)).every(b => /max-width: none;/.test(b)), 'the attribute table fills the phone\'s width');
   // Cloud sync's lists: as tall as the screen allows (dvh where known, vh before it, as the box itself), and a drag
   // on them, at their end, scrolls the dialog on
   const scroll = one('.cloud-scroll');
@@ -285,7 +287,7 @@ test('dialogs stay between the system bars (Android edge-to-edge: the insets com
   // (it sits in #mapwrap, not in a Leaflet corner, so the inset is its own and counted once)
   const trk = one('.trk-bar');
   assert.equal(trk.length, 2, 'the tracking bar: the base rule and the phone one');
-  assert.ok(trk.every(b => /bottom: calc\(\d+px \+ var\(--trk-inset, 0px\)\);/.test(b) && !inset('bottom').test(b)));
+  assert.ok(trk.every(b => /bottom: calc\(\d+px \+ var\(--clk-inset, 0px\) \+ var\(--trk-inset, 0px\)\);/.test(b) && !inset('bottom').test(b)));
   assert.ok(rules('html.native-app .trk-bar').some(b => /--trk-inset: env\(safe-area-inset-bottom, 0px\);/.test(b)), 'the inset only in the Android app');
   assert.ok(rules('html.native-app .leaflet-bottom').some(b => /margin-bottom: env\(safe-area-inset-bottom, 0px\);/.test(b)), 'the same room the map\'s corners get');
   // the export buttons' footer: the box ends above the bar, so no inset again
@@ -336,13 +338,13 @@ test('Recent projects deletes a synced project from the cloud first, and from th
   const ps = js['projectstore.js'];
   const del = ps.split("box.querySelectorAll('[data-del]')")[1].split("box.querySelectorAll('[data-restore]')")[0];
   assert.match(del, /if \(b\.dataset\.pending \|\| b\.closest\('\.recent-item'\)\.querySelector\('\.recent-ask'\)\) return;[\s\S]*b\.dataset\.pending = '1';[\s\S]*await MB\.cloud\.linkOf\(id\)/, 'a double click asks once');
-  assert.match(del, /try \{ await MB\.cloud\.deleteRemote\(cloud\.accountId, cloud\.fileId\); \}\s*catch \(err\) \{[\s\S]*?Nothing was deleted\.[\s\S]*?return;\s*\}\s*await P\.remove\(id\);/,
+  assert.match(del, /try \{ await MB\.cloud\.deleteRemote\(link\.accountId, link\.fileId\); \}\s*catch \(err\) \{[\s\S]*?Nothing was deleted\.[\s\S]*?return;\s*\}\s*await P\.remove\(id\);/,
     'a failed cloud delete returns before anything here is deleted');
   // another tab editing it: refused before anything is deleted
   assert.ok(del.indexOf('if (await P.openElsewhere(id)) {') >= 0 && del.indexOf('if (await P.openElsewhere(id)) {') < del.indexOf('MB.cloud.deleteRemote('));
   assert.match(del, /cloud\.changed \? ' The cloud version has changes that are not on this device\.' : ''/);
   assert.match(del, /querySelectorAll\('button'\)\.forEach\(x => \{ x\.disabled = true; \}\)/, 'Cancel too, while it goes');
-  assert.match(del, /Sign in to ' \+ prov\.name \+ ' \(Cloud sync\), or turn its sync off there, to delete it from this device only\./);
+  assert.match(del, /Sign in to ' \+ p\.name \+ ' \(Cloud sync\), or turn its sync off there, to delete it from this device only\./);
   assert.ok(!/P\.openDialog\(\)/.test(del), 'a closed dialog is not reopened when the delete finishes');
   assert.match(ps, /const refresh = \(\) => \{ if \(!dlg\.classList\.contains\('hidden'\)\) P\.openDialog\(\); \};/);
   assert.match(ps, /MB\.iconBtn\('trash', 'Delete everywhere \(this device and ' \+ syncedTo\(r\) \+ '\)'/, 'its bin says it deletes it everywhere');
@@ -357,4 +359,138 @@ test('the Cast to a screen icon is the standard cast glyph: arcs ending on the s
   const item = (html.match(/<button data-act="cast">([\s\S]*?)<\/button>/) || [])[1] || '';
   assert.ok(item.includes('<path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><path d="M2 12a9 9 0 0 1 8 8"/>' +
     '<path d="M2 16a5 5 0 0 1 4 4"/><path d="M2 20h.01"/>'), 'the menu\'s cast item uses the new glyph');
+});
+
+test('Recent projects reads the link again when the delete is confirmed, and never claims more than it did', () => {
+  const ps = js['projectstore.js'];
+  const del = ps.split("box.querySelectorAll('[data-del]')")[1].split("box.querySelectorAll('[data-restore]')")[0];
+  // the question is asked with the link read on the click; the delete uses the link as it is on the confirm
+  // (its sync may have been turned off, or its account changed, in between)
+  const reread = del.indexOf('const link = MB.cloud && MB.cloud.linkOf ? await MB.cloud.linkOf(id) : null;');
+  assert.ok(reread > 0, 'the link is read again inside the confirm');
+  assert.ok(reread < del.indexOf('MB.cloud.deleteRemote('), 'before the cloud delete');
+  assert.match(del, /if \(!link\) \{ await P\.remove\(id\); refresh\(\); return; \}/, 'no link left: a delete from this device only');
+  assert.match(del, /const p = \(MB\.cloudProviders \|\| \{\}\)\[link\.provider\] \|\| prov;/, 'and the provider named is that link\'s');
+  // P.remove swallows what it cannot delete: checked, rather than saying it is gone from here
+  assert.match(del, /await P\.remove\(id\);\s*\/\/[^\n]*\n\s*if \(await P\.get\(id\)\) \{ MB\.toast\('Deleted "' \+ name \+ '" from ' \+ p\.name \+ '; could not delete it from this device\.', 9000\); refresh\(\); return; \}/);
+  assert.match(js['projectstore.js'], /P\.get = id =>/, 'P.get is what it checks with');
+  // a network failure while this device is online: it may well have been deleted
+  assert.match(del, /err\.code === 'network' \? \(navigator\.onLine === false\s*\?[^\n]*Nothing was deleted\. Connect[^\n]*\n\s*: 'the connection failed\. It may not have been deleted: try again\.'\)/);
+});
+
+test('a question can be closed without answering it: the ✕, Escape, the backdrop and back then answer neither', () => {
+  const u = js['util.js'];
+  assert.match(u, /const away = opts && opts\.dismiss \? null : false;/);
+  assert.match(u, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); finish\(away\); \}/, 'Escape');
+  assert.ok(u.includes("xBtn.addEventListener('click', () => finish(away));"), 'the ✕ (which Android\'s back clicks)');
+  assert.ok(u.includes("if (opts && opts.dismiss) dlg.addEventListener('click', e => { if (e.target === dlg) finish(null); });"), 'the backdrop');
+  assert.ok(u.includes("noBtn.addEventListener('click', () => finish(false));"), 'Cancel still answers no');
+  // the question that needs it: opening a cloud project that is on this device too (either answer opens something)
+  const cs = js['cloudsync.js'];
+  assert.ok(cs.includes("'Keep this device\\'s copy', { dismiss: true });"));
+  assert.match(cs, /if \(cloud === null\) return false;/, 'closed: nothing opens');
+  assert.match(cs, /if \(await MB\.projects\.openElsewhere\(mine\.id\)\) \{ MB\.toast\('This map is open in another tab\. Open it there\.', 5000\); return false; \}/,
+    'nor over a copy another tab is editing');
+});
+
+test('a long name in a question or in a toast wraps instead of running off the screen', () => {
+  const plain = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = sel => [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m => m[1].split(',').some(s => s.trim() === sel)).map(m => m[2]);
+  for (const sel of ['.mb-ask .ask-text', '#mb-toast']) {
+    const r = rules(sel);
+    assert.ok(r.length, sel + ' found');
+    assert.ok(r.some(b => /overflow-wrap: anywhere;/.test(b)), sel + ': overflow-wrap: anywhere');
+  }
+});
+
+test('a project id or an account id a cloud dialog puts into a selector is escaped (a quote in one must not throw)', () => {
+  const bad = [];
+  for (const f of ['cloudui.js', 'cloudsync.js', 'projectstore.js']) {
+    for (const m of js[f].matchAll(/querySelector(All)?\(`[^`]*="\$\{([^}]*)\}"/g)) if (!/CSS\.escape/.test(m[2])) bad.push('js/' + f + ': ' + m[0]);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('the privacy policy says what cloud sync deletes, where a deleted file goes, and how a phone keeps a sign-in', () => {
+  const privacy = read('privacy.html');
+  assert.doesNotMatch(privacy, /never deletes/i, 'GenGIS does delete a file when the user asks it to (Cloud sync, Recent projects)');
+  assert.match(privacy, /deletes a project file only when you ask it to/);
+  assert.match(privacy, /<b>Cloud sync<\/b>/);
+  assert.match(privacy, /Delete everywhere/);
+  assert.match(privacy, /OneDrive's recycle bin or Google Drive's trash/, 'where the file goes, and that it can be restored');
+  assert.match(privacy, /Disconnecting deletes nothing\./);
+  assert.match(privacy, /moves the project files from the second folder into the first/, 'the folder merge is still described');
+  assert.match(privacy, /lists that one folder: so it can show the projects from your other devices and let you open any of them/);
+  assert.doesNotMatch(privacy, /Your files stay in your cloud storage until you delete them there\./);
+  assert.match(privacy, /until you delete them there, or until you have GenGIS delete one for you/);
+  // the Android app: the OneDrive token encrypted with a key in the Keystore, Google Drive through the phone's account
+  assert.match(privacy, /In the Android app[^.]*Android Keystore, which never leaves the phone/);
+  assert.match(privacy, /the phone's own Google account keeps the sign-in/);
+});
+
+test('the attribute table keeps the keyboard: focus is given back after it is drawn anew, never dropped on the page body', () => {
+  const at = js['attrtable.js'];
+  // what had focus is noted before the head and the body are written anew, and given back after
+  assert.match(at, /const ad = T\.ad, d = T\.dlg, mark = focusMark\(\);/, 'paint() notes it');
+  assert.match(at, /refocus\(mark\);\s*\r?\n\s*\}/, 'and gives it back once the table is drawn');
+  // a column's button or box by its index, a cell by its row and column
+  assert.match(at, /const c = at\.dataset\.c, a = \['data-sort', 'data-rename', 'data-col'\]\.find\(x => at\.hasAttribute\(x\)\);/);
+  assert.match(at, /if \(a\) return `#attrHead \[\$\{a\}\]\[data-c="\$\{c\}"\]`;/);
+  assert.match(at, /return tr && tr\.dataset\.i != null \? `#attrBody tr\[data-i="\$\{tr\.dataset\.i\}"\] \[data-c="\$\{c\}"\]` : null;/);
+  // gone (a field deleted, a row no longer in the page): the dialog's ✕; and focus still inside is left alone
+  assert.match(at, /const el = T\.dlg\.querySelector\(mark\) \|\| T\.dlg\.querySelector\('\.modal-x'\);/);
+  assert.match(at, /if \(at && at !== document\.body && T\.dlg\.contains\(at\)\) return;/);
+  assert.match(at, /if \(!mark \|\| T\.dlg\.classList\.contains\('hidden'\)\) return;/, 'and nothing is taken while it is closed (it is drawn before it opens)');
+  // Enter on the last row: the value is kept and focus stays on the cell (it used to blur, dropping focus to the body)
+  assert.doesNotMatch(at, /if \(next\) next\.focus\(\); else inp\.blur\(\);/, 'the cell is no longer blurred');
+  assert.match(at, /if \(next\) next\.focus\(\);\s*\r?\n\s*else commitCell\(inp\);/);
+  // a rename: its box is gone with the redraw, so that column's sort button takes the focus (unless focus went to
+  // another of the dialog's own controls)
+  assert.match(at, /const keep = rt && d\.contains\(rt\) && !head\.contains\(rt\) && !body\.contains\(rt\);/);
+  assert.match(at, /build\(\);\s*\r?\n\s*if \(!keep\) focusColumn\(why \? from : to\);/);
+  assert.match(at, /const el = \(c >= 0 && T\.dlg\.querySelector\(`#attrHead \[data-sort\]\[data-c="\$\{c\}"\]`\)\) \|\| T\.dlg\.querySelector\('\.modal-x'\);/);
+  // a box visited and left unchanged is no edit (Enter commits, and the change event that follows must not add a second undo step)
+  assert.match(at, /const same = v === was \|\| \(\(v == null \|\| v === ''\) && \(was == null \|\| was === ''\)\);\s*\r?\n\s*if \(!same\) T\.ad\.set\(row, k, v\);/);
+});
+
+test('with a dialog up, the app\'s own keys do nothing on the map behind it (Delete, f, Ctrl+Z…)', () => {
+  const ui = js['ui.js'];
+  const keys = ui.slice(ui.indexOf('function initKeys()'), ui.indexOf('/* ================= init ================= */'));
+  assert.ok(keys, 'initKeys found');
+  assert.match(keys, /const covered = \(\) => !!\(\(MB\.presenter && MB\.presenter\.active\) \|\| \$\$\('\.modal:not\(\.hidden\)'\)\.some\(m => m\.getClientRects\(\)\.length\)\);/);
+  // Escape first (it closes what is up), then nothing else while something covers the map
+  const esc = keys.indexOf("if (e.key === 'Escape') {"), gate = keys.indexOf('if (covered()) return;');
+  assert.ok(esc > 0 && gate > esc, 'Escape is handled before the gate');
+  for (const after of ["=== 'z'", "=== 'y'", "=== 's'", "=== 'd'", "e.key === 'Delete'", "e.key === '/'", 'MB.presenter.enter()', 'MB.icons.open()', 'MB.tools.set(tool)']) {
+    assert.ok(keys.indexOf(after) > gate, 'behind the gate: ' + after);
+  }
+  assert.ok(keys.indexOf('if (typing) return;') < gate, 'typing in a box is still answered first');
+  assert.ok(!/if \(MB\.presenter && MB\.presenter\.active\) return;/.test(keys.slice(gate)), 'the presenter check is the gate\'s own');
+  // the desktop app's Ctrl+F uses the same reading
+  assert.match(keys, /if \(!covered\(\)\) MB\.ui\.focusSearch\(\);/);
+});
+
+test('the track-log bar sits above the clock when the clock shows, and above the phone\'s gesture bar', () => {
+  const plain = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = sel => [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m => m[1].split(',').some(s => s.trim() === sel)).map(m => m[2]);
+  const lift = rules('#mapwrap.clock-on .trk-bar');
+  assert.equal(lift.length, 2, 'the clock\'s height: the base rule and the phone one');
+  assert.ok(lift.every(b => /--clk-inset: \d+px;/.test(b)), 'as the bar\'s own variable, so the Android inset still counts');
+  // the class is set and cleared by the clock itself, whether it is turned on, off, or applied at startup
+  const clock = js['clock.js'];
+  assert.match(clock, /const on = !!\(cfg\.show && MB\.map\);/);
+  assert.match(clock, /if \(wrap\) wrap\.classList\.toggle\('clock-on', on\);/);
+  assert.ok(clock.indexOf("classList.toggle('clock-on'") < clock.indexOf('if (!on) {'), 'set before it returns for a clock that is off');
+  // the bar lives in #mapwrap, where the class is
+  assert.match(js['tracklogs.js'], /const host = document\.getElementById\('mapwrap'\) \|\| MB\.map\.getContainer\(\);/);
+});
+
+test('the README says what a dropped file becomes: a layer for KML, KMZ, shapefiles and zips, project objects for GeoJSON', () => {
+  const readme = read('README.md');
+  const line = readme.split('\n').find(l => l.startsWith('- **Your own files**'));
+  assert.ok(line, 'the "Your own files" bullet');
+  assert.match(line, /dropping KML, KMZ, shapefiles and zips on the map/);
+  assert.match(line, /a dropped `\.geojson` opens as objects of the project instead/);
+  // which is what the page does: only those extensions go to the imports
+  assert.match(js['fileimports.js'], /isImportFile: f => \['kml', 'kmz', 'shp', 'dbf', 'prj', 'cpg', 'shx'\]\.includes\(extOf\(f\.name\)\)/);
 });

@@ -1900,6 +1900,10 @@ window.MB = window.MB || {};
   /* ================= keyboard ================= */
 
   function initKeys() {
+    // What covers the map: a dialog showing (one hidden has no boxes) or presenter mode. The app's own shortcuts do
+    // not act behind it: a dialog's keys reach it through its own listener, and focus dropped inside one (a list drawn
+    // anew) must not leave Delete, f or Ctrl+Z working on the map underneath.
+    const covered = () => !!((MB.presenter && MB.presenter.active) || $$('.modal:not(.hidden)').some(m => m.getClientRects().length));
     document.addEventListener('keydown', e => {
       const t = e.target;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
@@ -1907,8 +1911,7 @@ window.MB = window.MB || {};
       // presenter mode covers it
       if (document.documentElement.dataset.titlebar && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault();
-        const covered = (MB.presenter && MB.presenter.active) || $$('.modal').some(m => m.getClientRects().length);
-        if (!covered) MB.ui.focusSearch();
+        if (!covered()) MB.ui.focusSearch();
         return;
       }
       if (e.key === 'Escape') {
@@ -1923,7 +1926,7 @@ window.MB = window.MB || {};
         return;
       }
       if (typing) return;
-      if (MB.presenter && MB.presenter.active) return;
+      if (covered()) return; // a dialog or presenter mode is up: nothing here acts on the map behind it
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) MB.redo(); else MB.undo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); MB.redo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); MB.saveToFile(); return; }

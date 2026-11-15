@@ -132,8 +132,9 @@ window.MB = window.MB || {};
     // in markup with line break tags the file's own line breaks are spaces, as a browser shows them (a <br> then a
     // new line is one break); text with none (an entity, a bold word) keeps its lines
     if (/<br\b|<\/(p|div|tr|li|h\d)\s*>/i.test(s)) s = s.replace(/\s+/g, ' ');
-    return unent(s.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<!--[\s\S]*?(-->|$)/g, '').replace(GONE, '').replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^<>]*>/g, ''))
-      .replace(/\u00a0/g, ' ').split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim(); // (linear on any input: no regex here backtracks)
+    // (every tag here is read to the next '<' or '>', so no scan runs past one: linear on any input, crafted or not)
+    return unent(s.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<!--[\s\S]*?(-->|$)/g, '').replace(GONE, '').replace(/<br\b[^<>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^<>]*>/g, ''))
+      .replace(/\u00a0/g, ' ').split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   };
   // A value in a popup: its formatting kept (made safe) when it has any, else as text.
   MB.richValue = v => MB.isHtml(v) ? `<div class="mb-rich">${MB.safeHtml(v)}</div>` : MB.escapeHtml(v);
@@ -456,6 +457,8 @@ window.MB = window.MB || {};
   MB.setZoomText = (el, t) => { if (el.textContent.toLowerCase() !== String(t).toLowerCase()) el.innerHTML = MB.zoomText(t); };
 
   // opts.danger: the yes button is a delete's red one, and Cancel has the focus (Enter does not delete).
+  // opts.dismiss: closing the question without answering it (the ✕, Escape, the backdrop, Android's back) resolves
+  // null, not false: for questions where "no" is a choice of its own and not the way out.
   MB.ask = function (message, yes, no, opts) {
     return new Promise(resolve => {
       const back = document.activeElement;
@@ -475,11 +478,13 @@ window.MB = window.MB || {};
         resolve(v);
       };
       // While it is open no key reaches the app (Delete must not delete the selection behind it). Enter and Space
-      // still press the focused button; Tab stays on the dialog's buttons; Escape, like the ✕, answers no.
+      // still press the focused button; Tab stays on the dialog's buttons; Escape, like the ✕, answers no (null with
+      // opts.dismiss: nothing was answered).
+      const away = opts && opts.dismiss ? null : false;
       const order = [xBtn, noBtn, yesBtn];
       const onKey = e => {
         e.stopPropagation();
-        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        if (e.key === 'Escape') { e.preventDefault(); finish(away); }
         else if (e.key === 'Tab') {
           e.preventDefault();
           const i = order.indexOf(document.activeElement);
@@ -489,7 +494,8 @@ window.MB = window.MB || {};
       };
       yesBtn.addEventListener('click', () => finish(true));
       noBtn.addEventListener('click', () => finish(false));
-      xBtn.addEventListener('click', () => finish(false));
+      xBtn.addEventListener('click', () => finish(away));
+      if (opts && opts.dismiss) dlg.addEventListener('click', e => { if (e.target === dlg) finish(null); }); // the backdrop
       window.addEventListener('keydown', onKey, true);
       document.body.appendChild(dlg);
       (opts && opts.danger ? noBtn : yesBtn).focus();
