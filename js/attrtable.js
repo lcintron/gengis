@@ -137,10 +137,14 @@ window.MB = window.MB || {};
   // no longer in the page): the dialog's ✕ then.
   function refocus(mark) {
     if (!mark || T.dlg.classList.contains('hidden')) return;
-    const at = document.activeElement;
-    if (at && at !== document.body && T.dlg.contains(at)) return;
+    if (insideDialog()) return;
     const el = T.dlg.querySelector(mark) || T.dlg.querySelector('.modal-x');
     if (el) el.focus();
+  }
+  // Is the keyboard still on one of the dialog's own controls? (Focus dropped to the page body is not.)
+  function insideDialog() {
+    const at = document.activeElement;
+    return !!(at && at !== document.body && T.dlg && T.dlg.contains(at));
   }
   // The sort button of the column a field is in (after its rename box is gone).
   function focusColumn(key) {
@@ -184,6 +188,12 @@ window.MB = window.MB || {};
       T.page = Math.max(0, Math.min(pages - 1, T.page + (b.dataset.at === 'next' ? 1 : -1)));
       paint();
       d.querySelector('#attrScroll').scrollTop = 0;
+      // the first or last page: the button just pressed is disabled now, and focus would fall to the page body
+      if (b.disabled && !insideDialog()) {
+        const other = d.querySelector(`.attr-foot [data-at="${b.dataset.at === 'next' ? 'prev' : 'next'}"]`);
+        const el = (other && !other.disabled && !other.hidden && other) || d.querySelector('#attrBody [data-c]') || d.querySelector('.modal-x');
+        if (el) el.focus();
+      }
     });
     const head = d.querySelector('#attrHead'), body = d.querySelector('#attrBody');
     head.addEventListener('click', e => {

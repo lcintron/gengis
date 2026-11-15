@@ -1,11 +1,14 @@
 'use strict';
-// scripts/android-build.js (make apk): which JDK it builds with, and how it reads `adb devices`.
+// scripts/android-build.js (make apk): which JDK it builds with, how it reads `adb devices`, and when the emulator
+// counts as failed; scripts/android-prepare.js: the versionCode each version gets.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const path = require('path');
 
 const ROOT = process.env.GENGIS_ROOT || path.join(__dirname, '..');
-const { chooseJdk, gradleRunsOn, parseDevices, cmdQuote, javaHomePaths, emulatorStopped } = require(path.join(ROOT, 'scripts', 'android-build.js'));
+const { chooseJdk, gradleRunsOn, parseDevices, cmdQuote, javaHomePaths, emulatorStopped, emulatorFailure } = require(path.join(ROOT, 'scripts', 'android-build.js'));
+const { versionCode } = require(path.join(ROOT, 'scripts', 'android-prepare.js'));
 
 const jdks = (...list) => list.map(([dir, version]) => ({ dir, version }));
 
@@ -62,6 +65,39 @@ test('an emulator that stops before Android starts says so at once, with what it
   assert.match(emulatorStopped('Pixel_7', { code: null, signal: 'SIGKILL' }), /\(killed by SIGKILL\)/);
   assert.match(emulatorStopped('Pixel_7', { error: new Error('spawn ENOENT') }), /\(spawn ENOENT\)/);
   assert.match(emulatorStopped('Pixel_7', { code: 1 }), /Device Manager/, 'and where to look');
+});
+
+test('a launcher that exits cleanly is no failure: only a code, a signal or a spawn error is', () => {
+  assert.equal(emulatorFailure(0, null, null), null, 'exit 0: it may have handed the emulator over, so the wait goes on');
+  assert.equal(emulatorFailure(null, null, null), null);
+  assert.deepEqual(emulatorFailure(1, null, null), { code: 1 });
+  assert.deepEqual(emulatorFailure(null, 'SIGKILL', null), { signal: 'SIGKILL' });
+  const e = new Error('spawn ENOENT');
+  assert.deepEqual(emulatorFailure(null, null, e), { error: e });
+  assert.match(emulatorStopped('Pixel_7', emulatorFailure(2, null, null)), /\(exit 2\)/, 'and it is what the message is made of');
+  assert.match(emulatorStopped('Pixel_7', emulatorFailure(null, 'SIGTERM', null)), /\(killed by SIGTERM\)/);
+});
+
+test('every Android versionCode grows with the version, and a pre-release comes before its release', () => {
+  assert.equal(versionCode('0.19.0-Beta.0'), 1900000);
+  assert.equal(versionCode('0.19.0-Beta.1'), 1900001);
+  assert.equal(versionCode('0.19.0'), 1900099);
+  assert.equal(versionCode('0.19.1'), 1900199);
+  const order = ['0.19.0-Beta.0', '0.19.0-Beta.1', '0.19.0', '0.19.1', '0.20.0-Beta.0', '1.0.0'].map(versionCode);
+  assert.deepEqual(order.slice().sort((a, b) => a - b), order, 'in order, and never two the same');
+  assert.ok(versionCode('0.19.0') > 18003, 'above the codes of the releases up to 0.18.3 (Play refuses one that is not)');
+  assert.equal(versionCode('0.19.0-Beta.123'), 1900098, 'at most 98: still below the release');
+  assert.equal(versionCode('0.19.0-rc'), 1900000, 'a label without a number');
+});
+
+test('the Android project is not published with the site', () => {
+  for (const wf of ['.github/workflows/pages.yml', '.github/workflows/release.yml']) {
+    const yml = fs.readFileSync(path.join(ROOT, wf), 'utf8');
+    const rsync = /rsync[\s\S]*?\.\/ site\//.exec(yml);
+    assert.ok(rsync, wf + ': the rsync that assembles the site');
+    assert.match(rsync[0], /--exclude 'android-src'/, wf);
+    assert.match(rsync[0], /--exclude 'capacitor\.config\.json'/, wf);
+  }
 });
 
 test('arguments for cmd.exe are quoted when they need it', () => {

@@ -187,7 +187,8 @@ jobs:
           mkdir -p site
           rsync -a --include '/.well-known/***' --exclude '.*' --exclude 'node_modules' --exclude 'dist' --exclude 'electron' \
                    --exclude 'scripts' --exclude 'branding/source' --exclude 'Makefile' --exclude 'package.json' \
-                   --exclude 'package-lock.json' --exclude 'serve.js' --exclude '.claude' --exclude 'tests' ./ site/
+                   --exclude 'package-lock.json' --exclude 'serve.js' --exclude '.claude' --exclude 'tests' \
+                   --exclude 'android-src' --exclude 'capacitor.config.json' ./ site/
           echo "${{ needs.version.outputs.tag }} deployed $(date -u +%FT%TZ)" > site/VERSION.txt
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

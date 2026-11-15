@@ -143,6 +143,9 @@ const devices = () => parseDevices(output(ADB, ['devices']));
 const emulatorStopped = (avd, r) => `the emulator (${avd}) stopped before Android finished starting `
   + `(${r.error ? r.error.message : (r.signal ? 'killed by ' + r.signal : 'exit ' + r.code)}).`
   + '\nStart it in Android Studio (Device Manager) to see what it says of itself.';
+// What the launcher leaving means: the failure to report, or null for none. A clean exit 0 is not one - the launcher
+// hands the emulator over to a process of its own on some systems and returns at once - so the wait goes on.
+const emulatorFailure = (code, signal, error) => error ? { error } : signal ? { signal } : code ? { code } : null;
 
 async function startEmulator() {
   if (!fs.existsSync(EMULATOR)) fail('no emulator in the SDK: add it in Android Studio (SDK Manager > SDK Tools)');
@@ -154,8 +157,8 @@ async function startEmulator() {
   step(`Starting the emulator (${avd})`);
   const proc = spawn(EMULATOR, ['-avd', avd], { detached: true, stdio: 'ignore' });
   let stopped = null;   // it gave up (or never ran): said at once, rather than waiting the three minutes out
-  proc.on('exit', (code, signal) => { stopped = { code, signal }; });
-  proc.on('error', error => { stopped = { error }; });
+  proc.on('exit', (code, signal) => { stopped = stopped || emulatorFailure(code, signal, null); });
+  proc.on('error', error => { stopped = emulatorFailure(null, null, error); });
   proc.unref();
   // only the new emulator is asked (by its serial, which also overrides ANDROID_SERIAL), never a phone plugged in
   for (let i = 0; i < 180; i++) {   // up to 3 minutes for it to appear and Android to finish starting
@@ -238,4 +241,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { chooseJdk, gradleRunsOn, parseDevices, cmdQuote, javaHomePaths, emulatorStopped };
+module.exports = { chooseJdk, gradleRunsOn, parseDevices, cmdQuote, javaHomePaths, emulatorStopped, emulatorFailure };

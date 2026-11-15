@@ -439,7 +439,8 @@ test('the attribute table keeps the keyboard: focus is given back after it is dr
   assert.match(at, /return tr && tr\.dataset\.i != null \? `#attrBody tr\[data-i="\$\{tr\.dataset\.i\}"\] \[data-c="\$\{c\}"\]` : null;/);
   // gone (a field deleted, a row no longer in the page): the dialog's ✕; and focus still inside is left alone
   assert.match(at, /const el = T\.dlg\.querySelector\(mark\) \|\| T\.dlg\.querySelector\('\.modal-x'\);/);
-  assert.match(at, /if \(at && at !== document\.body && T\.dlg\.contains\(at\)\) return;/);
+  assert.match(at, /if \(insideDialog\(\)\) return;/, 'focus still inside is left alone');
+  assert.match(at, /return !!\(at && at !== document\.body && T\.dlg && T\.dlg\.contains\(at\)\);/, 'the page body is not inside');
   assert.match(at, /if \(!mark \|\| T\.dlg\.classList\.contains\('hidden'\)\) return;/, 'and nothing is taken while it is closed (it is drawn before it opens)');
   // Enter on the last row: the value is kept and focus stays on the cell (it used to blur, dropping focus to the body)
   assert.doesNotMatch(at, /if \(next\) next\.focus\(\); else inp\.blur\(\);/, 'the cell is no longer blurred');
@@ -449,6 +450,12 @@ test('the attribute table keeps the keyboard: focus is given back after it is dr
   assert.match(at, /const keep = rt && d\.contains\(rt\) && !head\.contains\(rt\) && !body\.contains\(rt\);/);
   assert.match(at, /build\(\);\s*\r?\n\s*if \(!keep\) focusColumn\(why \? from : to\);/);
   assert.match(at, /const el = \(c >= 0 && T\.dlg\.querySelector\(`#attrHead \[data-sort\]\[data-c="\$\{c\}"\]`\)\) \|\| T\.dlg\.querySelector\('\.modal-x'\);/);
+  // the page buttons: the one pressed is disabled on the first or last page, so focus goes to the other one (or to
+  // the first cell), never to the page body
+  assert.match(at, /if \(b\.disabled && !insideDialog\(\)\) \{/);
+  assert.match(at, /const other = d\.querySelector\(`\.attr-foot \[data-at="\$\{b\.dataset\.at === 'next' \? 'prev' : 'next'\}"\]`\);/);
+  assert.match(at, /const el = \(other && !other\.disabled && !other\.hidden && other\) \|\| d\.querySelector\('#attrBody \[data-c\]'\) \|\| d\.querySelector\('\.modal-x'\);/);
+  assert.ok(at.indexOf('if (b.disabled && !insideDialog())') > at.indexOf("d.querySelector('#attrScroll').scrollTop = 0;"), 'after the page is drawn anew');
   // a box visited and left unchanged is no edit (Enter commits, and the change event that follows must not add a second undo step)
   assert.match(at, /const same = v === was \|\| \(\(v == null \|\| v === ''\) && \(was == null \|\| was === ''\)\);\s*\r?\n\s*if \(!same\) T\.ad\.set\(row, k, v\);/);
 });

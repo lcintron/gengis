@@ -3,7 +3,7 @@
  * `npx cap sync android` (npm run android:sync does).
  * - permissions: location (the locate button), and plain-HTTP requests to receivers on the local network (dump1090,
  *   AIS-catcher), which Android refuses by default
- * - version: versionName from package.json, versionCode derived from it (0.16.3 -> 16003)
+ * - version: versionName from package.json, versionCode derived from it (0.19.0-Beta.1 -> 1900001, 0.19.0 -> 1900099)
  * - release signing from environment variables, when they are set (CI: the upload key from GitHub secrets):
  *   GENGIS_KEYSTORE (path), GENGIS_KEYSTORE_PASSWORD, GENGIS_KEY_ALIAS, GENGIS_KEY_PASSWORD
  * - GenGIS's icons (launcher, round, adaptive) and splash screens instead of Capacitor's
@@ -12,6 +12,19 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+
+/* Play's versionCode from a version in package.json: it must grow with every upload, and a pre-release has to come
+ * before the release it leads to. Two digits are kept for that: the pre-release's own number (Beta.1 -> 01, at most
+ * 98), 99 for the release itself. 0.19.0-Beta.0 -> 1900000, 0.19.0-Beta.1 -> 1900001, 0.19.0 -> 1900099, 0.19.1 ->
+ * 1900199. (Versions up to 0.18.3 were numbered 18003: every code here is larger.) */
+const versionCode = version => {
+  const [base, pre] = String(version).split('-');
+  const [maj, min, pat] = base.split('.').map(n => parseInt(n, 10) || 0);
+  const n = pre ? parseInt((/(\d+)\s*$/.exec(pre) || [, '0'])[1], 10) : 0;
+  return (maj * 1000000 + min * 1000 + pat) * 100 + (pre ? Math.min(n, 98) : 99);
+};
+module.exports = { versionCode };
+if (require.main !== module) return; // required by the tests: only the pure part above
 
 const ROOT = path.join(__dirname, '..');
 const APP = path.join(ROOT, 'android', 'app');
@@ -82,10 +95,9 @@ edit(mainActivity, s => {
 /* ---------- version and signing ---------- */
 const gradle = path.join(APP, 'build.gradle');
 if (!fs.existsSync(gradle)) fail('android/app/build.gradle not found (a Kotlin DSL template?): update this script');
-const [maj, min, pat] = String(pkg.version).split(/[.-]/).map(n => parseInt(n, 10) || 0);
-const versionCode = maj * 1000000 + min * 1000 + pat;
+const code = versionCode(pkg.version);
 edit(gradle, s => {
-  s = s.replace(/versionCode\s+\d+/, 'versionCode ' + versionCode).replace(/versionName\s+"[^"]*"/, `versionName "${pkg.version}"`);
+  s = s.replace(/versionCode\s+\d+/, 'versionCode ' + code).replace(/versionName\s+"[^"]*"/, `versionName "${pkg.version}"`);
   if (!s.includes('signingConfigs')) {
     s = s.replace(/(\n\s*)buildTypes\s*\{/, `$1signingConfigs {
         release {
@@ -132,4 +144,4 @@ const bg = path.join(RES, 'values', 'ic_launcher_background.xml');
 if (fs.existsSync(bg)) edit(bg, s => s.replace(/(<color name="ic_launcher_background">)[^<]*(<\/color>)/, '$1#0B1118$2'));
 const splash = copyTo('branding/splash/splash-1080x1920.png', 'splash.png', d => d.startsWith('drawable') && !d.includes('land')) +
   copyTo('branding/splash/splash-1920x1080.png', 'splash.png', d => d.startsWith('drawable') && d.includes('land'));
-console.log(`android-prepare: version ${pkg.version} (${versionCode}), ${icons} icons, ${splash} splash images, permissions, signing and cloud sign-in set`);
+console.log(`android-prepare: version ${pkg.version} (${code}), ${icons} icons, ${splash} splash images, permissions, signing and cloud sign-in set`);

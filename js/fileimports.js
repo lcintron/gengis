@@ -1353,10 +1353,11 @@ window.MB = window.MB || {};
     },
     async exportFile(id, format) {
       const rec = layers.get(id);
-      if (!rec || !(await this.load(rec)) || !MB.download) return;
+      if (!rec || !(await this.load(rec)) || !MB.download) return false;
       const name = rec.meta.name.replace(/[^\w\- ]+/g, '_').trim() || 'layer';
-      if (format === 'kml') MB.download(name + '.kml', toKml(rec), 'application/vnd.google-earth.kml+xml');
-      else MB.download(name + '.geojson', JSON.stringify(toGeoJson(rec)), 'application/geo+json');
+      // true once the file is out: in the app that is when the share sheet has answered (false when it was cancelled)
+      if (format === 'kml') return MB.download(name + '.kml', toKml(rec), 'application/vnd.google-earth.kml+xml');
+      return MB.download(name + '.geojson', JSON.stringify(toGeoJson(rec)), 'application/geo+json');
     },
     // The layer's features into the project as its own objects, in a layer of the same name: each named by its title
     // (by its label, when labels show, which then shows on it too), its attributes and colors with it, a point drawn
