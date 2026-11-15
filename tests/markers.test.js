@@ -225,6 +225,11 @@ test('attribute fields: reserved names refused, values read as the object\'s own
   assert.equal(A.tableFor('l1').renameField('a', 'b'), '');
   assert.equal(drawn, 1);
   assert.equal(A.valueOf(f.mb, 'b'), 1);
+  // a rename given up on (the box left as it was) says nothing, whatever the name is
+  assert.equal(A.tableFor('l1').renameField('__proto__', '__proto__'), '', 'a name every object has');
+  assert.equal(A.tableFor('l1').renameField('x'.repeat(80), 'x'.repeat(80)), '', 'a name longer than a field may be');
+  assert.equal(drawn, 1, 'and nothing is drawn anew');
+  assert.match(A.tableFor('l1').renameField('b', '__proto__'), /reserved/, 'but renaming a field to one is still refused');
 });
 
 test('copied into the project, every property is its own field ("__proto__" too)', () => {

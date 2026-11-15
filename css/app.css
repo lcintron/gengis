@@ -535,6 +535,7 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   transform: translate(-50%, 20px); background: var(--bg-2); border: 1px solid var(--border);
   color: var(--text); padding: 8px 14px; border-radius: 8px; opacity: 0; transition: all .2s; z-index: 5000; pointer-events: none;
   box-shadow: 0 8px 24px rgba(0,0,0,.5); max-width: calc(80vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  overflow-wrap: anywhere; /* a long project or file name in the message wraps instead of running off the screen */
 }
 #mb-toast.show { opacity: 1; transform: translate(-50%, 0); }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 4000;
@@ -940,7 +941,8 @@ button.link:hover { text-decoration: underline; }
 .recent-main .dim { font-size: 12px; }
 .mb-ask { z-index: 4500; }
 .mb-ask .modal-box { max-width: 440px; }
-.mb-ask .ask-text { white-space: pre-line; margin: 0 0 14px; }
+/* a project name, a file name or a provider's message in the question: wrapped anywhere rather than pushing the box wide */
+.mb-ask .ask-text { white-space: pre-line; margin: 0 0 14px; overflow-wrap: anywhere; }
 .desktop-files { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 /* Settings: a line of text or a file with its actions as icons, and an "i" whose explanation opens below the line */
 .info-line { position: relative; display: flex; align-items: center; gap: 6px; min-height: 26px; margin: 6px 0; }
@@ -1290,7 +1292,7 @@ textarea.attr-multi { display: block; height: auto; min-height: 28px; padding: 5
 .attr-section .attr-add { margin: 8px 0 0; }
 .attr-section .attr-add .icon-btn { flex: 0 0 auto; }
 @media (max-width: 640px) {
-  .attr-box { width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); border-radius: 0;
+  .attr-box { width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); max-width: none; border-radius: 0;
     max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); } /* the screen between the system bars */
   .attr-scroll { max-height: 58vh; }
   .attr-cell { height: 36px; font-size: 14px; }
@@ -1300,13 +1302,6 @@ textarea.attr-multi { display: block; height: auto; min-height: 28px; padding: 5
   .mb-datatable.attr-edit th:last-child { width: 40px; }
   .look-field input[type="text"] { height: 36px; }
 }
-/* File imports (fileimports.js): each layer's color, a small round swatch among its row's icons */
-.imp-sw { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: 0; cursor: pointer; }
-.imp-sw input[type="color"] { width: 16px; height: 16px; padding: 0; border: 1px solid rgba(255,255,255,.45); border-radius: 50%; background: none; cursor: pointer; }
-.imp-sw input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
-.imp-sw input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 50%; }
-.imp-sw input[type="color"]::-moz-color-swatch { border: 0; border-radius: 50%; }
-.imp-sw:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
 .trk-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .trk-list:empty { display: none; }
 .data-item.trk-item { margin: 0; padding: 6px 6px 7px 8px; }
@@ -1332,11 +1327,13 @@ textarea.attr-multi { display: block; height: auto; min-height: 28px; padding: 5
 .trk-craft svg path { fill: currentColor; stroke: #0b1118; stroke-width: 1.6; stroke-linejoin: round; paint-order: stroke; }
 .trk-craft.out { opacity: .4; }
 /* the time bar: over the map, clear of the coordinates (and their loading line) and the scale (--trk-inset: the
-   phone's bottom bar, which the coordinates below it also move above, set in the Android app's rules) */
+   phone's bottom bar, which the coordinates below it also move above, set in the Android app's rules; --clk-inset:
+   the clock, which sits above the coordinates while it shows, set from clock.js on #mapwrap) */
 .trk-bar {
-  position: absolute; z-index: 900; left: 50%; bottom: calc(66px + var(--trk-inset, 0px)); transform: translateX(-50%); width: min(560px, calc(100% - 24px)); box-sizing: border-box;
+  position: absolute; z-index: 900; left: 50%; bottom: calc(66px + var(--clk-inset, 0px) + var(--trk-inset, 0px)); transform: translateX(-50%); width: min(560px, calc(100% - 24px)); box-sizing: border-box;
   background: rgba(27,31,39,.92); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.45); padding: 6px 8px; font-size: 11px; color: var(--text);
 }
+#mapwrap.clock-on .trk-bar { --clk-inset: 30px; } /* the clock's height: the bar sits above it, not over it */
 .trk-ctl { display: flex; align-items: center; gap: 8px; }
 .trk-btn { flex: 0 0 auto; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 7px;
   border: 1px solid var(--border); background: var(--bg-3); color: var(--text); cursor: pointer; }
@@ -1355,7 +1352,8 @@ select.trk-rate { flex: 0 0 auto; height: 30px; padding: 0 4px; font-size: 12px;
 .trk-lg.chips span { display: inline-flex; align-items: center; gap: 4px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trk-lg.chips i { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 2px; border: 1px solid rgba(255,255,255,.25); }
 @media (max-width: 640px) {
-  .trk-bar { bottom: calc(64px + var(--trk-inset, 0px)); width: calc(100% - 16px); padding: 6px; }
+  .trk-bar { bottom: calc(64px + var(--clk-inset, 0px) + var(--trk-inset, 0px)); width: calc(100% - 16px); padding: 6px; }
+  #mapwrap.clock-on .trk-bar { --clk-inset: 27px; } /* (smaller type here, so a shorter clock) */
   .trk-ctl { gap: 6px; }
   .trk-btn, select.trk-rate { width: 36px; height: 36px; }
   select.trk-rate { width: auto; }

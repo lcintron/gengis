@@ -1900,6 +1900,10 @@ window.MB = window.MB || {};
   /* ================= keyboard ================= */
 
   function initKeys() {
+    // What covers the map: a dialog showing (one hidden has no boxes) or presenter mode. The app's own shortcuts do
+    // not act behind it: a dialog's keys reach it through its own listener, and focus dropped inside one (a list drawn
+    // anew) must not leave Delete, f or Ctrl+Z working on the map underneath.
+    const covered = () => !!((MB.presenter && MB.presenter.active) || $$('.modal:not(.hidden)').some(m => m.getClientRects().length));
     document.addEventListener('keydown', e => {
       const t = e.target;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
@@ -1907,14 +1911,18 @@ window.MB = window.MB || {};
       // presenter mode covers it
       if (document.documentElement.dataset.titlebar && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault();
-        const covered = (MB.presenter && MB.presenter.active) || $$('.modal').some(m => m.getClientRects().length);
-        if (!covered) MB.ui.focusSearch();
+        if (!covered()) MB.ui.focusSearch();
         return;
       }
       if (e.key === 'Escape') {
         if (MB.contextMenu && MB.contextMenu.isOpen()) { MB.contextMenu.hide(); return; }
         if (MB.presenter && MB.presenter.active) { MB.presenter.exit(); return; }
         if (typing) { t.blur(); return; }
+        // a dialog is up and focus has dropped outside it (a list drawn anew): Escape closes the top-most one, as its
+        // own ✕ and the Android back button do, rather than acting on the map behind it
+        // (preventDefault: the press is answered here, so a dialog with an Escape listener of its own on the document
+        //  — Recent projects — leaves it alone and two dialogs never close at once)
+        if (covered()) { e.preventDefault(); const top = $$('.modal:not(.hidden)').filter(m => m.getClientRects().length).pop(), x = top && top.querySelector('.modal-x'); if (x) x.click(); return; }
         if (MB.measure.active && MB.measure.pts.length) { MB.measure.cancel(); return; }
         if (MB.tools.current !== 'select') { MB.tools.set('select'); return; }
         if (MB.selected || (MB.multi && MB.multi.size)) { MB.deselect(); return; }
@@ -1923,7 +1931,7 @@ window.MB = window.MB || {};
         return;
       }
       if (typing) return;
-      if (MB.presenter && MB.presenter.active) return;
+      if (covered()) return; // a dialog or presenter mode is up: nothing here acts on the map behind it
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) MB.redo(); else MB.undo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); MB.redo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); MB.saveToFile(); return; }

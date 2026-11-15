@@ -11,14 +11,14 @@ const zlib = require('zlib');
 
 const ROOT = process.env.GENGIS_ROOT || path.join(__dirname, '..');
 
-function load() {
-  const MB = { escapeHtml: s => String(s) };
-  const ctx = { window: { MB }, TextDecoder, Blob, DecompressionStream, console, Date, Math };
+function load(extra) {
+  const MB = { escapeHtml: s => String(s), toast: () => {}, emit: () => {} };
+  const ctx = Object.assign({ window: { MB }, TextDecoder, Blob, DecompressionStream, console, Date, Math, setTimeout, clearTimeout }, extra || {});
   vm.createContext(ctx);
   for (const f of ['js/util.js', 'js/fileimports.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }); // (util.js: formatted text)
-  return MB.imports;
+  return MB;
 }
-const IMP = load(), R = IMP.read;
+const MB = load(), IMP = MB.imports, R = IMP.read;
 const plain = x => JSON.parse(JSON.stringify(x));
 const near = (got, want, tol, what) => assert.ok(Math.abs(got - want) <= tol, `${what}: ${got} is not within ${tol} of ${want}`);
 
@@ -45,6 +45,8 @@ function zip(entries) {
 }
 
 // A .shp: records { type: 'point', xy } | { type: 'line' | 'polygon', parts: [[[x, y], …], …] } | { type: 'null' }
+// (no spread over the points: a record of 100,000 rings would overflow the argument limit here, before the reader)
+const extent = pts => { const b = [Infinity, Infinity, -Infinity, -Infinity]; for (const p of pts) { if (p[0] < b[0]) b[0] = p[0]; if (p[1] < b[1]) b[1] = p[1]; if (p[0] > b[2]) b[2] = p[0]; if (p[1] > b[3]) b[3] = p[1]; } return b; };
 function shp(records) {
   const all = [], bufs = [];
   records.forEach((r, i) => {
@@ -55,21 +57,19 @@ function shp(records) {
       const pts = r.parts.flat();
       c = Buffer.alloc(44 + 4 * r.parts.length + 16 * pts.length);
       c.writeInt32LE(r.type === 'line' ? 3 : 5, 0);
-      const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-      [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].forEach((v, k) => c.writeDoubleLE(v, 4 + 8 * k));
+      extent(pts).forEach((v, k) => c.writeDoubleLE(v, 4 + 8 * k));
       c.writeInt32LE(r.parts.length, 36); c.writeInt32LE(pts.length, 40);
       let at = 0;
       r.parts.forEach((p, k) => { c.writeInt32LE(at, 44 + 4 * k); at += p.length; });
       pts.forEach((p, k) => { c.writeDoubleLE(p[0], 44 + 4 * r.parts.length + 16 * k); c.writeDoubleLE(p[1], 52 + 4 * r.parts.length + 16 * k); });
-      all.push(...pts);
+      for (const p of pts) all.push(p);
     }
     const rh = Buffer.alloc(8); rh.writeInt32BE(i + 1, 0); rh.writeInt32BE(c.length / 2, 4);
     bufs.push(rh, c);
   });
   const body = Buffer.concat(bufs), h = Buffer.alloc(100);
   h.writeInt32BE(9994, 0); h.writeInt32BE((100 + body.length) / 2, 24); h.writeInt32LE(1000, 28); h.writeInt32LE(5, 32);
-  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
-  [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].forEach((v, k) => h.writeDoubleLE(v, 36 + 8 * k));
+  extent(all).forEach((v, k) => h.writeDoubleLE(v, 36 + 8 * k));
   return Buffer.concat([h, body]);
 }
 
@@ -279,6 +279,12 @@ test('shapefile text: UTF-8 when it reads as UTF-8, Windows-1252 when not, the .
   assert.equal(R.dbf(dbf(f1, [['Zürich']], 'utf8'))[0].N, 'Zürich');
   assert.equal(R.dbf(dbf(f1, [['Zürich']], 'latin1'))[0].N, 'Zürich');
   assert.equal(R.dbf(dbf(f1, [['Zürich']], 'utf8'), 'UTF-8')[0].N, 'Zürich');
+  // a field with a name every object already has is the record's own field, not the function behind it
+  const odd = [{ name: '__proto__', type: 'C', len: 4 }, { name: 'toString', type: 'C', len: 4 }];
+  const row = R.dbf(dbf(odd, [['x', 'y']]))[0];
+  assert.equal(Object.hasOwn(row, '__proto__'), true, 'a field called "__proto__" is kept');
+  assert.equal(Object.getOwnPropertyDescriptor(row, '__proto__').value, 'x', 'as a plain field of its own');
+  assert.equal(row.toString, 'y');
 });
 
 /* ---------- files and zips ---------- */
@@ -372,6 +378,139 @@ test('review fixes: rings all one way nest by containment; WKT2 false-origin nam
   assert.equal(white.features[0].mbStyle, undefined, 'no marker color: the layer\'s');
 });
 
+
+/* ---------- names every object has, crafted text, and writes that are not kept ---------- */
+test('KML: a name every object already has is no field, no style, no entity and no note', () => {
+  const kml = `<kml>
+    <constructor/><toString/>
+    <Placemark><name>With</name><ExtendedData><Data name="constructor"><value>ACME</value></Data><Data name="__proto__"><value>x</value></Data></ExtendedData><Point><coordinates>1,2</coordinates></Point></Placemark>
+    <Placemark><name>Without</name><styleUrl>#constructor</styleUrl><Point><coordinates>3,4</coordinates></Point></Placemark>
+  </kml>`;
+  const { features, notes } = R.kml(kml);
+  assert.deepEqual(plain(notes), [], 'a <constructor/> element is not one of the kinds left out ("1 undefined left out")');
+  const [withIt, without] = features;
+  assert.equal(withIt.properties.constructor, 'ACME', 'the file\'s own field');
+  assert.equal(Object.hasOwn(withIt.properties, '__proto__'), true, 'a field called "__proto__" is the feature\'s own');
+  assert.equal(Object.getOwnPropertyDescriptor(withIt.properties, '__proto__').value, 'x', 'a plain field of its own, not its prototype');
+  assert.equal(Object.hasOwn(without.properties, 'constructor'), false, 'the other placemark has no such field');
+  assert.equal(without.mbStyle, undefined, 'a styleUrl naming no Style in the file is no style');
+  // an entity named after one of those is text, as any unknown entity is
+  const ent = R.kml('<kml><Placemark><name>&constructor; &amp; &toString;</name><Point><coordinates>1,2</coordinates></Point></Placemark></kml>');
+  assert.equal(ent.features[0].properties.name, '&constructor; & &toString;');
+});
+
+test('KML coordinates: tuples are split on every kind of space, not the ASCII ones alone', () => {
+  const seps = [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '　', '﻿'];
+  const text = '1,2' + seps.map((s, i) => s + (i + 3) + ',' + (i + 4)).join('');
+  const g = R.kml(`<kml><Placemark><LineString><coordinates>${text}</coordinates></LineString></Placemark></kml>`).features[0].geometry;
+  assert.equal(g.coordinates.length, seps.length + 1, 'one point per tuple');
+  assert.deepEqual(plain(g.coordinates.slice(0, 3)), [[1, 2], [3, 4], [4, 5]]);
+});
+
+test('shapefile rings: the same nesting however they are wound, and thousands of separate outlines stay quick', () => {
+  const ccw = r => r.slice().reverse();
+  const ringsOf = parts => {
+    const g = R.shapefile({ shp: shp([{ type: 'polygon', parts }]) }).features[0].geometry;
+    return (g.type === 'Polygon' ? [g.coordinates] : g.coordinates).map(p => p.length); // rings in each polygon
+  };
+  assert.deepEqual(plain(ringsOf([SQUARE, HOLE])), [2], 'outline and hole, wound by the rule');
+  assert.deepEqual(plain(ringsOf([SQUARE, ccw(HOLE)])), [2], 'both clockwise');
+  assert.deepEqual(plain(ringsOf([ccw(SQUARE), HOLE])), [2], 'both counter-clockwise');
+  assert.deepEqual(plain(ringsOf([SQUARE, ISLAND])), [1, 1], 'two outlines, neither inside the other');
+  assert.deepEqual(plain(ringsOf([SQUARE])), [1], 'one ring: nothing to nest');
+
+  // 4,000 separate clockwise outlines, 50 points each: no hole in the file, so the nesting runs, and it must not
+  // test every ring against every other
+  const many = [];
+  for (let i = 0; i < 4000; i++) {
+    const cx = (i % 100) * 1.5, cy = Math.floor(i / 100) * 2, r = [];
+    for (let k = 0; k < 50; k++) { const a = -2 * Math.PI * k / 50; r.push([cx + 0.4 * Math.cos(a), cy + 0.4 * Math.sin(a)]); } // clockwise
+    r.push(r[0]);
+    many.push(r);
+  }
+  const t0 = process.hrtime.bigint();
+  const [f] = R.shapefile({ shp: shp([{ type: 'polygon', parts: many }]) }).features;
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.equal(f.geometry.type, 'MultiPolygon');
+  assert.equal(f.geometry.coordinates.length, 4000, 'every outline kept, none taken for a hole');
+  assert.ok(f.geometry.coordinates.every(p => p.length === 1), 'and none given a hole');
+  assert.ok(ms < 2000, '4,000 rings read in ' + ms.toFixed(0) + ' ms');
+  // a record of 100,000 polygons: pushed one by one (spreading them would overflow the argument limit, and the
+  // record would be dropped without a word)
+  assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'js/fileimports.js'), 'utf8'), /parts\.push\(\.\.\.polygonOf/);
+});
+
+test('crafted text is read in one pass: attribute names with no value, a run of spaces in coordinates, markup that never closes', () => {
+  const ms = fn => { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; };
+  const under = (what, n, limit) => assert.ok(n < (limit || 200), what + ' took ' + n.toFixed(0) + ' ms');
+  // 200 kB of attribute names with no values in one tag (each searched for an '=' to the end of the tag: 0.8 s)
+  const names = ('a'.repeat(5000) + ' ').repeat(40);
+  const t1 = ms(() => assert.deepEqual(plain(R.parseXml(`<kml><Placemark ${names}><Point><coordinates>1,2</coordinates></Point></Placemark></kml>`).kids[0].kids[0].attrs), {}));
+  under('a tag of names with no values', t1);
+  // 200 kB of spaces inside one tag, with and without a stray '=' after them (the name's pattern used to eat the run
+  // at every position and give it back again: 19 s for 160 kB)
+  const run = ' '.repeat(200000);
+  const attrs = s => R.parseXml(`<kml><Placemark ${s}><Point><coordinates>1,2</coordinates></Point></Placemark></kml>`).kids[0].kids[0].attrs;
+  under('a tag ending in a run of spaces', ms(() => assert.deepEqual(plain(attrs('a="1"' + run)), { a: '1' })));
+  under('a run of spaces and a stray =', ms(() => assert.deepEqual(plain(attrs('a="1"' + run + '= b="2"')), { a: '1', b: '2' })));
+  // 200 kB of spaces in a coordinate list (each a search for the next comma: 0.5 s)
+  const spaces = (' '.repeat(5000) + ' 3,4').repeat(40);
+  const t2 = ms(() => assert.equal(R.kml(`<kml><Placemark><LineString><coordinates>1,2${spaces}</coordinates></LineString></Placemark></kml>`).features[0].geometry.coordinates.length, 41));
+  under('a coordinate list of spaces', t2);
+  // 200 kB of markup whose tags never close (each <br searched to the end of the text: 0.9 s)
+  const marky = '<br'.repeat(6000) + '<'.repeat(182000);
+  under('formatted text that never closes', ms(() => MB.htmlText(marky)));
+  // and the stand-in in fileimports.js, where util.js is not loaded, reads tags the same way
+  assert.match(fs.readFileSync(path.join(ROOT, 'js/fileimports.js'), 'utf8'), /<br\\b\[\^<>\]\*>\|<\\\/\(p\|div\|tr\|li\|h\\d\)/);
+});
+
+// A stand-in IndexedDB: a request answers, and then the transaction either commits or, with abort, is rolled back
+// (the quota reached, the disk full). What answered but never committed was not kept.
+function fakeIdb(opts) {
+  opts = opts || {};
+  const data = new Map(), soon = fn => setTimeout(fn, 0);
+  const db = {
+    objectStoreNames: { contains: n => data.has(n) },
+    createObjectStore(n) { data.set(n, new Map()); },
+    transaction(name, mode) {
+      const m = data.get(name) || data.set(name, new Map()).get(name), write = mode === 'readwrite', queued = [];
+      const req = run => { const r = {}; queued.push([r, run]); return r; };
+      const store = {
+        put: (v, k) => req(() => { if (!(write && opts.abort)) m.set(k, v); }),
+        get: k => req(() => m.get(k)),
+        getAll: () => req(() => Array.from(m.values())),
+        getAllKeys: () => req(() => Array.from(m.keys())),
+        delete: k => req(() => { m.delete(k); })
+      };
+      const tx = { error: null, objectStore: () => store };
+      soon(() => {
+        queued.forEach(([r, run]) => { r.result = run(); if (r.onsuccess) r.onsuccess(); }); // the request answers first
+        if (write && opts.abort) { tx.error = new Error('the quota is full'); if (tx.onabort) tx.onabort(); }
+        else if (tx.oncomplete) tx.oncomplete();
+      });
+      return tx;
+    }
+  };
+  return { stores: data, open: () => { const r = { result: db }; soon(() => { if (r.onupgradeneeded) r.onupgradeneeded(); if (r.onsuccess) r.onsuccess(); }); return r; } };
+}
+
+test('a layer counts as imported only once its write went through: one that answers and then fails to commit is not "on the map"', async () => {
+  const gj = JSON.stringify({ type: 'Feature', properties: { name: 'A' }, geometry: { type: 'Point', coordinates: [1, 2] } });
+  const quiet = idb => { const m = load({ indexedDB: idb }); m.toast = () => {}; return m.imports; }; // (toast: util.js's writes to the page)
+  const kept = fakeIdb(), ok = quiet(kept);
+  const ids = await ok.openFiles([file('ok.geojson', gj)]);
+  assert.equal(ids.length, 1);
+  assert.deepEqual(plain(ok.notes.map(n => n.text)), ['ok: 1 feature on the map.']);
+  assert.equal(kept.stores.get('meta').size, 1, 'kept on the device');
+  assert.equal(kept.stores.get('geo').size, 1);
+
+  const lost = fakeIdb({ abort: true }), bad = quiet(lost);
+  assert.deepEqual(plain(await bad.openFiles([file('ok.geojson', gj)])), [], 'no layer');
+  const said = bad.notes.map(n => n.text);
+  assert.ok(said.some(t => /^ok: could not be kept \(/.test(t)), said.join(' | '));
+  assert.ok(!said.some(t => /on the map/.test(t)), 'nothing says it is on the map: ' + said.join(' | '));
+  assert.equal(lost.stores.get('meta').size, 0, 'and nothing was kept');
+});
 
 test('a panel redraw waits for a press to end: its release, a context menu, the window losing focus, or 2 s', async () => {
   // a fresh copy, its own press state, with a stand-in page

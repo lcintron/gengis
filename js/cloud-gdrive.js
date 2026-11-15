@@ -267,11 +267,22 @@ window.MB = window.MB || {};
       body.set(head); body.set(bytes, head.length); body.set(tail, head.length + bytes.length);
       return item(await api(ctx, 'POST', UPLOAD + '/files?uploadType=multipart&fields=' + FIELDS, { headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body }));
     }
-    // resumable: a session, then chunks to its address
-    const start = await api(ctx, o.fileId ? 'PATCH' : 'POST', UPLOAD + '/files' + (o.fileId ? '/' + encodeURIComponent(o.fileId) : '') + '?uploadType=resumable&fields=' + FIELDS,
-      { raw: true, headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/json', 'X-Upload-Content-Length': String(bytes.length) }, body: JSON.stringify(meta || {}) });
-    const session = start.headers.get('Location');
-    if (!session) throw new Error('No upload session');
+    // resumable: a session, then chunks to its address. A session gone over there (expired or cancelled) is started
+    // once more from the beginning: the file itself is there, so that is no 404 for cloudsync to read as deleted.
+    for (let fresh = 0; ; fresh++) {
+      const start = await api(ctx, o.fileId ? 'PATCH' : 'POST', UPLOAD + '/files' + (o.fileId ? '/' + encodeURIComponent(o.fileId) : '') + '?uploadType=resumable&fields=' + FIELDS,
+        { raw: true, headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/json', 'X-Upload-Content-Length': String(bytes.length) }, body: JSON.stringify(meta || {}) });
+      const session = start.headers.get('Location');
+      if (!session) throw new Error('No upload session');
+      const done = await chunks(ctx, o, session, bytes);
+      if (done) return done;
+      if (fresh) throw Object.assign(new Error('The upload session ended'), { status: 503 }); // (a second time: tried again later)
+    }
+  }
+
+  // The chunks to an upload session's own address. Resolves the file's item, or null when the session itself is gone
+  // on Drive's side (404 or 410: expired or cancelled).
+  async function chunks(ctx, o, session, bytes) {
     // Drive says how much it has (308 + Range): the next chunk starts there, which may be short of what was sent
     let at = 0, stalls = 0;
     for (;;) {
@@ -280,6 +291,7 @@ window.MB = window.MB || {};
       try { res = await ctx.fetch(session, { method: 'PUT', headers: { Authorization: 'Bearer ' + await ctx.token(), 'Content-Range': `bytes ${at}-${end - 1}/${bytes.length}` }, body: bytes.subarray(at, end) }); }
       catch (e) { const err = new Error('offline'); err.code = 'network'; throw err; }
       if (res.ok) { if (o.onProgress) o.onProgress(bytes.length, bytes.length); return item(await res.json()); }
+      if (res.status === 404 || res.status === 410) return null; // the session, not the file
       if (res.status !== 308) throw await httpError(res, 'upload');
       const m = /bytes=0-(\d+)/.exec(res.headers.get('Range') || '');
       const got = m ? +m[1] + 1 : end; // (a browser may not be shown Range: then the chunk counts as taken, and a gap is Drive's 400)

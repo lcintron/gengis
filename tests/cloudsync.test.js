@@ -213,15 +213,51 @@ test('deleted in the cloud: the project stays here and stops syncing', async () 
   assert.equal(server.live().length, 1, 'uploaded again when the user chooses');
 });
 
-test('deleted in the cloud before a check saw it: the next upload writes it again (404 → new file)', async () => {
+test('deleted in the cloud before a check saw it: the upload writes no new file (404 → kept here, sync off)', async () => {
   const { server, app } = await connected();
-  const old = fileOf(server, 'Alpha.gengis.json').id;
-  server.deleteRemote(old);
+  server.deleteRemote(fileOf(server, 'Alpha.gengis.json').id);
   app.save(project('p1', 'Alpha', 4));
   await app.settle();
+  assert.equal(server.live().length, 0, 'the delete is not undone by a new file');
+  assert.ok(app.toasts.some(t => /"Alpha" was deleted from the cloud\. Kept here, sync off\./.test(t)));
+  assert.equal(linkOf(app, 'p1').excluded, true);
+  assert.equal(linkOf(app, 'p1').fileId, undefined);
+  assert.equal(app.device.projects.recs.get('p1').data.features.length, 4, 'the edit stays on this device');
+  // and it goes back to the cloud when the user asks for it
+  await app.C.setSync('p1', app.C.accounts[0].id); await app.settle();
+  assert.equal(content(server, 'Alpha.gengis.json').features.length, 4);
+});
+
+test('one device deletes the file while another was editing: the second writes no new file and keeps its edit', async () => {
+  const server = makeServer(), a = makeApp({ server });
+  a.device.projects.put(project('p1', 'Alpha', 3));
+  await a.connect(); await a.settle();
+  const b = makeApp({ server, pushDelay: 150 });
+  b.device.projects.put(project('p1', 'Alpha', 3));
+  await b.connect(); await b.settle();
   const f = fileOf(server, 'Alpha.gengis.json');
-  assert.ok(f && f.id !== old);
-  assert.equal(linkOf(app, 'p1').fileId, f.id);
+  assert.equal(linkOf(b, 'p1').fileId, f.id, 'both devices sync the one file');
+  b.save(project('p1', 'Alpha', 8));            // B edited it; its upload is still waiting
+  await a.C.deleteRemote(a.C.accounts[0].id, f.id);
+  await new Promise(r => setTimeout(r, 300)); await b.settle();
+  assert.equal(server.live().length, 0, 'B wrote no new file');
+  assert.equal(linkOf(b, 'p1').excluded, true);
+  assert.equal(b.device.projects.recs.get('p1').data.features.length, 8);
+  assert.ok(b.toasts.some(t => /"Alpha" was deleted from the cloud\. Kept here, sync off\./.test(t)));
+});
+
+test('a 404 from an upload while the file is still there (an expired upload session, a passing one): tried again, sync stays on', async () => {
+  const { server, app } = await connected();
+  app.C.env.backoffBase = 20;
+  let n = 0;
+  server.fail = r => (r.method === 'PUT' && /\/content/.test(r.url) && n++ === 0 ? failWith(404, 'itemNotFound') : null);
+  app.save(project('p1', 'Alpha', 4));
+  await new Promise(r => setTimeout(r, 1200)); await app.settle();
+  assert.equal(linkOf(app, 'p1').excluded, undefined, 'sync is not turned off: the file was asked about and is there');
+  assert.equal(linkOf(app, 'p1').state, 'synced');
+  assert.equal(server.live().length, 1, 'the one file, written again');
+  assert.equal(content(server, 'Alpha.gengis.json').features.length, 4);
+  assert.ok(!app.toasts.some(t => /deleted from the cloud/.test(t)));
 });
 
 test('offline: waits, then uploads when the network returns', async () => {
@@ -306,6 +342,59 @@ test('a project set to "not synced" never uploads, even with sync-all on', async
   await app.settle();
   assert.equal(content(server, 'Alpha.gengis.json').features.length, 1);
   assert.ok(!fileOf(server, 'Beta.gengis.json'));
+});
+
+test('a project with its sync turned off is never replaced by its cloud file either', async () => {
+  const { server, app } = await connected();
+  const f = fileOf(server, 'Alpha.gengis.json');
+  await app.C.setSync('p1', null);
+  app.toasts.length = 0;
+  server.writeRemote(f.id, JSON.stringify(project('p1', 'Alpha', 9)));
+  await app.C.pull(true); await app.settle();
+  assert.equal(app.device.projects.recs.get('p1').data.features.length, 3, 'the copy here is untouched');
+  assert.equal(app.device.projects.copies.length, 0, 'nothing was replaced, so no recovery copy');
+  assert.deepEqual(app.toasts, [], 'and nothing is said about a project that no longer syncs');
+  assert.equal(app.loaded.length, 0);
+  assert.equal(linkOf(app, 'p1').excluded, true);
+  assert.ok(!linkOf(app, 'p1').remoteEtag, 'its file\'s changes are not even noted');
+});
+
+test('a project with its sync turned off: its file deleted in the cloud says nothing and changes nothing here', async () => {
+  const { server, app } = await connected();
+  const f = fileOf(server, 'Alpha.gengis.json');
+  await app.C.setSync('p1', null);
+  app.toasts.length = 0;
+  server.deleteRemote(f.id);
+  await app.C.pull(true); await app.settle();
+  assert.deepEqual(app.toasts, []);
+  assert.equal(linkOf(app, 'p1').excluded, true);
+  assert.equal(linkOf(app, 'p1').fileId, f.id, 'its file is still the one it would sync to again');
+  assert.ok(app.device.projects.recs.get('p1'));
+  // the same on a full re-check (a cursor too old to use), which looks for linked files gone from the folder
+  const acc = [...app.device.store.tables.accounts.values()][0];
+  server.tooOld.add(new URL(acc.cursor).searchParams.get('token'));
+  app.toasts.length = 0;
+  await app.C.pull(true); await app.settle();
+  assert.deepEqual(app.toasts, []);
+  assert.equal(linkOf(app, 'p1').excluded, true);
+});
+
+test('turning a project\'s sync back on after a cloud change: its file is adopted or it is a conflict, never a silent overwrite', async () => {
+  const { server, app } = await connected();
+  const f = fileOf(server, 'Alpha.gengis.json');
+  await app.C.setSync('p1', null);
+  server.writeRemote(f.id, JSON.stringify(project('p1', 'Alpha', 9)));
+  await app.C.pull(true); await app.settle();
+  await app.C.setSync('p1', app.C.accounts[0].id); await app.settle();
+  assert.equal(server.live().length, 1, 'no second file for it');
+  assert.equal(content(server, 'Alpha.gengis.json').features.length, 9, 'the cloud version is not written over');
+  assert.equal(linkOf(app, 'p1').state, 'conflict');
+  assert.equal(app.device.projects.recs.get('p1').data.features.length, 3, 'nor is the copy here');
+  assert.ok(app.toasts.some(t => /was edited in two places/.test(t)));
+  // and the user settles it
+  await app.C.resolve('p1', 'cloud'); await app.settle();
+  assert.equal(app.device.projects.recs.get('p1').data.features.length, 9);
+  assert.equal(linkOf(app, 'p1').state, 'synced');
 });
 
 test('sync-all off: only projects chosen one by one upload', async () => {
@@ -551,6 +640,37 @@ test('a deleted file back in the cloud (restored, or written again elsewhere) ne
   assert.ok(app.device.projects.copies.some(c => c.id === 'p1' && c.data.features.length === 3));
   assert.equal(linkOf(app, 'p1').fileId, other.id);
   assert.notEqual(linkOf(app, 'p1').excluded, true);
+});
+
+test('that question closed without an answer (Escape, the ✕, Android\'s back): neither copy opens', async () => {
+  const { server, app } = await connected();
+  const accId = app.C.accounts[0].id;
+  await app.C.deleteRemote(accId, fileOf(server, 'Alpha.gengis.json').id);
+  const other = server.create('Alpha.gengis.json', JSON.stringify(project('p1', 'Alpha', 7)));
+  app.answer = null; // MB.ask with { dismiss: true } answers null when it is closed, not "keep this device's copy"
+  assert.equal(await app.C.openRemote(accId, other.id), false);
+  assert.equal(app.asked.length, 1);
+  assert.equal(app.asked[0].opts.dismiss, true, 'asked so that closing it answers neither');
+  assert.equal(app.MB.state.projectId, null, 'nothing was opened');
+  assert.equal(app.loaded.length, 0);
+  assert.equal(app.device.projects.recs.get('p1').data.features.length, 3, 'the copy here is untouched');
+  assert.equal(app.device.projects.copies.length, 0);
+  assert.equal(linkOf(app, 'p1').excluded, true, 'and its sync stays off');
+});
+
+test('the cloud version of a map another tab is editing is not opened here: that tab is pointed at', async () => {
+  const { server, app } = await connected();
+  const accId = app.C.accounts[0].id;
+  await app.C.deleteRemote(accId, fileOf(server, 'Alpha.gengis.json').id);
+  const other = server.create('Alpha.gengis.json', JSON.stringify(project('p1', 'Alpha', 7)));
+  app.device.locksHeld.set('p1', 'other-tab');
+  app.toasts.length = 0;
+  app.answer = true; // the cloud version chosen
+  assert.equal(await app.C.openRemote(accId, other.id), false);
+  assert.deepEqual(app.toasts, ['This map is open in another tab. Open it there.']);
+  assert.equal(app.device.projects.recs.get('p1').data.features.length, 3);
+  assert.equal(app.device.projects.copies.length, 0, 'the copy here was not even put away first');
+  assert.equal(app.loaded.length, 0);
 });
 
 /* ---------- the Android app: the same list, open and delete, signed in through the app ---------- */

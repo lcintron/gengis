@@ -166,6 +166,41 @@ test('a field renamed or deleted in the attribute table: every feature, and ever
   assert.deepEqual(plain(look.fields.map(f => f.key)), ['h', 'note']);
 });
 
+test('a field named after something every object has ("constructor"): a value only where the feature has one', () => {
+  const feats = [pt({ constructor: 'ACME', name: 'A' }), pt({ name: 'B' })];
+  const look = S.defaults(feats, '#ff8a3d');
+  assert.deepEqual(plain(look.fields.map(f => f.key)), ['constructor', 'name'], 'the file\'s field, as any other');
+  const [a, b] = feats.map(f => f.properties);
+  assert.deepEqual(plain(S.popupRows(look, a)), [['constructor', 'ACME'], ['name', 'A']]);
+  assert.deepEqual(plain(S.popupRows(look, b)), [['name', 'B']], 'B has no such field: no row, not the function behind it');
+  look.title = 'constructor';
+  assert.equal(S.titleOf(look, a), 'ACME');
+  assert.equal(S.titleOf(look, b), '');
+  look.label.text = '{constructor}';
+  assert.equal(S.labelText(look, b), '');
+  assert.equal(S.labelText(look, a), 'ACME');
+  assert.deepEqual(plain(S.categories(feats, 'constructor')), [{ value: '', count: 1 }, { value: 'ACME', count: 1 }], 'one feature with a value, one without');
+  Object.assign(look.symbol, { mode: 'category', field: 'constructor' });
+  S.fillCats(look, feats);
+  assert.deepEqual(plain(look.symbol.cats.map(c => c.value)), ['', 'ACME'], 'two categories, not one per function source');
+  assert.equal(S.symbolOf(look, feats[1]).color, look.symbol.cats[0].color, 'B is in the empty one');
+  assert.deepEqual(plain(S.numericFields(look, feats)), [], 'no field reads as numbers');
+
+  const rec = { meta: { id: 'c', name: 'Sites', look }, fc: { type: 'FeatureCollection', features: feats } };
+  const ad = MB.imports.tableAdapter(rec);
+  assert.equal(ad.get(feats[1], 'constructor'), undefined, 'its cell is empty');
+  assert.equal(ad.get(feats[0], 'constructor'), 'ACME');
+  assert.equal(ad.addField('toString'), 'That name is reserved: choose another');
+  assert.equal(ad.addField('__proto__'), 'That name is reserved: choose another');
+  assert.equal(ad.renameField('constructor', 'constructor'), '', 'the same name: nothing to do');
+  assert.equal(ad.renameField('constructor', 'builder'), '');
+  assert.equal(feats[0].properties.builder, 'ACME');
+  assert.equal(Object.hasOwn(feats[1].properties, 'builder'), false, 'B had no value: it has none now either');
+  assert.doesNotThrow(() => structuredClone(rec.fc), 'nothing in the layer that cannot be saved');
+  assert.equal(ad.renameField('builder', 'constructor'), 'That name is reserved: choose another');
+  assert.equal(MB.attrs.badKey('constructor'), 'That name is reserved: choose another', 'the project\'s own objects say the same');
+});
+
 test('the attribute table names its columns by their index: no field name goes into the page and back', () => {
   const src = read('js/attrtable.js');
   assert.ok(!/data-(k|sort|col|rename)="\$\{esc\(f\.key\)\}"/.test(src), 'a field name (the Object name column\'s key has a NUL in it) would not survive an attribute');

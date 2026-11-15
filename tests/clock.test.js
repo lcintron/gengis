@@ -47,7 +47,10 @@ function load(clockSettings) {
       }
     }
   };
-  const document = { hidden: false, addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); } };
+  // the map's wrapper, for the class that tells the track-log bar how much room the clock takes
+  const classes = new Set();
+  const wrap = { classList: { toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); }, contains: c => classes.has(c) } };
+  const document = { hidden: false, addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }, getElementById: id => (id === 'mapwrap' ? wrap : null) };
   const MB = {
     map,
     settings: clockSettings === undefined ? {} : { clock: clockSettings },
@@ -63,7 +66,7 @@ function load(clockSettings) {
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/clock.js'), 'utf8'), ctx, { filename: 'clock.js' });
   const fire = type => (listeners[type] || []).forEach(fn => fn());
-  return { C: MB.clock, MB, map, timers, document, fire, saves: () => saves };
+  return { C: MB.clock, MB, map, timers, document, fire, wrap, saves: () => saves };
 }
 const plain = x => JSON.parse(JSON.stringify(x)); // (the sandbox's objects, as this realm's)
 const AT = new Date(Date.UTC(2026, 0, 15, 18, 32, 5)); // 18:32:05 UTC; 03:32:05 the next day in Tokyo
@@ -150,4 +153,18 @@ test('while the page is hidden it rests, and catches up at once when it is back'
   assert.equal(timers.size, 0);
   document.hidden = false; fire('visibilitychange');
   assert.equal(timers.size, 1);
+});
+
+test('while it shows, the map is told (the track-log bar sits above it, not over it)', () => {
+  const { C, wrap } = load();
+  C.init();
+  assert.equal(wrap.classList.contains('clock-on'), false, 'off: nothing in the way');
+  C.set({ show: true, mode: 'both', zone: '' });
+  assert.equal(wrap.classList.contains('clock-on'), true);
+  C.set({ show: false });
+  assert.equal(wrap.classList.contains('clock-on'), false, 'and it is cleared again');
+  // on at startup: the class is set as the widget is made
+  const back = load({ show: true, mode: 'local', zone: '' });
+  back.C.init();
+  assert.equal(back.wrap.classList.contains('clock-on'), true);
 });

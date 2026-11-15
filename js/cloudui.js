@@ -265,7 +265,7 @@ window.MB = window.MB || {};
       if (sel.value) C().setAuto(sel.value, true); else if (was) C().setAuto(was.id, false);
     });
     on('[data-sync]', el => C().setSync(el.dataset.sync, el.type === 'checkbox' ? (el.checked ? el.dataset.acc : null) : (el.value || null)));
-    on('[data-resolve]', b => { box.querySelectorAll(`[data-resolve][data-id="${b.dataset.id}"]`).forEach(x => { x.disabled = true; }); C().resolve(b.dataset.id, b.dataset.resolve); });
+    on('[data-resolve]', b => { box.querySelectorAll(`[data-resolve][data-id="${CSS.escape(b.dataset.id)}"]`).forEach(x => { x.disabled = true; }); C().resolve(b.dataset.id, b.dataset.resolve); });
     on('[data-act="syncnow"]', b => { b.disabled = true; b.classList.add('spin'); C().syncNow().finally(() => { U.render(); loadAll(); }); });
     on('[data-reload]', b => loadRemote(b.dataset.reload));
     on('[data-act="dismiss"]', () => { C().lastError = ''; U.render(); });

@@ -19,7 +19,7 @@ on:
         default: auto
         options: [auto, patch, minor, major, prerelease]
       prerelease:
-        description: Pre-release label (e.g. Beta); empty for a normal release
+        description: Pre-release label (Beta, rc or alpha; a label not in use yet starts at .0); empty for a normal release
         type: string
         default: ''
       dry_run:
@@ -72,11 +72,12 @@ jobs:
           esac
           # Dot-separated identifiers of letters, digits and dashes (the semver pre-release form): no "..",
           # no leading or trailing dot, no all-digit identifier with a leading zero ("01"). git has the last
-          # word, so the tag is a valid ref before anything is committed.
+          # word, so the tag is a valid ref before anything is committed; scripts/release.js then refuses a
+          # label the Android versionCode cannot order (it takes Beta, rc and alpha: android-prepare.js).
           if [ "${#PRE}" -gt 30 ] || [[ ! "$PRE" =~ ^([0-9A-Za-z][0-9A-Za-z-]*(\.[0-9A-Za-z][0-9A-Za-z-]*)*)?$ ]] \
              || [[ "$PRE" =~ (^|\.)0[0-9]+(\.|$) ]] \
              || ! git check-ref-format "refs/tags/v0.0.0${PRE:+-$PRE}"; then
-            echo "::error::Pre-release label must be dot-separated groups of letters, digits or dashes, with no leading zeros in numeric groups, e.g. Beta or rc.1 (got '$PRE')."
+            echo "::error::Pre-release label must be dot-separated groups of letters, digits or dashes, with no leading zeros in numeric groups, e.g. Beta or rc (got '$PRE')."
             exit 1
           fi
       - name: Bump version, commit, tag and push
@@ -187,7 +188,8 @@ jobs:
           mkdir -p site
           rsync -a --include '/.well-known/***' --exclude '.*' --exclude 'node_modules' --exclude 'dist' --exclude 'electron' \
                    --exclude 'scripts' --exclude 'branding/source' --exclude 'Makefile' --exclude 'package.json' \
-                   --exclude 'package-lock.json' --exclude 'serve.js' --exclude '.claude' --exclude 'tests' ./ site/
+                   --exclude 'package-lock.json' --exclude 'serve.js' --exclude '.claude' --exclude 'tests' \
+                   --exclude 'android-src' --exclude 'capacitor.config.json' ./ site/
           echo "${{ needs.version.outputs.tag }} deployed $(date -u +%FT%TZ)" > site/VERSION.txt
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

@@ -37,6 +37,9 @@ window.MB = window.MB || {};
   const AUTO_TITLE = ['name', 'NAME', 'Name', 'title', 'TITLE', 'Title', 'label', 'LABEL'];
 
   const filled = v => v != null && v !== '';
+  // A feature's value for a field: the feature's own, never one every object inherits (a file with a field named
+  // "constructor" or "toString": a feature without it would show the function behind it).
+  const own = (p, k) => (p && Object.hasOwn(p, k) ? p[k] : undefined);
   const fmt = v => (v == null ? '' : typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toFixed(6))) : typeof v === 'boolean' ? (v ? 'yes' : 'no') : typeof v === 'object' ? JSON.stringify(v) : String(v));
   const plainOf = v => { const s = fmt(v); return MB.isHtml && MB.isHtml(s) ? MB.htmlText(s) : s; }; // a formatted value as text (a title, a label)
   const catKey = v => (filled(v) ? String(v) : '');
@@ -69,25 +72,25 @@ window.MB = window.MB || {};
 
   function titleOf(look, p) {
     p = p || {};
-    if (look && look.title) return plainOf(p[look.title]);
-    for (const k of AUTO_TITLE) if (filled(p[k])) return plainOf(p[k]);
+    if (look && look.title) return plainOf(own(p, look.title));
+    for (const k of AUTO_TITLE) if (filled(own(p, k))) return plainOf(own(p, k));
     return '';
   }
   function popupRows(look, p) {
     p = p || {};
-    return (look.fields || []).filter(f => f.show !== false && filled(p[f.key])).slice(0, 40).map(f => [f.alias || f.key, fmt(p[f.key])]);
+    return (look.fields || []).filter(f => f.show !== false && filled(own(p, f.key))).slice(0, 40).map(f => [f.alias || f.key, fmt(own(p, f.key))]);
   }
   function labelText(look, p) {
     const lb = look.label || {};
     p = p || {};
-    if (lb.text && lb.text.trim()) return lb.text.replace(/\{([^{}]+)\}/g, (m, k) => plainOf(p[k.trim()])).replace(/\s+/g, ' ').trim();
-    return lb.field ? plainOf(p[lb.field]).trim() : titleOf(look, p);
+    if (lb.text && lb.text.trim()) return lb.text.replace(/\{([^{}]+)\}/g, (m, k) => plainOf(own(p, k.trim()))).replace(/\s+/g, ' ').trim();
+    return lb.field ? plainOf(own(p, lb.field)).trim() : titleOf(look, p);
   }
 
   // A field's values with how many features have each, the commonest first ('' for none).
   function categories(features, field) {
     const n = new Map();
-    for (const f of features) { const k = catKey((f.properties || {})[field]); n.set(k, (n.get(k) || 0) + 1); }
+    for (const f of features) { const k = catKey(own(f.properties, field)); n.set(k, (n.get(k) || 0) + 1); }
     return Array.from(n, ([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || (a.value < b.value ? -1 : 1));
   }
   // Class limits (n + 1 numbers) for values: equal intervals, or quantiles (about as many features in each class).
@@ -117,7 +120,7 @@ window.MB = window.MB || {};
     const sample = features.slice(0, 2000);
     return (look.fields || []).map(f => f.key).filter(k => {
       let num = 0, any = 0;
-      for (const f of sample) { const v = (f.properties || {})[k]; if (!filled(v)) continue; any++; if (Number.isFinite(numValue(v))) num++; }
+      for (const f of sample) { const v = own(f.properties, k); if (!filled(v)) continue; any++; if (Number.isFinite(numValue(v))) num++; }
       return any && num / any >= 0.95;
     });
   }
@@ -131,18 +134,18 @@ window.MB = window.MB || {};
   }
   function fillBreaks(look, features) {
     const s = look.symbol;
-    s.breaks = s.field ? breaksOf(features.map(f => numValue((f.properties || {})[s.field])), s.classes || 5, s.method) : [];
+    s.breaks = s.field ? breaksOf(features.map(f => numValue(own(f.properties, s.field))), s.classes || 5, s.method) : [];
     return look;
   }
   // A feature's symbol: { color, icon, own } (own: the file's style, in "file" mode).
   function symbolOf(look, f) {
     const s = look.symbol, p = f.properties || {};
     if (s.mode === 'category') {
-      const c = (s.cats || []).find(x => x.value === catKey(p[s.field]));
+      const c = (s.cats || []).find(x => x.value === catKey(own(p, s.field)));
       return c ? { color: c.color, icon: c.icon || s.icon } : { color: s.other || OTHER, icon: s.icon };
     }
     if (s.mode === 'graduated') {
-      const v = numValue(p[s.field]), b = s.breaks || [];
+      const v = numValue(own(p, s.field)), b = s.breaks || [];
       if (!Number.isFinite(v) || b.length < 2) return { color: s.other || OTHER, icon: s.icon };
       const colors = rampColors(s.ramp, b.length - 1);
       let i = 0;

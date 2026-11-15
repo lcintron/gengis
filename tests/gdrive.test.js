@@ -434,6 +434,25 @@ test('Drive: an upload Drive stops taking fails (to be tried again), never loops
   assert.ok(google.chunkSizes.length <= 5);
 });
 
+test('Drive: an upload session gone over there (404) starts again; the file itself is not taken for deleted', async () => {
+  const { google, GD, ctx } = adapter();
+  const big = project('p1', 'Big', 1, { pad: 'q'.repeat(7 * 1024 * 1024) });
+  const made = await GD.put(ctx(), { name: 'Big.gengis.json', text: JSON.stringify(big) });
+  // the first session's chunk finds no session (expired or cancelled): a new session, from the start
+  const no = { status: 404, ok: false, headers: { get: () => null }, json: async () => ({ error: { code: 404, message: 'Not Found', errors: [{ reason: 'notFound' }] } }) };
+  let drop = 1, gone = 0;
+  google.fail = r => (/\/upload\/session\//.test(r.url) && drop > 0 ? (drop--, gone++, no) : null);
+  const next = JSON.stringify(Object.assign({}, big, { name: 'Big 2' }));
+  const out = await GD.put(ctx(), { fileId: made.fileId, ifMatch: made.etag, text: next });
+  assert.equal(gone, 1, 'the session was gone once');
+  assert.equal(out.fileId, made.fileId);
+  assert.equal(google.files.get(made.fileId).content.toString(), next, 'written whole by the second session');
+  // a session that keeps going missing is a retryable failure, not a 404 (which cloudsync reads as "deleted in the cloud")
+  drop = 99;
+  await assert.rejects(GD.put(ctx(), { fileId: made.fileId, ifMatch: String(google.files.get(made.fileId).version), text: next }), e => e.status === 503);
+  google.fail = null;
+});
+
 test('Drive: a second GenGIS folder with files in it is merged into the older one', async () => {
   const { google, GD, ctx } = adapter();
   const older = google.add('GenGIS', '', { mimeType: FOLDER, appProperties: { gengis: 'root' } });

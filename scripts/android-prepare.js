@@ -3,7 +3,7 @@
  * `npx cap sync android` (npm run android:sync does).
  * - permissions: location (the locate button), and plain-HTTP requests to receivers on the local network (dump1090,
  *   AIS-catcher), which Android refuses by default
- * - version: versionName from package.json, versionCode derived from it (0.16.3 -> 16003)
+ * - version: versionName from package.json, versionCode derived from it (0.19.0-Beta.1 -> 1900031, 0.19.0 -> 1900099)
  * - release signing from environment variables, when they are set (CI: the upload key from GitHub secrets):
  *   GENGIS_KEYSTORE (path), GENGIS_KEYSTORE_PASSWORD, GENGIS_KEY_ALIAS, GENGIS_KEY_PASSWORD
  * - GenGIS's icons (launcher, round, adaptive) and splash screens instead of Capacitor's
@@ -12,6 +12,39 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+
+/* Play's versionCode from a version in package.json: it must grow with every upload, and a pre-release has to come
+ * before the release it leads to. Two digits are kept for that, 99 being the release itself and each pre-release
+ * label having a band of its own below it, in semver's order (alpha < beta < rc), so that a label changed part way
+ * through a cycle still counts up: 0.19.0-alpha.2 -> 1900002, 0.19.0-Beta.0 -> 1900030, 0.19.0-Beta.3 -> 1900033,
+ * 0.19.0-rc.1 -> 1900061, 0.19.0 -> 1900099, 0.19.1 -> 1900199. (Versions up to 0.18.3 were numbered 18003: every
+ * code here is larger.) Anything this cannot order — another label, a number past its band, a version that is not
+ * MAJOR.MINOR.PATCH — throws rather than quietly giving a code that goes backwards. */
+const BANDS = { alpha: 0, beta: 30, rc: 60 }; // 90-98 free for a label to come; 99 is the release
+const BAND = 30;
+const versionCode = version => {
+  const v = String(version).trim().split('+')[0];           // build metadata (+sha.5) orders nothing
+  const cut = v.indexOf('-'), base = cut < 0 ? v : v.slice(0, cut), pre = cut < 0 ? '' : v.slice(cut + 1);
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(base);
+  if (!m) throw new Error('version "' + version + '" is not MAJOR.MINOR.PATCH: no Android versionCode can be made of it');
+  const [maj, min, pat] = m.slice(1).map(Number);
+  if (maj > 20) throw new Error('version "' + version + '": Play takes no versionCode above 2100000000, so major versions stop at 20');
+  if (min > 999 || pat > 999) throw new Error('version "' + version + '": the minor and patch numbers go up to 999');
+  let tail = 99;
+  if (pre) {
+    const p = /^([A-Za-z][0-9A-Za-z-]*)(?:\.(\d+))?$/.exec(pre);
+    if (!p) throw new Error('version "' + version + '": a pre-release must be a label and a number, as scripts/release.js writes them (Beta.1)');
+    const label = p[1].toLowerCase();
+    const band = Object.hasOwn(BANDS, label) ? BANDS[label] : null; // (its own label, never one every object has: "constructor")
+    if (band == null) throw new Error('version "' + version + '": the pre-release label must be one of ' + Object.keys(BANDS).join(', ') + ' (add it to BANDS in scripts/android-prepare.js to use another)');
+    const n = p[2] == null ? 0 : Number(p[2]);
+    if (n >= BAND) throw new Error('version "' + version + '": a pre-release number goes up to ' + (BAND - 1) + ', so that the next label still comes after it');
+    tail = band + n;
+  }
+  return (maj * 1000000 + min * 1000 + pat) * 100 + tail;
+};
+module.exports = { versionCode };
+if (require.main !== module) return; // required by the tests: only the pure part above
 
 const ROOT = path.join(__dirname, '..');
 const APP = path.join(ROOT, 'android', 'app');
@@ -82,10 +115,10 @@ edit(mainActivity, s => {
 /* ---------- version and signing ---------- */
 const gradle = path.join(APP, 'build.gradle');
 if (!fs.existsSync(gradle)) fail('android/app/build.gradle not found (a Kotlin DSL template?): update this script');
-const [maj, min, pat] = String(pkg.version).split(/[.-]/).map(n => parseInt(n, 10) || 0);
-const versionCode = maj * 1000000 + min * 1000 + pat;
+let code;
+try { code = versionCode(pkg.version); } catch (e) { fail(e.message); } // (a version Play could not be given in order)
 edit(gradle, s => {
-  s = s.replace(/versionCode\s+\d+/, 'versionCode ' + versionCode).replace(/versionName\s+"[^"]*"/, `versionName "${pkg.version}"`);
+  s = s.replace(/versionCode\s+\d+/, 'versionCode ' + code).replace(/versionName\s+"[^"]*"/, `versionName "${pkg.version}"`);
   if (!s.includes('signingConfigs')) {
     s = s.replace(/(\n\s*)buildTypes\s*\{/, `$1signingConfigs {
         release {
@@ -132,4 +165,4 @@ const bg = path.join(RES, 'values', 'ic_launcher_background.xml');
 if (fs.existsSync(bg)) edit(bg, s => s.replace(/(<color name="ic_launcher_background">)[^<]*(<\/color>)/, '$1#0B1118$2'));
 const splash = copyTo('branding/splash/splash-1080x1920.png', 'splash.png', d => d.startsWith('drawable') && !d.includes('land')) +
   copyTo('branding/splash/splash-1920x1080.png', 'splash.png', d => d.startsWith('drawable') && d.includes('land'));
-console.log(`android-prepare: version ${pkg.version} (${versionCode}), ${icons} icons, ${splash} splash images, permissions, signing and cloud sign-in set`);
+console.log(`android-prepare: version ${pkg.version} (${code}), ${icons} icons, ${splash} splash images, permissions, signing and cloud sign-in set`);

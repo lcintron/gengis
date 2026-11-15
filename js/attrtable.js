@@ -84,9 +84,9 @@ window.MB = window.MB || {};
         return '';
       },
       renameField(from, to) {
-        const l = lay(), why = !l ? 'The layer is gone' : badKey(to) || (to !== from && fieldsOf(layerId).includes(to) ? 'There is a field of that name already' : '');
+        if (to === from) return ''; // (a rename given up on: nothing to say, whatever the name is)
+        const l = lay(), why = !l ? 'The layer is gone' : badKey(to) || (fieldsOf(layerId).includes(to) ? 'There is a field of that name already' : '');
         if (why) return why;
-        if (to === from) return '';
         objectsOf(layerId).forEach(f => { const a = f.mb.attrs; if (a && Object.hasOwn(a, from)) { const v = a[from]; delete a[from]; put(a, to, v); } });
         if (l.fields) l.fields = l.fields.map(k => (k === from ? to : k));
         commit('rename field');
@@ -106,6 +106,52 @@ window.MB = window.MB || {};
   /* ---------- the table ---------- */
   const T = { dlg: null, ad: null, q: '', sort: null, dir: 1, page: 0, list: [], renaming: null, fields: [] };
   const keyAt = el => { const f = T.fields[+el.dataset.c]; return f ? f.key : null; }; // a column's field, by its index
+
+  // A cell's value kept (nothing to keep when it did not change: no undo step for a box only visited), and the box
+  // showing it as it was kept (" 12 " is 12).
+  function commitCell(inp) {
+    const tr = inp.closest('tr'), row = tr && T.list[+tr.dataset.i], k = keyAt(inp);
+    if (!row || k == null) return;
+    const was = T.ad.get(row, k), v = k === NAME ? inp.value : typed(inp.value, was);
+    const same = v === was || ((v == null || v === '') && (was == null || was === ''));
+    if (!same) T.ad.set(row, k, v);
+    inp.value = show(T.ad.get(row, k));
+    inp.title = inp.value;
+  }
+
+  /* ---------- focus, while the table is drawn anew ----------
+   * The head and the body are written anew on a sort, a rename, a field added or deleted, a page turned. Whatever had
+   * focus in them is gone by then and focus would fall to the page body, where the app's own keys (Delete, f, Ctrl+Z…)
+   * act on the map behind the dialog. So what had focus is noted, and given it back once the table is drawn. */
+  // A column's button or box by its index, a cell by its row and column; nothing for focus elsewhere (the search box,
+  // Add field and the page buttons are not drawn anew).
+  function focusMark() {
+    const at = T.dlg ? document.activeElement : null;
+    if (!at || !T.dlg.contains(at) || !at.dataset || at.dataset.c == null) return null;
+    const c = at.dataset.c, a = ['data-sort', 'data-rename', 'data-col'].find(x => at.hasAttribute(x));
+    if (a) return `#attrHead [${a}][data-c="${c}"]`;
+    const tr = at.closest('tr');
+    return tr && tr.dataset.i != null ? `#attrBody tr[data-i="${tr.dataset.i}"] [data-c="${c}"]` : null;
+  }
+  // Focus back where it was, unless it never left the dialog; its column or row may be gone (a field deleted, a row
+  // no longer in the page): the dialog's ✕ then.
+  function refocus(mark) {
+    if (!mark || T.dlg.classList.contains('hidden')) return;
+    if (insideDialog()) return;
+    const el = T.dlg.querySelector(mark) || T.dlg.querySelector('.modal-x');
+    if (el) el.focus();
+  }
+  // Is the keyboard still on one of the dialog's own controls? (Focus dropped to the page body is not.)
+  function insideDialog() {
+    const at = document.activeElement;
+    return !!(at && at !== document.body && T.dlg && T.dlg.contains(at));
+  }
+  // The sort button of the column a field is in (after its rename box is gone).
+  function focusColumn(key) {
+    const c = T.fields.findIndex(f => f.key === key);
+    const el = (c >= 0 && T.dlg.querySelector(`#attrHead [data-sort][data-c="${c}"]`)) || T.dlg.querySelector('.modal-x');
+    if (el) el.focus();
+  }
 
   function dialog() {
     if (T.dlg) return T.dlg;
@@ -142,6 +188,14 @@ window.MB = window.MB || {};
       T.page = Math.max(0, Math.min(pages - 1, T.page + (b.dataset.at === 'next' ? 1 : -1)));
       paint();
       d.querySelector('#attrScroll').scrollTop = 0;
+      // the first or last page: the button just pressed is disabled now, and focus would fall to the page body
+      // (Chromium still names the disabled button as the active element until the next rendering step: it counts as
+      //  focus about to be lost, not as focus still inside the dialog)
+      if (b.disabled && (document.activeElement === b || !insideDialog())) {
+        const other = d.querySelector(`.attr-foot [data-at="${b.dataset.at === 'next' ? 'prev' : 'next'}"]`);
+        const el = (other && !other.disabled && !other.hidden && other) || d.querySelector('#attrBody [data-c]') || d.querySelector('.modal-x');
+        if (el) el.focus();
+      }
     });
     const head = d.querySelector('#attrHead'), body = d.querySelector('#attrBody');
     head.addEventListener('click', e => {
@@ -159,28 +213,25 @@ window.MB = window.MB || {};
       const inp = e.target.closest('input[data-rename]');
       if (!inp || T.renaming == null) return;
       const from = keyAt(inp), to = inp.value.trim();
+      // where focus is going: another of the dialog's own controls keeps it, else that column's sort button takes it
+      // (the box it was in is about to go, and the page body behind the dialog must not have it)
+      const rt = e.relatedTarget;
+      const keep = rt && d.contains(rt) && !head.contains(rt) && !body.contains(rt);
       T.renaming = null;
-      if (from == null) { build(); return; }
+      if (from == null) { build(); if (!keep) focusColumn(null); return; }
       const why = T.ad.renameField(from, to);
       if (why) MB.toast(why); else if (T.sort === from) T.sort = to;
       build();
+      if (!keep) focusColumn(why ? from : to);
     });
-    body.addEventListener('change', e => {
-      const inp = e.target.closest('[data-c]');
-      if (!inp) return;
-      const row = T.list[+inp.closest('tr').dataset.i], k = keyAt(inp);
-      if (!row || k == null) return;
-      const v = k === NAME ? inp.value : typed(inp.value, T.ad.get(row, k));
-      T.ad.set(row, k, v);
-      inp.value = show(T.ad.get(row, k));
-      inp.title = inp.value;
-    });
+    body.addEventListener('change', e => { const inp = e.target.closest('[data-c]'); if (inp) commitCell(inp); });
     body.addEventListener('keydown', e => {
       const inp = e.target.closest('[data-c]');
       if (!inp || e.key !== 'Enter' || (inp.hasAttribute('data-ml') && !e.ctrlKey && !e.metaKey)) return; // (in a value of several lines, Enter is a new line; Ctrl+Enter moves on)
       e.preventDefault(); // Enter: the cell below, as a spreadsheet
       const tr = inp.closest('tr').nextElementSibling, next = tr && tr.querySelector(`[data-c="${inp.dataset.c}"]`);
-      if (next) next.focus(); else inp.blur();
+      if (next) next.focus();
+      else commitCell(inp); // the last row: kept, focus staying on the cell (dropped, the app's keys would act on the map behind the dialog)
     });
     body.addEventListener('click', e => {
       const b = e.target.closest('[data-zoom]');
@@ -235,7 +286,7 @@ window.MB = window.MB || {};
     }).join('')}</tr>`;
   }
   function paint() {
-    const ad = T.ad, d = T.dlg;
+    const ad = T.ad, d = T.dlg, mark = focusMark(); // (what has focus: the head and the body are written anew below)
     paintHead();
     const fields = T.fields;
     const from = T.page * PAGE, rows = T.list.slice(from, from + PAGE);
@@ -247,6 +298,7 @@ window.MB = window.MB || {};
     d.querySelector('#attrCount').textContent = (T.q ? `${T.list.length.toLocaleString()} of ${total.toLocaleString()}` : total.toLocaleString()) + ` row${total === 1 ? '' : 's'} · ${(fields.length - fields.filter(f => f.fixed).length)} field${fields.length === 1 ? '' : 's'}`;
     d.querySelector('#attrPage').textContent = pages > 1 ? `${T.page + 1} / ${pages}` : '';
     d.querySelectorAll('.attr-foot [data-at]').forEach(b => { b.hidden = pages < 2; b.disabled = (b.dataset.at === 'prev' ? T.page === 0 : T.page >= pages - 1); });
+    refocus(mark);
   }
 
   MB.attrTable = {
@@ -259,7 +311,7 @@ window.MB = window.MB || {};
       build();
       MB.ui.openDialog(d);
     },
-    // Redrawn when the rows changed elsewhere (an undo, a feature removed), if it is open.
+    // Drawn again when the layer's fields changed elsewhere (a field's display name in Layer settings), if it is open.
     refresh() { if (T.dlg && !T.dlg.classList.contains('hidden') && T.ad) build(); },
     isOpen: () => !!(T.dlg && !T.dlg.classList.contains('hidden'))
   };

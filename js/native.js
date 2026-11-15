@@ -4,6 +4,9 @@
  *   in the web app and the desktop app it is plain fetch.
  * - saving a file (project, GeoJSON, an exported image or PDF): written to the app's cache and handed to Android's
  *   share sheet (Save to Files, Drive, email...), since a download link does nothing in an app
+ * - picking a file: an accept naming anything but images (.gengis, the shapefile parts, the Betaflight logs, map
+ *   sources) is dropped, since Android's picker greys out every file it has no matching MIME type for; the image
+ *   picker keeps its filter
  * - the back button: closes what is open (a dialog, the menu, the side panel, presenter mode, a selection) before
  *   leaving the app
  * - cloud sync's sign-in, kept by the app (MB.native.cloud: android-src/CloudPlugin.java)
@@ -53,17 +56,49 @@ window.MB = window.MB || {};
       fr.onerror = () => rej(fr.error);
       fr.readAsDataURL(blob);
     });
+    // true once the share sheet has taken the file; false when it was cancelled or could not be written (said then),
+    // so that the page only reports "saved" after the sheet answers.
     MB.download = async function (filename, text, mime) {
       try {
         const blob = text instanceof Blob ? text : new Blob([text], { type: mime || 'application/json' });
         const out = await fsys.writeFile({ path: filename, data: await asBase64(blob), directory: 'CACHE' });
         await share.share({ title: filename, url: out.uri, dialogTitle: filename });
+        return true;
       } catch (e) {
         const msg = String((e && e.message) || e);
         if (!/cancel/i.test(msg)) MB.toast('Could not save "' + filename + '": ' + msg, 6000);
+        return false;
       }
     };
   }
+
+  /* ---------- picking files: Android's own picker ----------
+   * Capacitor's bridge turns an <input accept> into MIME types and leaves out the extensions Android does not know
+   * (.gengis, .shp, .dbf, .prj, .cpg, .shx, .bbl, .bfl, .kml, .geojson…), so the picker greys those files out. Such
+   * an accept is dropped before the picker opens, and the opener checks the file it is given by its name and its
+   * content anyway. Only the image picker keeps its filter: its list is MIME types and the image extensions Android
+   * maps to those same types, so nothing is lost in the crossing. A picker for other kinds (map sources: .xml, .zip)
+   * drops it, since a file's type there is Android's guess as well — a zip is as often application/x-zip-compressed
+   * or application/octet-stream — and a filter would grey it out. (capture, which asks Android for a camera or a
+   * microphone instead of a file, is not touched: GenGIS has no such input.) */
+  const ANDROID_EXT = /^\.(svg|png|jpe?g|webp|gif|bmp)$/i; // the image extensions Android maps to a MIME type itself
+  const MIME = /^[\w.+-]+\/[\w.*+-]+$/;
+  const keepsFilter = a => a.split(',').map(s => s.trim()).filter(Boolean).every(t => (t[0] === '.' ? ANDROID_EXT.test(t) : MIME.test(t)));
+  const dropAccept = el => {
+    if (!el || el.tagName !== 'INPUT' || el.type !== 'file' || !el.hasAttribute('accept')) return;
+    if (!keepsFilter(el.getAttribute('accept') || '')) el.removeAttribute('accept');
+  };
+  const Input = window.HTMLInputElement;
+  if (Input && Input.prototype && Input.prototype.click) {
+    const click = Input.prototype.click;
+    Input.prototype.click = function () { dropAccept(this); return click.apply(this, arguments); }; // the openers click their input themselves
+  }
+  document.addEventListener('click', e => { // and a label opens the input it is for
+    const el = e.target && e.target.closest ? e.target.closest('input[type="file"], label') : null;
+    if (!el) return;
+    if (el.tagName === 'INPUT') dropAccept(el);
+    else dropAccept(el.htmlFor ? document.getElementById(el.htmlFor) : el.querySelector('input[type="file"]'));
+  }, true);
 
   /* ---------- cloud sync: the app's own sign-in (android-src/CloudPlugin.java) ----------
    * The desktop app's bridge (window.gengisDesktop.cloud), the same calls: OneDrive signs in in a browser tab that

@@ -41,6 +41,13 @@ window.MB = window.MB || {};
   const extOf = name => ((/\.([a-z0-9]+)$/i.exec(name || '') || [])[1] || '').toLowerCase();
   const baseOf = name => String(name || '').replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
   const plural = (n, one, many) => n.toLocaleString() + ' ' + (n === 1 ? one : (many || one + 's'));
+  // A feature's value for a field: the feature's own, never one every object inherits (a file with a field named
+  // "constructor" or "toString": a feature without it would otherwise show the function behind it).
+  const own = (p, k) => (p && Object.hasOwn(p, k) ? p[k] : undefined);
+  const put = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true }); // (its own field, whatever its name: "__proto__" too)
+  // A field name that cannot be used, and why (attrtable.js: the one reading; this below only where it is not loaded)
+  const badKey = k => (MB.attrs ? MB.attrs.badKey(k) : !k ? 'Give the field a name' : k.length > 64 ? 'A field name is at most 64 characters'
+    : k in Object.prototype ? 'That name is reserved: choose another' : '');
 
   /* ---------- XML (KML) ----------
    * A small, forgiving reader: elements by their local name (gx:Track is Track), attributes, and text (CDATA as it
@@ -54,14 +61,26 @@ window.MB = window.MB || {};
         const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
         try { return String.fromCodePoint(n); } catch (x) { return m; }
       }
-      return ENT[e] !== undefined ? ENT[e] : m;
+      return Object.hasOwn(ENT, e) ? ENT[e] : m; // (&constructor; and the like are not entities: left as written)
     });
   }
   const localName = n => { const i = n.indexOf(':'); return i < 0 ? n : n.slice(i + 1); };
+  // A tag's attributes: name="value" or name='value', a name without a value ignored. Sticky, so each character of
+  // the tag is read once (a name 80 kB long with no '=' in it would make a searching regex quadratic). A run of
+  // whitespace is stepped over in one go, and never by the name's own pattern (a run of 20 kB inside a tag would make
+  // that one quadratic in its turn: it would eat the run at every position, then give it back again).
   function attrsOf(s) {
-    const a = {}, re = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-    let m;
-    while ((m = re.exec(s))) a[localName(m[1])] = decode(m[2] != null ? m[2] : m[3]);
+    const a = {}, ws = /\s*/y, re = /([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/y;
+    let i = 0;
+    while (i < s.length) {
+      ws.lastIndex = i; ws.exec(s); i = ws.lastIndex;
+      if (i >= s.length) break;
+      re.lastIndex = i;
+      const m = re.exec(s);
+      if (!m) { i++; continue; } // (a stray '=': on to the next character)
+      i = re.lastIndex;
+      if (m[2] != null || m[3] != null) put(a, localName(m[1]), decode(m[2] != null ? m[2] : m[3]));
+    }
     return a;
   }
   function parseXml(s) {
@@ -116,7 +135,7 @@ window.MB = window.MB || {};
     // (in markup with line break tags, the file's own line breaks are spaces, as a browser shows them: a <br> then a
     // new line is one break; text with none, entities or a bold word only, keeps its lines)
     if (/<br\b|<\/(p|div|tr|li|h\d)\s*>/i.test(s)) s = s.replace(/\s+/g, ' ');
-    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<br\b[^>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^<>]*>/g, '').replace(/&nbsp;/gi, ' '))
+    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<br\b[^<>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^<>]*>/g, '').replace(/&nbsp;/gi, ' ')) // (each tag read to the next '<' or '>': linear on any input)
       .split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
@@ -201,14 +220,27 @@ window.MB = window.MB || {};
     if (is) { const c = kmlColor(val(is, 'color')); if (c && c.color !== '#ffffff') st.marker = c.color; } // (white: the icon untinted)
     return st;
   }
+  // "lon,lat,alt lon,lat,alt …" (spaces around the commas forgiven) as points. Read character by character, each one
+  // once: a regex for the commas would be quadratic on a long run of spaces.
+  // (everything a regex's \s separated tuples by before: the ASCII ones by hand, and the other space separators
+  //  (U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF) by a test on the one
+  //  character, which the ASCII path never reaches)
+  const SPACE = /\s/;
+  const WS = c => c === ' ' || c === '\n' || c === '\r' || c === '\t' || c === '\f' || c === '\v' || (c > '\u007f' && SPACE.test(c));
   function kmlCoords(s) {
-    const out = [];
-    for (const tok of String(s || '').replace(/\s*,\s*/g, ',').trim().split(/\s+/)) {
-      if (!tok) continue;
-      const p = tok.split(',');
-      const q = pt([+p[0], +p[1]]);
-      if (q) out.push(q);
+    const str = String(s || ''), n = str.length, out = [];
+    let i = 0, tuple = [];
+    const take = () => { if (tuple.length > 1) { const q = pt([+tuple[0], +tuple[1]]); if (q) out.push(q); } tuple = []; };
+    while (i < n) {
+      let comma = false, sep = false; // the separators between two numbers: a comma holds a point together, spaces alone end it
+      for (; i < n; i++) { const c = str[i]; if (c === ',') { comma = true; sep = true; } else if (WS(c)) sep = true; else break; }
+      if (sep && !comma) take();
+      const from = i;
+      for (; i < n; i++) { const c = str[i]; if (c === ',' || WS(c)) break; }
+      if (i > from) tuple.push(str.slice(from, i));
+      else if (!sep) break; // (nothing read and no separator: the end)
     }
+    take();
     return out;
   }
   function kmlGeom(n, out) {
@@ -238,13 +270,13 @@ window.MB = window.MB || {};
     const doc = parseXml(text);
     const kml = findDeep(doc, 'kml');
     if (!kml) throw new Error('it is not a KML file');
-    const styles = {}, maps = {};
+    const styles = new Map(), maps = new Map(); // (by the file's own ids: a style called "constructor" is no object's own)
     (function collect(n) {
       for (const k of n.kids) {
-        if (k.name === 'Style' && k.attrs.id) styles[k.attrs.id] = kmlStyle(k);
+        if (k.name === 'Style' && k.attrs.id) styles.set(k.attrs.id, kmlStyle(k));
         else if (k.name === 'StyleMap' && k.attrs.id) {
           const pair = kidsOf(k, 'Pair').find(p => val(p, 'key') === 'normal') || kid(k, 'Pair');
-          if (pair) maps[k.attrs.id] = { url: val(pair, 'styleUrl'), inline: kid(pair, 'Style') };
+          if (pair) maps.set(k.attrs.id, { url: val(pair, 'styleUrl'), inline: kid(pair, 'Style') });
         }
         if (k.kids.length && k.name !== 'Placemark') collect(k);
       }
@@ -252,11 +284,11 @@ window.MB = window.MB || {};
     const styleAt = (url, depth) => {
       const id = String(url || '').split('#').pop();
       if (!id) return null;
-      if (styles[id]) return styles[id];
-      const m = maps[id];
+      if (styles.has(id)) return styles.get(id);
+      const m = maps.get(id);
       return m && depth < 4 ? Object.assign({}, m.url ? styleAt(m.url, depth + 1) : null, m.inline ? kmlStyle(m.inline) : null) : null;
     };
-    const features = [], skipped = {};
+    const features = [], skipped = new Map();
     let bare = 0;
     const placemark = (pm, folders) => {
       const props = {};
@@ -266,8 +298,8 @@ window.MB = window.MB || {};
       if (folders.length) props.folder = folders.join(' / ');
       const ext = kid(pm, 'ExtendedData');
       if (ext) {
-        for (const d of kidsOf(ext, 'Data')) if (d.attrs.name) { const v = val(d, 'value'); if (v !== '') props[d.attrs.name] = v; }
-        for (const sd of kidsOf(ext, 'SchemaData')) for (const s of kidsOf(sd, 'SimpleData')) if (s.attrs.name) { const v = textOf(s).trim(); if (v !== '') props[s.attrs.name] = v; }
+        for (const d of kidsOf(ext, 'Data')) if (d.attrs.name) { const v = val(d, 'value'); if (v !== '') put(props, d.attrs.name, v); }
+        for (const sd of kidsOf(ext, 'SchemaData')) for (const s of kidsOf(sd, 'SimpleData')) if (s.attrs.name) { const v = textOf(s).trim(); if (v !== '') put(props, s.attrs.name, v); }
       }
       const ts = kid(pm, 'TimeStamp'), span = kid(pm, 'TimeSpan');
       if (ts && val(ts, 'when')) props.time = val(ts, 'when');
@@ -284,10 +316,10 @@ window.MB = window.MB || {};
         if (k.name === 'Placemark') placemark(k, folders);
         else if (k.name === 'Folder') { const nm = val(k, 'name'); walk(k, nm ? folders.concat(nm) : folders); }
         else if (k.name === 'Document' || k.name === 'kml') walk(k, folders);
-        else if (KML_SKIP[k.name]) skipped[k.name] = (skipped[k.name] || 0) + 1;
+        else if (Object.hasOwn(KML_SKIP, k.name)) skipped.set(k.name, (skipped.get(k.name) || 0) + 1);
       }
     })(kml, []);
-    const notes = Object.keys(skipped).map(k => plural(skipped[k], KML_SKIP[k][0]));
+    const notes = Array.from(skipped, ([k, n]) => plural(n, KML_SKIP[k][0]));
     if (bare) notes.push(plural(bare, 'placemark') + ' with no point, line or polygon (a 3D model, or empty)');
     return { features, notes: notes.length ? [notes.join(', ') + ' left out'] : [] };
   }
@@ -355,21 +387,46 @@ window.MB = window.MB || {};
     }
     return into;
   }
+  const bboxOf = r => { let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity; for (const p of r) { if (p[0] < w) w = p[0]; if (p[0] > e) e = p[0]; if (p[1] < s) s = p[1]; if (p[1] > n) n = p[1]; } return [w, s, e, n]; };
+  const inBox = (p, b) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+  // How deep each ring sits (x.d): how many larger rings hold its first point. The rings go largest first, their
+  // boxes, areas and first points in flat arrays, so a ring is tested against larger rings only, against their
+  // outline only where their box holds its point, and not at all once the rings left are no larger: a file of
+  // thousands of separate outlines costs a box test a pair, not a ring walk.
+  function depths(rs) {
+    const big = rs.slice().sort((x, y) => Math.abs(y.a) - Math.abs(x.a)), n = big.length;
+    const box = new Float64Array(n * 4), size = new Float64Array(n), px = new Float64Array(n), py = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = big[i], o = i * 4;
+      box[o] = x.b[0]; box[o + 1] = x.b[1]; box[o + 2] = x.b[2]; box[o + 3] = x.b[3];
+      size[i] = Math.abs(x.a); px[i] = x.r[0][0]; py[i] = x.r[0][1];
+    }
+    for (let i = 0; i < n; i++) {
+      const x = px[i], y = py[i], a = size[i];
+      let d = 0;
+      for (let k = 0; k < i; k++) {
+        if (size[k] <= a) break; // (largest first: nothing beyond this one is larger either)
+        const o = k * 4;
+        if (x >= box[o] && x <= box[o + 2] && y >= box[o + 1] && y <= box[o + 3] && inRing(big[i].r[0], big[k].r)) d++;
+      }
+      big[i].d = d;
+    }
+  }
   // A shapefile polygon's rings: clockwise ones are outlines, counter-clockwise ones holes (in the outline they are
   // in, the smallest). Files that ignore the rule (every ring one way) are nested by what is inside what: a ring
   // inside an odd number of others is a hole.
   function polygonOf(parts, tx) {
-    const rs = parts.filter(r => r.length >= 3).map(r => ({ r, a: area(r) }));
+    const rs = parts.filter(r => r.length >= 3).map(r => ({ r, a: area(r), b: bboxOf(r) }));
     let outers = rs.filter(x => x.a < 0), holes = rs.filter(x => x.a >= 0);
-    if (!outers.length || !holes.length) {
-      const depth = x => rs.filter(y => y !== x && Math.abs(y.a) > Math.abs(x.a) && inRing(x.r[0], y.r)).length;
+    if (rs.length > 1 && (!outers.length || !holes.length)) {
+      depths(rs);
       outers = []; holes = [];
-      rs.forEach(x => (depth(x) % 2 ? holes : outers).push(x));
+      rs.forEach(x => (x.d % 2 ? holes : outers).push(x)); // (in the file's order still)
     }
     const polys = outers.map(o => ({ o, holes: [] }));
     for (const h of holes) {
       let best = null;
-      for (const p of polys) if (inRing(h.r[0], p.o.r) && (!best || Math.abs(p.o.a) < Math.abs(best.o.a))) best = p;
+      for (const p of polys) if ((!best || Math.abs(p.o.a) < Math.abs(best.o.a)) && inBox(h.r[0], p.o.b) && inRing(h.r[0], p.o.r)) best = p;
       if (best) best.holes.push(h); else polys.push({ o: h, holes: [] });
     }
     const out = [];
@@ -408,7 +465,7 @@ window.MB = window.MB || {};
               raw.push(r);
             }
             if (kind === 'line') raw.forEach(r => { const l = line(r, tx, 2); if (l) parts.push({ type: 'LineString', coordinates: l }); });
-            else parts.push(...polygonOf(raw, tx));
+            else for (const p of polygonOf(raw, tx)) parts.push(p); // (one by one: spreading 100,000 polygons into push would be too many arguments)
           }
         } else if (kind === 'patch') patches++;
       } catch (e) { /* a damaged record: none of it */ }
@@ -474,7 +531,7 @@ window.MB = window.MB || {};
       if (u8[s] === 0x2a) { rows.push(null); continue; } // '*': deleted
       const row = {};
       let at = s + 1;
-      for (const f of fields) { const v = value(f, u8.subarray(at, at + f.len)); at += f.len; if (v !== null) row[f.name] = v; }
+      for (const f of fields) { const v = value(f, u8.subarray(at, at + f.len)); at += f.len; if (v !== null) put(row, f.name, v); } // (put: a field named "__proto__" too)
       rows.push(row);
     }
     return rows;
@@ -787,13 +844,18 @@ window.MB = window.MB || {};
         r.onerror = () => res(null);
       });
     },
+    // One request in its own transaction. It is done when the transaction commits, not when the request answers: a
+    // write that answers and then fails to commit (the disk full, the quota reached) must not pass for kept.
     async req(store, mode, fn) {
       const db = await this.open();
       if (!db) { const m = this.mem[store]; return fn(null, m); }
       return new Promise((res, rej) => {
-        const q = fn(db.transaction(store, mode).objectStore(store));
-        q.onsuccess = () => res(q.result);
-        q.onerror = () => rej(q.error);
+        const tx = db.transaction(store, mode);
+        const q = fn(tx.objectStore(store));
+        let out;
+        q.onsuccess = () => { out = q.result; };
+        tx.oncomplete = () => res(out);
+        tx.onabort = tx.onerror = () => rej(tx.error || q.error || new Error('the store could not be written'));
       });
     },
     get(store, key) { return this.req(store, 'readonly', (s, m) => (s ? s.get(key) : m.get(key))); },
@@ -961,7 +1023,10 @@ window.MB = window.MB || {};
       try {
         res = await readFiles(list);
         for (const l of res.layers) {
-          try { ids.push(await this.add(l)); } catch (e) { res.fail.push(l.name + ': could not be kept (' + (e.message || e) + ')'); }
+          let id = null;
+          try { id = await this.add(l); } catch (e) { res.fail.push(l.name + ': could not be kept (' + (e.message || e) + ')'); }
+          if (!id) continue; // (not kept: the failure is said, not "on the map")
+          ids.push(id);
           this.note(`${l.name}: ${plural(l.features.length, 'feature')} on the map${l.notes.length ? '; ' + l.notes.join('; ') : ''}.`, l.notes.length > 0);
         }
         res.fail.forEach(t => this.note(t + '.', true));
@@ -1126,7 +1191,7 @@ window.MB = window.MB || {};
     // A feature's value (null: none), kept; its look follows when the field is one the symbols, labels or title use.
     async setValue(rec, f, key, value, opts) {
       const p = f.properties = f.properties || {}, look = rec.meta.look, s = look.symbol;
-      if (value == null || value === '') delete p[key]; else p[key] = value;
+      if (value == null || value === '') delete p[key]; else put(p, key, value);
       if (value != null && value !== '' && !look.fields.some(x => x.key === key)) look.fields.push({ key, alias: '', show: true });
       rec.fcDirty = true;
       if (s.field === key) { if (s.mode === 'category') S().fillCats(look, rec.fc.features); if (s.mode === 'graduated') S().fillBreaks(look, rec.fc.features); }
@@ -1141,9 +1206,11 @@ window.MB = window.MB || {};
     renameField(rec, from, to) {
       const look = rec.meta.look, s = look.symbol;
       to = String(to || '').trim();
-      const why = !to ? 'Give the field a name' : to.length > 64 ? 'A field name is at most 64 characters' : to !== from && look.fields.some(f => f.key === to) ? 'There is a field of that name already' : '';
-      if (why || to === from) return why;
-      rec.fc.features.forEach(f => { const p = f.properties; if (p && from in p) { const v = p[from]; delete p[from]; p[to] = v; } });
+      if (to === from) return ''; // (a rename given up on: nothing to say, whatever the name is)
+      const why = badKey(to) || (look.fields.some(f => f.key === to) ? 'There is a field of that name already' : '');
+      if (why) return why;
+      // each feature's own value only (never one inherited: a function left in a feature would stop the layer saving)
+      rec.fc.features.forEach(f => { const p = f.properties; if (p && Object.hasOwn(p, from)) { const v = p[from]; delete p[from]; put(p, to, v); } });
       look.fields.forEach(f => { if (f.key === from) f.key = to; });
       if (look.title === from) look.title = to;
       if (look.label.field === from) look.label.field = to;
@@ -1175,11 +1242,11 @@ window.MB = window.MB || {};
         title: () => rec.meta.name + ': attributes',
         fields: () => look().fields.map(f => ({ key: f.key, label: f.alias ? `${f.alias} (${f.key})` : f.key })),
         rows: () => (rec.fc ? rec.fc.features : []),
-        get: (f, k) => (f.properties || {})[k],
+        get: (f, k) => own(f.properties, k),
         set: (f, k, v) => { this.setValue(rec, f, k, v).catch(e => console.warn('File imports', e)); },
         addField: k => {
           k = String(k || '').trim();
-          const why = !k ? 'Give the field a name' : k.length > 64 ? 'A field name is at most 64 characters' : look().fields.some(f => f.key === k) ? 'There is a field of that name already' : '';
+          const why = badKey(k) || (look().fields.some(f => f.key === k) ? 'There is a field of that name already' : '');
           if (why) return why;
           look().fields.push({ key: k, alias: '', show: true });
           this.saveSoon(rec);
@@ -1216,7 +1283,7 @@ window.MB = window.MB || {};
     attrsHtml(rec, p) {
       const look = rec.meta.look, id = esc(rec.meta.id);
       const rows = look.fields.map(f => {
-        const raw = p[f.key], v = raw == null ? '' : typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+        const raw = own(p, f.key), v = raw == null ? '' : typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
         return `<tr><td title="${esc(f.key)}">${esc(f.alias || f.key)}</td><td><input type="text" class="attr-cell" data-iattr="${esc(f.key)}" value="${esc(v)}" aria-label="${esc(f.alias || f.key)}" spellcheck="false"></td></tr>`;
       }).join('');
       return `<div class="section"><h3>Attributes</h3>${rows ? `<table class="mb-datatable attr-edit">${rows}</table>` : '<p class="note">No fields yet.</p>'}
@@ -1232,7 +1299,7 @@ window.MB = window.MB || {};
       hookPress();
       panel.querySelectorAll('input[data-iattr]').forEach(inp => inp.addEventListener('change', () => {
         const f = picked.layer.feature, k = inp.dataset.iattr;
-        const v = MB.attrs ? MB.attrs.typed(inp.value, (f.properties || {})[k]) : inp.value;
+        const v = MB.attrs ? MB.attrs.typed(inp.value, own(f.properties, k)) : inp.value;
         dirty = true;
         inp.value = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
         saving = this.setValue(rec, f, k, v, { fromProps: true }).catch(e => console.warn('File imports', e));
@@ -1294,10 +1361,11 @@ window.MB = window.MB || {};
     },
     async exportFile(id, format) {
       const rec = layers.get(id);
-      if (!rec || !(await this.load(rec)) || !MB.download) return;
+      if (!rec || !(await this.load(rec)) || !MB.download) return false;
       const name = rec.meta.name.replace(/[^\w\- ]+/g, '_').trim() || 'layer';
-      if (format === 'kml') MB.download(name + '.kml', toKml(rec), 'application/vnd.google-earth.kml+xml');
-      else MB.download(name + '.geojson', JSON.stringify(toGeoJson(rec)), 'application/geo+json');
+      // true once the file is out: in the app that is when the share sheet has answered (false when it was cancelled)
+      if (format === 'kml') return MB.download(name + '.kml', toKml(rec), 'application/vnd.google-earth.kml+xml');
+      return MB.download(name + '.geojson', JSON.stringify(toGeoJson(rec)), 'application/geo+json');
     },
     // The layer's features into the project as its own objects, in a layer of the same name: each named by its title
     // (by its label, when labels show, which then shows on it too), its attributes and colors with it, a point drawn

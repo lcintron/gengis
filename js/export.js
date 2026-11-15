@@ -237,9 +237,10 @@ window.MB = window.MB || {};
             blob = buildPdf(new Uint8Array(await jpeg.arrayBuffer()), canvas.width, canvas.height, lay.page, lay.box, MB.state.projectName || 'Map');
           }
         }
-        MB.download(fileName(c.format === 'jpeg' ? 'jpg' : c.format), blob);
+        const out = fileName(c.format === 'jpeg' ? 'jpg' : c.format);
+        if (!(await MB.download(out, blob))) { this.status(''); return; } // the app's share sheet: cancelled, or it failed (said there)
         this.status(`Saved: ${(blob.size / 1048576).toFixed(1)} MB` + (blurry ? ' · the sharper map tiles did not load: the map is at screen detail' : ''));
-        MB.toast('Exported ' + fileName(c.format === 'jpeg' ? 'jpg' : c.format));
+        MB.toast('Exported ' + out);
       } catch (e) {
         console.error(e);
         this.status('Export failed: ' + (e && e.message ? e.message : e instanceof Event ? 'a picture on the map could not be read' : 'unknown error'), true); // (an image's error event)

@@ -9,18 +9,21 @@ window.MB = window.MB || {};
   MB.loadAutosave = () => MB.projects.loadMirror();
   MB.clearAutosave = () => MB.projects.removeCurrent();
 
-  MB.saveToFile = function () {
+  MB.saveToFile = async function () {
     if (MB.desktopFiles && MB.desktopFiles.available) return MB.desktopFiles.save(); // the desktop app writes the file itself
     if (MB.browserFiles && MB.browserFiles.available) return MB.browserFiles.save(); // so do Chrome and Edge (a file picked once)
     const p = MB.serializeProject();
     const name = (p.name || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map';
-    MB.download(name + MB.PROJECT_EXT, JSON.stringify(p, null, 1));
+    if (!(await MB.download(name + MB.PROJECT_EXT, JSON.stringify(p, null, 1)))) return; // the app's share sheet: cancelled, or it failed (said there)
     MB.projects.markFileBacked(); // saved explicitly: not a draft any more
     MB.toast('Project saved');
   };
 
+  // A file from a picker or a drop. openText says what it could not make of the text; a file that cannot be read at
+  // all (gone, not allowed, too large for the browser to hold) is said here, never left as an unanswered failure.
   MB.openFile = function (file) {
-    return file.text().then(txt => MB.openText(txt, file.name));
+    return file.text().then(txt => MB.openText(txt, file.name),
+      e => { MB.toast('Could not open file: ' + ((e && e.message) || e)); return null; });
   };
 
   // A project or GeoJSON file's text (from a file picker, or the desktop app's own dialogs). Resolves 'project' or
@@ -36,7 +39,7 @@ window.MB = window.MB || {};
 
   /* ---------- GeoJSON ---------- */
 
-  MB.exportGeoJSON = function () {
+  MB.exportGeoJSON = async function () {
     const features = [];
     Object.keys(MB.featureLayers).forEach(id => {
       const l = MB.featureLayers[id], m = l.mb;
@@ -65,7 +68,7 @@ window.MB = window.MB || {};
     });
     const fc = { type: 'FeatureCollection', features };
     const name = (MB.state.projectName || 'map').replace(/[^\w\- ]+/g, '_').trim() || 'map';
-    MB.download(name + '.geojson', JSON.stringify(fc, null, 1), 'application/geo+json');
+    if (!(await MB.download(name + '.geojson', JSON.stringify(fc, null, 1), 'application/geo+json'))) return; // cancelled in the app's share sheet
     MB.toast('GeoJSON exported (' + features.length + ' features)');
   };
 
