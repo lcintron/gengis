@@ -506,10 +506,10 @@ window.MB = window.MB || {};
       dlg.className = 'modal';
       dlg.innerHTML = '<div class="modal-box recent-box" role="dialog" aria-modal="true" aria-labelledby="recentTitle">' + MB.modalCloseHtml + '</div>';
       dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-act="close"]')) dlg.classList.add('hidden'); });
-      // Escape closes it only while it is the dialog on top: one over it (a question, the cloud dialog) answers its
-      // own Escape, and ui.js closes the top-most of them — one press must never close two
+      // Escape closes it only while it is the dialog on top, and only if nothing answered the press already (ui.js
+      // closes the top-most dialog and marks it answered): one press must never close two
       document.addEventListener('keydown', e => {
-        if (e.key !== 'Escape' || dlg.classList.contains('hidden')) return;
+        if (e.key !== 'Escape' || e.defaultPrevented || dlg.classList.contains('hidden')) return;
         const shown = Array.from(document.querySelectorAll('.modal:not(.hidden)')).filter(m => m.getClientRects().length);
         if (shown[shown.length - 1] === dlg) dlg.classList.add('hidden');
       });

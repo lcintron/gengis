@@ -487,16 +487,16 @@ test('with a dialog up, the app\'s own keys do nothing on the map behind it (Del
   }
   // Escape with a dialog up and focus outside it (on <body>, a list drawn anew): the top-most dialog closes, as its
   // own ✕ does, and none of the map chain runs (the tool, the selection, the search marker)
-  assert.match(keys, /if \(covered\(\)\) \{ const top = \$\$\('\.modal:not\(\.hidden\)'\)\.filter\(m => m\.getClientRects\(\)\.length\)\.pop\(\), x = top && top\.querySelector\('\.modal-x'\); if \(x\) x\.click\(\); return; \}/);
-  const close = keys.indexOf('if (covered()) { const top =');
+  assert.match(keys, /if \(covered\(\)\) \{ e\.preventDefault\(\); const top = \$\$\('\.modal:not\(\.hidden\)'\)\.filter\(m => m\.getClientRects\(\)\.length\)\.pop\(\), x = top && top\.querySelector\('\.modal-x'\); if \(x\) x\.click\(\); return; \}/);
+  const close = keys.indexOf('if (covered()) { e.preventDefault();');
   assert.ok(close > esc && close < keys.indexOf('MB.measure.cancel()'), 'in the Escape branch, before the map chain');
   assert.ok(keys.indexOf('MB.presenter.exit()') < close, 'presenter mode still has its own Escape');
   assert.ok(keys.indexOf('if (typing) { t.blur(); return; }') < close, 'a box being typed in is blurred first');
   assert.ok(keys.indexOf('if (typing) return;') < gate, 'typing in a box is still answered first');
-  // Recent projects listens for Escape on the document itself: it closes only while it is the one on top, so that
-  // the press that closes a dialog over it does not close it as well
+  // Recent projects listens for Escape on the document itself: it closes only while it is the one on top and only
+  // when nothing answered the press already (the branch above marks it), so one press never closes two dialogs
   const ps = js['projectstore.js'];
-  assert.match(ps, /if \(e\.key !== 'Escape' \|\| dlg\.classList\.contains\('hidden'\)\) return;/);
+  assert.match(ps, /if \(e\.key !== 'Escape' \|\| e\.defaultPrevented \|\| dlg\.classList\.contains\('hidden'\)\) return;/);
   assert.match(ps, /const shown = Array\.from\(document\.querySelectorAll\('\.modal:not\(\.hidden\)'\)\)\.filter\(m => m\.getClientRects\(\)\.length\);\s*\r?\n\s*if \(shown\[shown\.length - 1\] === dlg\) dlg\.classList\.add\('hidden'\);/);
   assert.doesNotMatch(ps, /if \(e\.key === 'Escape'\) dlg\.classList\.add\('hidden'\);/, 'no longer closed from under another dialog');
   assert.ok(!/if \(MB\.presenter && MB\.presenter\.active\) return;/.test(keys.slice(gate)), 'the presenter check is the gate\'s own');

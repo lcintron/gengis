@@ -131,23 +131,68 @@ test('every version a release can lead to has an Android versionCode: the releas
   assert.equal(nextVersion('0.18.3', 'prerelease', null), '0.18.4-Beta.0');
   assert.equal(nextVersion('0.18.4-rc.1', 'prerelease', null), '0.18.4-rc.2', 'the next one counts up');
   assert.equal(nextVersion('0.18.4-rc.2', 'patch', null), '0.18.4', 'and the release it leads to');
+  // a label while on a pre-release of another one starts that label's own number, rather than being ignored
+  assert.equal(nextVersion('0.19.1-Beta.0', 'prerelease', 'rc'), '0.19.1-rc.0');
+  assert.equal(nextVersion('0.19.1-Beta.0', 'prerelease', 'Beta'), '0.19.1-Beta.1', 'the same label still counts up');
+  assert.equal(nextVersion('0.19.1-Beta.0', 'prerelease', 'BETA'), '0.19.1-Beta.1', 'however it is written');
+  assert.equal(nextVersion('0.19.1-Beta.0', 'prerelease', 'Beta.5'), '0.19.1-Beta.5', 'a number asked for by name');
+  assert.ok(versionCode(nextVersion('0.19.1-Beta.0', 'prerelease', 'rc')) > versionCode('0.19.1-Beta.0'));
 });
 
-test('a release of a version the Android app could not be built from stops before anything is written', () => {
-  const { execFileSync } = require('child_process');
+// scripts/release.js in a copy of its own (a fixed package.json and the files it rewrites), so that what the repo's
+// version happens to be — a release or a pre-release — changes nothing here.
+function fakeRepo(version) {
+  const os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gengis-release-'));
+  fs.mkdirSync(path.join(dir, 'scripts')); fs.mkdirSync(path.join(dir, 'js'));
+  for (const f of ['scripts/release.js', 'scripts/android-prepare.js']) fs.copyFileSync(path.join(ROOT, f), path.join(dir, f));
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'gengis', version }, null, 2));
+  fs.writeFileSync(path.join(dir, 'js', 'util.js'), `MB.APP = { name: 'GenGIS', version: '${version}' };\n`);
+  fs.writeFileSync(path.join(dir, 'sw.js'), `const VERSION = 'gengis-${version}'; // app version\n`);
+  fs.writeFileSync(path.join(dir, 'index.html'), `<div class="ver">Version ${version}</div>\n`);
+  const env = { ...process.env };
+  delete env.GITHUB_OUTPUT; // (never append to the step's own output file)
   const run = (...a) => {
-    try { return { status: 0, out: execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'release.js'), ...a], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }; }
+    const o = { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] };
+    try { return { status: 0, out: require('child_process').execFileSync(process.execPath, [path.join(dir, 'scripts', 'release.js'), ...a], o) }; }
     catch (e) { return { status: e.status, out: (e.stdout || '') + (e.stderr || '') }; }
   };
-  const bad = run('prerelease', '--pre=preview', '--dry');
-  assert.equal(bad.status, 1, 'a dry run fails too, so the workflow never reaches the tag');
-  assert.match(bad.out, /Not a version the Android app can be built from/);
-  assert.match(bad.out, /must be one of alpha, beta, rc/);
-  assert.ok(!/updated package\.json/.test(bad.out), 'and no file was even considered');
-  const ok = run('prerelease', '--pre=rc', '--dry');
-  assert.equal(ok.status, 0);
-  assert.match(ok.out, /-> \d+\.\d+\.\d+-rc\.0/);
-  assert.match(ok.out, /Dry run: nothing written, committed or tagged\./);
+  return { dir, run, clean: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('a release of a version the Android app could not be built from stops before anything is written', () => {
+  const repo = fakeRepo('0.19.0');
+  try {
+    const bad = repo.run('prerelease', '--pre=preview', '--dry');
+    assert.equal(bad.status, 1, 'a dry run fails too, so the workflow never reaches the tag');
+    assert.match(bad.out, /Not a version the Android app can be built from/);
+    assert.match(bad.out, /must be one of alpha, beta, rc/);
+    assert.ok(!/updated package\.json/.test(bad.out), 'and no file was even considered');
+    const ok = repo.run('prerelease', '--pre=rc', '--dry');
+    assert.equal(ok.status, 0);
+    assert.match(ok.out, /0\.19\.0 -> 0\.19\.1-rc\.0/);
+    assert.match(ok.out, /Dry run: nothing written, committed or tagged\./);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(repo.dir, 'package.json'), 'utf8')).version, '0.19.0', 'a dry run writes nothing');
+  } finally { repo.clean(); }
+});
+
+test('a release whose Android versionCode would not grow is refused (a label that goes backwards, a number dropped)', () => {
+  const repo = fakeRepo('0.19.0-Beta.3');
+  try {
+    // 0.19.0-Beta.3 is 1900033; these all come out at or below it
+    for (const args of [['patch', '--pre=Beta'], ['patch', '--pre=alpha'], ['prerelease', '--pre=alpha']]) {
+      const r = repo.run(...args, '--dry');
+      assert.equal(r.status, 1, args.join(' '));
+      assert.match(r.out, /The Android versionCode would not grow: 0\.19\.0-Beta\.3 is 1900033/, args.join(' '));
+      assert.match(r.out, /Choose another bump, or a pre-release label that comes after this one/);
+    }
+    // the ways on from a Beta: the next Beta, an rc, or the release itself
+    for (const [args, want] of [[['prerelease'], '0.19.0-Beta.4'], [['prerelease', '--pre=rc'], '0.19.0-rc.0'], [['patch'], '0.19.0'], [['minor'], '0.20.0']]) {
+      const r = repo.run(...args, '--dry');
+      assert.equal(r.status, 0, args.join(' ') + ': ' + r.out);
+      assert.ok(r.out.startsWith('0.19.0-Beta.3 -> ' + want), args.join(' ') + ' -> ' + want + ', got: ' + r.out.split('\n')[0]);
+    }
+  } finally { repo.clean(); }
 });
 
 test('the Android project is not published with the site', () => {

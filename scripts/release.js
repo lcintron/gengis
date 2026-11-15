@@ -6,6 +6,10 @@
  * - Picks the semantic-version bump from the conventional commits since the last tag when "auto" (default):
  *     "BREAKING CHANGE" / "type!:" -> major,  feat: -> minor,  fix: / perf: / revert: -> patch,
  *     only chore/docs/ci/style/refactor/test/build commits -> no release (exit 0, released=false)
+ * - --pre=LABEL: a pre-release. On a release it starts the label at .0 (0.19.0 + prerelease --pre=rc -> 0.19.1-rc.0);
+ *   on a pre-release of the same label it counts up (rc.0 -> rc.1), and another label starts at its own .0
+ *   (Beta.2 -> rc.0). The Android versionCode orders alpha < Beta < rc < the release, and a bump or label that would
+ *   not grow it is refused (scripts/android-prepare.js).
  * - --ci: non-interactive mode for GitHub Actions; writes released/tag/version to $GITHUB_OUTPUT
  * - Writes the new version everywhere it is displayed: package.json, js/util.js (MB.APP.version, shown in
  *   the About dialog), sw.js (cache name) and index.html (splash); the README shows the latest release
@@ -57,15 +61,19 @@ function output(obj) {
   fs.appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(obj).map(([k, v]) => `${k}=${v}\n`).join(''));
 }
 
+const labelOf = p => /^(.*?)(?:\.\d+)?$/.exec(p || '')[1]; // "rc.1" -> "rc"
+
 function bump(v, kind, pre) {
   const n = { ...v };
   if (kind === 'prerelease') {
-    // a label with its number already in it (rc.1) is taken as it is; one without gets .0 (Beta -> Beta.0)
-    if (!n.pre) { n.patch++; n.pre = /\.\d+$/.test(pre || '') ? pre : (pre || 'Beta') + '.0'; }
-    else {
-      const m = /^(.*?)(?:\.(\d+))?$/.exec(n.pre);
-      n.pre = m[1] + '.' + ((m[2] == null ? 0 : +m[2]) + 1);
-    }
+    const numbered = !!pre && /\.\d+$/.test(pre); // a label with its number already in it (rc.1): taken as it is
+    if (!n.pre) { n.patch++; n.pre = numbered ? pre : (pre || 'Beta') + '.0'; return n; }
+    if (numbered) { n.pre = pre; return n; }
+    // on a pre-release already: the same label counts up (Beta.1 -> Beta.2), another label starts its own number
+    // (Beta.1 -> rc.0; one that would go backwards, rc.1 -> Beta.0, is refused by the versionCode check below)
+    if (pre && labelOf(pre).toLowerCase() !== labelOf(n.pre).toLowerCase()) { n.pre = pre + '.0'; return n; }
+    const m = /^(.*?)(?:\.(\d+))?$/.exec(n.pre);
+    n.pre = m[1] + '.' + ((m[2] == null ? 0 : +m[2]) + 1);
     return n;
   }
   // Leaving a pre-release of the same level keeps the number (0.0.1-Beta -> 0.0.1); otherwise bump normally.
@@ -100,9 +108,17 @@ const pre = opt('pre');
 // dot, no all-digit group with a leading zero such as "01")
 if (pre && (!/^[0-9A-Za-z][0-9A-Za-z-]*(\.[0-9A-Za-z][0-9A-Za-z-]*)*$/.test(pre) || /(^|\.)0\d+(\.|$)/.test(pre))) { console.error('Invalid pre-release label: ' + pre); process.exit(1); }
 const next = nextVersion(current, kind, pre);
-// the Android app must be able to make a versionCode of it (scripts/android-prepare.js): a label that cannot be
-// ordered, or a number past its band, would otherwise be tagged and published here and only fail at the app's build
-try { versionCode(next); } catch (e) { console.error('Not a version the Android app can be built from: ' + e.message); process.exit(1); }
+// the Android app must be able to make a versionCode of it (scripts/android-prepare.js), and that code has to grow:
+// Play refuses an upload whose code is not above the last one, so a bump or a label that would go backwards
+// (0.19.0-Beta.3 + patch --pre=Beta -> 0.19.0-Beta) is refused here, not at the app's build or on Play
+let code;
+try { code = versionCode(next); } catch (e) { console.error('Not a version the Android app can be built from: ' + e.message); process.exit(1); }
+let had = null;
+try { had = versionCode(current); } catch (e) { /* the version here is older than the scheme: nothing to compare */ }
+if (had != null && code <= had) {
+  console.error(`The Android versionCode would not grow: ${current} is ${had}, ${next} would be ${code}. Choose another bump, or a pre-release label that comes after this one (alpha, Beta, rc, then the release).`);
+  process.exit(1);
+}
 const tag = 'v' + next;
 // the tag must be a valid git ref before anything is written or committed
 try { sh(`git check-ref-format refs/tags/${tag}`, true); } catch (e) { console.error('Not a valid tag name: ' + tag); process.exit(1); }

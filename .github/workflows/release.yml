@@ -19,7 +19,7 @@ on:
         default: auto
         options: [auto, patch, minor, major, prerelease]
       prerelease:
-        description: Pre-release label (Beta, rc or alpha); empty for a normal release
+        description: Pre-release label (Beta, rc or alpha; a label not in use yet starts at .0); empty for a normal release
         type: string
         default: ''
       dry_run:

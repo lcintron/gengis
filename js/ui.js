@@ -1920,7 +1920,9 @@ window.MB = window.MB || {};
         if (typing) { t.blur(); return; }
         // a dialog is up and focus has dropped outside it (a list drawn anew): Escape closes the top-most one, as its
         // own ✕ and the Android back button do, rather than acting on the map behind it
-        if (covered()) { const top = $$('.modal:not(.hidden)').filter(m => m.getClientRects().length).pop(), x = top && top.querySelector('.modal-x'); if (x) x.click(); return; }
+        // (preventDefault: the press is answered here, so a dialog with an Escape listener of its own on the document
+        //  — Recent projects — leaves it alone and two dialogs never close at once)
+        if (covered()) { e.preventDefault(); const top = $$('.modal:not(.hidden)').filter(m => m.getClientRects().length).pop(), x = top && top.querySelector('.modal-x'); if (x) x.click(); return; }
         if (MB.measure.active && MB.measure.pts.length) { MB.measure.cancel(); return; }
         if (MB.tools.current !== 'select') { MB.tools.set('select'); return; }
         if (MB.selected || (MB.multi && MB.multi.size)) { MB.deselect(); return; }
