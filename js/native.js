@@ -4,9 +4,9 @@
  *   in the web app and the desktop app it is plain fetch.
  * - saving a file (project, GeoJSON, an exported image or PDF): written to the app's cache and handed to Android's
  *   share sheet (Save to Files, Drive, email...), since a download link does nothing in an app
- * - picking a file: an accept naming an extension Android has no MIME type for (.gengis, the shapefile parts, the
- *   Betaflight logs) is dropped, since the picker would grey those files out; one Android can read whole (the SVG
- *   and image picker) keeps its filter
+ * - picking a file: an accept naming anything but images (.gengis, the shapefile parts, the Betaflight logs, map
+ *   sources) is dropped, since Android's picker greys out every file it has no matching MIME type for; the image
+ *   picker keeps its filter
  * - the back button: closes what is open (a dialog, the menu, the side panel, presenter mode, a selection) before
  *   leaving the app
  * - cloud sync's sign-in, kept by the app (MB.native.cloud: android-src/CloudPlugin.java)
@@ -76,10 +76,12 @@ window.MB = window.MB || {};
    * Capacitor's bridge turns an <input accept> into MIME types and leaves out the extensions Android does not know
    * (.gengis, .shp, .dbf, .prj, .cpg, .shx, .bbl, .bfl, .kml, .geojson…), so the picker greys those files out. Such
    * an accept is dropped before the picker opens, and the opener checks the file it is given by its name and its
-   * content anyway. An accept of nothing but MIME types and the few extensions Android does map (the SVG and image
-   * picker) keeps its filter: there the list loses nothing in the crossing. (capture, which asks Android for a
-   * camera or a microphone instead of a file, is not touched: GenGIS has no such input.) */
-  const ANDROID_EXT = /^\.(svg|png|jpe?g|webp|gif|bmp|txt|csv|xml|zip|pdf)$/i; // extensions Android has a MIME type for
+   * content anyway. Only the image picker keeps its filter: its list is MIME types and the image extensions Android
+   * maps to those same types, so nothing is lost in the crossing. A picker for other kinds (map sources: .xml, .zip)
+   * drops it, since a file's type there is Android's guess as well — a zip is as often application/x-zip-compressed
+   * or application/octet-stream — and a filter would grey it out. (capture, which asks Android for a camera or a
+   * microphone instead of a file, is not touched: GenGIS has no such input.) */
+  const ANDROID_EXT = /^\.(svg|png|jpe?g|webp|gif|bmp)$/i; // the image extensions Android maps to a MIME type itself
   const MIME = /^[\w.+-]+\/[\w.*+-]+$/;
   const keepsFilter = a => a.split(',').map(s => s.trim()).filter(Boolean).every(t => (t[0] === '.' ? ANDROID_EXT.test(t) : MIME.test(t)));
   const dropAccept = el => {

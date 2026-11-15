@@ -493,6 +493,12 @@ test('with a dialog up, the app\'s own keys do nothing on the map behind it (Del
   assert.ok(keys.indexOf('MB.presenter.exit()') < close, 'presenter mode still has its own Escape');
   assert.ok(keys.indexOf('if (typing) { t.blur(); return; }') < close, 'a box being typed in is blurred first');
   assert.ok(keys.indexOf('if (typing) return;') < gate, 'typing in a box is still answered first');
+  // Recent projects listens for Escape on the document itself: it closes only while it is the one on top, so that
+  // the press that closes a dialog over it does not close it as well
+  const ps = js['projectstore.js'];
+  assert.match(ps, /if \(e\.key !== 'Escape' \|\| dlg\.classList\.contains\('hidden'\)\) return;/);
+  assert.match(ps, /const shown = Array\.from\(document\.querySelectorAll\('\.modal:not\(\.hidden\)'\)\)\.filter\(m => m\.getClientRects\(\)\.length\);\s*\r?\n\s*if \(shown\[shown\.length - 1\] === dlg\) dlg\.classList\.add\('hidden'\);/);
+  assert.doesNotMatch(ps, /if \(e\.key === 'Escape'\) dlg\.classList\.add\('hidden'\);/, 'no longer closed from under another dialog');
   assert.ok(!/if \(MB\.presenter && MB\.presenter\.active\) return;/.test(keys.slice(gate)), 'the presenter check is the gate\'s own');
   // the desktop app's Ctrl+F uses the same reading
   assert.match(keys, /if \(!covered\(\)\) MB\.ui\.focusSearch\(\);/);

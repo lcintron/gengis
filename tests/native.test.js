@@ -134,12 +134,12 @@ test('in the app a file picker is opened without its accept list, so Android sho
   assert.equal(imports.getAttribute('capture'), 'environment', 'asking Android for a camera is left alone');
 });
 
-test('a picker whose accept Android can read whole keeps its filter (the SVG and image picker)', () => {
+test('only the image picker keeps its filter; every other picker, map sources included, opens without one', () => {
   const { dom } = env({});
   const svg = dom.input('file', '.svg,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif');
   const was = svg.accept;
   svg.click();
-  assert.equal(svg.accept, was, 'MIME types and extensions Android maps itself: the picker still shows images only');
+  assert.equal(svg.accept, was, 'MIME types and the image extensions Android maps to them: images only, still');
   assert.deepEqual(svg.clicks, [was]);
   const any = dom.input('file', 'image/*');
   any.click();
@@ -153,6 +153,15 @@ test('a picker whose accept Android can read whole keeps its filter (the SVG and
   const up = dom.input('file', acceptOf('svgUpload'));
   up.click();
   assert.equal(up.accept, acceptOf('svgUpload'), 'the image picker keeps its own list');
+  // map sources (js/mapsources.js): Android calls a zip application/x-zip-compressed or application/octet-stream as
+  // readily as application/zip, so a filter there would grey the file out
+  const maps = fs.readFileSync(path.join(ROOT, 'js', 'mapsources.js'), 'utf8');
+  const list = (/input\.accept = '([^']*)'/.exec(maps) || [])[1];
+  assert.ok(list, 'the map-source picker\'s accept');
+  const ms = dom.input('file', list);
+  ms.click();
+  assert.equal(ms.accept, '', 'the map-source picker opens without its accept');
+  assert.deepEqual(ms.clicks, ['']);
 });
 
 test('a picker opened by its label loses its accept too, and nothing else is touched', () => {

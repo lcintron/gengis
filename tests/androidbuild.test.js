@@ -1,6 +1,7 @@
 'use strict';
 // scripts/android-build.js (make apk): which JDK it builds with, how it reads `adb devices`, and when the emulator
-// counts as failed; scripts/android-prepare.js: the versionCode each version gets.
+// counts as failed; scripts/android-prepare.js: the versionCode each version gets, and scripts/release.js never
+// tagging a version that has none.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -100,6 +101,9 @@ test('an Android versionCode that could not keep its order is refused, never qui
   assert.throws(() => versionCode(''), /not MAJOR\.MINOR\.PATCH/);
   assert.throws(() => versionCode('0.19.0-Beta.30'), /goes up to 29/, 'past its band: it would reach the next label');
   assert.throws(() => versionCode('0.19.0-preview.1'), /must be one of alpha, beta, rc/, 'a label this does not know how to order');
+  for (const k of ['constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+    assert.throws(() => versionCode('0.19.0-' + k + '.1'), /must be one of alpha, beta, rc/, 'a label every object has is no band: ' + k);
+  }
   assert.throws(() => versionCode('0.19.0-Beta.1.2'), /a label and a number/);
   assert.throws(() => versionCode('0.19.1000'), /up to 999/);
   assert.throws(() => versionCode('0.1000.0'), /up to 999/, 'a number that would run into the one above it');
@@ -108,6 +112,42 @@ test('an Android versionCode that could not keep its order is refused, never qui
   // and the script stops rather than writing that code into build.gradle
   const prep = fs.readFileSync(path.join(ROOT, 'scripts', 'android-prepare.js'), 'utf8');
   assert.match(prep, /try \{ code = versionCode\(pkg\.version\); \} catch \(e\) \{ fail\(e\.message\); \}/);
+});
+
+test('every version a release can lead to has an Android versionCode: the release script checks before it tags', () => {
+  const { nextVersion } = require(path.join(ROOT, 'scripts', 'release.js'));
+  // the version the workflow's own flows lead to, from a release and from a pre-release of each label
+  const from = ['0.18.3', '0.19.0-Beta.0', '0.19.0-rc.2', '0.19.0-alpha.9'];
+  for (const cur of from) {
+    for (const kind of ['patch', 'minor', 'major', 'prerelease']) {
+      for (const pre of [null, 'Beta', 'rc', 'alpha', 'rc.1']) {
+        const next = nextVersion(cur, kind, pre);
+        assert.doesNotThrow(() => versionCode(next), `${cur} + ${kind} ${pre || '(no label)'} -> ${next}`);
+      }
+    }
+  }
+  assert.equal(nextVersion('0.18.3', 'prerelease', 'rc.1'), '0.18.4-rc.1', 'a label with its number in it keeps it (it used to become rc.1.0)');
+  assert.equal(nextVersion('0.18.3', 'prerelease', 'rc'), '0.18.4-rc.0');
+  assert.equal(nextVersion('0.18.3', 'prerelease', null), '0.18.4-Beta.0');
+  assert.equal(nextVersion('0.18.4-rc.1', 'prerelease', null), '0.18.4-rc.2', 'the next one counts up');
+  assert.equal(nextVersion('0.18.4-rc.2', 'patch', null), '0.18.4', 'and the release it leads to');
+});
+
+test('a release of a version the Android app could not be built from stops before anything is written', () => {
+  const { execFileSync } = require('child_process');
+  const run = (...a) => {
+    try { return { status: 0, out: execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'release.js'), ...a], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }; }
+    catch (e) { return { status: e.status, out: (e.stdout || '') + (e.stderr || '') }; }
+  };
+  const bad = run('prerelease', '--pre=preview', '--dry');
+  assert.equal(bad.status, 1, 'a dry run fails too, so the workflow never reaches the tag');
+  assert.match(bad.out, /Not a version the Android app can be built from/);
+  assert.match(bad.out, /must be one of alpha, beta, rc/);
+  assert.ok(!/updated package\.json/.test(bad.out), 'and no file was even considered');
+  const ok = run('prerelease', '--pre=rc', '--dry');
+  assert.equal(ok.status, 0);
+  assert.match(ok.out, /-> \d+\.\d+\.\d+-rc\.0/);
+  assert.match(ok.out, /Dry run: nothing written, committed or tagged\./);
 });
 
 test('the Android project is not published with the site', () => {

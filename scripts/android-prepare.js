@@ -34,7 +34,8 @@ const versionCode = version => {
   if (pre) {
     const p = /^([A-Za-z][0-9A-Za-z-]*)(?:\.(\d+))?$/.exec(pre);
     if (!p) throw new Error('version "' + version + '": a pre-release must be a label and a number, as scripts/release.js writes them (Beta.1)');
-    const band = BANDS[p[1].toLowerCase()];
+    const label = p[1].toLowerCase();
+    const band = Object.hasOwn(BANDS, label) ? BANDS[label] : null; // (its own label, never one every object has: "constructor")
     if (band == null) throw new Error('version "' + version + '": the pre-release label must be one of ' + Object.keys(BANDS).join(', ') + ' (add it to BANDS in scripts/android-prepare.js to use another)');
     const n = p[2] == null ? 0 : Number(p[2]);
     if (n >= BAND) throw new Error('version "' + version + '": a pre-release number goes up to ' + (BAND - 1) + ', so that the next label still comes after it');
