@@ -10,7 +10,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const TMP = path.join(__dirname, '.tmp-cloudauth'); // (inside the project; removed afterwards)
+// A folder of this test run's own (inside the project; removed afterwards): two runs of the suite at once in the same
+// tree must not share a store file, or one's writes and deletes break the other's sign-ins.
+const TMP = fs.mkdtempSync(path.join(__dirname, '.tmp-cloudauth-'));
 const handlers = {}, syncs = {};
 let encryption = true;
 const electron = {
@@ -29,7 +31,7 @@ const T = cloudauth._test;
 
 const b64url = buf => Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const idToken = c => 'x.' + b64url(JSON.stringify(c)) + '.y';
-const STORE = path.join(TMP, 'cloud-accounts.json');
+let STORE = ''; // the accounts file, a fresh one for each test (set in beforeEach: nothing is left from the one before)
 
 // A stand-in identity provider: the token endpoint (PKCE checked), and the browser that answers the loopback address.
 function provider(o) {
@@ -74,9 +76,10 @@ const get = url => new Promise(res => {
 });
 function use(P, extra) { T.set(Object.assign({ fetch: P.fetch, open: P.open, file: STORE, encryption: null, timeout: 0 }, extra || {})); }
 
+let storeNo = 0;
 test.before(() => { fs.mkdirSync(TMP, { recursive: true }); T.PROVIDERS.gdrive.clientId = 'g-client'; T.PROVIDERS.gdrive.clientSecret = 'g-secret'; });
 test.after(() => { fs.rmSync(TMP, { recursive: true, force: true }); });
-test.beforeEach(() => { try { fs.unlinkSync(STORE); } catch (e) { /* none */ } encryption = true; });
+test.beforeEach(() => { STORE = path.join(TMP, 'cloud-accounts-' + (++storeNo) + '.json'); encryption = true; });
 
 test('OneDrive: the browser sign-in comes back to the loopback address; PKCE and state; the refresh token kept encrypted', async () => {
   const P = provider();

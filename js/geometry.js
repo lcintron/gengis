@@ -177,7 +177,13 @@ window.MB = window.MB || {};
 
   // The attributes of joined objects, together: the first one's value where they differ (attrtable.js).
   function joinedAttrs(layers) {
-    const a = Object.assign({}, ...layers.slice().reverse().map(l => MB.deepClone(l.mb.attrs || {})));
+    const a = {};
+    // each field set as the object's own, whatever its name (Object.assign would drop one named "__proto__", or set
+    // the copy's prototype with it)
+    layers.slice().reverse().forEach(l => {
+      const attrs = MB.deepClone(l.mb.attrs || {});
+      Object.keys(attrs).forEach(k => Object.defineProperty(a, k, { value: attrs[k], writable: true, enumerable: true, configurable: true }));
+    });
     return Object.keys(a).length ? a : undefined;
   }
 

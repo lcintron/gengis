@@ -8,7 +8,7 @@
  *   { title, fields() -> [{ key, label, fixed }], rows() -> [row], get(row, key), set(row, key, value),
  *     addField(key) -> error text or '', renameField(from, to) -> error text or '', deleteField(key), zoom(row) }
  * API: MB.attrs.typed(text, was), fieldsOf(layerId), set(feature, key, value), valueOf(mb, key), badKey(key) -> error
- *   text or '', cellHtml(value, attrs) -> a value's box, tableFor(layerId);
+ *   text or '', cellHtml(value, attrs) -> a value's box, tableFor(layerId), sortBy(adapter, rows, key, dir);
  *   MB.attrTable.open(adapter), refresh()
  */
 window.MB = window.MB || {};
@@ -35,6 +35,20 @@ window.MB = window.MB || {};
       : `<input type="text" class="attr-cell" value="${esc(s)}" ${attrs} spellcheck="false">`;
   };
   const put = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
+
+  // Rows sorted by one field: empty values last either way, numbers as numbers, the rest as text ("Site 2" before
+  // "Site 10", case and accents alike). One collator for the whole sort, and each row's value read and shown once
+  // (a comparator runs millions of times on a large layer: a collator built in it took 20 s for 250,000 rows).
+  const COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  function sortBy(ad, list, key, dir) {
+    const rows = list.map(r => { const v = ad.get(r, key), empty = v == null || v === ''; return { r, v, s: empty ? '' : show(v), empty }; });
+    rows.sort((a, b) => {
+      if (a.empty) return b.empty ? 0 : 1;
+      if (b.empty) return -1;
+      return (typeof a.v === 'number' && typeof b.v === 'number' ? a.v - b.v : COLLATOR.compare(a.s, b.s)) * dir;
+    });
+    return rows.map(x => x.r);
+  }
 
   // What a typed value is: a number where it reads as one (and the field held numbers, or nothing yet; leading zeros
   // stay text: "007"), true/false in a field of those, otherwise text; nothing for an empty box.
@@ -246,8 +260,10 @@ window.MB = window.MB || {};
     const r = btn.getBoundingClientRect(), f = T.ad.fields().find(x => x.key === key);
     if (!f) return;
     MB.contextMenu.show(r.left, r.bottom + 2, [
-      { label: 'Sort ascending', action: () => { T.sort = key; T.dir = 1; build(); } },
-      { label: 'Sort descending', action: () => { T.sort = key; T.dir = -1; build(); } },
+      // (the menu is gone by then and focus with it: that column's sort button takes it, so the keyboard stays in the
+      //  dialog and the app's own keys do not act on the map behind it)
+      { label: 'Sort ascending', action: () => { T.sort = key; T.dir = 1; build(); if (!insideDialog()) focusColumn(key); } },
+      { label: 'Sort descending', action: () => { T.sort = key; T.dir = -1; build(); if (!insideDialog()) focusColumn(key); } },
       { sep: true },
       { label: 'Rename field', disabled: f.fixed, action: () => { T.renaming = key; paint(); const inp = T.dlg.querySelector('input[data-rename]'); if (inp) { inp.focus(); inp.select(); } } },
       { label: 'Delete field', danger: true, disabled: f.fixed, action: async () => {
@@ -262,15 +278,7 @@ window.MB = window.MB || {};
     const ad = T.ad, fields = ad.fields().map(f => f.key);
     let list = ad.rows();
     if (T.q) list = list.filter(r => fields.some(k => show(ad.get(r, k)).toLowerCase().includes(T.q)));
-    if (T.sort) {
-      const k = T.sort, d = T.dir;
-      list = list.slice().sort((a, b) => {
-        const x = ad.get(a, k), y = ad.get(b, k);
-        if (x == null || x === '') return y == null || y === '' ? 0 : 1; // empty last, either way
-        if (y == null || y === '') return -1;
-        return (typeof x === 'number' && typeof y === 'number' ? x - y : show(x).localeCompare(show(y), undefined, { numeric: true, sensitivity: 'base' })) * d;
-      });
-    }
+    if (T.sort) list = sortBy(ad, list, T.sort, T.dir);
     T.list = list;
     const pages = Math.max(1, Math.ceil(list.length / PAGE));
     if (T.page >= pages) T.page = pages - 1;
@@ -295,7 +303,8 @@ window.MB = window.MB || {};
       return `<td>${cellHtml(v, `data-c="${c}" aria-label="${esc(f.label)}, row ${from + i + 1}"`)}</td>`;
     }).join('')}</tr>`).join('') || `<tr><td colspan="${fields.length + 1}" class="note">${T.q ? 'No row matches.' : 'No rows.'}</td></tr>`;
     const total = ad.rows().length, pages = Math.max(1, Math.ceil(T.list.length / PAGE));
-    d.querySelector('#attrCount').textContent = (T.q ? `${T.list.length.toLocaleString()} of ${total.toLocaleString()}` : total.toLocaleString()) + ` row${total === 1 ? '' : 's'} · ${(fields.length - fields.filter(f => f.fixed).length)} field${fields.length === 1 ? '' : 's'}`;
+    const nFields = fields.length - fields.filter(f => f.fixed).length; // (the fixed Object name column is no field)
+    d.querySelector('#attrCount').textContent = (T.q ? `${T.list.length.toLocaleString()} of ${total.toLocaleString()}` : total.toLocaleString()) + ` row${total === 1 ? '' : 's'} · ${nFields} field${nFields === 1 ? '' : 's'}`;
     d.querySelector('#attrPage').textContent = pages > 1 ? `${T.page + 1} / ${pages}` : '';
     d.querySelectorAll('.attr-foot [data-at]').forEach(b => { b.hidden = pages < 2; b.disabled = (b.dataset.at === 'prev' ? T.page === 0 : T.page >= pages - 1); });
     refocus(mark);
@@ -315,5 +324,5 @@ window.MB = window.MB || {};
     refresh() { if (T.dlg && !T.dlg.classList.contains('hidden') && T.ad) build(); },
     isOpen: () => !!(T.dlg && !T.dlg.classList.contains('hidden'))
   };
-  MB.attrs = { typed, fieldsOf, set, tableFor, valueOf, badKey, cellHtml, NAME };
+  MB.attrs = { typed, fieldsOf, set, tableFor, valueOf, badKey, cellHtml, sortBy, NAME };
 })(window.MB);

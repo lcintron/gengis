@@ -1288,9 +1288,14 @@ window.MB = window.MB || {};
       inp.addEventListener('change', () => {
         const from = keyOf(inp), to = inp.value.trim();
         if (to === from) { inp.value = from; return; }
-        const why = table().renameField(from, to);
-        if (why) { MB.toast(why); inp.value = from; return; } // (done: Properties drawn anew by the table's commit)
-        focusRow('[data-av]', to);
+        // the rename draws Properties anew (the table's commit), so it waits for the pointer to be released: between
+        // a button's press and its release the panel would go, and the click that follows it with it (another row's
+        // trash button, say). With the keyboard (Enter, Tab) nothing is held down and it runs on the next turn.
+        MB.whenReleased(() => {
+          const why = table().renameField(from, to);
+          if (why) { MB.toast(why); inp.value = from; return; } // (done: Properties drawn anew by the table's commit)
+          focusRow('[data-av]', to);
+        });
       });
     });
     $$('[data-adel]', wrap).forEach(b => b.addEventListener('click', async () => {

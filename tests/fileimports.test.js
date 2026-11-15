@@ -287,6 +287,42 @@ test('shapefile text: UTF-8 when it reads as UTF-8, Windows-1252 when not, the .
   assert.equal(row.toString, 'y');
 });
 
+test('a .dbf whose header cannot be right is refused, not read as four billion records', () => {
+  // 66 bytes: a header saying 4,294,967,295 records of no length at all. Every record would start where the last
+  // one did, so the loop would never reach the end of the file.
+  const bad = Buffer.alloc(66);
+  bad[0] = 3;
+  bad.writeUInt32LE(0xffffffff, 4); // records
+  bad.writeUInt16LE(65, 8);         // header length
+  bad.writeUInt16LE(0, 10);         // record length: impossible
+  bad.write('N', 32, 'ascii'); bad.write('C', 43, 'ascii'); bad[48] = 10;
+  bad[64] = 0x0d; bad[65] = 0x1a;
+  const t0 = process.hrtime.bigint();
+  assert.throws(() => R.dbf(bad), /\.dbf is damaged/);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(ms < 200, 'it is refused at once (' + ms.toFixed(0) + ' ms)');
+  const past = Buffer.from(bad); past.writeUInt16LE(10, 10); past.writeUInt16LE(5000, 8); // a header past the end of the file
+  assert.throws(() => R.dbf(past), /\.dbf is damaged/);
+  // and a header that claims more records than the file holds gives the records that are in it
+  const some = dbf([{ name: 'N', type: 'C', len: 4 }], [['a'], ['b']]);
+  some.writeUInt32LE(4000000000, 4);
+  assert.deepEqual(plain(R.dbf(some).map(r => r.N)), ['a', 'b']);
+});
+
+test('a feature\'s own "__proto__" field survives the copies a record\'s parts and a layer written out make', () => {
+  const gj = JSON.stringify({ type: 'Feature', properties: JSON.parse('{"__proto__":"p","name":"A"}'),
+    geometry: { type: 'GeometryCollection', geometries: [{ type: 'Point', coordinates: [1, 2] }, { type: 'LineString', coordinates: [[0, 0], [1, 1]] }] } });
+  const { features } = R.geoJson(gj);
+  assert.deepEqual(plain(features.map(f => f.geometry.type)), ['LineString', 'Point'], 'two features, each with the attributes');
+  const proto = Object.getPrototypeOf(features[0]); // a plain object's prototype, in the sandbox the reader runs in
+  for (const f of features) {
+    assert.equal(Object.hasOwn(f.properties, '__proto__'), true, 'the field is the feature\'s own, in the copy too');
+    assert.equal(Object.getOwnPropertyDescriptor(f.properties, '__proto__').value, 'p');
+    assert.equal(Object.getPrototypeOf(f.properties), proto, 'and the copy has no prototype of its own');
+  }
+  assert.equal(features[0].properties.name, 'A');
+});
+
 /* ---------- files and zips ---------- */
 test('files: a shapefile\'s parts picked together (any order, any case), KML and GeoJSON beside them; what cannot be read says why', async () => {
   const res = await R.files([
@@ -460,15 +496,37 @@ test('crafted text is read in one pass: attribute names with no value, a run of 
   // 200 kB of markup whose tags never close (each <br searched to the end of the text: 0.9 s)
   const marky = '<br'.repeat(6000) + '<'.repeat(182000);
   under('formatted text that never closes', ms(() => MB.htmlText(marky)));
-  // and the stand-in in fileimports.js, where util.js is not loaded, reads tags the same way
-  assert.match(fs.readFileSync(path.join(ROOT, 'js/fileimports.js'), 'utf8'), /<br\\b\[\^<>\]\*>\|<\\\/\(p\|div\|tr\|li\|h\\d\)/);
+  // and a description is read by that one alone (util.js is always loaded with fileimports.js: no second reading of
+  // its own here to drift from it)
+  assert.match(fs.readFileSync(path.join(ROOT, 'js/fileimports.js'), 'utf8'), /const htmlText = s => \(!s \? '' : MB\.htmlText \? MB\.htmlText\(s\) : String\(s\)\.trim\(\)\);/);
+});
+
+test('crafted markup is read in one pass too: stray closing tags are skipped at once, deep nesting is refused by name', () => {
+  const ms = fn => { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; };
+  // 999 tags left open and a million closing tags that match none of them: each used to be looked for down the whole
+  // stack (0.8 s here, 3.3 s for 40,000 of each in a KML file)
+  const stray = '<a>'.repeat(999) + '</b>'.repeat(1000000);
+  const t = ms(() => assert.equal(R.parseXml('<kml>' + stray + '</kml>').kids[0].kids[0].name, 'a'));
+  assert.ok(t < 200, 'stray closing tags took ' + t.toFixed(0) + ' ms');
+  // and the tags still close what they name: the one named, and whatever was left open inside it
+  const doc = R.parseXml('<kml><Document><Folder><Placemark/></b></Folder></unopened><Placemark/></Document></kml>');
+  const kml = doc.kids[0], folder = kml.kids[0].kids[0];
+  assert.deepEqual(plain(folder.kids.map(k => k.name)), ['Placemark'], '</b> and </unopened> closed nothing');
+  assert.deepEqual(plain(kml.kids[0].kids.map(k => k.name)), ['Folder', 'Placemark'], 'and the Placemark after </Folder> is the Document\'s');
+  // a file nested deeper than the readers can walk says so, instead of "Maximum call stack size exceeded"
+  assert.throws(() => R.kml('<kml>' + '<Folder>'.repeat(2000) + '</Folder>'.repeat(2000) + '</kml>'), /nested too deeply/);
+  const deep = ms(() => { try { R.kml('<kml>' + '<Folder>'.repeat(200000) + '</kml>'); } catch (e) { /* said above */ } });
+  assert.ok(deep < 200, 'and it is refused at once (' + deep.toFixed(0) + ' ms)');
 });
 
 // A stand-in IndexedDB: a request answers, and then the transaction either commits or, with abort, is rolled back
-// (the quota reached, the disk full). What answered but never committed was not kept.
+// (the quota reached, the disk full). What answered but never committed was not kept. A value is copied in, as a
+// real store copies it: what is written later is not what was written before. out.abort turns writes to failures
+// from then on.
 function fakeIdb(opts) {
   opts = opts || {};
   const data = new Map(), soon = fn => setTimeout(fn, 0);
+  const out = { stores: data, abort: !!opts.abort };
   const db = {
     objectStoreNames: { contains: n => data.has(n) },
     createObjectStore(n) { data.set(n, new Map()); },
@@ -476,7 +534,7 @@ function fakeIdb(opts) {
       const m = data.get(name) || data.set(name, new Map()).get(name), write = mode === 'readwrite', queued = [];
       const req = run => { const r = {}; queued.push([r, run]); return r; };
       const store = {
-        put: (v, k) => req(() => { if (!(write && opts.abort)) m.set(k, v); }),
+        put: (v, k) => req(() => { if (!(write && out.abort)) m.set(k, structuredClone(v)); }),
         get: k => req(() => m.get(k)),
         getAll: () => req(() => Array.from(m.values())),
         getAllKeys: () => req(() => Array.from(m.keys())),
@@ -485,13 +543,14 @@ function fakeIdb(opts) {
       const tx = { error: null, objectStore: () => store };
       soon(() => {
         queued.forEach(([r, run]) => { r.result = run(); if (r.onsuccess) r.onsuccess(); }); // the request answers first
-        if (write && opts.abort) { tx.error = new Error('the quota is full'); if (tx.onabort) tx.onabort(); }
+        if (write && out.abort) { tx.error = new Error('the quota is full'); if (tx.onabort) tx.onabort(); }
         else if (tx.oncomplete) tx.oncomplete();
       });
       return tx;
     }
   };
-  return { stores: data, open: () => { const r = { result: db }; soon(() => { if (r.onupgradeneeded) r.onupgradeneeded(); if (r.onsuccess) r.onsuccess(); }); return r; } };
+  out.open = () => { const r = { result: db }; soon(() => { if (r.onupgradeneeded) r.onupgradeneeded(); if (r.onsuccess) r.onsuccess(); }); return r; };
+  return out;
 }
 
 test('a layer counts as imported only once its write went through: one that answers and then fails to commit is not "on the map"', async () => {
@@ -512,14 +571,66 @@ test('a layer counts as imported only once its write went through: one that answ
   assert.equal(lost.stores.get('meta').size, 0, 'and nothing was kept');
 });
 
+// One tab's file imports, with a stand-in page (its pagehide and visibilitychange listeners) and a store of its own.
+function tab(idb) {
+  const MB = {}, listeners = {}, events = [];
+  const on = (t, fn) => { (listeners[t] = listeners[t] || []).push(fn); };
+  const win = { MB, addEventListener: on }, doc = { visibilityState: 'visible', addEventListener: on };
+  const ctx = { window: win, document: doc, indexedDB: idb, TextDecoder, Blob, DecompressionStream, console: { warn() {}, log() {}, error() {} }, Date, Math, setTimeout, clearTimeout };
+  vm.createContext(ctx);
+  for (const f of ['js/util.js', 'js/importstyle.js', 'js/attrtable.js', 'js/fileimports.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+  MB.toast = () => {}; MB.emit = e => events.push(e); // (util.js's own write to the page, and the app's events)
+  MB.imports.saves.hook();
+  return { MB, imp: MB.imports, events, doc, fire: t => (listeners[t] || []).forEach(fn => fn()) };
+}
+const tick = ms => new Promise(r => setTimeout(r, ms || 0));
+
+test('an edit waiting to be kept is written when the page is hidden or closed, not lost with the tab', async () => {
+  const gj = JSON.stringify({ type: 'Feature', properties: { name: 'A' }, geometry: { type: 'Point', coordinates: [1, 2] } });
+  const store = fakeIdb(), t = tab(store);
+  const [id] = await t.imp.openFiles([file('sites.geojson', gj)]);
+  const rec = t.imp.record(id);
+  const nameIn = () => store.stores.get('geo').get(id).features[0].properties.name;
+  assert.equal(nameIn(), 'A');
+
+  await t.imp.setValue(rec, rec.fc.features[0], 'name', 'B');
+  assert.equal(nameIn(), 'A', 'kept 500 ms after the last change: not written yet');
+  t.fire('pagehide'); // the tab (or the app) closing
+  await tick(20);
+  assert.equal(nameIn(), 'B', 'written now');
+  assert.equal(rec.saveTimer, null, 'and nothing is left waiting');
+
+  // the app sent to the background: the same (a phone may never come back to it)
+  await t.imp.setValue(rec, rec.fc.features[0], 'name', 'C');
+  t.doc.visibilityState = 'hidden';
+  t.fire('visibilitychange');
+  await tick(20);
+  assert.equal(nameIn(), 'C');
+
+  // a write that fails leaves the features dirty, to be written again, and says so in the panel
+  await t.imp.setValue(rec, rec.fc.features[0], 'name', 'D');
+  store.abort = true;
+  t.fire('pagehide');
+  await tick(20);
+  assert.equal(rec.fcDirty, true, 'still owed');
+  assert.ok(t.imp.notes.some(n => /a change could not be kept/.test(n.text)), t.imp.notes.map(n => n.text).join(' | '));
+  assert.ok(t.events.includes('data'), 'the panel is drawn anew, so the note shows');
+  store.abort = false;
+  t.fire('pagehide');
+  await tick(20);
+  assert.equal(nameIn(), 'D', 'and written when the store takes it again');
+  assert.equal(rec.fcDirty, false);
+});
+
 test('a panel redraw waits for a press to end: its release, a context menu, the window losing focus, or 2 s', async () => {
-  // a fresh copy, its own press state, with a stand-in page
+  // a fresh copy, its own press state, with a stand-in page (util.js keeps it: Properties uses it for the project's
+  // own fields, the imported layers' panel for theirs)
   const MB2 = { escapeHtml: s => String(s) };
   const ctx = { window: { MB: MB2 }, TextDecoder, Blob, DecompressionStream, console, Date, Math, setTimeout, clearTimeout };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/fileimports.js'), 'utf8'), ctx, { filename: 'fileimports.js' });
-  const P = MB2.imports.press, doc = new EventTarget(), win = new EventTarget();
-  P.hookPress(doc, win);
+  for (const f of ['js/util.js', 'js/fileimports.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+  const P = { whenReleased: MB2.whenReleased, state: MB2.press.state }, doc = new EventTarget(), win = new EventTarget();
+  MB2.press.hook(doc, win);
   P.state.giveUp = 60; // (2 s in the app)
   const fire = (t, init) => { const e = new Event(t); Object.assign(e, init || {}); (t === 'blur' ? win : doc).dispatchEvent(e); };
   const tick = ms => new Promise(r => setTimeout(r, ms || 0));

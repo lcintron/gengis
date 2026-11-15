@@ -1,5 +1,8 @@
 # dependencies and build output
+# (no lock file is committed: the workflows install without one, and the one electron-builder's install step writes
+#  here must not make the working tree dirty for scripts/release.js)
 node_modules/
+package-lock.json
 dist/
 out/
 

@@ -45,6 +45,9 @@ window.MB = window.MB || {};
   // "constructor" or "toString": a feature without it would otherwise show the function behind it).
   const own = (p, k) => (p && Object.hasOwn(p, k) ? p[k] : undefined);
   const put = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true }); // (its own field, whatever its name: "__proto__" too)
+  // A copy of a feature's attributes: every field its own (Object.assign would drop one named "__proto__", or set the
+  // copy's prototype with it).
+  const copyOwn = o => Object.fromEntries(Object.entries(o || {}));
   // A field name that cannot be used, and why (attrtable.js: the one reading; this below only where it is not loaded)
   const badKey = k => (MB.attrs ? MB.attrs.badKey(k) : !k ? 'Give the field a name' : k.length > 64 ? 'A field name is at most 64 characters'
     : k in Object.prototype ? 'That name is reserved: choose another' : '');
@@ -83,9 +86,14 @@ window.MB = window.MB || {};
     }
     return a;
   }
+  const MAX_DEPTH = 1000; // elements inside one another (KML nests a few dozen deep; the readers below walk a tree by recursion)
   function parseXml(s) {
     const root = { name: '#document', attrs: {}, kids: [], text: '' };
     const stack = [root], n = s.length;
+    // How many of each name are open: a closing tag that matches none is skipped at once, without a walk down the
+    // stack (40,000 stray closing tags over a deep stack used to take seconds).
+    const open = new Map();
+    const count = (name, d) => { const c = (open.get(name) || 0) + d; if (c > 0) open.set(name, c); else open.delete(name); };
     const bad = () => new Error('it is not well-formed XML');
     let i = s.charCodeAt(0) === 0xfeff ? 1 : 0;
     while (i < n) {
@@ -108,7 +116,11 @@ window.MB = window.MB || {};
       i = e + 1;
       if (body[0] === '/') {
         const name = localName(body.slice(1).trim());
-        for (let k = stack.length - 1; k > 0; k--) if (stack[k].name === name) { stack.length = k; break; }
+        if (!open.has(name)) continue; // (a stray closing tag: nothing of that name is open)
+        let k = stack.length - 1;
+        while (stack[k].name !== name) k--;
+        for (let j = stack.length - 1; j >= k; j--) count(stack[j].name, -1); // (each element closed once: linear over the file)
+        stack.length = k;
         continue;
       }
       const m = /^[^\s/>]+/.exec(body);
@@ -116,7 +128,11 @@ window.MB = window.MB || {};
       const selfClose = body.charCodeAt(body.length - 1) === 47;
       const node = { name: localName(m[0]), attrs: attrsOf(body.slice(m[0].length, selfClose ? body.length - 1 : body.length)), kids: [], text: '' };
       top.kids.push(node);
-      if (!selfClose) stack.push(node);
+      if (!selfClose) {
+        if (stack.length > MAX_DEPTH) throw new Error('it is nested too deeply (more than ' + MAX_DEPTH + ' elements inside one another)');
+        stack.push(node);
+        count(node.name, 1);
+      }
     }
     return root;
   }
@@ -127,17 +143,9 @@ window.MB = window.MB || {};
   function findDeep(n, name) { if (n.name === name) return n; for (const k of n.kids) { const f = findDeep(k, name); if (f) return f; } return null; }
 
   // A description with no formatting, as text (its entities read). One with formatting is kept as the file has it:
-  // popups show it made safe (MB.safeHtml), labels and titles as text (MB.htmlText).
-  function htmlText(s) {
-    if (!s) return '';
-    if (MB.htmlText) return MB.htmlText(s); // (util.js: the one reading; this below only where it is not loaded)
-    if (!/[<&]/.test(s)) return s.trim();
-    // (in markup with line break tags, the file's own line breaks are spaces, as a browser shows them: a <br> then a
-    // new line is one break; text with none, entities or a bold word only, keeps its lines)
-    if (/<br\b|<\/(p|div|tr|li|h\d)\s*>/i.test(s)) s = s.replace(/\s+/g, ' ');
-    return decode(s.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<br\b[^<>]*>|<\/(p|div|tr|li|h\d)\s*>/gi, '\n').replace(/<[^<>]*>/g, '').replace(/&nbsp;/gi, ' ')) // (each tag read to the next '<' or '>': linear on any input)
-      .split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
-  }
+  // popups show it made safe (MB.safeHtml), labels and titles as text (MB.htmlText, util.js, always loaded with this;
+  // without it the text is left as the file has it, rather than read a second way here).
+  const htmlText = s => (!s ? '' : MB.htmlText ? MB.htmlText(s) : String(s).trim());
 
   /* ---------- geometry, as the layers keep it ----------
    * Simple parts (Point, LineString, Polygon) in longitude/latitude, rounded to ~1 cm; parts of one kind are put
@@ -187,7 +195,7 @@ window.MB = window.MB || {};
   // Features for one record: its parts combined, each with the attributes (copies past the first) and its style.
   function featuresFor(parts, props, style, out) {
     combine(parts).forEach((geometry, i) => {
-      const f = { type: 'Feature', properties: i ? Object.assign({}, props) : props, geometry };
+      const f = { type: 'Feature', properties: i ? copyOwn(props) : props, geometry };
       if (style && Object.keys(style).length) f.mbStyle = style;
       out.push(f);
     });
@@ -499,7 +507,12 @@ window.MB = window.MB || {};
   function readDbf(buf, cpg) {
     const u8 = bytes(buf), dv = view(u8);
     if (u8.length < 33) throw new Error('its .dbf is not a dBASE file');
-    const count = dv.getUint32(4, true), hl = dv.getUint16(8, true), rl = dv.getUint16(10, true);
+    const hl = dv.getUint16(8, true), rl = dv.getUint16(10, true);
+    // A header or a record length the file cannot have: refused, rather than read as 4 billion empty records (with a
+    // record length of 0 every record starts where the last one did, and the end of the file is never reached).
+    if (!rl) throw new Error('its .dbf is damaged (its records have no length)');
+    if (hl < 33 || hl > u8.length) throw new Error('its .dbf is damaged (its header does not fit the file)');
+    const count = Math.min(dv.getUint32(4, true), Math.floor((u8.length - hl) / rl)); // (no more records than the file holds)
     const fields = [];
     for (let p = 32; p + 32 <= hl && u8[p] !== 0x0d; p += 32) {
       let name = '';
@@ -932,7 +945,7 @@ window.MB = window.MB || {};
   // The layer as GeoJSON: its attributes, with its look as simplestyle properties (what other tools read).
   function toGeoJson(rec) {
     return { type: 'FeatureCollection', features: rec.fc.features.map(f => {
-      const p = paint(rec, f), st = p.style, props = Object.assign({}, f.properties);
+      const p = paint(rec, f), st = p.style, props = copyOwn(f.properties);
       if (p.kind === 'point') props['marker-color'] = st.fillColor;
       else {
         Object.assign(props, { stroke: st.color, 'stroke-width': st.weight, 'stroke-opacity': st.opacity });
@@ -944,42 +957,30 @@ window.MB = window.MB || {};
 
   const layers = new Map(); // id -> { meta, fc (when loaded), group (when drawn), ds (identify's view of it), styles }
 
-  // Whether a pointer is pressed anywhere: something that redraws a panel waits for its release (and the click
-  // that follows it) with whenReleased(fn). Listened to once, for the page. Only the main button's press counts (a
-  // right-click's menu may swallow its release); the window losing focus, or a context menu, ends a press too, and
-  // a release that never comes is given up on after 2 s, so nothing waits for good.
-  const press = { down: false, waiting: [], hooked: false, timer: null, giveUp: 2000 }; // (giveUp: ms; the tests shorten it)
-  function release() {
-    press.down = false;
-    clearTimeout(press.timer);
-    const w = press.waiting.splice(0);
-    if (w.length) setTimeout(() => w.forEach(fn => fn())); // (after the click)
-  }
-  function hookPress(doc, win) {
-    doc = doc || (typeof document !== 'undefined' ? document : null);
+  // A panel drawn anew waits for a pointer press to end (util.js: MB.whenReleased), so a click is never lost.
+  const whenReleased = fn => MB.whenReleased(fn);
+
+  // The page being hidden or closed writes what the layers owe now: their changes are kept 500 ms after the last one
+  // (saveSoon), and a tab or an app closed in between would lose the last edit. The project is saved the same way
+  // (js/app.js).
+  const saves = { hooked: false };
+  function hookSaves(win, doc) {
     win = win || (typeof window !== 'undefined' ? window : null);
-    if (press.hooked || !doc) return;
-    press.hooked = true;
-    doc.addEventListener('pointerdown', e => {
-      if (e.button > 0 || e.isPrimary === false) return;
-      press.down = true;
-      clearTimeout(press.timer);
-      press.timer = setTimeout(release, press.giveUp);
-    }, true);
-    const end = e => { if (e.isPrimary !== false) release(); }; // (a second finger lifting is not the press ending)
-    ['pointerup', 'pointercancel'].forEach(t => doc.addEventListener(t, end, true));
-    doc.addEventListener('contextmenu', release, true);
-    if (win && typeof win.addEventListener === 'function') win.addEventListener('blur', release);
+    doc = doc || (typeof document !== 'undefined' ? document : null);
+    if (saves.hooked || !win) return;
+    saves.hooked = true;
+    win.addEventListener('pagehide', () => MB.imports.flushSaves());
+    if (doc && doc.addEventListener) doc.addEventListener('visibilitychange', () => { if (doc.visibilityState === 'hidden') MB.imports.flushSaves(); });
   }
-  const whenReleased = fn => { if (press.down) press.waiting.push(fn); else setTimeout(fn); };
 
   MB.imports = {
     job: null,     // what is being read: { name }
     notes: [],     // what the files opened came to: [{ text, warn }]
-    press: { hookPress, whenReleased, state: press }, // (the tests)
+    saves: { hook: hookSaves, state: saves }, // (the tests)
     read: { parseXml, kml: readKml, geoJson: readGeoJson, shapefile: readShapefile, shp: readShp, dbf: readDbf, projection, zip: readZip, files: readFiles, styleFor, toKml, toGeoJson, paint },
 
     async init() {
+      hookSaves();
       let metas = [];
       try { metas = await DB.all('meta'); } catch (e) { console.warn('File imports', e); }
       metas.sort((a, b) => (a.added || 0) - (b.added || 0)).forEach(meta => layers.set(meta.id, { meta }));
@@ -1178,14 +1179,30 @@ window.MB = window.MB || {};
       const box = document.getElementById('propsBody'), inside = box && box.contains(document.activeElement);
       if (!quiet && !inside && MB.ui && MB.ui.renderProps && !MB.selected) MB.ui.renderProps();
     },
+    // The layer's settings and features kept, 500 ms after the last change (an edited value, a field, its look).
     saveSoon(rec) {
       clearTimeout(rec.saveTimer);
-      rec.saveTimer = setTimeout(() => {
-        if (layers.get(rec.meta.id) !== rec) return;
-        DB.set('meta', rec.meta.id, rec.meta).catch(e => console.warn('File imports', e));
-        if (rec.fcDirty && rec.fc) { rec.fcDirty = false; DB.set('geo', rec.meta.id, rec.fc).catch(e => this.note(rec.meta.name + ': a change could not be kept (' + (e.message || e) + ').', true)); }
-      }, 500);
+      rec.saveTimer = setTimeout(() => this.saveNow(rec), 500);
     },
+    // What one layer owes, written now. The features are marked clean before the write, so a change made while it is
+    // in flight is written again; a write that fails marks them dirty once more (the next change, or the page being
+    // hidden, tries again) and says so in the panel.
+    saveNow(rec) {
+      clearTimeout(rec.saveTimer);
+      rec.saveTimer = null;
+      if (layers.get(rec.meta.id) !== rec) return;
+      DB.set('meta', rec.meta.id, rec.meta).catch(e => console.warn('File imports', e));
+      if (rec.fcDirty && rec.fc) {
+        rec.fcDirty = false;
+        DB.set('geo', rec.meta.id, rec.fc).catch(e => {
+          rec.fcDirty = true;
+          this.note(rec.meta.name + ': a change could not be kept (' + (e.message || e) + ').', true);
+          this.changed();
+        });
+      }
+    },
+    // Every layer with a change waiting, or one a write failed for (the page is being hidden or closed).
+    flushSaves() { layers.forEach(rec => { if (rec.saveTimer || rec.fcDirty) this.saveNow(rec); }); },
 
     /* ---------- editing the attributes ---------- */
     // A feature's value (null: none), kept; its look follows when the field is one the symbols, labels or title use.
@@ -1296,7 +1313,6 @@ window.MB = window.MB || {};
       // An edit is kept, its box showing the value as kept (" 12 " is 12); Properties is drawn again (its heading
       // may be the title just edited) once focus leaves it, not on the way from one box to the next.
       let dirty = false, saving = Promise.resolve();
-      hookPress();
       panel.querySelectorAll('input[data-iattr]').forEach(inp => inp.addEventListener('change', () => {
         const f = picked.layer.feature, k = inp.dataset.iattr;
         const v = MB.attrs ? MB.attrs.typed(inp.value, own(f.properties, k)) : inp.value;
