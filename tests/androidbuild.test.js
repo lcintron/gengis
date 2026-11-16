@@ -205,6 +205,79 @@ test('the Android project is not published with the site', () => {
   }
 });
 
+// The jobs of a workflow as text, keyed by name (a job starts at two spaces of indent under jobs:)
+function workflowJobs(file) {
+  const yml = fs.readFileSync(path.join(ROOT, file), 'utf8');
+  const body = yml.slice(yml.indexOf('\njobs:') + 1);
+  const jobs = {};
+  let name = null;
+  for (const line of body.split('\n')) {
+    const start = /^ {2}([\w-]+):\s*$/.exec(line);
+    if (start) { name = start[1]; jobs[name] = ''; } else if (name) jobs[name] += line + '\n';
+  }
+  return jobs;
+}
+
+test('the release builds the Android app from the tag, the same way the Android workflow does', () => {
+  const android = workflowJobs('.github/workflows/release.yml').android;
+  assert.ok(android, 'release.yml has an android job');
+  assert.match(android, /needs: version/);
+  assert.match(android, /if: needs\.version\.outputs\.released == 'true'/);
+  assert.match(android, /ref: \$\{\{ needs\.version\.outputs\.tag \}\}/, 'built from the release tag, like the installers');
+  // the steps that make the APK are android.yml's
+  const onDemand = workflowJobs('.github/workflows/android.yml').build;
+  for (const step of ['node scripts/build-web.js', 'npx cap add android', 'npx cap sync android', 'node scripts/android-prepare.js',
+    './gradlew --no-daemon assembleDebug', './gradlew --no-daemon bundleRelease assembleRelease']) {
+    assert.ok(onDemand.includes(step), 'android.yml runs ' + step);
+    assert.ok(android.includes(step), 'release.yml runs ' + step);
+  }
+  assert.match(android, /SIGNED: \$\{\{ secrets\.ANDROID_KEYSTORE_BASE64 != '' \}\}/);
+  assert.match(android, /if: env\.SIGNED == 'true'/, 'the release build only when the upload key is set');
+  assert.match(android, /permissions:\n {6}contents: read/, 'it only builds: the Release is published by the publish job');
+  assert.match(android, /trap 'rm -f "\$RUNNER_TEMP\/upload\.jks"' EXIT/, 'the keystore is removed again');
+});
+
+test('the release names the Android assets after the version, the signed APK in place of the debug one', () => {
+  const collect = /\n      - name: Collect artifacts\n([\s\S]*?)\n      - uses:/.exec(workflowJobs('.github/workflows/release.yml').android);
+  assert.ok(collect, 'the android job collects its artifacts');
+  const step = collect[1];
+  assert.match(step, /VERSION: \$\{\{ needs\.version\.outputs\.version \}\}/, 'the version reaches the shell as an env var');
+  assert.ok(!/\$\{\{/.test(step.split('run: |')[1]), 'nothing is interpolated into the script itself');
+  assert.match(step, /out\/GenGIS-\$VERSION-android\.apk/);
+  assert.match(step, /out\/GenGIS-\$VERSION-android\.aab/);
+  assert.match(step, /out\/GenGIS-\$VERSION-android-debug\.apk/);
+  // the debug APK is the else branch: a signed build ships the release APK instead
+  assert.match(step, /if \[ -f android\/app\/build\/outputs\/apk\/release\/app-release\.apk \][\s\S]*?else\s+cp android\/app\/build\/outputs\/apk\/debug\/app-debug\.apk "out\/GenGIS-\$VERSION-android-debug\.apk"/);
+});
+
+test('a failed Android build does not hold back the Release, and nothing is published without a release', () => {
+  const jobs = workflowJobs('.github/workflows/release.yml');
+  assert.match(jobs.publish, /needs: \[version, build, android\]/);
+  // the note about the Android download: only when a debug APK was really attached, and named after that file
+  const note = /\n      - name: Android release note\n([\s\S]*?)\n      - uses:/.exec(jobs.publish);
+  assert.ok(note, 'the step that writes the note');
+  assert.match(note[1], /id: apknote/);
+  assert.match(note[1], /ls installers\/GenGIS-\*-android-debug\.apk/, 'it looks at what was downloaded');
+  assert.match(note[1], /basename "\$apk"/, 'the name in the note is the attached file\'s own');
+  assert.ok(jobs.publish.indexOf('path: installers') < jobs.publish.indexOf('- name: Android release note'),
+    'it runs after the download, so the glob sees the files');
+  // the heredoc is opened outside the if: a body is always written, so a re-run overwrites it rather than
+  // letting the generated notes be appended to the body the last run left behind
+  assert.match(note[1], /echo 'body<<APKNOTE_EOF'\n {12}if \[ -n "\$apk" \]; then/);
+  assert.match(note[1], /\n {12}else\n {14}echo '<!-- release notes -->'\n {12}fi/, 'an invisible placeholder when there is no note');
+  assert.match(note[1], /\*\*Android:\*\*[\s\S]*?\n {12}else/, 'the note itself only in the debug-APK branch');
+  assert.ok(!/\*\*Android:\*\*/.test(jobs.publish.replace(note[1], '')), 'the note lives in that step, not in the release body');
+  assert.match(jobs.publish, /generate_release_notes: true\n {10}body: \$\{\{ steps\.apknote\.outputs\.body \}\}/);
+  assert.ok(!/append_body/.test(jobs.publish), 'no append_body: a re-run would add the note a second time');
+  // !cancelled() rather than always(): an android failure still publishes, a cancelled run does not
+  assert.match(jobs.publish, /if: \$\{\{ !cancelled\(\) && needs\.version\.outputs\.released == 'true' && needs\.build\.result == 'success' \}\}/);
+  assert.ok(!/always\(\)/.test(jobs.publish), 'a cancelled run must not publish a Release');
+  // deploy-pages asks publish's own result: without that, a failed android skips the deploy through publish
+  assert.match(jobs['deploy-pages'], /needs: \[version, publish\]/);
+  assert.match(jobs['deploy-pages'], /if: \$\{\{ !cancelled\(\) && needs\.publish\.result == 'success' \}\}/);
+  assert.ok(!/always\(\)/.test(jobs['deploy-pages']), 'a cancelled run must not deploy the site');
+});
+
 test('arguments for cmd.exe are quoted when they need it', () => {
   assert.equal(cmdQuote('assembleDebug'), 'assembleDebug');
   assert.equal(cmdQuote('C:\\Program Files\\x\\gradlew.bat'), '"C:\\Program Files\\x\\gradlew.bat"');

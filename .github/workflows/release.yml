@@ -7,8 +7,11 @@ name: Release
 #      With "auto" and only chore/docs/ci commits since the last tag there is nothing to release and the
 #      run stops here.
 #   2. "build": build the Windows, macOS and Linux installers from that tag.
-#   3. "publish": create the GitHub Release with the installers and generated notes.
-#   4. "deploy-pages": publish GitHub Pages from the release tag.
+#   3. "android": build the Android APK from the same tag: a signed APK and Play bundle (.aab) when the
+#      ANDROID_* signing secrets are set, otherwise a debug APK (installable for testing). Best-effort:
+#      a failed Android build does not hold back the installers or the Release.
+#   4. "publish": create the GitHub Release with the installers, the Android APK and generated notes.
+#   5. "deploy-pages": publish GitHub Pages from the release tag.
 # Tick "Dry run" to see the version a run would release without changing anything.
 on:
   workflow_dispatch:
@@ -96,7 +99,7 @@ jobs:
           DRY: ${{ inputs.dry_run }}
         run: |
           if [ "$RELEASED" = "true" ]; then
-            echo "Released **$TAG**. The installers, the GitHub Release and the site deploy follow in this run." >> "$GITHUB_STEP_SUMMARY"
+            echo "Released **$TAG**. The installers, the Android APK, the GitHub Release and the site deploy follow in this run." >> "$GITHUB_STEP_SUMMARY"
           elif [ "$DRY" = "true" ] && [ -n "$TAG" ]; then
             echo "Dry run: this would release **$TAG**. Nothing was changed." >> "$GITHUB_STEP_SUMMARY"
           elif [ -n "$VERSION" ]; then
@@ -151,26 +154,118 @@ jobs:
           path: out/*
           if-no-files-found: error
 
+  android:
+    name: Android APK
+    needs: version
+    if: needs.version.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read   # it only builds; the Release is published by the publish job
+    env:
+      SIGNED: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}   # the upload key is set: signed release builds too
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false   # no lock file to key a cache on
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Android project
+        run: |
+          node scripts/build-web.js
+          npx cap add android
+          npx cap sync android
+          node scripts/android-prepare.js
+      - name: Debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Release AAB and APK (signed)
+        if: env.SIGNED == 'true'
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GENGIS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          GENGIS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          GENGIS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: android
+        run: |
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          trap 'rm -f "$RUNNER_TEMP/upload.jks"' EXIT   # gone whether the build succeeds or not
+          export GENGIS_KEYSTORE="$RUNNER_TEMP/upload.jks"
+          ./gradlew --no-daemon bundleRelease assembleRelease
+      - name: Collect artifacts
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          # Named like the desktop installers (GenGIS-<version>-...). Signed builds ship the release APK and
+          # the Play bundle; without the signing secrets only the debug APK exists, installable for testing.
+          mkdir -p out
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "out/GenGIS-$VERSION-android.apk"
+            if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then
+              cp android/app/build/outputs/bundle/release/app-release.aab "out/GenGIS-$VERSION-android.aab"
+            fi
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk "out/GenGIS-$VERSION-android-debug.apk"
+          fi
+          ls -la out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android
+          path: out/*
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub Release
-    needs: [version, build]
+    needs: [version, build, android]
+    # !cancelled(): the Android APK is best-effort, so a failed android job must not hold back the Release, but
+    # cancelling the run stops it. Skipped when nothing was released or the installers failed.
+    if: ${{ !cancelled() && needs.version.outputs.released == 'true' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
         with:
           path: installers
           merge-multiple: true
+      - name: Android release note
+        id: apknote
+        # Always emit a body (an invisible placeholder when there is no Android note) so a re-run of publish
+        # overwrites the release body instead of appending the generated notes again: action-gh-release falls
+        # back to the existing body when the workflow body is empty. The note itself is only for a debug APK,
+        # which a signed build does not attach and a failed android job leaves out altogether.
+        run: |
+          apk=$(ls installers/GenGIS-*-android-debug.apk 2>/dev/null | head -n1 || true)
+          {
+            echo 'body<<APKNOTE_EOF'
+            if [ -n "$apk" ]; then
+              echo "**Android:** \`$(basename "$apk")\` is a debug build, for testing and fresh installs: it will not install over a previous GenGIS APK (uninstall that one first). A signed release APK will replace it once app signing is set up."
+            else
+              echo '<!-- release notes -->'
+            fi
+            echo APKNOTE_EOF
+          } >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: GenGIS ${{ needs.version.outputs.tag }}
           generate_release_notes: true
+          body: ${{ steps.apknote.outputs.body }}   # the Android note, or the placeholder, above the generated notes
           prerelease: ${{ contains(needs.version.outputs.tag, '-') }}
           files: installers/*
 
   deploy-pages:
     name: Deploy site from ${{ needs.version.outputs.tag }}
     needs: [version, publish]
+    # Gated on publish itself: a skipped publish skips the deploy, but a failed android job (which only
+    # reaches here as publish being "skipped" without this) must not keep a real release off the site.
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
