@@ -156,6 +156,18 @@ test('the Scale box has a rotation knob: one drag, one undo step, Esc puts it ba
   assert.match(scale, /if \(this\.tip\) this\.tip\.style\.display = 'none';/);
 });
 
+test('a second pointer on a handle or the knob is ignored while a drag is live', () => {
+  const scale = read('js/scaletool.js');
+  // listen() replaces this._move/_up/_key and saves the map handlers it turned off: a second start would leak the
+  // first set on window for good and lose the saved handlers (the map would never pan again)
+  for (const fn of ['start(e, h)', 'startRotate(e)']) {
+    const body = scale.match(new RegExp(fn.replace(/[(),]/g, '\\$&') + ' \\{[\\s\\S]*?\\n    \\},'))[0];
+    assert.match(body, new RegExp('^' + fn.replace(/[(),]/g, '\\$&') + ' \\{\\n      if \\(this\\.drag\\) return;'),
+      fn + ' returns before any state is touched or listen() is called');
+    assert.ok(body.indexOf('if (this.drag) return;') < body.indexOf('this.listen(e)'), 'and before the listeners go on');
+  }
+});
+
 test('Properties has an angle field for a text, an image and a rectangle', () => {
   const ui = read('js/ui.js');
   assert.match(ui, /function rotationRow\(get, title, set\) \{/);

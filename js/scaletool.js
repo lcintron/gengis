@@ -203,6 +203,7 @@ window.MB = window.MB || {};
 
     // A handle grabbed: what the selection is now (on screen), so every step scales from there.
     start(e, h) {
+      if (this.drag) return; // a second finger on another handle: the drag under way keeps its listeners and the map's
       const targets = this.targets;
       if (!targets.length || e.button !== 0 || this.frame) return;
       if (targets.some(l => MB.isFeatureLocked(l))) { MB.toast(targets.length > 1 ? 'The layer is locked' : 'Object is locked'); return; }
@@ -218,6 +219,7 @@ window.MB = window.MB || {};
 
     // The knob grabbed: the selection turns about the middle of its box, from the angle the pointer is at now.
     startRotate(e) {
+      if (this.drag) return; // likewise: the knob grabbed mid-drag changes nothing
       const targets = this.targets;
       if (!targets.length || e.button !== 0 || this.frame) return;
       if (targets.some(l => MB.isFeatureLocked(l))) { MB.toast(targets.length > 1 ? 'The layer is locked' : 'Object is locked'); return; }
