@@ -1,7 +1,8 @@
 /* GenGIS - preset shapes (the toolbar's Shapes button)
  * - the button opens a palette beside the toolbar: rectangle, triangle, pentagon, hexagon, octagon, star, lightning;
  *   the shape chosen stays on the button, and R draws it again
- * - the rectangle is the drawing tool's own (two clicks); the others are drawn by dragging a box on the map (Shift
+ * - the rectangle is the drawing tool's own (corner to corner, from its center, or three points: MB.rectDraw at the
+ *   foot of this file); the others are drawn by dragging a box on the map (Shift
  *   keeps the shape's own proportions) or by a click (a default size), and saved as a polygon named after the shape,
  *   edited, measured and styled like any other
  */
@@ -53,6 +54,8 @@ window.MB = window.MB || {};
     btn: null, palette: null, preview: null, down: null,
 
     init() {
+      MB.rectDraw.patch(); // the rectangle tool's three modes, before anything is drawn
+      MB.rectDraw.apply();
       const btn = this.btn = document.getElementById('shapeBtn');
       if (!btn) return;
       const pal = this.palette = document.createElement('div');
@@ -202,6 +205,148 @@ window.MB = window.MB || {};
       MB.commit('draw ' + p.name.toLowerCase());
       MB.noteAdded(f);
       if (!MB.state.continueDrawing) { MB.tools.set('select'); MB.selectFeature(f); }
+    }
+  };
+
+  /* ----- the rectangle tool's three modes -----
+   * Corner (two opposite corners, as it always was), Center (the center, then a corner) and Three-point (two clicks
+   * for one side, a third for the depth: a rectangle at any angle). The mode is remembered on this device and
+   * chosen in the tool hint; Geoman draws the rectangle either way, with its preview, snapping and readout.
+   */
+  const RECT_MODES = [
+    {
+      id: 'corner', name: 'Corner', title: 'Corner to corner',
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="4" cy="6" r="2.4" fill="currentColor"/><circle cx="20" cy="18" r="2.4" fill="currentColor"/></svg>'
+    },
+    {
+      id: 'center', name: 'Center', title: 'Center, then a corner',
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="20" cy="18" r="2.4" fill="currentColor"/></svg>'
+    },
+    {
+      id: 'three', name: 'Angled', title: 'Two points for one side, then the depth',
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12L7.3 17L16.3 11L13 6Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="4" cy="12" r="2.4" fill="currentColor"/><circle cx="13" cy="6" r="2.4" fill="currentColor"/></svg>'
+    }
+  ];
+  const MIN_RECT_PX = 2; // less across than this: nothing is drawn (a stray click, not a rectangle)
+
+  MB.rectDraw = {
+    modes: RECT_MODES,
+    el: null,
+    pending: null, // the corners a three-point rectangle is to get (read in tools.js when it is created)
+
+    get mode() {
+      const m = MB.settings && MB.settings.rectMode;
+      return RECT_MODES.some(x => x.id === m) ? m : 'corner';
+    },
+
+    setMode(m) {
+      if (!RECT_MODES.some(x => x.id === m) || m === this.mode) return;
+      MB.settings.rectMode = m;
+      MB.saveSettings();
+      this.apply();
+      if (MB.tools.current === 'rectangle') { MB.map.pm.disableDraw(); MB.tools.startDraw('rectangle'); } // a half-drawn one goes
+      MB.emit('tool', 'rectangle'); // the hint's instructions and the buttons
+    },
+
+    // The center mode's first point is a center, not a corner: Geoman's start marker shows an X there (css/app.css).
+    apply() {
+      if (MB.map) MB.map.getContainer().classList.toggle('mb-rect-center', this.mode === 'center');
+    },
+
+    // The buttons, where the tool's instructions go (one node, kept and re-used: ui.js appends it each render).
+    controls() {
+      if (!this.el) {
+        const el = this.el = document.createElement('div');
+        el.className = 'seg small rect-modes';
+        el.setAttribute('role', 'radiogroup');
+        el.setAttribute('aria-label', 'Rectangle mode');
+        el.innerHTML = RECT_MODES.map(m => `<button type="button" role="radio" data-rect-mode="${m.id}" title="${m.title}" aria-checked="false">${m.icon}<span>${m.name}</span></button>`).join('');
+        el.addEventListener('click', e => { const b = e.target.closest('[data-rect-mode]'); if (b) this.setMode(b.dataset.rectMode); });
+        el.addEventListener('keydown', e => { if (e.key !== 'Escape' && e.key !== 'Tab') e.stopPropagation(); }); // the app's letter shortcuts stay out
+        MB.ui.radios(el);
+      }
+      const cur = this.mode;
+      this.el.querySelectorAll('[data-rect-mode]').forEach(b => {
+        const on = b.dataset.rectMode === cur;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-checked', on);
+        b.tabIndex = on ? 0 : -1;
+      });
+      return this.el;
+    },
+
+    /* Geoman's rectangle draws from two opposite corners. The other two modes work out the corners themselves (in
+     * the map's own projection, so the rectangle is square on the map), then hand Geoman the diagonal of what they
+     * made: it creates, styles and fires the rectangle as it always does. */
+    patch() {
+      const P = L.PM && L.PM.Draw && L.PM.Draw.Rectangle && L.PM.Draw.Rectangle.prototype;
+      if (!P || P._mbRectModes || !P.enable || !P._syncRectangleSize || !P._finishShape) return;
+      P._mbRectModes = true;
+      const self = this;
+      // the map's projection at this zoom, and back: unrounded, so a corner does not land on the pixel grid
+      const px = ll => MB.map.project(ll, MB.map.getZoom());
+      const latlng = p => MB.map.unproject(L.point(p.x, p.y), MB.map.getZoom());
+      const enable = P.enable, sync = P._syncRectangleSize, finish = P._finishShape;
+      // Geoman's two corner markers: on the corners the pointer is not on
+      const styleAt = (draw, pts) => {
+        if (!draw.options.cursorMarker || !draw._styleMarkers) return;
+        pts.forEach((p, i) => { try { draw._styleMarkers[i].setLatLng(p); } catch (e) { /* ignore */ } });
+      };
+
+      P.enable = function (...a) {
+        delete this._mbBase; // a side left half drawn by the last turn of the tool
+        return enable.apply(this, a);
+      };
+
+      // The preview under the pointer.
+      P._syncRectangleSize = function () {
+        const mode = self.mode;
+        if (mode === 'corner' || this._mbFinishing) return sync.call(this);
+        const start = px(this._startMarker.getLatLng()), hint = px(this._hintMarker.getLatLng());
+        if (mode === 'center') {
+          const ring = MB.rectFromCenter(start, hint).map(latlng);
+          this._layer.setLatLngs(ring);
+          styleAt(this, [ring[1], ring[3]]);
+          return;
+        }
+        if (!this._mbBase) { this._layer.setLatLngs([this._startMarker.getLatLng(), this._hintMarker.getLatLng()]); return; } // the side being drawn
+        const ring = MB.rectFrom3(start, px(this._mbBase), hint);
+        if (!ring) return;
+        const corners = ring.map(latlng);
+        this._layer.setLatLngs(corners);
+        styleAt(this, [this._mbBase, corners[1]]);
+      };
+
+      // A click: the depth of a three-point rectangle, or the finished shape.
+      P._finishShape = function (e) {
+        const mode = self.mode;
+        if (mode === 'corner') return finish.call(this, e);
+        if (e && e.latlng && !this._hintMarker._snapped) this._hintMarker.setLatLng(e.latlng); // (as Geoman's own does)
+        const startLL = this._startMarker.getLatLng(), hintLL = this._hintMarker.getLatLng();
+        const start = px(startLL), hint = px(hintLL);
+        if (mode === 'three' && !this._mbBase) { // the second click ends the side; the rectangle takes a third
+          if (Math.abs(hint.x - start.x) < MIN_RECT_PX && Math.abs(hint.y - start.y) < MIN_RECT_PX) return;
+          this._mbBase = L.latLng(hintLL.lat, hintLL.lng);
+          this._syncRectangleSize();
+          return;
+        }
+        const ring = mode === 'center' ? MB.rectFromCenter(start, hint) : MB.rectFrom3(start, px(this._mbBase), hint);
+        if (!ring) return;
+        const side = p => Math.sqrt((p[1].x - p[0].x) ** 2 + (p[1].y - p[0].y) ** 2);
+        if (side([ring[0], ring[1]]) < MIN_RECT_PX || side([ring[0], ring[3]]) < MIN_RECT_PX) return; // too small to be meant
+        const corners = ring.map(latlng);
+        if (mode === 'three') self.pending = corners; // turned: tools.js gives the new rectangle these corners
+        this._mbFinishing = true;
+        try {
+          this._startMarker.setLatLng(corners[0]);
+          this._hintMarker.setLatLng(corners[2]); // the diagonal Geoman builds from
+          finish.call(this);
+        } finally {
+          delete this._mbFinishing;
+          delete this._mbBase;
+          self.pending = null;
+        }
+      };
     }
   };
 })(window.MB);

@@ -1024,7 +1024,19 @@ window.MB = window.MB || {};
       case 'line': case 'measure-line': layer = L.polyline(fromArr(d.latlngs), st); break;
       case 'ink': layer = L.polyline(fromArr(d.latlngs), Object.assign(st, { fill: false, className: 'mb-ink mb-ink-' + ((d.style && d.style.ink) || 'pen') })); break; // (ink.js)
       case 'polygon': case 'measure-area': layer = L.polygon(fromArr(d.latlngs), st); break;
-      case 'rectangle': layer = L.rectangle(L.latLngBounds(flattenLatLngs(fromArr(d.latlngs))), st); break;
+      case 'rectangle': {
+        // A turned rectangle (the drawing tool's three-point mode) is kept corner by corner: its bounding box would
+        // straighten it on every undo, reload, duplicate or import. An upright one takes the box, as it always has.
+        const ring = flattenLatLngs(fromArr(d.latlngs));
+        if (ring.length > 1 && ring[0].equals(ring[ring.length - 1])) ring.pop(); // an imported ring comes closed
+        const turned = MB.isRectRing(ring) && !MB.isAxisRect(ring);
+        layer = L.rectangle(L.latLngBounds(ring), st);
+        if (turned) {
+          layer.setLatLngs(ring);
+          if (layer.pm) layer.pm._setAngle(MB.ringAngle(ring)); // so dragging a corner keeps it rectangular
+        }
+        break;
+      }
       case 'circle': layer = L.circle(fromArr(d.latlng), Object.assign({ radius: d.radius }, st)); break;
       case 'svg': layer = MB.buildSvgLayer(fromArr(d.latlng), d.svg); break;
     }

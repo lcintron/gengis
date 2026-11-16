@@ -16,11 +16,18 @@ window.MB = window.MB || {};
     line: 'Click to add points. Double-click (or click the last point) to finish. Click the first point to close it into a polygon.',
     polygon: 'Click to add vertices. Click the first vertex or double-click to finish.',
     rectangle: 'Click one corner, then click the opposite corner.',
+    // (the rectangle's mode: its buttons sit in the hint, shapes.js)
     shape: 'Drag a box to draw the shape (Shift keeps its proportions), or click for a default size.',
     circle: 'Click the center, then click to set the radius.',
     svg: 'Click the map to place the image. Choose a different one in the Images panel.',
     'measure-distance': 'Click points to measure. Double-click or Enter to finish (saved to the active layer), Esc to cancel.',
     'measure-area': 'Click at least 3 points. Double-click or Enter to finish (saved to the active layer), Esc to cancel.'
+  };
+  // The rectangle tool, by the mode chosen in the hint (js/shapes.js).
+  const rectHints = {
+    corner: toolHints.rectangle,
+    center: 'Click the center, then a corner.',
+    three: 'Click two points for one side, then a third for the depth.'
   };
 
   MB.ui = {};
@@ -604,6 +611,7 @@ window.MB = window.MB || {};
     hint.classList.toggle('ink', name === 'annotate');
     if (name === 'annotate') { // the annotation tool: its options where the instructions go (drawn once; ink.js redraws it)
       if (hint.dataset.mode !== 'ink') { hint.dataset.mode = 'ink'; MB.ink.renderBar(hint); }
+      hint.classList.remove('has-controls');
       hint.classList.remove('hidden');
       return;
     }
@@ -612,13 +620,39 @@ window.MB = window.MB || {};
     if (name === 'svg' && MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) {
       text = 'Click the map to place "' + MB.state.svgLibrary[MB.svgPlace.svgId].name + '". Choose a different one in the Images panel.';
     }
+    if (name === 'rectangle') text = rectHints[MB.rectDraw.mode] || text;
+    if (name === 'circle' && MB.circleRadius.locked) text = `Radius ${MB.formatDistance(MB.circleRadius.locked)}: click the map to place the circle.`;
     const layer = MB.activeLayer();
     const hidden = ADDING_TOOLS.includes(name) && layer && !layer.visible;
-    hint.innerHTML = (text ? `<div>${esc(text)}</div>` : '') + (hidden
-      ? `<div class="hint-warn" role="alert"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <span>Layer “${esc(layer.name)}” is hidden: what you add won't show.</span><button type="button" class="btn small" data-act="show-layer">Show layer</button></div>` : '');
-    hint.classList.toggle('hidden', !text && !hidden);
+    // The tool's own controls, where its instructions go: the rectangle's modes (shapes.js) and the circle's radius
+    // box (tools.js), each one node, built once and kept. The instructions and the warning are their own children
+    // and are changed in place, so a control is never taken off the page: a radius being typed keeps the keyboard
+    // and the caret.
+    const controls = name === 'rectangle' ? MB.rectDraw.controls() : name === 'circle' ? MB.circleRadius.controls() : null;
+    hint.classList.toggle('has-controls', !!controls);
+    // what the last tool left here goes (its own controls, the annotation bar), and the controls come last
+    Array.from(hint.children).forEach(el => { if (el !== controls && !el.classList.contains('hint-text') && !el.classList.contains('hint-warn')) el.remove(); });
+    if (controls && controls.parentNode !== hint) hint.appendChild(controls);
+    const before = controls && controls.parentNode === hint ? controls : null; // the text and the warning come first
+    let txt = $('.hint-text', hint);
+    if (text) {
+      if (!txt) { txt = document.createElement('div'); txt.className = 'hint-text'; hint.insertBefore(txt, hint.firstChild); }
+      txt.textContent = text;
+    } else if (txt) txt.remove();
+    let warn = $('.hint-warn', hint);
+    if (hidden) {
+      if (!warn) {
+        warn = document.createElement('div');
+        warn.className = 'hint-warn';
+        warn.setAttribute('role', 'alert');
+        hint.insertBefore(warn, before);
+      }
+      warn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>Layer “${esc(layer.name)}” is hidden: what you add won't show.</span><button type="button" class="btn small" data-act="show-layer">Show layer</button>`;
+    } else if (warn) warn.remove();
+    hint.classList.toggle('hidden', !text && !hidden && !controls);
   }
+  MB.ui.renderToolHint = renderToolHint;
 
   // Point at a hidden layer: its row in the Layers panel, and the warning under the toolbar, pulse.
   function flashHidden(layer) {
@@ -2019,6 +2053,11 @@ window.MB = window.MB || {};
       }
       if (typing) return;
       if (covered()) return; // a dialog or presenter mode is up: nothing here acts on the map behind it
+      // the circle tool: typing a digit starts a radius in its box (the key itself lands there, so it is not taken)
+      if (MB.tools.current === 'circle' && !e.ctrlKey && !e.metaKey && !e.altKey && /^[\d.,]$/.test(e.key)) {
+        const box = MB.circleRadius.box();
+        if (box) { box.focus(); return; }
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) MB.redo(); else MB.undo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); MB.redo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); MB.saveToFile(); return; }

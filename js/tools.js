@@ -19,6 +19,8 @@ window.MB = window.MB || {};
       MB.svgPlace.stop();
       if (MB.shapes) MB.shapes.stop();
       MB.ink.stop();
+      MB.drawDrag.stop();
+      if (this.current === 'circle' && name !== 'circle') MB.circleRadius.reset(); // a typed radius is for the circle being drawn
       const keep = MB.tools.picks(name) ? MB.selected : null;
       const keepGroup = MB.tools.picks(name) && MB.selectedGroup ? MB.selectedGroup() : null;
       if (keep) MB.deselect();
@@ -63,7 +65,12 @@ window.MB = window.MB || {};
       MB.map.pm.setGlobalOptions({ layerGroup: group });
       const opts = this.drawOptions();
       if (name === 'line') opts.pathOptions = Object.assign({}, opts.pathOptions, { fill: false });
+      if (name === 'circle') { // a typed radius pins the one being drawn (0: any radius)
+        const r = MB.circleRadius.locked || 0;
+        opts.minRadiusCircle = r; opts.maxRadiusCircle = r;
+      }
       MB.map.pm.enableDraw(this.shapes[name], opts);
+      if (name === 'rectangle' || name === 'circle') MB.drawDrag.start(); // a finger may drag one out
     },
 
     // Called when the default style or active layer changes while a draw tool is active.
@@ -87,6 +94,8 @@ window.MB = window.MB || {};
     },
 
     init() {
+      MB.drawDrag.init(); // first: its pm:create listener must see a shape made mid-gesture before this one acts on it
+      MB.circleRadius.init();
       // Deleting an object can free a palette color: the previews show what the next object will really get.
       MB.on('features', () => { this.refreshDraw(); if (MB.measure.active) MB.measure.restyleTemp(); });
       MB.map.on('pm:create', e => {
@@ -113,6 +122,16 @@ window.MB = window.MB || {};
             return;
           }
         }
+        // A rectangle drawn from three points is turned: Geoman built it from the diagonal, so it gets its real
+        // corners here (and the angle, so dragging one keeps it rectangular).
+        if (type === 'rectangle' && MB.rectDraw.pending) {
+          const ring = MB.rectDraw.pending;
+          layer.setLatLngs(ring);
+          if (layer.pm) layer.pm._setAngle(MB.ringAngle(ring));
+        }
+        // A circle drawn to a typed radius must still be resizable afterwards (Geoman passes the draw's pinned
+        // radius on to the new circle).
+        if (type === 'circle' && layer.pm && layer.pm.setOptions) layer.pm.setOptions({ minRadiusCircle: 0, maxRadiusCircle: 0 });
         MB.addFeature(layer, { type, layerId: MB.activeLayer().id, style: MB.newShapeStyle(true) });
         if (type === 'text' && layer.pm) layer.mb.text = layer.pm.getText();
         MB.commit('draw ' + type);
@@ -162,7 +181,8 @@ window.MB = window.MB || {};
         if (e.shape !== 'Circle' || !hint) return;
         hint.on('move', () => {
           const center = draw._centerMarker;
-          if (!center || !draw._layerGroup || !draw._layerGroup.hasLayer(center)) return; // the center is not placed yet
+          if (!center || !draw._layerGroup || !draw._layerGroup.hasLayer(center)) { MB.circleRadius.showGhost(hint.getLatLng()); return; } // the center is not placed yet (with a typed radius: the circle to come)
+          MB.circleRadius.showGhost(null);
           const r = center.getLatLng().distanceTo(hint.getLatLng()), p = MB.map.latLngToContainerPoint(hint.getLatLng());
           tip.innerHTML = `<b>Radius ${MB.formatDistance(r)}</b><br><span class="dim">${MB.formatDistanceAlt(r)}</span>`; // the measure only (how to finish: the hint)
           tip.style.display = 'block';
@@ -172,7 +192,230 @@ window.MB = window.MB || {};
           tip.style.top = (p.y + 16 + h > size.y ? p.y - 16 - h : p.y + 16) + 'px';
         });
       });
-      MB.map.on('pm:drawend', hide);
+      MB.map.on('pm:drawend', () => { hide(); MB.circleRadius.showGhost(null); });
+    }
+  };
+
+  /* ---------- a typed radius for the circle ---------- */
+  // Type a radius and the circle takes it: one click on the map places a circle of exactly that size. The box sits
+  // where the tool's instructions go (ui.js appends it). Geoman does the work: its smallest and largest radius, set
+  // to the same value, pin the radius of the circle being drawn.
+
+  MB.circleRadius = {
+    locked: null, // meters, or null for "as dragged"
+    el: null, ghost: null,
+
+    init() {
+      MB.on('units', () => this.useDefaultUnit());
+      // the center placed with a radius typed: that is the whole circle, no second click
+      const Circle = L.PM && L.PM.Draw && L.PM.Draw.Circle && L.PM.Draw.Circle.prototype;
+      if (Circle && Circle._placeCenterMarker && !Circle._mbRadiusBox) {
+        const place = Circle._placeCenterMarker;
+        Circle._mbRadiusBox = true;
+        Circle._placeCenterMarker = function (e) {
+          const r = place.call(this, e);
+          if (MB.circleRadius.locked) this._finishShape();
+          return r;
+        };
+      }
+    },
+
+    box() { return this.el && this.el.querySelector('#radiusInput'); },
+    unitSel() { return this.el && this.el.querySelector('#radiusUnit'); },
+
+    // The box, kept and re-used (ui.js appends this same node to the tool hint on every render).
+    controls() {
+      if (this.el) return this.el;
+      const el = this.el = document.createElement('div');
+      el.className = 'radius-row';
+      el.innerHTML = '<label for="radiusInput">Radius</label>' +
+        '<input id="radiusInput" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="type a value">' +
+        `<select id="radiusUnit" aria-label="Radius unit">${Object.keys(MB.distanceUnits).map(u => `<option value="${u}">${u}</option>`).join('')}</select>` +
+        '<button type="button" class="radius-clear" aria-label="Clear radius" title="Clear radius">✕</button>';
+      const box = this.box(), sel = this.unitSel();
+      sel.value = MB.inputUnit('radius').label;
+      box.addEventListener('input', () => this.read());
+      sel.addEventListener('change', () => { this.read(); box.focus(); });
+      box.addEventListener('keydown', e => {
+        e.stopPropagation(); // the app's single-key shortcuts stay out of a typed value
+        const draw = MB.map.pm.Draw.Circle;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const placed = this.locked && draw && draw._centerMarker && draw._layerGroup && draw._layerGroup.hasLayer(draw._centerMarker);
+          if (placed) draw._finishShape(); else box.blur(); // the center is waiting: Enter is the second click
+        } else if (e.key === 'Escape') { e.preventDefault(); this.reset(); box.blur(); }
+      });
+      el.querySelector('.radius-clear').addEventListener('click', () => { this.reset(); box.focus(); });
+      return el;
+    },
+
+    // The unit chosen in Settings, and a radius already typed rewritten in it.
+    useDefaultUnit() {
+      const sel = this.unitSel();
+      if (!sel) return;
+      const was = this.locked;
+      sel.value = MB.inputUnit('radius').label;
+      if (was) {
+        this.box().value = String(+(was / MB.distanceUnits[sel.value]).toFixed(3)); // (plain digits: the box is read back)
+        this.read();
+      }
+    },
+
+    // What is in the box now: a radius to keep to, nothing, or a value that makes no sense.
+    read() {
+      const box = this.box(), sel = this.unitSel();
+      if (!box) return;
+      const text = box.value.trim();
+      if (!text) { box.removeAttribute('aria-invalid'); this.unlock(); return; }
+      const r = MB.parseDistance(text, sel.value);
+      if (!r) { box.setAttribute('aria-invalid', 'true'); this.unlock(); return; }
+      box.removeAttribute('aria-invalid');
+      if (r.unit !== sel.value) sel.value = r.unit; // a unit typed after the number wins
+      this.lock(r.meters);
+    },
+
+    lock(meters) { this.set(meters); },
+    unlock() { this.set(null); },
+    reset() {
+      const box = this.box();
+      if (box) { box.value = ''; box.removeAttribute('aria-invalid'); }
+      this.unlock();
+    },
+
+    set(meters) {
+      const was = this.locked;
+      this.locked = meters;
+      const draw = MB.map && MB.map.pm && MB.map.pm.Draw && MB.map.pm.Draw.Circle;
+      if (draw) {
+        draw.options.minRadiusCircle = meters || 0;
+        draw.options.maxRadiusCircle = meters || 0;
+        if (draw.enabled() && draw._hintMarker) draw._hintMarker.fire('move'); // the preview and the readout follow at once
+      }
+      if (!meters) this.showGhost(null);
+      if (was !== meters && MB.ui && MB.ui.renderToolHint) MB.ui.renderToolHint(); // the instructions say the radius
+    },
+
+    // Where the circle would land, while the center is still to be clicked.
+    showGhost(latlng) {
+      if (!latlng || !this.locked || MB.tools.current !== 'circle') {
+        if (this.ghost) { MB.map.removeLayer(this.ghost); this.ghost = null; }
+        return;
+      }
+      const color = MB.newShapeStyle().color;
+      if (!this.ghost) {
+        this.ghost = L.circle(latlng, { radius: this.locked, color, weight: 1.5, dashArray: '5,5', fill: false, interactive: false, pmIgnore: true }).addTo(MB.map);
+      } else {
+        this.ghost.setStyle({ color });
+        this.ghost.setLatLng(latlng);
+        this.ghost.setRadius(this.locked);
+      }
+    }
+  };
+
+  /* ---------- drag to draw (a finger or a stylus) ---------- */
+  // The rectangle and circle tools take two clicks, which is awkward with a finger: press where the shape starts,
+  // drag, lift where it ends. Geoman draws it as ever - the gesture gives it the click and the moves it would have
+  // had from a mouse. A tap is left alone, so tap-then-tap still works, and the mouse is unchanged (its drag pans).
+
+  MB.drawDrag = {
+    active: false, g: null, swallow: 0,
+    MIN: 6, // px: less is a tap
+
+    init() {
+      const wrap = document.getElementById('mapwrap');
+      // the capture phase on the map's parent: the gesture's events never reach Leaflet, so the map does not pan
+      wrap.addEventListener('pointerdown', e => this.down(e), true);
+      wrap.addEventListener('pointermove', e => this.move(e), true);
+      ['pointerup', 'pointercancel'].forEach(t => wrap.addEventListener(t, e => this.up(e, t === 'pointercancel'), true));
+      wrap.addEventListener('click', e => { if (Date.now() < this.swallow && MB.ink.onMap(e)) { e.stopPropagation(); e.preventDefault(); } }, true); // the gesture's own click would add a point
+      MB.map.on('zoomstart', () => this.cancel()); // a pinch mid-gesture: the first point no longer lies where it did
+      MB.map.on('pm:create', () => { if (this.g) this.g.created = true; });
+    },
+
+    start() {
+      this.active = true;
+      MB.map.getContainer().classList.add('mb-shape-draw'); // a finger's drag draws: not a scroll for the browser (app.css)
+    },
+    stop() {
+      this.active = false; // (before the abort: the tool is going, nothing is started again)
+      this.cancel();
+      MB.map.getContainer().classList.remove('mb-shape-draw');
+    },
+
+    // While a shape is dragged out the map stays put: its drag and pinch are off (Leaflet starts a pan from the
+    // touch event that follows the pointer one, which never reaches it), back as they were after.
+    hold(on) {
+      const m = MB.map;
+      if (on) { this.held = ['dragging', 'touchZoom'].filter(h => m[h] && m[h].enabled()); this.held.forEach(h => m[h].disable()); }
+      else if (this.held) { this.held.forEach(h => m[h].enable()); this.held = null; }
+    },
+
+    // A gesture given up on (a second finger, a pinch, the tool put away): what it began is dropped.
+    cancel() {
+      const g = this.g;
+      this.hold(false);
+      if (!g) return;
+      this.g = null;
+      if (g.placed) this.swallow = Date.now() + 400;
+      if (g.placed && !g.created) this.restartDraw();
+    },
+    restartDraw() {
+      const t = MB.tools.current;
+      if (!this.active || (t !== 'rectangle' && t !== 'circle')) return;
+      MB.map.pm.disableDraw();
+      MB.tools.startDraw(t);
+    },
+
+    point(e) {
+      const r = MB.map.getContainer().getBoundingClientRect();
+      return L.point(e.clientX - r.left, e.clientY - r.top);
+    },
+    // The click or move Geoman would have had from a mouse (it does the snapping, the preview and the readout).
+    fire(type, p, e) {
+      MB.map.fire(type, { latlng: MB.map.containerPointToLatLng(p), layerPoint: MB.map.containerPointToLayerPoint(p), containerPoint: p, originalEvent: e });
+    },
+
+    down(e) {
+      if (!this.active) return;
+      if (this.g) { if (e.pointerId !== this.g.id) this.cancel(); return; } // a second finger: not a drawing
+      if (e.pointerType === 'mouse' || !e.isPrimary || e.button !== 0 || !MB.ink.onMap(e)) return;
+      e.preventDefault(); e.stopPropagation();
+      const box = MB.circleRadius.box();
+      if (box && document.activeElement === box) box.blur(); // the phone's keyboard is in the way of the map
+      this.hold(true);
+      this.g = { id: e.pointerId, p0: this.point(e), placed: false, created: false };
+      try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* gone already */ }
+    },
+
+    move(e) {
+      const g = this.g;
+      if (!g) return;
+      if (e.pointerId !== g.id) { this.cancel(); return; }
+      e.preventDefault(); e.stopPropagation();
+      const p = this.point(e);
+      if (!g.placed) {
+        if (Math.abs(p.x - g.p0.x) < this.MIN && Math.abs(p.y - g.p0.y) < this.MIN) return; // still a tap
+        g.placed = true;
+        this.swallow = Date.now() + 400;
+        this.fire('click', g.p0, e); // the first point, where the finger went down
+        if (!this.g || g.created) return; // the shape is already made (a typed radius) or the tool is gone
+      }
+      this.fire('mousemove', p, e);
+    },
+
+    up(e, cancelled) {
+      const g = this.g;
+      if (!g || e.pointerId !== g.id) return;
+      e.preventDefault(); e.stopPropagation();
+      if (cancelled) { this.cancel(); return; }
+      this.g = null;
+      this.hold(false);
+      if (!g.placed) return; // a tap: Leaflet gets its own click (tap, then tap, draws as it always did)
+      this.swallow = Date.now() + 400;
+      if (g.created) return;
+      const p = this.point(e);
+      this.fire('mousemove', p, e); // where it was lifted, snapping and all
+      this.fire('click', p, e);
     }
   };
 

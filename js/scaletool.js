@@ -9,8 +9,10 @@ window.MB = window.MB || {};
   const MIN = 4; // px: the smallest a selection can be scaled down to, across
 
   // Objects that keep their proportions whatever the handle: a circle stays round, a text and an image keep their
-  // shape (a selection with one of them scales alike both ways).
-  const uniform = layer => ['circle', 'text', 'svg'].includes(layer.mb.type);
+  // shape, and a turned rectangle stays a rectangle (stretched one way only it would skew into a parallelogram).
+  // A selection with one of them scales alike both ways.
+  const turnedRect = layer => layer.mb.type === 'rectangle' && layer.getLatLngs && !MB.isAxisRect(layer.getLatLngs()[0] || []);
+  const uniform = layer => ['circle', 'text', 'svg'].includes(layer.mb.type) || turnedRect(layer);
   // Markers are pins of a fixed size: nothing to scale (in a group they move with it).
   MB.canScale = layer => !!layer && !!layer.mb && layer.mb.type !== 'marker';
 
