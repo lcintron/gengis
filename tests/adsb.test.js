@@ -23,6 +23,7 @@ function makeAdsb() {
   };
   const node = () => ({ style: { setProperty() {} }, classList: classes(), setAttribute() {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, innerHTML: '', textContent: '' });
   const layers = new Set();
+  const wrap = { classList: classes() }; // the map's wrapper: "narrow" says which corner the overlays dock in (ui.js fitDock)
   const map = {
     createPane: () => node(), getPane: () => node(), on() {}, getZoom: () => 9,
     getCenter: () => ({ wrap: () => ({ lat: 40.64, lng: -73.78, distanceTo: () => 30000 }) }),
@@ -38,7 +39,17 @@ function makeAdsb() {
       return m;
     },
     divIcon: o => o,
-    Control: { extend: () => function () { this.addTo = () => this; } },
+    // a map control: it keeps the element its onAdd returns, and setPosition re-adds that same element in the other
+    // corner, as Leaflet's does (`adds`: how many times it was added, so a needless move shows)
+    Control: {
+      extend: proto => function (options) {
+        this.options = Object.assign({}, options);
+        this.adds = 0;
+        this.addTo = () => { this.el = proto && proto.onAdd ? proto.onAdd() : null; this.adds++; return this; };
+        this.getPosition = () => this.options.position;
+        this.setPosition = pos => { this.options.position = pos; if (this.adds) this.addTo(); return this; };
+      }
+    },
     DomEvent: { stopPropagation() {}, stop() {} }
   };
   // feeds: source id -> the JSON it answers with (a value, or a function returning one or a promise of one)
@@ -61,7 +72,7 @@ function makeAdsb() {
     window: { MB, gengisDesktop: {} }, MB, // (the desktop app: the community networks are offered there only)
     L, Date: FakeDate, fetch, AbortController, URL, console,
     setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {}, requestAnimationFrame: () => 0,
-    document: { hidden: false, addEventListener() {}, createElement: node, getElementById: () => null, querySelector: () => null },
+    document: { hidden: false, addEventListener() {}, createElement: node, getElementById: id => (id === 'mapwrap' ? wrap : null), querySelector: () => null },
     navigator: { onLine: true }, location: { protocol: 'http:' }
   };
   vm.createContext(ctx);
@@ -71,7 +82,7 @@ function makeAdsb() {
   A.init();
 
   const app = {
-    A, feeds, layers, clock,
+    A, MB, feeds, layers, clock, wrap,
     advance: ms => { clock.t += ms; },
     on: (...ids) => ids.forEach(id => { A.enable(id, true); assert.ok(A.rt[id].on, id + ' is on'); }),
     poll: async id => { await A.poll(A.sources.find(s => s.id === id)); },
@@ -302,6 +313,33 @@ test('ADS-B: turning a source off mid-flight leaves one marker per aircraft stil
   assert.equal(app.entries('b00003').length, 0);
   assert.equal(app.layers.size, 2);
   app.checkMarkers();
+});
+
+/* ---------------------------------------------------------------- the map's overlays */
+
+test('ADS-B: a narrow map docks the altitude legend and the zoom hint in the bottom left column, each keeping its element', () => {
+  const app = makeAdsb();
+  app.MB.liveZoomHint('aircraft', true);
+  const hint = app.MB.liveZoomHintCtl, legend = app.A.legendCtl;
+  assert.ok(hint && legend, 'both controls are kept, not only their elements');
+  assert.deepEqual([hint.getPosition(), legend.getPosition()], ['bottomright', 'bottomright'], 'a wide map: beside the scale bar');
+  const els = [hint.el, legend.el];
+  app.A.dock(true);
+  assert.deepEqual([hint.getPosition(), legend.getPosition()], ['bottomleft', 'bottomleft']);
+  assert.deepEqual([hint.el, legend.el], els, 'the same elements re-added: what each shows (and whether it is hidden) comes along');
+  const adds = [hint.adds, legend.adds];
+  app.A.dock(true);
+  assert.deepEqual([hint.adds, legend.adds], adds, 'already in that corner: nothing moved');
+  app.A.dock(false);
+  assert.deepEqual([hint.getPosition(), legend.getPosition()], ['bottomright', 'bottomright'], 'wide again: back beside the scale bar');
+  // a hint first needed while the map is narrow is made in the corner the map is using
+  const narrow = makeAdsb();
+  narrow.wrap.classList.add('narrow');
+  narrow.MB.liveZoomHint('vessels', true);
+  assert.equal(narrow.MB.liveZoomHintCtl.getPosition(), 'bottomleft');
+  assert.equal(narrow.A.legendCtl.getPosition(), 'bottomright', 'the legend was built before the map was measured: dock() moves it');
+  narrow.A.dock(true);
+  assert.equal(narrow.A.legendCtl.getPosition(), 'bottomleft');
 });
 
 /* ---------------------------------------------------------------- cost */

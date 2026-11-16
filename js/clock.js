@@ -67,15 +67,17 @@ window.MB = window.MB || {};
       const cfg = C.config();
       const on = !!(cfg.show && MB.map);
       const wrap = document.getElementById('mapwrap');
-      if (wrap) wrap.classList.toggle('clock-on', on); // (css: the track-log bar sits above the clock, not over it)
+      if (wrap) wrap.classList.toggle('clock-on', on); // (the clock is showing: the corner's column is that much taller)
       if (!on) {
         clearTimeout(C.timer); C.timer = 0;
         if (C.control) { C.control.remove(); C.control = null; }
+        if (MB.ui && MB.ui.fitDock) MB.ui.fitDock(); // the track-log bar takes the room back
         return;
       }
-      if (!C.control) C.control = new (Clock())({ position: 'bottomleft' }).addTo(MB.map); // above the coordinates
+      if (!C.control) C.control = new (Clock())({ position: 'bottomleft' }).addTo(MB.map); // (the column places it above the coordinates)
       C.control.build(cfg);
       C.tick();
+      if (MB.ui && MB.ui.fitDock) MB.ui.fitDock(); // the track-log bar sits above it
     },
 
     // the time now, and the next tick at the start of the next second (none while the page is hidden)

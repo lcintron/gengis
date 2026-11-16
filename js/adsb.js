@@ -133,6 +133,12 @@ window.MB = window.MB || {};
   MB.LIVE_ZOOM = NET_ZOOM;
   const waitingFor = new Set();
   let zoomHint = null;
+  // Which bottom corner the map's overlays live in: the right one, or the left column on a narrow map, where the right
+  // one has room for the scale bar only (#mapwrap.narrow, set by ui.js fitDock).
+  function dockPos() {
+    const wrap = document.getElementById('mapwrap');
+    return wrap && wrap.classList.contains('narrow') ? 'bottomleft' : 'bottomright';
+  }
   MB.liveZoomHint = function (what, on) {
     if (on) waitingFor.add(what); else waitingFor.delete(what);
     if (!zoomHint) {
@@ -140,7 +146,7 @@ window.MB = window.MB || {};
       zoomHint = document.createElement('div');
       zoomHint.className = 'mb-zoom-hint';
       const Hint = L.Control.extend({ onAdd: () => zoomHint });
-      new Hint({ position: 'bottomright' }).addTo(MB.map); // stacked above the altitude legend
+      MB.liveZoomHintCtl = new Hint({ position: dockPos() }).addTo(MB.map); // stacked above the altitude legend
     }
     zoomHint.textContent = 'Zoom in to see live ' + [...waitingFor].sort().join(' and ');
     zoomHint.classList.toggle('hidden', !waitingFor.size);
@@ -640,10 +646,20 @@ window.MB = window.MB || {};
       el.innerHTML = `<div class="ttl">Altitude (ft)</div>
         <div class="scale"><span class="gnd" style="background:${GROUND_COLOR}" title="On the ground"></span><span class="bar" style="background:linear-gradient(90deg,${stops.join(',')})"></span></div>
         <div class="ticks"><span class="gnd">GND</span><span class="axis">${LEGEND_TICKS.map(t => `<i style="left:${legendPos(t)}%">${t >= 40000 ? '40k+' : (t ? t / 1000 + 'k' : '0')}</i>`).join('')}</span></div>`;
-      // a map control in the corner with the scale bar: Leaflet stacks it above, so the two never overlap
+      // a map control in the corner with the scale bar: the column there stacks it above (css), so they never overlap
       const Legend = L.Control.extend({ onAdd: () => el });
-      new Legend({ position: 'bottomright' }).addTo(MB.map);
+      this.legendCtl = new Legend({ position: dockPos() }).addTo(MB.map);
       this.legend = el;
+    },
+
+    // The legend and the zoom hint move to the map's bottom left column while the map is narrow, where there is width
+    // for them, and back to the right one when it is wide again (ui.js fitDock). The control keeps its element, so
+    // what each shows (and whether it is hidden) comes along.
+    dock(narrow) {
+      const pos = narrow ? 'bottomleft' : 'bottomright';
+      [MB.liveZoomHintCtl, this.legendCtl].forEach(ctl => {
+        if (ctl && ctl.getPosition && ctl.getPosition() !== pos) ctl.setPosition(pos);
+      });
     },
 
     /* ----- selection and popup ----- */

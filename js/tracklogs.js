@@ -504,7 +504,9 @@ window.MB = window.MB || {};
       const el = this.bar();
       if (!el) return;
       const tl = this.timeline();
+      const was = el.hidden;
       el.hidden = !tl;
+      if (was !== el.hidden && MB.ui && MB.ui.fitDock) MB.ui.fitDock(); // showing: lifted clear of the corners' readouts
       if (!tl) return;
       const t = this.cur == null ? tl.start : this.cur;
       const seek = el.querySelector('.trk-seek');
