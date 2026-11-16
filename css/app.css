@@ -218,9 +218,24 @@ svg.mi { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentC
 .mb-scale-h[data-h="w"] { left: -3px; top: 50%; cursor: ew-resize; }
 .mb-scale-box.dragging .mb-scale-h { opacity: .6; }
 .mb-scale-box.frame .mb-scale-h { display: none; } /* the Move tool: the box only */
+/* the rotation knob, on a stem above the box (below it when the box is near the top of the map) */
+.mb-rot-h { position: absolute; left: 50%; top: -28px; width: 12px; height: 12px; margin: -6px 0 0 -6px; background: #fff;
+  border: 2px solid var(--accent); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.35); box-sizing: border-box;
+  pointer-events: auto; touch-action: none; cursor: grab; }
+.mb-rot-h::before { content: ''; position: absolute; left: 50%; top: 100%; width: 1px; height: 22px; margin-left: -.5px; background: var(--accent); }
+.mb-scale-box.below .mb-rot-h { top: calc(100% + 28px); }
+.mb-scale-box.below .mb-rot-h::before { top: auto; bottom: 100%; }
+.mb-scale-box.dragging .mb-rot-h { opacity: .6; cursor: grabbing; }
+.mb-scale-box.frame .mb-rot-h, .mb-scale-box.no-rotate .mb-rot-h { display: none; } /* the Move tool's frame, a circle, a marker */
 #map.mb-scale-tool .leaflet-interactive, #map.mb-scale-tool .mb-svg-pin, #map.mb-scale-tool .pm-text-marker { cursor: pointer !important; }
 body.presenting .mb-scale-box { display: none !important; }
-@media (pointer: coarse) { .mb-scale-h { width: 18px; height: 18px; margin: -9px 0 0 -9px; } }
+@media (pointer: coarse) {
+  .mb-scale-h { width: 18px; height: 18px; margin: -9px 0 0 -9px; }
+  /* a finger-sized knob, far enough out to clear the bigger top handle */
+  .mb-rot-h { width: 22px; height: 22px; margin: -11px 0 0 -11px; top: -36px; }
+  .mb-rot-h::before { height: 26px; }
+  .mb-scale-box.below .mb-rot-h { top: calc(100% + 36px); }
+}
 
 #toolbar {
   position: absolute; left: 12px; top: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 4px;

@@ -1,5 +1,6 @@
 /* GenGIS - the Scale tool: a box with eight handles around the selection (an object, or a layer's group); dragging
-   one resizes it. A group is also moved as one here (the Move tool). */
+   one resizes it, and dragging the round knob above the box turns it. A group is also moved as one here (the Move
+   tool). */
 window.MB = window.MB || {};
 (function (MB) {
   'use strict';
@@ -7,6 +8,7 @@ window.MB = window.MB || {};
   // Handles: where each sits on the box, as which way it pulls (-1 left/top, 1 right/bottom, 0 neither).
   const HANDLES = { nw: [-1, -1], n: [0, -1], ne: [1, -1], e: [1, 0], se: [1, 1], s: [0, 1], sw: [-1, 1], w: [-1, 0] };
   const MIN = 4; // px: the smallest a selection can be scaled down to, across
+  const SNAP_DEG = 15; // the steps a turn takes with Shift held
 
   // Objects that keep their proportions whatever the handle: a circle stays round, a text and an image keep their
   // shape, and a turned rectangle stays a rectangle (stretched one way only it would skew into a parallelogram).
@@ -27,6 +29,12 @@ window.MB = window.MB || {};
   const handlersOff = () => { const off = HANDLERS.filter(k => MB.map[k] && MB.map[k].enabled()); off.forEach(k => MB.map[k].disable()); return off; };
   const handlersOn = off => (off || []).forEach(k => MB.map[k].enable());
 
+  // What an element covers on screen, in container pixels (a turned one's box is bigger than the element itself).
+  function elRect(el) {
+    const r = el.getBoundingClientRect(), m = MB.map.getContainer().getBoundingClientRect();
+    return { x0: r.left - m.left, y0: r.top - m.top, x1: r.right - m.left, y1: r.bottom - m.top };
+  }
+
   // An object's box on screen (container pixels): its geometry's bounds, or what a point object shows.
   function rectOf(layer) {
     if (layer instanceof L.Circle && layer._radius != null) {
@@ -34,6 +42,10 @@ window.MB = window.MB || {};
       return { x0: c.x - rx, y0: c.y - ry, x1: c.x + rx, y1: c.y + ry };
     }
     if (layer.getBounds && !(layer instanceof L.Marker)) {
+      // a turned ground image: its bounds are still upright, so what it covers is measured on screen
+      const turned = layer.mb.type === 'svg' && layer.setBounds && MB.normAngle(layer.mb.svg && layer.mb.svg.rotation);
+      const img = turned && MB.map.hasLayer(layer) && layer.getElement && layer.getElement();
+      if (img) return elRect(img);
       const b = layer.getBounds();
       if (!b.isValid()) return null;
       const a = cp(b.getNorthWest()), c = cp(b.getSouthEast());
@@ -43,8 +55,7 @@ window.MB = window.MB || {};
     const el = layer.mb.type === 'text' ? layer.pm && layer.pm.textArea : layer.getElement && layer.getElement();
     const shown = el && (el.querySelector && el.querySelector('img, svg')) || el;
     if (!shown) return null;
-    const r = shown.getBoundingClientRect(), m = MB.map.getContainer().getBoundingClientRect();
-    return { x0: r.left - m.left, y0: r.top - m.top, x1: r.right - m.left, y1: r.bottom - m.top };
+    return elRect(shown);
   }
   // The box around several (the shown ones).
   function unionRect(layers) {
@@ -66,6 +77,7 @@ window.MB = window.MB || {};
     else if (t === 'svg') { sn.pos = cp(MB.svgCenter(layer)); sn.width = +layer.mb.svg.width; }
     else if (t === 'marker') sn.pos = cp(layer.getLatLng());
     else sn.pts = mapNested(layer.getLatLngs(), cp);
+    if (t === 'text' || t === 'svg') sn.rot = MB.getRotation(layer); // its own angle, turned along with its place
     sn.orig = { lls: layer.getLatLngs && !(layer instanceof L.Circle) ? mapNested(layer.getLatLngs(), p => L.latLng(p.lat, p.lng)) : null,
       ll: layer.getLatLng ? L.latLng(layer.getLatLng()) : null, radius: layer.getRadius ? layer.getRadius() : null,
       bounds: t === 'svg' && layer.setBounds ? L.latLngBounds(layer.getBounds().getSouthWest(), layer.getBounds().getNorthEast()) : null,
@@ -111,7 +123,27 @@ window.MB = window.MB || {};
     else if (t === 'svg') { layer.mb.svg.width = o.svgWidth; if (o.bounds) layer.setBounds(o.bounds); else layer.setLatLng(o.ll); MB.refreshSvg(layer); }
     else if (t === 'marker') layer.setLatLng(o.ll);
     else layer.setLatLngs(o.lls);
+    if (sn.rot != null) MB.setRotation(layer, sn.rot); // as far turned as it was
     MB.updateTooltip(layer);
+  }
+
+  // The angle an object itself is at, for a turn to be snapped to whole 15° (a text's or an image's own angle, a
+  // rectangle's first edge); null for an object with no angle of its own, whose turn is snapped instead.
+  function startAngle(layer) {
+    const t = layer.mb.type;
+    if (t === 'text' || t === 'svg') return MB.getRotation(layer);
+    if (t === 'rectangle' && layer.getLatLngs) return MB.ringAngle((layer.getLatLngs() || [])[0] || []);
+    return null;
+  }
+  // A rectangle whose corners were just turned: Geoman's own idea of its angle is stale, and is worked out again
+  // from the corners the next time it is edited.
+  function reangle(layer) {
+    if (layer.mb && layer.mb.type === 'rectangle' && layer.pm) delete layer.pm._angle;
+  }
+  // Where the pointer is, in container pixels.
+  function pointerPx(e) {
+    const m = MB.map.getContainer().getBoundingClientRect();
+    return L.point(e.clientX - m.left, e.clientY - m.top);
   }
 
   MB.scaler = {
@@ -120,11 +152,16 @@ window.MB = window.MB || {};
     init() {
       const box = this.box = document.createElement('div');
       box.className = 'mb-scale-box';
-      box.innerHTML = Object.keys(HANDLES).map(h => `<span class="mb-scale-h" data-h="${h}"></span>`).join('');
+      box.innerHTML = Object.keys(HANDLES).map(h => `<span class="mb-scale-h" data-h="${h}"></span>`).join('')
+        + '<span class="mb-rot-h" data-h="rot" title="Rotate (Shift: 15° steps)" aria-label="Rotate"></span>';
       MB.map.getContainer().appendChild(box);
       L.DomEvent.disableClickPropagation(box); // a handle is not a click on the map (which would deselect)
       L.DomEvent.disableScrollPropagation(box);
       box.querySelectorAll('.mb-scale-h').forEach(h => h.addEventListener('pointerdown', e => this.start(e, h.dataset.h)));
+      box.querySelector('.mb-rot-h').addEventListener('pointerdown', e => this.startRotate(e));
+      this.tip = document.createElement('div'); // the angle beside the pointer while turning
+      this.tip.className = 'mb-measure-tip';
+      MB.map.getContainer().appendChild(this.tip);
       MB.map.on('move zoomend viewreset resize', () => this.place());
       MB.map.on('zoomstart', () => { if (this.drag) this.cancel(); if (this.targets.length) box.style.display = 'none'; }); // e.g. a zoom button
       MB.on('featurechange', l => { if (this.targets.includes(l) && !this.drag) this.place(); });
@@ -142,6 +179,8 @@ window.MB = window.MB || {};
       this.targets = layers;
       this.frame = frame;
       this.box.classList.toggle('frame', frame);
+      // nothing to turn: the Move tool's frame, or a lone circle (round already) or marker (a pin stands upright)
+      this.box.classList.toggle('no-rotate', frame || (layers.length === 1 && !MB.canRotate(layers[0])));
       this.place();
     },
     // The box follows an object being dragged (the Move tool's drag of one object).
@@ -158,6 +197,7 @@ window.MB = window.MB || {};
       if (!box) return;
       const r = this.targets.length ? unionRect(this.targets) : null;
       if (!r) { box.style.display = 'none'; return; }
+      box.classList.toggle('below', r.y0 < 48); // no room above (a coarse pointer's knob sits 36 px out): it hangs under the box instead
       Object.assign(box.style, { display: 'block', left: r.x0 + 'px', top: r.y0 + 'px', width: Math.max(0, r.x1 - r.x0) + 'px', height: Math.max(0, r.y1 - r.y0) + 'px' });
     },
 
@@ -173,18 +213,42 @@ window.MB = window.MB || {};
       const m = MB.map.getContainer().getBoundingClientRect(), [dx, dy] = HANDLES[h];
       const grab = { x: dx ? e.clientX - m.left - (dx > 0 ? r.x1 : r.x0) : 0, y: dy ? e.clientY - m.top - (dy > 0 ? r.y1 : r.y0) : 0 };
       this.drag = { h, r, grab, snaps: targets.map(snapshot), uniform: targets.some(uniform), pointer: e.pointerId, last: e };
+      this.listen(e);
+    },
+
+    // The knob grabbed: the selection turns about the middle of its box, from the angle the pointer is at now.
+    startRotate(e) {
+      const targets = this.targets;
+      if (!targets.length || e.button !== 0 || this.frame) return;
+      if (targets.some(l => MB.isFeatureLocked(l))) { MB.toast(targets.length > 1 ? 'The layer is locked' : 'Object is locked'); return; }
+      e.preventDefault(); e.stopPropagation();
+      const r = unionRect(targets);
+      if (!r) return;
+      const pivot = L.point((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), p = pointerPx(e);
+      this.drag = {
+        rot: true, r, pivot, grab: p, a0: Math.atan2(p.y - pivot.y, p.x - pivot.x) * 180 / Math.PI,
+        base: targets.length === 1 ? startAngle(targets[0]) : null, // the angle it is at, for Shift to snap the turn to whole steps
+        snaps: targets.map(snapshot), pointer: e.pointerId, last: e
+      };
+      this.listen(e);
+    },
+
+    // What a drag of a handle or of the knob shares: the pointer captured, the map's own handlers off, and the
+    // window listening for the pointer, for Shift and Alt (they act as soon as they are pressed, without moving)
+    // and for Esc (which puts the selection back).
+    listen(e) {
       try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* the pointer is gone already: the window listeners still follow it */ }
       this.handlersOff = handlersOff();
       this.box.classList.add('dragging');
-      this._move = ev => { if (ev.pointerId === this.drag.pointer) { this.drag.last = ev; this.apply(ev); } };
+      const apply = ev => (this.drag.rot ? this.applyRotate(ev) : this.apply(ev));
+      this._move = ev => { if (ev.pointerId === this.drag.pointer) { this.drag.last = ev; apply(ev); } };
       this._up = ev => { if (ev.pointerId === this.drag.pointer) this.end(); };
-      // Shift and Alt change the scaling as soon as they are pressed, without moving; Esc puts the selection back
       this._key = ev => {
         if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); this.cancel(); return; }
         if (ev.key === 'Shift' || ev.key === 'Alt') {
           ev.preventDefault(); // Alt would open the window menu
           const l = this.drag.last;
-          this.apply({ clientX: l.clientX, clientY: l.clientY, shiftKey: ev.type === 'keydown' ? ev.key === 'Shift' || ev.shiftKey : ev.key !== 'Shift' && ev.shiftKey,
+          apply({ clientX: l.clientX, clientY: l.clientY, shiftKey: ev.type === 'keydown' ? ev.key === 'Shift' || ev.shiftKey : ev.key !== 'Shift' && ev.shiftKey,
             altKey: ev.type === 'keydown' ? ev.key === 'Alt' || ev.altKey : ev.key !== 'Alt' && ev.altKey });
         }
       };
@@ -219,18 +283,75 @@ window.MB = window.MB || {};
       this.place();
     },
 
+    // Turn the selection for the pointer at e: by as far as the pointer has swung round the pivot since the grab.
+    // Shift turns in 15° steps — of the angle the object ends up at, for one object that has an angle of its own
+    // (so it lands on 0°, 15°, 30°…), of the turn itself for a line, a shape or a group.
+    applyRotate(e) {
+      const d = this.drag, pivot = d.pivot, p = pointerPx(e);
+      if (!d.moved && Math.abs(p.x - d.grab.x) + Math.abs(p.y - d.grab.y) < 3) return; // a press on the knob, not a turn
+      d.moved = true;
+      let delta = MB.normAngle(Math.atan2(p.y - pivot.y, p.x - pivot.x) * 180 / Math.PI - d.a0);
+      if (e.shiftKey) delta = d.base == null ? MB.snapAngle(delta, SNAP_DEG) : MB.normAngle(MB.snapAngle(d.base + delta, SNAP_DEG) - d.base);
+      this.rotate(delta);
+      this.showAngle(p, delta, d.base);
+    },
+
+    // The selection as it was when the knob was grabbed, turned by deg about the pivot on screen.
+    rotate(deg) {
+      const d = this.drag, pivot = d.pivot;
+      const to = p => { const q = MB.rotateXY(p.x, p.y, pivot.x, pivot.y, deg); return L.point(q[0], q[1]); };
+      d.snaps.forEach(sn => {
+        transform(sn, to, 1); // its points (and its place) turned about the pivot
+        if (sn.rot != null) MB.setRotation(sn.layer, sn.rot + deg); // and a text or an image turned about its own middle
+      });
+      this.place();
+    },
+
+    // The angle beside the pointer while turning (as the measuring tools show their readout).
+    showAngle(p, delta, base) {
+      const tip = this.tip;
+      if (!tip) return;
+      const turn = Math.round(MB.normAngle(delta));
+      tip.innerHTML = base == null ? `<b>${turn}°</b>` : `<b>${Math.round(MB.normAngle(base + delta))}°</b><br><span class="dim">turned ${turn}°</span>`;
+      tip.style.display = 'block';
+      const size = MB.map.getSize(), w = tip.offsetWidth, h = tip.offsetHeight; // beside the pointer, on the side where it fits
+      tip.style.left = (p.x + 16 + w > size.x ? p.x - 16 - w : p.x + 16) + 'px';
+      tip.style.top = (p.y + 16 + h > size.y ? p.y - 16 - h : p.y + 16) + 'px';
+    },
+
+    // Turn one object by deg about the middle of its box (the angle field in Properties): the geometry only, with
+    // nothing committed — the caller saves it.
+    rotateBy(layer, deg) {
+      const a = MB.normAngle(deg);
+      if (!a || !layer || !MB.canRotate(layer) || this.drag) return;
+      const r = rectOf(layer);
+      if (!r) return;
+      const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+      const sn = snapshot(layer);
+      transform(sn, p => { const q = MB.rotateXY(p.x, p.y, cx, cy, a); return L.point(q[0], q[1]); }, 1);
+      if (sn.rot != null) MB.setRotation(layer, sn.rot + a);
+      reangle(layer);
+      MB.updateTooltip(layer);
+      this.follow(layer);
+    },
+
     end() {
       const d = this.drag;
       this.stopDrag();
       if (!d || !d.moved || !this.targets.length) return;
+      if (d.rot) this.targets.forEach(reangle);
       this.targets.forEach(l => MB.emit('featurechange', l));
-      MB.commit(this.targets.length > 1 ? 'scale group' : 'scale');
+      MB.commit((d.rot ? 'rotate' : 'scale') + (this.targets.length > 1 ? ' group' : ''));
     },
 
     // Esc while dragging: the selection as it was.
     cancel() {
       if (!this.drag) return;
-      if (this.drag.moved) this.drag.snaps.forEach(restore);
+      const rot = this.drag.rot;
+      if (this.drag.moved) {
+        this.drag.snaps.forEach(restore);
+        if (rot) this.targets.forEach(reangle);
+      }
       this.stopDrag();
       this.place();
     },
@@ -245,6 +366,7 @@ window.MB = window.MB || {};
       handlersOn(this.handlersOff);
       this.handlersOff = null;
       this.box.classList.remove('dragging');
+      if (this.tip) this.tip.style.display = 'none';
       this.drag = null;
     }
   };

@@ -10,7 +10,7 @@ window.MB = window.MB || {};
   const toolHints = {
     select: '',
     move: 'Click an object (or a grouped layer) and drag it to move it; its box shows what moves. Use Select to edit vertices.',
-    scale: 'Click an object, then drag a handle to resize it. Shift keeps its proportions, Alt resizes from its center, Esc puts it back.',
+    scale: 'Click an object, then drag a handle to resize it (Shift keeps its proportions, Alt resizes from its center) or drag the round handle to rotate (Shift: 15° steps). Esc puts it back.',
     marker: 'Click the map to place a marker.',
     text: 'Click the map to place a text label, type your text, then click elsewhere.',
     line: 'Click to add points. Double-click (or click the last point) to finish. Click the first point to close it into a polygon.',
@@ -1169,6 +1169,18 @@ window.MB = window.MB || {};
     $('#multiLayer', panel).addEventListener('change', e => { if (e.target.value) MB.moveMultiToLayer(e.target.value); });
   }
 
+  // A "Rotation" row: how far the object is turned, in degrees (the Scale tool's knob does the same by hand).
+  // `set` is called with the angle on the slider; it does the turning and saves it.
+  function rotationRow(value, title, set) {
+    const wrap = document.createElement('div');
+    const v = Math.round(MB.normAngle(value));
+    wrap.innerHTML = `<div class="row"${title ? ` title="${esc(title)}"` : ''}><label>Rotation</label>` +
+      `<input type="range" id="propRot" min="0" max="360" step="1" value="${v}"><span class="val" data-val="rot">${v}°</span></div>`;
+    const inp = $('#propRot', wrap), out = $('[data-val="rot"]', wrap);
+    inp.addEventListener('input', () => { const deg = +inp.value; out.textContent = Math.round(deg) + '°'; set(deg); });
+    return wrap;
+  }
+
   MB.ui.renderProps = function () {
     const panel = $('#propsBody');
     const f = MB.selected;
@@ -1245,6 +1257,11 @@ window.MB = window.MB || {};
       t.innerHTML = `<div class="row"><label>Text</label><textarea id="propText">${esc(f.pm && f.pm.textArea ? f.pm.getText() : m.text || '')}</textarea></div>`;
       panel.appendChild(t);
       $('#propText', panel).addEventListener('input', e => { if (f.pm) { f.pm.setText(e.target.value); m.text = e.target.value; MB.commitDebounced('text'); } });
+      panel.appendChild(rotationRow(MB.getRotation(f), 'How far the text is turned, clockwise', deg => {
+        MB.setRotation(f, deg);
+        MB.scaler.follow(f);
+        MB.commitDebounced('rotate');
+      }));
       panel.appendChild(styleForm(['text'], () => m.style, patch => MB.applyStyle(f, patch)));
     } else if (m.type === 'svg') {
       panel.appendChild(svgProps(f));
@@ -1256,6 +1273,23 @@ window.MB = window.MB || {};
       panel.appendChild(styleForm(['stroke'], () => m.style, patch => MB.applyStyle(f, patch)));
     } else {
       panel.appendChild(styleForm(['stroke', 'fill'], () => m.style, patch => MB.applyStyle(f, patch)));
+    }
+
+    if (m.type === 'rectangle') {
+      // A rectangle keeps no angle of its own: its corners are turned instead, by the difference between the angle
+      // on the slider and the one it is at (its first edge's, within a quarter turn — it looks the same every 90°).
+      let at = MB.normAngle(MB.ringAngle((f.getLatLngs() || [])[0] || [])) % 90;
+      const row = rotationRow(at, 'How far the rectangle is turned, clockwise (it looks the same every quarter turn)', deg => {
+        MB.scaler.rotateBy(f, deg - at);
+        at = deg;
+        MB.emit('featurechange', f);
+        MB.commitDebounced('rotate');
+      });
+      panel.appendChild(row);
+      // its corner handles are left where they were: the rectangle is selected afresh once the slider is let go
+      $('#propRot', row).addEventListener('change', () => {
+        if (f.pm && f.pm.enabled && f.pm.enabled()) { MB.deselect(); MB.selectFeature(f); }
+      });
     }
 
     if (m.type === 'circle') {
@@ -1528,7 +1562,7 @@ window.MB = window.MB || {};
       <div class="row"><label>File</label><select data-k="svgId">${Object.values(MB.state.svgLibrary).map(l => `<option value="${l.id}"${l.id === svg.svgId ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>
       ${raster ? '<p class="note">A picture scales with the map: its width is on the ground.</p>' : `<div class="row"><label>Sizing</label><div class="seg small"><button data-mode="pin"${!isGround ? ' class="active"' : ''}>Fixed pixels</button><button data-mode="ground"${isGround ? ' class="active"' : ''}>Scale with map</button></div></div>`}
       <div class="row"><label>Width</label><input type="number" data-k="width" min="1" step="any" value="${wVal}"><span class="unit">${isGround ? MB.lengthUnitLabel() : 'px'}</span></div>
-      ${isGround ? '' : `<div class="row"><label>Rotation</label><input type="range" data-k="rotation" min="0" max="360" step="1" value="${svg.rotation || 0}"><span class="val" data-val="rotation">${svg.rotation || 0}°</span></div>`}
+      <div class="row"><label>Rotation</label><input type="range" data-k="rotation" min="0" max="360" step="1" value="${MB.normAngle(svg.rotation)}"><span class="val" data-val="rotation">${MB.normAngle(svg.rotation)}°</span></div>
       <div class="row"><label>Opacity</label><input type="range" data-k="opacity" min="0" max="1" step="0.05" value="${svg.opacity == null ? 1 : svg.opacity}"><span class="val" data-val="opacity">${Math.round((svg.opacity == null ? 1 : svg.opacity) * 100)}%</span></div>
       <p class="note">${esc(lib.name || '')} · ${lib.width ? lib.width + '×' + lib.height : ''}</p></div>`;
     // a new sizing, the width converted so the image keeps about its size on screen
@@ -1554,10 +1588,11 @@ window.MB = window.MB || {};
           if ((MB.state.svgLibrary[svg.svgId] || {}).kind === 'raster' && svg.mode !== 'ground') toMode('ground'); // a picture lies on the ground
           MB.rebuildFeature(f); MB.ui.renderProps(); MB.commit('svg image'); return;
         }
-        else svg[k] = +inp.value;
+        else svg[k] = k === 'rotation' ? MB.normAngle(inp.value) : +inp.value;
         const valEl = $(`[data-val="${k}"]`, wrap);
         if (valEl) valEl.textContent = k === 'rotation' ? svg.rotation + '°' : Math.round(svg.opacity * 100) + '%';
         MB.refreshSvg(f);
+        MB.scaler.follow(f); // the Scale tool's box around the turned image
         if (f._mbHandle) f._mbHandle.setLatLng(f.getBounds().getCenter());
         MB.ui.renderMeasureBox();
         MB.commitDebounced('svg');

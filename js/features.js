@@ -113,6 +113,7 @@ window.MB = window.MB || {};
       label: meta.label ? MB.deepClone(meta.label) : undefined,
       zoom: MB.normZoomRule(meta.zoom)
     };
+    if (layer.mb.type === 'text') layer.mb.rotation = MB.normAngle(meta.rotation); // how far the text is turned (its box is rotated in CSS)
     if (meta.attrs && typeof meta.attrs === 'object' && Object.keys(meta.attrs).length) layer.mb.attrs = MB.deepClone(meta.attrs); // its fields' values (attrtable.js)
     // measurements ticked to show on the map (only those the type has: a converted object may have carried others)
     const shown = MB.measureKeys(layer.mb.type).filter(k => (meta.showMeasures || []).includes(k));
@@ -464,9 +465,10 @@ window.MB = window.MB || {};
     const st = layer.mb.style, ta = layer.pm && layer.pm.textArea;
     if (!ta) return;
     const [hx, ox] = ANCHOR_X[st.textHAnchor || 'center'], [vy, oy] = ANCHOR_Y[st.textVAnchor || 'middle'];
-    const px = shown(st), s = px / (+st.textSize || 14);
+    const px = shown(st), s = px / (+st.textSize || 14), a = MB.normAngle(layer.mb.rotation);
     ta.style.transformOrigin = ox + ' ' + oy;
-    ta.style.transform = `translate(${hx}, ${vy})` + (s !== 1 ? ` scale(${s})` : '');
+    // turned about its anchor (the transform origin already is it), between the anchoring and the scaling
+    ta.style.transform = `translate(${hx}, ${vy})` + (a ? ` rotate(${a}deg)` : '') + (s !== 1 ? ` scale(${s})` : '');
     ta.style.visibility = px < 3 ? 'hidden' : '';
   };
   let zoomHooked = false;
@@ -517,16 +519,53 @@ window.MB = window.MB || {};
     };
   }
 
+  /* ---------- rotation ---------- */
+  // A text and an image carry how far they are turned (their drawing is rotated in CSS, about its middle); a line,
+  // shape or rectangle has no angle of its own — its points are turned instead (js/scaletool.js).
+  MB.getRotation = function (layer) {
+    const m = layer && layer.mb;
+    if (!m) return 0;
+    if (m.type === 'text') return MB.normAngle(m.rotation);
+    if (m.type === 'svg') return MB.normAngle(m.svg && m.svg.rotation);
+    return 0;
+  };
+  MB.setRotation = function (layer, deg) {
+    const m = layer && layer.mb;
+    if (!m) return;
+    const a = MB.normAngle(deg);
+    if (m.type === 'text') { m.rotation = a; MB.textTransform(layer); }
+    else if (m.type === 'svg' && m.svg) { m.svg.rotation = a; MB.refreshSvg(layer); }
+    else return;
+    MB.updateTooltip(layer); // its name label and measurements sit around the turned object
+  };
+  // What can be turned: everything but a circle (round already) and a marker (a pin stands upright).
+  MB.canRotate = layer => !!layer && !!layer.mb && layer.mb.type !== 'circle' && layer.mb.type !== 'marker';
+
   /* ---------- SVG features ---------- */
 
   MB.svgPinIcon = function (lib, svg) {
     const w = Math.max(4, +svg.width || 48), h = w / (lib.aspect || 1);
     return L.divIcon({
       className: 'mb-svg-pin',
-      html: `<img src="${lib.dataUrl}" draggable="false" style="width:${w}px;height:${h}px;transform:rotate(${+svg.rotation || 0}deg);opacity:${svg.opacity == null ? 1 : svg.opacity}">`,
+      html: `<img src="${lib.dataUrl}" draggable="false" style="width:${w}px;height:${h}px;transform:rotate(${MB.normAngle(svg.rotation)}deg);opacity:${svg.opacity == null ? 1 : svg.opacity}">`,
       iconSize: [w, h], iconAnchor: [w / 2, h / 2]
     });
   };
+
+  // An image lying on the ground, which can be turned. Leaflet places the <img> on the (upright) bounds with a
+  // transform of its own, every pan, zoom and resize: the rotation is appended to whatever it just set, about the
+  // middle of that box (so the image keeps its place and only turns).
+  MB.GroundImage = L.ImageOverlay.extend({
+    _turn() {
+      const img = this._image, a = MB.normAngle(this.mb && this.mb.svg && this.mb.svg.rotation);
+      if (!img || !a) return;
+      const w = parseFloat(img.style.width) || 0, h = parseFloat(img.style.height) || 0;
+      img.style.transformOrigin = '0 0';
+      img.style.transform = (img.style.transform || '') + ` translate(${w / 2}px, ${h / 2}px) rotate(${a}deg) translate(${-w / 2}px, ${-h / 2}px)`;
+    },
+    _reset() { L.ImageOverlay.prototype._reset.call(this); this._turn(); },
+    _animateZoom(e) { L.ImageOverlay.prototype._animateZoom.call(this, e); this._turn(); }
+  });
 
   MB.buildSvgLayer = function (latlng, svg) {
     const lib = MB.state.svgLibrary[svg.svgId];
@@ -534,7 +573,7 @@ window.MB = window.MB || {};
     latlng = L.latLng(latlng);
     if (svg.mode === 'ground') {
       const b = MB.boundsAround(latlng, svg.width, svg.width / (lib.aspect || 1));
-      return L.imageOverlay(lib.dataUrl, b, {
+      return new MB.GroundImage(lib.dataUrl, b, {
         interactive: true, opacity: svg.opacity == null ? 1 : svg.opacity, pmIgnore: true, className: 'mb-svg-ground'
       });
     }
@@ -1011,6 +1050,7 @@ window.MB = window.MB || {};
     const d = { id: m.id, layerId: m.layerId, type: m.type, name: m.name, style: MB.deepClone(m.style) };
     if (m.visible === false) d.visible = false;
     if (m.locked) d.locked = true;
+    if (m.rotation) d.rotation = m.rotation; // a turned text (an image keeps its angle in mb.svg)
     if (m.label) d.label = MB.deepClone(m.label);
     if (m.zoom) d.zoom = MB.deepClone(m.zoom);
     if (m.showMeasures) d.showMeasures = m.showMeasures.slice();
