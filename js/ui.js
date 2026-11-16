@@ -455,6 +455,23 @@ window.MB = window.MB || {};
   // taller of the two corners it crosses (--dock-h, read by its CSS).
   const NARROW_MAP = 560; // px of map width: below it the right column has room for the scale bar only
   const BOTTOM_CORNERS = ['.leaflet-bottom.leaflet-left', '.leaflet-bottom.leaflet-right'];
+
+  // How much the time bar must clear: the corners under it, as they are now (a legend or the loading line showing, a
+  // docked toolbar having moved one of them aside). Measured last in a fit pass, after the toolbar has taken its place.
+  function dockHeight() {
+    const wrap = $('#mapwrap');
+    if (!wrap) return;
+    const bar = $('.trk-bar', wrap), br = bar && !bar.hidden ? bar.getBoundingClientRect() : null;
+    if (!br || !br.width) return; // no bar: nothing to lift (its CSS keeps a sensible floor until there is)
+    let h = 0;
+    for (const sel of BOTTOM_CORNERS) {
+      const c = $(sel, wrap), r = c && c.offsetParent ? c.getBoundingClientRect() : null;
+      if (r && r.height && r.right > br.left && r.left < br.right) h = Math.max(h, r.height); // only a corner the bar crosses
+    }
+    const px = Math.round(h) + 'px';
+    if (wrap.style.getPropertyValue('--dock-h') !== px) wrap.style.setProperty('--dock-h', px); // (only on a change: no observer loop)
+  }
+
   function fitDock() {
     const wrap = $('#mapwrap');
     if (!wrap || !wrap.clientWidth) return;
@@ -467,18 +484,12 @@ window.MB = window.MB || {};
     // whenever it differs: the bar may not have been built when the width last changed)
     const maxWidth = narrow ? 120 : 200;
     if (MB.scaleControl && MB.scaleControl.options.maxWidth !== maxWidth) { MB.scaleControl.options.maxWidth = maxWidth; MB.scaleControl.update(); }
-    // how much the time bar must clear: the corners under it, as they are now (a legend or the loading line showing)
-    const bar = $('.trk-bar', wrap), br = bar && !bar.hidden ? bar.getBoundingClientRect() : null;
-    if (!br || !br.width) return; // no bar: nothing to lift (its CSS keeps a sensible floor until there is)
-    let h = 0;
-    for (const sel of BOTTOM_CORNERS) {
-      const c = $(sel, wrap), r = c && c.offsetParent ? c.getBoundingClientRect() : null;
-      if (r && r.height && r.right > br.left && r.left < br.right) h = Math.max(h, r.height); // only a corner the bar crosses
-    }
-    const px = Math.round(h) + 'px';
-    if (wrap.style.getPropertyValue('--dock-h') !== px) wrap.style.setProperty('--dock-h', px); // (only on a change: no observer loop)
+    dockHeight();
   }
   MB.ui.fitDock = fitDock;
+  // one pass: where the overlays go, then the toolbar's room above them, then the time bar's clearance over both (the
+  // toolbar docking moves a corner sideways without resizing it, so the clearance is read again after it)
+  function fitAll() { fitDock(); fitToolbar(); dockHeight(); }
 
   // Settings → Interface → Toolbar: the tools down the map's left edge (the default) or its right one, where the
   // map's own buttons (zoom, location) then move to the left. A preference of this device.
@@ -488,8 +499,7 @@ window.MB = window.MB || {};
     if (!wrap) return;
     wrap.classList.toggle('tb-right', MB.ui.toolbarSide() === 'right');
     document.documentElement.classList.toggle('tb-right', MB.ui.toolbarSide() === 'right'); // for presenter mode's logo (app.css)
-    fitDock(); // the corners move with it: the time bar's room is measured again
-    fitToolbar();
+    fitAll(); // the corners move with it: the overlays, the toolbar's room and the time bar's clearance all again
   };
   MB.ui.setToolbarSide = function (side) {
     MB.settings.toolbarSide = side === 'right' ? 'right' : 'left';
@@ -564,11 +574,11 @@ window.MB = window.MB || {};
       // they cover): the toolbar fits above them, the time bar above them, and the overlays dock where there is room.
       // One pass per frame, so what a fit resizes itself cannot set the observer off again in the middle of it.
       let pending = 0;
-      const fitSoon = () => { if (pending) return; pending = requestAnimationFrame(() => { pending = 0; fitDock(); fitToolbar(); }); };
+      const fitSoon = () => { if (pending) return; pending = requestAnimationFrame(() => { pending = 0; fitAll(); }); };
       const ro = new ResizeObserver(fitSoon);
       ro.observe($('#mapwrap'));
       BOTTOM_CORNERS.forEach(sel => { const c = $(sel, $('#mapwrap')); if (c) ro.observe(c); });
-    } else addEventListener('resize', () => { fitDock(); fitToolbar(); }); // older browsers: the window's size at least
+    } else addEventListener('resize', fitAll); // older browsers: the window's size at least
     MB.ui.applyToolbarSide(); // fits it too
     $$('#toolbar button[data-tool]:not(#shapeBtn)').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool))); // Shapes opens its palette (shapes.js)
     MB.on('tool', name => {
@@ -2015,7 +2025,7 @@ window.MB = window.MB || {};
     initStatus();
     if (MB.clock) MB.clock.init(); // (the column places it above the coordinates)
     MB.ui.setupScale();
-    fitDock(); // the corners are built: dock the overlays and size the scale bar for the map's width
+    fitAll(); // the corners are built: dock the overlays, size the scale bar, fit the toolbar above what is there
     MB.ui.renderLayers();
     MB.ui.renderProps();
     MB.ui.renderSvgPanel();

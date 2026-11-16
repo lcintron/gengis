@@ -356,10 +356,14 @@ body.presenting .mb-scale-box { display: none !important; }
 .leaflet-control-attribution { order: 5; }
 .mb-scale { order: 5; }
 /* a narrow map (ui.js fitDock): the altitude legend and the zoom hint dock in this column too (adsb.js), where there
-   is width for them; the right column then holds the scale bar alone, and the two boxes that share its bottom row
-   stop short of it */
-#mapwrap.narrow .leaflet-bottom.leaflet-left { --dock-reserve: 0px; }
-#mapwrap.narrow :is(.leaflet-control-attribution, .mb-status) { max-width: calc(100% - 144px); } /* the scale bar's room */
+   is width for them; the right column then holds the scale bar alone, and whatever shares the bottom row with it
+   stops short of its end (--scale-room, which follows a toolbar strip docked on that side) */
+#mapwrap.narrow .leaflet-bottom.leaflet-left { --dock-reserve: 0px; --scale-room: 144px; } /* --scale-room: the scale bar's end of the bottom row */
+#mapwrap.narrow.tb-right.tb-docked .leaflet-bottom.leaflet-left { --scale-room: calc(144px + var(--tb-w, 52px)); } /* the strip moves the scale bar in (:266) */
+#mapwrap.narrow :is(.leaflet-control-attribution, .mb-status) { max-width: calc(100% - var(--scale-room, 144px)); }
+/* presenting hides the coordinates (below), so the legend, the hint and the clock drop into the scale bar's row: they
+   leave it the same room there */
+body.presenting #mapwrap.narrow :is(.mb-alt-legend, .mb-zoom-hint, .mb-clock) { max-width: calc(100% - var(--scale-room, 144px)); }
 #mapwrap.narrow :is(.mb-alt-legend, .mb-zoom-hint) { margin: 0 0 6px 8px !important; } /* against the map's left edge now */
 #mapwrap.narrow .mb-alt-legend { width: min(250px, 100% - 16px); }
 .mb-status {
