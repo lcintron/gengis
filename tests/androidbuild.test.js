@@ -259,8 +259,14 @@ test('a failed Android build does not hold back the Release, and nothing is publ
   assert.match(note[1], /id: apknote/);
   assert.match(note[1], /ls installers\/GenGIS-\*-android-debug\.apk/, 'it looks at what was downloaded');
   assert.match(note[1], /basename "\$apk"/, 'the name in the note is the attached file\'s own');
-  assert.match(note[1], /if \[ -n "\$apk" \]; then\n[\s\S]*?\$GITHUB_OUTPUT[\s\S]*?\n          fi/, 'nothing is written without a debug APK');
-  assert.ok(!/\*\*Android:\*\*/.test(jobs.publish.replace(note[1], '')), 'the note itself lives in that step, not in the release body');
+  assert.ok(jobs.publish.indexOf('path: installers') < jobs.publish.indexOf('- name: Android release note'),
+    'it runs after the download, so the glob sees the files');
+  // the heredoc is opened outside the if: a body is always written, so a re-run overwrites it rather than
+  // letting the generated notes be appended to the body the last run left behind
+  assert.match(note[1], /echo 'body<<APKNOTE_EOF'\n {12}if \[ -n "\$apk" \]; then/);
+  assert.match(note[1], /\n {12}else\n {14}echo '<!-- release notes -->'\n {12}fi/, 'an invisible placeholder when there is no note');
+  assert.match(note[1], /\*\*Android:\*\*[\s\S]*?\n {12}else/, 'the note itself only in the debug-APK branch');
+  assert.ok(!/\*\*Android:\*\*/.test(jobs.publish.replace(note[1], '')), 'the note lives in that step, not in the release body');
   assert.match(jobs.publish, /generate_release_notes: true\n {10}body: \$\{\{ steps\.apknote\.outputs\.body \}\}/);
   assert.ok(!/append_body/.test(jobs.publish), 'no append_body: a re-run would add the note a second time');
   // !cancelled() rather than always(): an android failure still publishes, a cancelled run does not
