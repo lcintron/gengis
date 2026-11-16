@@ -775,7 +775,10 @@ window.MB = window.MB || {};
   // takes the same place (the middle of a shape, under a point).
   function measureLabelPlace(layer) {
     const m = layer.mb, lb = MB.labelTypes.includes(m.type) && m.name ? MB.getLabel(layer) : null;
-    const nameH = lb && lb.show && lb.h === 'center' ? MB.labelShownPx(lb, zoomNow()) * 1.35 + 4 : 0; // see .mb-name-label
+    // How tall the name label stands there: its line and its padding and border, the whole of it scaled when it
+    // scales with the map (see .mb-name-label).
+    const sz = lb ? +lb.size || 12 : 12;
+    const nameH = lb && lb.show && lb.h === 'center' ? (sz * 1.35 + 4) * (MB.labelShownPx(lb, zoomNow()) / sz) : 0;
     const point = m.type === 'marker' || (m.type === 'svg' && !layer.setBounds);
     if (point) {
       const under = lb && lb.v === 'bottom' ? nameH + 2 : 0;

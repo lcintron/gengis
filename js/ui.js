@@ -41,7 +41,7 @@ window.MB = window.MB || {};
     if (range.dataset.stepper) return;
     range.dataset.stepper = '1';
     const readout = range.nextElementSibling && range.nextElementSibling.classList.contains('val') ? range.nextElementSibling : null;
-    const min = +range.min || 0, max = range.max === '' ? 100 : +range.max;
+    const min = () => +range.min || 0, max = range.max === '' ? 100 : +range.max; // (the low end read each time: a slider's own end can move, as a map-scaled label's size does on a zoom)
     const pct = max <= 1 && (!readout || /%\s*$/.test(readout.textContent));
     const unit = pct ? '%' : readout ? (readout.textContent.match(/[^\d.\s-]+\s*$/) || [''])[0].trim() : '';
     if (pct && (+range.step || 1) > 0.01) range.step = '0.01'; // a typed percent is kept as typed
@@ -57,12 +57,12 @@ window.MB = window.MB || {};
     range.after(box);
     if (readout) readout.hidden = true;
     const num = box.querySelector('input');
-    num.min = +(min * scale).toFixed(4); num.max = +((+range.dataset.softMax || max) * scale).toFixed(4); num.step = 'any';
-    const show = () => { num.value = +(+range.value * scale).toFixed(decimals); };
+    num.max = +((+range.dataset.softMax || max) * scale).toFixed(4); num.step = 'any';
+    const show = () => { num.min = +(min() * scale).toFixed(4); num.value = +(+range.value * scale).toFixed(decimals); };
     const soft = +range.dataset.softMax || 0; // a slider whose end is only where dragging stops (a text's size): typed values go past it
     const set = v => {
       if (!isFinite(v)) { show(); return; }
-      v = Math.min((soft || +range.max) * scale, Math.max(min * scale, v));
+      v = Math.min((soft || +range.max) * scale, Math.max(min() * scale, v));
       if (v / scale > +range.max) range.max = String(v / scale);
       range.value = String(v / scale);
       show();

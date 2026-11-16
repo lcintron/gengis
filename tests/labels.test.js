@@ -79,7 +79,7 @@ test('a new label is a fixed-pixel one, and Properties offers both sizings', () 
   assert.doesNotMatch(features.match(/MB\.copyStyle = function[\s\S]*?\n  \};/)[0], /refZoom/, 'never its reference zoom');
   assert.match(features, /MB\.labelSizing\(MB\.getLabel\(l\), MB\.deepClone\(cb\.label\), zoomNow\(\)\)/, 'a pasted label re-bases at the target\'s zoom');
   assert.match(features, /patch = MB\.labelSizing\(MB\.getLabel\(layer\), Object\.assign\(\{\}, patch \|\| \{\}\), zoomNow\(\)\)/, 'setLabel re-bases too');
-  assert.match(features, /MB\.labelShownPx\(lb, zoomNow\(\)\) \* 1\.35 \+ 4/, 'a measurement label stacks under the size it shows');
+  assert.match(features, /const nameH = lb && lb\.show && lb\.h === 'center' \? \(sz \* 1\.35 \+ 4\) \* \(MB\.labelShownPx\(lb, zoomNow\(\)\) \/ sz\)/, 'a measurement label stacks under the size it shows');
   const form = ui.slice(ui.indexOf('function labelForm(f)'), ui.indexOf('function attrForm(f)'));
   assert.match(form, /data-ls="scale"/);
   assert.match(form, /\[\['screen', 'Fixed pixels'\], \['map', 'Scale with map'\]\]/, 'a text\'s wording');
@@ -109,6 +109,61 @@ test('a zoom moves the scaled labels alone, by their element, and the text formu
   // the label's own look is unchanged: its class, and its clicks are its object's (tests/markers.test.js)
   assert.match(features, /className: labelClass\(layer\)/);
   assert.match(features, /layer\._mbLabel\.on\('click contextmenu', e => layer\.fire\(e\.type, e\)\);/);
+});
+
+test('a measurement label stacks under the whole name label: its padding and border scale with its text', () => {
+  // the height the measurement label is pushed down by, as js/features.js measureLabelPlace works it out
+  const src = read('js/features.js').match(/const sz = [^;]+;[\s\S]*?const nameH = [^;]+;/)[0];
+  const nameH = (lb, zoom) => vm.runInNewContext(src + '\nnameH', { lb, MB, zoomNow: () => zoom });
+  const one = 12 * 1.35 + 4; // one line of 12 px, with the label's padding and border
+  assert.equal(nameH({ show: true, h: 'center', size: 12 }, 14), one, 'fixed pixels: as it always was');
+  assert.equal(nameH({ show: true, h: 'center' }, 14), one, 'no size: the default 12 px');
+  assert.equal(nameH({ show: true, h: 'center', size: 12, scale: 'map', refZoom: 10 }, 12), one * 4, 'the whole label is 4× as tall, padding too');
+  assert.equal(nameH({ show: true, h: 'center', size: 12, scale: 'map', refZoom: 10 }, 9), one / 2);
+  assert.equal(nameH({ show: true, h: 'center', size: 12, scale: 'map', refZoom: 10 }, 10), one, 'as set at its reference zoom');
+  assert.equal(nameH({ show: false, h: 'center', size: 12 }, 14), 0, 'no label shown: nothing above it');
+  assert.equal(nameH({ show: true, h: 'left', size: 12 }, 14), 0, 'a label beside the object: out of the way');
+  assert.equal(nameH(null, 14), 0);
+});
+
+test('a slider whose low end moves with the zoom: its number box clamps to the end it has now', () => {
+  // The label size slider's min follows the zoom (a map-scaled label can show 3 px): the number box beside it must
+  // not hold the value back to the min the slider had when it was built.
+  const ui = read('js/ui.js');
+  const src = ui.slice(ui.indexOf('function stepper(range)'), ui.indexOf('MB.ui.stepper = stepper'));
+  const el = (tag, attrs) => {
+    const e = Object.assign({ tagName: tag.toUpperCase(), dataset: {}, style: {}, title: '', disabled: false, children: [],
+      handlers: {}, classList: { toggle() {}, contains: () => false },
+      addEventListener(t, fn) { (this.handlers[t] = this.handlers[t] || []).push(fn); },
+      dispatchEvent(ev) { (this.handlers[ev.type] || []).forEach(fn => fn(ev)); return true; },
+      fire(t) { this.dispatchEvent({ type: t }); },
+      after() {}, closest: () => null, select() {}, focus() {},
+      querySelector(sel) { return this.children.find(c => c.tagName === (sel === 'input' ? 'INPUT' : sel.toUpperCase())) || null; },
+      querySelectorAll(sel) { return this.children.filter(c => c.tagName === sel.toUpperCase()); }
+    }, attrs || {});
+    return e;
+  };
+  const num = el('input'), b1 = el('button', { dataset: { d: '1' } }), b2 = el('button', { dataset: { d: '-1' } });
+  const box = el('span', { children: [num, b1, b2] });
+  const range = el('input', { type: 'range', min: '9', max: '36', step: '1', value: '12', dataset: { softMax: '200' }, nextElementSibling: null });
+  const ctx = { document: { createElement: () => box }, MutationObserver: class { observe() {} }, Event: class { constructor(t) { this.type = t; } },
+    esc: s => String(s), console, setTimeout, clearTimeout, setInterval, clearInterval };
+  vm.createContext(ctx);
+  vm.runInContext(src + '\nstepper(range);', Object.assign(ctx, { range }), { filename: 'stepper' });
+  assert.equal(+num.value, 12);
+  assert.equal(+num.min, 9);
+  // zoomed out, the label shows 3 px: the size row lowers the slider's end and the box follows it
+  range.min = '3'; range.value = '3'; range.fire('input');
+  assert.equal(+num.min, 3, 'the box takes the slider\'s end as it is now');
+  num.value = '5'; num.fire('change');
+  assert.equal(range.value, '5', 'a size between the old end and the new one is reachable from the box');
+  b2.dispatchEvent({ type: 'pointerdown', button: 0, preventDefault() {} });
+  b2.fire('pointerup'); // (held down it would repeat)
+  assert.equal(range.value, '4', 'and its arrows step down to the new end');
+  num.value = '1'; num.fire('change');
+  assert.equal(range.value, '3', 'never below the end it has');
+  num.value = '400'; num.fire('change');
+  assert.equal(range.value, '200', 'and never past the size a label may show (data-soft-max)');
 });
 
 test('a label color from a project file goes into no style attribute unchecked', () => {
