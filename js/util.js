@@ -232,6 +232,122 @@ window.MB = window.MB || {};
     return L.latLngBounds([center.lat - dLat, center.lng - dLng], [center.lat + dLat, center.lng + dLng]);
   };
 
+  /* ---------- rectangles (flat Web-Mercator math) ----------
+   * A rectangle is a rectangle on the map, so its corners are worked out in Mercator x/y (the projection the map
+   * draws in), never in degrees. The helpers take and return plain points {x, y} in any such frame (Mercator
+   * radians with y up, or screen pixels with y down), so the drawing tool can use the map's own projection. */
+
+  // Web-Mercator x, y of a point, in radians, y up.
+  MB.mercXY = function (lat, lng) {
+    const l = Math.max(-89.9999, Math.min(89.9999, +lat));
+    return { x: +lng * D2R, y: Math.log(Math.tan(Math.PI / 4 + l * D2R / 2)) };
+  };
+
+  // The rectangle on the side a → b, deep enough to reach p: its corners as a ring [a, d, c, b] (a and c opposite).
+  // Null when a and b are the same point, or p lies on the line through them (nothing to draw).
+  MB.rectFrom3 = function (a, b, p) {
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy);
+    if (!(len > 1e-9)) return null;
+    const nx = -dy / len, ny = dx / len; // the side's normal (unit)
+    const h = (p.x - a.x) * nx + (p.y - a.y) * ny; // how deep, with its sign (p's side)
+    if (!(Math.abs(h) > 1e-9)) return null;
+    return [{ x: a.x, y: a.y }, { x: a.x + nx * h, y: a.y + ny * h }, { x: b.x + nx * h, y: b.y + ny * h }, { x: b.x, y: b.y }];
+  };
+
+  // The axis-aligned rectangle centered on c with p as a corner, as a ring (index 0 and 2 opposite).
+  MB.rectFromCenter = function (c, p) {
+    const qx = 2 * c.x - p.x, qy = 2 * c.y - p.y;
+    const x0 = Math.min(qx, p.x), x1 = Math.max(qx, p.x), y0 = Math.min(qy, p.y), y1 = Math.max(qy, p.y);
+    return [{ x: x0, y: y0 }, { x: x0, y: y1 }, { x: x1, y: y1 }, { x: x1, y: y0 }];
+  };
+
+  // Web-Mercator x, y back to a point on the map.
+  MB.mercLatLng = function (x, y) {
+    return { lat: (2 * Math.atan(Math.exp(y)) - Math.PI / 2) / D2R, lng: x / D2R };
+  };
+
+  const samePt = (a, b) => Math.abs(a.lat - b.lat) < 1e-12 && Math.abs(a.lng - b.lng) < 1e-12;
+
+  // A ring's points as {lat, lng}, in either form ([lat, lng] pairs or LatLngs), without a closing duplicate
+  // (a GeoJSON ring comes closed). Empty for anything else.
+  function ringPts(latlngs) {
+    if (!Array.isArray(latlngs) || !latlngs.length) return [];
+    const pts = latlngs.map(p => (Array.isArray(p) ? { lat: +p[0], lng: +p[1] } : (p && typeof p === 'object' ? { lat: +p.lat, lng: +p.lng } : null)));
+    if (pts.some(p => !p || !isFinite(p.lat) || !isFinite(p.lng))) return [];
+    if (pts.length > 1 && samePt(pts[0], pts[pts.length - 1])) pts.pop();
+    return pts;
+  }
+
+  // Whether a ring really is a rectangle on the map (four corners whose diagonals halve each other and are the same
+  // length): a rotated one that would be lost if it were restored from its bounding box. The tolerance allows for
+  // the 7 decimals a project file keeps. `near`: a tolerance generous enough for a file written with fewer decimals
+  // (a percent of the shape, and never under about 0.6 m) — what comes back is squared up again (MB.squareRect),
+  // so a rectangle is not left a polygon over rounding by whatever wrote it.
+  MB.isRectRing = function (latlngs, near) {
+    const pts = ringPts(latlngs);
+    if (pts.length !== 4) return false;
+    const q = pts.map(p => MB.mercXY(p.lat, p.lng));
+    const d1 = Math.sqrt((q[2].x - q[0].x) ** 2 + (q[2].y - q[0].y) ** 2);
+    const d2 = Math.sqrt((q[3].x - q[1].x) ** 2 + (q[3].y - q[1].y) ** 2);
+    const mid = Math.sqrt(((q[1].x + q[3].x - q[0].x - q[2].x) / 2) ** 2 + ((q[1].y + q[3].y - q[0].y - q[2].y) / 2) ** 2);
+    const tol = near ? Math.max(Math.max(d1, d2) * 1e-2, 1e-7) : Math.max(Math.max(d1, d2) * 1e-3, 1e-8); // (1e-7 rad: about 0.6 m)
+    return mid <= tol && Math.abs(d1 - d2) <= tol;
+  };
+
+  // Whether a ring is upright (every edge due north-south or east-west): what a rectangle's bounding box gives.
+  MB.isAxisRect = function (latlngs) {
+    const pts = ringPts(latlngs);
+    if (pts.length < 3) return false;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      if (Math.abs(a.lat - b.lat) >= 1e-9 && Math.abs(a.lng - b.lng) >= 1e-9) return false;
+    }
+    return true;
+  };
+
+  // The corners a rectangle must be kept by, or null when its bounding box says it all (an upright one, or a ring
+  // that is no rectangle at all): four different corners that are not upright. It does not ask for a perfect
+  // rectangle — a turned one dragged across the map comes back slightly skewed, every corner having moved by the
+  // same degrees, which is not the same distance in the projection — so a turned rectangle is never straightened
+  // into its box behind the user's back. (The skew itself is taken out when the drag ends: js/features.js.)
+  MB.rectRing = function (latlngs) {
+    const pts = ringPts(latlngs);
+    if (pts.length !== 4) return null;
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) if (samePt(pts[i], pts[j])) return null; // a corner on a corner: nothing to keep
+    return MB.isAxisRect(pts) ? null : pts;
+  };
+
+  // The true rectangle nearest a four-cornered ring: the same center, turn and size, its corners in the same order
+  // (so the ring's angle is unchanged). Null for anything but four corners.
+  MB.squareRect = function (latlngs) {
+    const pts = ringPts(latlngs);
+    if (pts.length !== 4) return null;
+    const q = pts.map(p => MB.mercXY(p.lat, p.lng));
+    const cx = (q[0].x + q[1].x + q[2].x + q[3].x) / 4, cy = (q[0].y + q[1].y + q[2].y + q[3].y) / 4;
+    // the two pairs of opposite sides, averaged: the way the rectangle lies and how big it is
+    const ax = ((q[1].x - q[0].x) + (q[2].x - q[3].x)) / 2, ay = ((q[1].y - q[0].y) + (q[2].y - q[3].y)) / 2;
+    const bx = ((q[3].x - q[0].x) + (q[2].x - q[1].x)) / 2, by = ((q[3].y - q[0].y) + (q[2].y - q[1].y)) / 2;
+    const h = Math.sqrt(ax * ax + ay * ay);
+    if (!(h > 1e-12)) return null;
+    const ux = ax / h, uy = ay / h; // along the first edge
+    let vx = -uy, vy = ux;          // square to it, on the side the other pair points
+    if (bx * vx + by * vy < 0) { vx = -vx; vy = -vy; }
+    const w = bx * vx + by * vy;
+    if (!(w > 1e-12)) return null; // no width to it (a ring crossing itself): left as it is, not flattened to a line
+    const corner = (s, t) => MB.mercLatLng(cx + ux * h * s / 2 + vx * w * t / 2, cy + uy * h * s / 2 + vy * w * t / 2);
+    return [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
+  };
+
+  // How far a ring is turned, in degrees [0, 360): the angle of its first edge, in Geoman's convention (0 for a
+  // ring that starts south-west and runs north).
+  MB.ringAngle = function (latlngs) {
+    const pts = ringPts(latlngs);
+    if (pts.length < 2) return 0;
+    const a = MB.mercXY(pts[0].lat, pts[0].lng), b = MB.mercXY(pts[1].lat, pts[1].lng);
+    const deg = Math.atan2(-(b.y - a.y), b.x - a.x) * 180 / Math.PI + 90; // (screen pixels count y downwards)
+    return ((deg % 360) + 360) % 360;
+  };
+
   /* ---------- units ---------- */
 
   function fmt(n, d) {
@@ -301,6 +417,47 @@ window.MB = window.MB || {};
   MB.toMeters = (v, units) => MB.inputUnit('size', units).toMeters(v);
   MB.fromMeters = (m, units) => MB.inputUnit('size', units).fromMeters(m);
   MB.lengthUnitLabel = units => MB.inputUnit('size', units).label;
+
+  /* ----- a typed length ----- */
+  // What a typed length can be in, and how many meters one is.
+  MB.distanceUnits = { m: 1, km: 1000, ft: 0.3048, mi: 1609.344, NM: 1852 };
+  // The units that may be typed after the number (it wins over the one chosen beside the box).
+  const UNIT_WORDS = {
+    m: 'm', meter: 'm', meters: 'm', metre: 'm', metres: 'm',
+    km: 'km', kilometer: 'km', kilometers: 'km', kilometre: 'km', kilometres: 'km',
+    ft: 'ft', foot: 'ft', feet: 'ft', "'": 'ft',
+    mi: 'mi', mile: 'mi', miles: 'mi',
+    nm: 'NM', nmi: 'NM'
+  };
+  const MIN_LENGTH = 0.01, MAX_LENGTH = 20000000; // meters: 1 cm to 20 000 km (anything else is a typo)
+  const GROUPED = /^\d{1,3}(,\d{3})+(\.\d+)?$/; // 1,500 and 1,234.5: commas by thousands
+
+  // A length as typed ("500", "1.5 km", ".5 mi", "1,5", "1,234.5 ft"), in the unit given unless the text names one:
+  // { meters, unit }, or null for anything that is not a usable length.
+  MB.parseDistance = function (text, unit) {
+    const s = String(text == null ? '' : text).trim();
+    if (!s || s.length > 40) return null; // (nothing this long is a length: no point picking it apart)
+    // the number, then the unit if one is typed (the classes share no character: no backtracking over a long value)
+    const m = /^(\.?\d[\d.,]*)\s*([a-z'′]*)$/i.exec(s);
+    if (!m) return null;
+    let u = MB.distanceUnits[unit] ? unit : 'm';
+    const suffix = m[2].replace(/′/g, "'").toLowerCase();
+    if (suffix) {
+      if (!UNIT_WORDS[suffix]) return null;
+      u = UNIT_WORDS[suffix];
+    }
+    // a comma groups thousands where it can ("1,500", "1,234.5"); on its own it is the decimal point ("1,5").
+    // "1.234,5" is neither: it is not read as 1.2345 (that would be a thousandfold mistake), it is refused.
+    let num = m[1];
+    if (num.includes(',')) {
+      if (num.includes('.') && !GROUPED.test(num)) return null;
+      num = GROUPED.test(num) ? num.replace(/,/g, '') : num.replace(',', '.');
+    }
+    const v = /^\d*\.?\d*$/.test(num) ? Number(num) : NaN;
+    const meters = v * MB.distanceUnits[u];
+    if (!isFinite(meters) || meters < MIN_LENGTH || meters > MAX_LENGTH) return null;
+    return { meters, unit: u };
+  };
 
   // Scale-bar unit for a bar whose half length is `halfMeters`.
   MB.scaleUnit = function (halfMeters, units) {

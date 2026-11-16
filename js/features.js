@@ -336,6 +336,19 @@ window.MB = window.MB || {};
     return { latlng: e.latlng, cp, x: r.left + cp.x, y: r.top + cp.y };
   }
 
+  // A turned rectangle just dragged with the Move tool: Geoman moves every corner by the same degrees, which is not
+  // the same distance in the projection, so the shape comes out slightly skewed. It is squared up again here (same
+  // center, turn and size), so a hundred drags do not pile the skew up into a parallelogram.
+  function resquare(layer) {
+    if (!layer.mb || layer.mb.type !== 'rectangle' || !layer.getLatLngs) return;
+    const ring = (layer.getLatLngs() || [])[0] || [];
+    if (!MB.rectRing(ring)) return; // upright (or no longer four corners): nothing to square
+    const sq = MB.squareRect(ring);
+    if (!sq) return;
+    layer.setLatLngs(sq.map(p => L.latLng(p.lat, p.lng)));
+    if (layer.pm) layer.pm._setAngle(MB.ringAngle(sq)); // (a drag is the Move tool's: no edit handles out to re-place)
+  }
+
   function bindFeatureEvents(layer) {
     if (layer._mbBound) return;
     layer._mbBound = true;
@@ -384,8 +397,8 @@ window.MB = window.MB || {};
       MB.commitDebounced(label);
     };
     layer.on('pm:edit', () => changed('edit'));
-    layer.on('pm:dragend', () => changed('move'));
-    layer.on('dragend', () => changed('move'));
+    layer.on('pm:dragend', () => { resquare(layer); changed('move'); });
+    layer.on('dragend', () => { resquare(layer); changed('move'); });
     layer.on('drag pm:drag', () => { MB.updateTooltip(layer); MB.scaler.follow(layer); }); // its labels and box follow the drag
     layer.on('pm:textchange', e => { layer.mb.text = e.text; MB.commitDebounced('text'); });
     layer.on('pm:textblur', () => {
@@ -1024,7 +1037,18 @@ window.MB = window.MB || {};
       case 'line': case 'measure-line': layer = L.polyline(fromArr(d.latlngs), st); break;
       case 'ink': layer = L.polyline(fromArr(d.latlngs), Object.assign(st, { fill: false, className: 'mb-ink mb-ink-' + ((d.style && d.style.ink) || 'pen') })); break; // (ink.js)
       case 'polygon': case 'measure-area': layer = L.polygon(fromArr(d.latlngs), st); break;
-      case 'rectangle': layer = L.rectangle(L.latLngBounds(flattenLatLngs(fromArr(d.latlngs))), st); break;
+      case 'rectangle': {
+        // A turned rectangle (the drawing tool's three-point mode) is kept corner by corner: its bounding box would
+        // straighten it on every undo, reload, duplicate or import. An upright one takes the box, as it always has.
+        const all = flattenLatLngs(fromArr(d.latlngs));
+        const ring = MB.rectRing(all); // the corners to keep, or null for the box
+        layer = L.rectangle(L.latLngBounds(all), st);
+        if (ring) {
+          layer.setLatLngs(ring.map(p => L.latLng(p.lat, p.lng)));
+          if (layer.pm) layer.pm._setAngle(MB.ringAngle(ring)); // so dragging a corner keeps it rectangular
+        }
+        break;
+      }
       case 'circle': layer = L.circle(fromArr(d.latlng), Object.assign({ radius: d.radius }, st)); break;
       case 'svg': layer = MB.buildSvgLayer(fromArr(d.latlng), d.svg); break;
     }
