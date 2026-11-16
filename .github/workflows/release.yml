@@ -234,14 +234,25 @@ jobs:
         with:
           path: installers
           merge-multiple: true
+      - name: Android release note
+        id: apknote
+        # Only when a debug APK was actually attached: a signed APK needs no warning, and a failed android
+        # job leaves none at all. The note goes above the generated notes in the Release body.
+        run: |
+          apk=$(ls installers/GenGIS-*-android-debug.apk 2>/dev/null | head -n1 || true)
+          if [ -n "$apk" ]; then
+            {
+              echo 'body<<APKNOTE_EOF'
+              echo "**Android:** \`$(basename "$apk")\` is a debug build, for testing and fresh installs: it will not install over a previous GenGIS APK (uninstall that one first). A signed release APK will replace it once app signing is set up."
+              echo APKNOTE_EOF
+            } >> "$GITHUB_OUTPUT"
+          fi
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: GenGIS ${{ needs.version.outputs.tag }}
           generate_release_notes: true
-          append_body: true   # the note below is kept alongside the generated notes, not in place of them
-          body: |
-            **Android:** `GenGIS-${{ needs.version.outputs.version }}-android-debug.apk` is a debug build, for testing and fresh installs: it will not install over a previous GenGIS APK (uninstall that one first). A signed release APK will replace it once app signing is set up.
+          body: ${{ steps.apknote.outputs.body }}   # empty when there is no debug APK: the generated notes alone
           prerelease: ${{ contains(needs.version.outputs.tag, '-') }}
           files: installers/*
 

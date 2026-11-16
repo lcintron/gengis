@@ -253,9 +253,16 @@ test('the release names the Android assets after the version, the signed APK in 
 test('a failed Android build does not hold back the Release, and nothing is published without a release', () => {
   const jobs = workflowJobs('.github/workflows/release.yml');
   assert.match(jobs.publish, /needs: \[version, build, android\]/);
-  // the note about the Android download is appended to the generated notes, never in place of them
-  assert.match(jobs.publish, /generate_release_notes: true\n {10}append_body: true/);
-  assert.match(jobs.publish, /\*\*Android:\*\* `GenGIS-\$\{\{ needs\.version\.outputs\.version \}\}-android-debug\.apk`/);
+  // the note about the Android download: only when a debug APK was really attached, and named after that file
+  const note = /\n      - name: Android release note\n([\s\S]*?)\n      - uses:/.exec(jobs.publish);
+  assert.ok(note, 'the step that writes the note');
+  assert.match(note[1], /id: apknote/);
+  assert.match(note[1], /ls installers\/GenGIS-\*-android-debug\.apk/, 'it looks at what was downloaded');
+  assert.match(note[1], /basename "\$apk"/, 'the name in the note is the attached file\'s own');
+  assert.match(note[1], /if \[ -n "\$apk" \]; then\n[\s\S]*?\$GITHUB_OUTPUT[\s\S]*?\n          fi/, 'nothing is written without a debug APK');
+  assert.ok(!/\*\*Android:\*\*/.test(jobs.publish.replace(note[1], '')), 'the note itself lives in that step, not in the release body');
+  assert.match(jobs.publish, /generate_release_notes: true\n {10}body: \$\{\{ steps\.apknote\.outputs\.body \}\}/);
+  assert.ok(!/append_body/.test(jobs.publish), 'no append_body: a re-run would add the note a second time');
   // !cancelled() rather than always(): an android failure still publishes, a cancelled run does not
   assert.match(jobs.publish, /if: \$\{\{ !cancelled\(\) && needs\.version\.outputs\.released == 'true' && needs\.build\.result == 'success' \}\}/);
   assert.ok(!/always\(\)/.test(jobs.publish), 'a cancelled run must not publish a Release');
