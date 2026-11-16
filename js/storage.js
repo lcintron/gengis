@@ -115,8 +115,12 @@ window.MB = window.MB || {};
             MB.restoreFeature(Object.assign(base, { type: p.type === 'measure-line' || p.type === 'ink' ? p.type : 'line', latlngs: c.map(pt => [pt[1], pt[0]]) })); n++; break;
           case 'MultiLineString':
             MB.restoreFeature(Object.assign(base, { type: 'line', latlngs: c.map(ls => ls.map(pt => [pt[1], pt[0]])) })); n++; break;
-          case 'Polygon':
-            MB.restoreFeature(Object.assign(base, { type: p.type === 'rectangle' ? 'rectangle' : (p.type === 'measure-area' ? 'measure-area' : 'polygon'), latlngs: c.map(r => r.map(pt => [pt[1], pt[0]])) })); n++; break;
+          case 'Polygon': {
+            // tagged a rectangle, but only if it really is one: anything else keeps its shape as a polygon
+            const rings = c.map(r => r.map(pt => [pt[1], pt[0]]));
+            const rect = p.type === 'rectangle' && MB.isRectRing(rings[0]);
+            MB.restoreFeature(Object.assign(base, { type: rect ? 'rectangle' : (p.type === 'measure-area' ? 'measure-area' : 'polygon'), latlngs: rings })); n++; break;
+          }
           case 'MultiPolygon':
             MB.restoreFeature(Object.assign(base, { type: 'polygon', latlngs: c.map(pg => pg.map(r => r.map(pt => [pt[1], pt[0]]))) })); n++; break;
         }

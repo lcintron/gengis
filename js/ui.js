@@ -1733,7 +1733,10 @@ window.MB = window.MB || {};
     return g && root.contains(g) ? g.getAttribute('aria-label') : null;
   };
   MB.ui.radios = function (root, refocus) {
-    root.querySelectorAll('[role="radiogroup"]').forEach(g => {
+    // the root itself can be the group (the rectangle tool's modes), or hold them (the annotation bar)
+    const groups = Array.from(root.querySelectorAll('[role="radiogroup"]'));
+    if (root.getAttribute && root.getAttribute('role') === 'radiogroup') groups.unshift(root);
+    groups.forEach(g => {
       const opts = Array.from(g.querySelectorAll('[role="radio"]:not([disabled])'));
       if (!opts.length) return;
       const checked = opts.find(b => b.getAttribute('aria-checked') === 'true') || opts[0];

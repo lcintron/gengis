@@ -203,10 +203,11 @@ window.MB = window.MB || {};
 
   MB.circleRadius = {
     locked: null, // meters, or null for "as dragged"
-    el: null, ghost: null,
+    el: null, ghost: null, color: null, // (the ghost's color, worked out once: it is drawn on every move)
 
     init() {
       MB.on('units', () => this.useDefaultUnit());
+      MB.on('features', () => { this.color = null; }); // the next object's color may have changed (the ghost's)
       // the center placed with a radius typed: that is the whole circle, no second click
       const Circle = L.PM && L.PM.Draw && L.PM.Draw.Circle && L.PM.Draw.Circle.prototype;
       if (Circle && Circle._placeCenterMarker && !Circle._mbRadiusBox) {
@@ -256,7 +257,11 @@ window.MB = window.MB || {};
       const was = this.locked;
       sel.value = MB.inputUnit('radius').label;
       if (was) {
-        this.box().value = String(+(was / MB.distanceUnits[sel.value]).toFixed(3)); // (plain digits: the box is read back)
+        // the same length in the new unit, with digits enough that it stays that length (1 m is 0.000539957 NM, and
+        // rounded short it would be 0: no radius at all)
+        let v = String(+(was / MB.distanceUnits[sel.value]).toPrecision(6)); // (plain digits: the box is read back)
+        if (!MB.parseDistance(v, sel.value)) { sel.value = 'm'; v = String(+was.toPrecision(6)); } // not writable there (a hair's breadth in miles): meters say it
+        this.box().value = v;
         this.read();
       }
     },
@@ -301,11 +306,11 @@ window.MB = window.MB || {};
         if (this.ghost) { MB.map.removeLayer(this.ghost); this.ghost = null; }
         return;
       }
-      const color = MB.newShapeStyle().color;
+      const color = this.color || (this.color = MB.newShapeStyle().color);
       if (!this.ghost) {
         this.ghost = L.circle(latlng, { radius: this.locked, color, weight: 1.5, dashArray: '5,5', fill: false, interactive: false, pmIgnore: true }).addTo(MB.map);
       } else {
-        this.ghost.setStyle({ color });
+        if (this.ghost.options.color !== color) this.ghost.setStyle({ color });
         this.ghost.setLatLng(latlng);
         this.ghost.setRadius(this.locked);
       }
@@ -318,7 +323,7 @@ window.MB = window.MB || {};
   // had from a mouse. A tap is left alone, so tap-then-tap still works, and the mouse is unchanged (its drag pans).
 
   MB.drawDrag = {
-    active: false, g: null, swallow: 0,
+    active: false, g: null, swallow: 0, ended: null, // ended: the pointer of a gesture that finished mid-drag
     MIN: 6, // px: less is a tap
 
     init() {
@@ -356,7 +361,7 @@ window.MB = window.MB || {};
       this.hold(false);
       if (!g) return;
       this.g = null;
-      if (g.placed) this.swallow = Date.now() + 400;
+      if (g.placed) { this.swallow = Date.now() + 400; this.ended = g.id; } // its lift's click is still not the map's
       if (g.placed && !g.created) this.restartDraw();
     },
     restartDraw() {
@@ -364,6 +369,16 @@ window.MB = window.MB || {};
       if (!this.active || (t !== 'rectangle' && t !== 'circle')) return;
       MB.map.pm.disableDraw();
       MB.tools.startDraw(t);
+    },
+
+    // Whether the draw already has its first point down (a rectangle's first corner or the end of its side, a
+    // circle's center): then a drag sets the next one where the finger is lifted, not where it went down.
+    started() {
+      const t = MB.tools.current, pm = MB.map.pm.Draw;
+      const draw = t === 'rectangle' ? pm.Rectangle : t === 'circle' ? pm.Circle : null;
+      if (!draw || !draw._layerGroup) return false;
+      const first = t === 'circle' ? draw._centerMarker : draw._layer; // Geoman adds it on the first click
+      return !!first && draw._layerGroup.hasLayer(first);
     },
 
     point(e) {
@@ -383,7 +398,8 @@ window.MB = window.MB || {};
       const box = MB.circleRadius.box();
       if (box && document.activeElement === box) box.blur(); // the phone's keyboard is in the way of the map
       this.hold(true);
-      this.g = { id: e.pointerId, p0: this.point(e), placed: false, created: false };
+      this.ended = null;
+      this.g = { id: e.pointerId, p0: this.point(e), placed: false, created: false, second: this.started() };
       try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* gone already */ }
     },
 
@@ -396,24 +412,34 @@ window.MB = window.MB || {};
       if (!g.placed) {
         if (Math.abs(p.x - g.p0.x) < this.MIN && Math.abs(p.y - g.p0.y) < this.MIN) return; // still a tap
         g.placed = true;
-        this.swallow = Date.now() + 400;
-        this.fire('click', g.p0, e); // the first point, where the finger went down
-        if (!this.g || g.created) return; // the shape is already made (a typed radius) or the tool is gone
+        this.swallow = Date.now() + 400; // (set before the click: the gesture may make the shape there and then)
+        if (!g.second) { // the first point, where the finger went down (with one already down, the lift sets the next)
+          this.fire('mousemove', g.p0, e); // first the move: Geoman's hint marker, and its snapping, belong there
+          this.fire('click', g.p0, e);
+          if (!this.g || g.created) return; // the shape is already made (a typed radius) or the tool is gone
+        }
       }
       this.fire('mousemove', p, e);
     },
 
     up(e, cancelled) {
       const g = this.g;
-      if (!g || e.pointerId !== g.id) return;
+      if (!g || e.pointerId !== g.id) {
+        // the gesture already ended (its first point made the shape): its lift must not reach the map either, or
+        // the click lands in the tool that followed and undoes the selection
+        if (this.ended != null && this.ended === e.pointerId) { this.ended = null; this.swallow = Date.now() + 400; e.preventDefault(); e.stopPropagation(); }
+        return;
+      }
       e.preventDefault(); e.stopPropagation();
       if (cancelled) { this.cancel(); return; }
       this.g = null;
       this.hold(false);
-      if (!g.placed) return; // a tap: Leaflet gets its own click (tap, then tap, draws as it always did)
+      const p = this.point(e);
+      // A tap: Leaflet gets its own click (tap, then tap, draws as it always did). The move first, so Geoman's hint
+      // marker is where the finger is and its snapping decided before the click reads it.
+      if (!g.placed) { this.fire('mousemove', p, e); return; }
       this.swallow = Date.now() + 400;
       if (g.created) return;
-      const p = this.point(e);
       this.fire('mousemove', p, e); // where it was lifted, snapping and all
       this.fire('click', p, e);
     }

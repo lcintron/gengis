@@ -336,6 +336,22 @@ window.MB = window.MB || {};
     return { latlng: e.latlng, cp, x: r.left + cp.x, y: r.top + cp.y };
   }
 
+  // A turned rectangle just dragged: Geoman moves every corner by the same degrees, which is not the same distance
+  // in the projection, so the shape comes out slightly skewed. It is squared up again here (same center, turn and
+  // size), so a hundred drags do not pile the skew up into a parallelogram.
+  function resquare(layer) {
+    if (!layer.mb || layer.mb.type !== 'rectangle' || !layer.getLatLngs) return;
+    const ring = (layer.getLatLngs() || [])[0] || [];
+    if (!MB.rectRing(ring)) return; // upright (or no longer four corners): nothing to square
+    const sq = MB.squareRect(ring);
+    if (!sq) return;
+    layer.setLatLngs(sq.map(p => L.latLng(p.lat, p.lng)));
+    if (layer.pm) {
+      layer.pm._setAngle(MB.ringAngle(sq));
+      try { if (layer.pm.enabled() && layer.pm._initMarkers) layer.pm._initMarkers(); } catch (e) { /* its handles follow next time */ }
+    }
+  }
+
   function bindFeatureEvents(layer) {
     if (layer._mbBound) return;
     layer._mbBound = true;
@@ -384,8 +400,8 @@ window.MB = window.MB || {};
       MB.commitDebounced(label);
     };
     layer.on('pm:edit', () => changed('edit'));
-    layer.on('pm:dragend', () => changed('move'));
-    layer.on('dragend', () => changed('move'));
+    layer.on('pm:dragend', () => { resquare(layer); changed('move'); });
+    layer.on('dragend', () => { resquare(layer); changed('move'); });
     layer.on('drag pm:drag', () => { MB.updateTooltip(layer); MB.scaler.follow(layer); }); // its labels and box follow the drag
     layer.on('pm:textchange', e => { layer.mb.text = e.text; MB.commitDebounced('text'); });
     layer.on('pm:textblur', () => {
@@ -1027,12 +1043,11 @@ window.MB = window.MB || {};
       case 'rectangle': {
         // A turned rectangle (the drawing tool's three-point mode) is kept corner by corner: its bounding box would
         // straighten it on every undo, reload, duplicate or import. An upright one takes the box, as it always has.
-        const ring = flattenLatLngs(fromArr(d.latlngs));
-        if (ring.length > 1 && ring[0].equals(ring[ring.length - 1])) ring.pop(); // an imported ring comes closed
-        const turned = MB.isRectRing(ring) && !MB.isAxisRect(ring);
-        layer = L.rectangle(L.latLngBounds(ring), st);
-        if (turned) {
-          layer.setLatLngs(ring);
+        const all = flattenLatLngs(fromArr(d.latlngs));
+        const ring = MB.rectRing(all); // the corners to keep, or null for the box
+        layer = L.rectangle(L.latLngBounds(all), st);
+        if (ring) {
+          layer.setLatLngs(ring.map(p => L.latLng(p.lat, p.lng)));
           if (layer.pm) layer.pm._setAngle(MB.ringAngle(ring)); // so dragging a corner keeps it rectangular
         }
         break;
