@@ -264,6 +264,8 @@ body.presenting .mb-scale-box { display: none !important; }
 #mapwrap.tb-right #toolbar { left: auto; right: 12px; transform-origin: top right; }
 #mapwrap.tb-right #toolbar.docked { right: 0; border-width: 0 0 0 1px; direction: ltr; } /* its scroll bar against the screen's edge */
 #mapwrap.tb-right.tb-docked .leaflet-bottom.leaflet-right { right: var(--tb-w, 52px); }
+/* the right column moved in by the strip: the left column stops that much earlier as well (--dock-reserve, below) */
+#mapwrap.tb-right.tb-docked:not(.narrow) .leaflet-bottom.leaflet-left { --dock-reserve: calc(290px + var(--tb-w, 52px)); }
 #mapwrap.tb-right .leaflet-top.leaflet-right { right: auto; left: 0; }
 #mapwrap.tb-right .leaflet-top.leaflet-right .leaflet-control { float: left; clear: both; margin-right: 0; margin-left: 10px; }
 
@@ -333,14 +335,37 @@ body.presenting .mb-scale-box { display: none !important; }
 .mb-heading-rot { width: 100%; height: 100%; transition: transform .12s linear; }
 .mb-heading-rot svg { width: 100%; height: 100%; display: block; overflow: visible; }
 @keyframes mb-pulse { 50% { opacity: .3; } }
-.leaflet-control-attribution { background: rgba(27,31,39,.8) !important; color: var(--text-dim); font-size: 10px; }
+/* the credits: one line, cut with an ellipsis rather than pushed past the map's edge (the column caps its width) */
+.leaflet-control-attribution { background: rgba(27,31,39,.8) !important; color: var(--text-dim); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .leaflet-control-attribution a { color: var(--accent); }
-.leaflet-control-scale { margin-right: 12px !important; margin-bottom: 12px !important; }
-.leaflet-control-scale-line {
-  background: rgba(27,31,39,.85); color: #fff; border-color: #fff; font-size: 11px; line-height: 1.2; padding: 2px 6px 1px;
-  text-shadow: 0 0 2px #000;
-}
-.leaflet-control-scale-line:not(:first-child) { border-top: none; margin-top: -1px; }
+
+/* ---------- the map's bottom corners: one column each (ui.js fitDock) ----------
+   Every readout down there is a Leaflet control in a corner. The corners stack them in a column in a set order, so
+   what shows depends on what is on, not on the order the controls happened to be added in, and nothing lands on top
+   of anything else. The left column stops short of the right one (--dock-reserve) so its boxes can be capped at the
+   room it has; on a narrow map (#mapwrap.narrow) the right column holds only the scale bar and the reserve goes. */
+.leaflet-bottom.leaflet-left { display: flex; flex-direction: column; align-items: flex-start; right: var(--dock-reserve, 290px); }
+.leaflet-bottom.leaflet-right { display: flex; flex-direction: column; align-items: flex-end; }
+.leaflet-bottom .leaflet-control { max-width: 100%; box-sizing: border-box; }
+/* top to bottom in either column: the zoom hint, the altitude legend, the clock, the coordinates, then the credits
+   (left) or the scale bar (right) at the very bottom */
+.mb-zoom-hint { order: 1; }
+.mb-alt-legend { order: 2; }
+.mb-clock { order: 3; }
+.mb-status { order: 4; }
+.leaflet-control-attribution { order: 5; }
+.mb-scale { order: 5; }
+/* a narrow map (ui.js fitDock): the altitude legend and the zoom hint dock in this column too (adsb.js), where there
+   is width for them; the right column then holds the scale bar alone, and whatever shares the bottom row with it
+   stops short of its end (--scale-room, which follows a toolbar strip docked on that side) */
+#mapwrap.narrow .leaflet-bottom.leaflet-left { --dock-reserve: 0px; --scale-room: 144px; } /* --scale-room: the scale bar's end of the bottom row */
+#mapwrap.narrow.tb-right.tb-docked .leaflet-bottom.leaflet-left { --scale-room: calc(144px + var(--tb-w, 52px)); } /* the strip moves the scale bar in (:266) */
+#mapwrap.narrow :is(.leaflet-control-attribution, .mb-status) { max-width: calc(100% - var(--scale-room, 144px)); }
+/* presenting hides the coordinates (below), so the legend, the hint and the clock drop into the scale bar's row: they
+   leave it the same room there */
+body.presenting #mapwrap.narrow :is(.mb-alt-legend, .mb-zoom-hint, .mb-clock) { max-width: calc(100% - var(--scale-room, 144px)); }
+#mapwrap.narrow :is(.mb-alt-legend, .mb-zoom-hint) { margin: 0 0 6px 8px !important; } /* against the map's left edge now */
+#mapwrap.narrow .mb-alt-legend { width: min(250px, 100% - 16px); }
 .mb-status {
   background: rgba(27,31,39,.85); color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 11px; font-variant-numeric: tabular-nums;
   margin: 0 0 12px 12px !important; border: 1px solid var(--border);
@@ -634,7 +659,6 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   .mb-status { font-size: 10px; margin: 0 0 8px 8px !important; }
   .mb-clock { font-size: 10px; margin: 0 0 4px 8px !important; }
   .mb-scale { margin: 0 8px 8px 0 !important; }
-  .leaflet-control-attribution { max-width: 60vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row label { flex: 0 0 80px; }
   .modal-box { padding: 14px; max-height: calc(92vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); max-height: calc(92dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
   .modal-x { width: 34px; height: 34px; margin: -6px -6px 6px 10px; } /* a finger-sized target */
@@ -1003,7 +1027,8 @@ button.link:hover { text-decoration: underline; }
 .measure-box.with-show .mm-name { padding-left: 19px; }
 
 /* ---------- busy indicator (under the coordinates readout) ---------- */
-.mb-busy { flex: 1 0 100%; display: flex; align-items: center; gap: 6px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.mb-busy { flex: 1 0 100%; display: flex; align-items: center; gap: 6px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; white-space: nowrap; min-width: 0; overflow: hidden; }
+.mb-busy .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* a long list of what is loading is cut, never widening the coordinates box */
 .mb-busy.hidden { display: none; }
 .mb-busy .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid rgba(29,179,169,.25); border-top-color: var(--accent); animation: mb-spin .8s linear infinite; flex: 0 0 auto; }
 @keyframes mb-spin { to { transform: rotate(360deg); } }
@@ -1106,14 +1131,13 @@ body.presenting .mb-ident-own .btn-row { display: none; }
 /* glide on from each position report along the track (dead reckoning); switched off while the map zooms */
 .leaflet-mb-adsb-pane.smooth .mb-ac.glide { transition: transform var(--glide, 1s) linear; } /* --glide: per icon, the time until its next report is due; no glide while zooming (no .smooth) */
 .mb-alt-legend {
-  width: 250px; max-width: calc(100vw - 90px); margin: 0 12px 8px 0 !important; pointer-events: none;
+  width: 250px; max-width: 100%; margin: 0 12px 8px 0 !important; pointer-events: none; /* (its column's width, not the window's) */
   background: rgba(27,31,39,.85); border: 1px solid var(--border); border-radius: 6px; padding: 5px 14px 4px; font-size: 10px; color: var(--text);
 }
 .mb-zoom-hint {
   margin: 0 12px 6px 0 !important; pointer-events: none; padding: 4px 10px; border-radius: 6px; font-size: 11px;
   background: rgba(27,31,39,.85); border: 1px solid var(--border); color: var(--text);
 }
-@media (max-width: 640px) { .mb-alt-legend { margin: 0 8px 14px 0 !important; } .mb-zoom-hint { margin: 0 8px 6px 0 !important; } } /* clear the coordinates box on phones */
 .mb-alt-legend .ttl { color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
 .mb-alt-legend .scale, .mb-alt-legend .ticks { display: flex; gap: 6px; align-items: center; }
 .mb-alt-legend .scale span { height: 8px; border-radius: 2px; }
@@ -1329,14 +1353,13 @@ textarea.attr-multi { display: block; height: auto; min-height: 28px; padding: 5
 .trk-craft svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .trk-craft svg path { fill: currentColor; stroke: #0b1118; stroke-width: 1.6; stroke-linejoin: round; paint-order: stroke; }
 .trk-craft.out { opacity: .4; }
-/* the time bar: over the map, clear of the coordinates (and their loading line) and the scale (--trk-inset: the
-   phone's bottom bar, which the coordinates below it also move above, set in the Android app's rules; --clk-inset:
-   the clock, which sits above the coordinates while it shows, set from clock.js on #mapwrap) */
+/* the time bar: over the map, above whatever the bottom corners hold under it — the coordinates and their loading
+   line, the clock, the altitude legend (--dock-h: the taller corner the bar crosses, measured in ui.js fitDock;
+   --trk-inset: the phone's bottom bar, which the corners below it also move above, set in the Android app's rules) */
 .trk-bar {
-  position: absolute; z-index: 900; left: 50%; bottom: calc(66px + var(--clk-inset, 0px) + var(--trk-inset, 0px)); transform: translateX(-50%); width: min(560px, calc(100% - 24px)); box-sizing: border-box;
+  position: absolute; z-index: 900; left: 50%; bottom: calc(var(--dock-h, 58px) + 8px + var(--trk-inset, 0px)); transform: translateX(-50%); width: min(560px, calc(100% - 24px)); box-sizing: border-box;
   background: rgba(27,31,39,.92); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.45); padding: 6px 8px; font-size: 11px; color: var(--text);
 }
-#mapwrap.clock-on .trk-bar { --clk-inset: 30px; } /* the clock's height: the bar sits above it, not over it */
 .trk-ctl { display: flex; align-items: center; gap: 8px; }
 .trk-btn { flex: 0 0 auto; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 7px;
   border: 1px solid var(--border); background: var(--bg-3); color: var(--text); cursor: pointer; }
@@ -1355,8 +1378,7 @@ select.trk-rate { flex: 0 0 auto; height: 30px; padding: 0 4px; font-size: 12px;
 .trk-lg.chips span { display: inline-flex; align-items: center; gap: 4px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trk-lg.chips i { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 2px; border: 1px solid rgba(255,255,255,.25); }
 @media (max-width: 640px) {
-  .trk-bar { bottom: calc(64px + var(--clk-inset, 0px) + var(--trk-inset, 0px)); width: calc(100% - 16px); padding: 6px; }
-  #mapwrap.clock-on .trk-bar { --clk-inset: 27px; } /* (smaller type here, so a shorter clock) */
+  .trk-bar { bottom: calc(var(--dock-h, 54px) + 8px + var(--trk-inset, 0px)); width: calc(100% - 16px); padding: 6px; }
   .trk-ctl { gap: 6px; }
   .trk-btn, select.trk-rate { width: 36px; height: 36px; }
   select.trk-rate { width: auto; }
@@ -1390,6 +1412,8 @@ html.native-app #mapwrap.tb-right #toolbar { margin-left: 0; margin-right: env(s
 html.native-app .leaflet-bottom { margin-bottom: env(safe-area-inset-bottom, 0px); }
 html.native-app .leaflet-left { margin-left: env(safe-area-inset-left, 0px); }
 html.native-app .leaflet-right { margin-right: env(safe-area-inset-right, 0px); }
+/* a narrow map: the left column runs the full width, so it keeps clear of a bar or cutout at the right as well */
+html.native-app #mapwrap.narrow .leaflet-bottom.leaflet-left { margin-right: env(safe-area-inset-right, 0px); }
 /* unless the side panel is docked beside the map (a phone's sheet lies over it instead): the map ends at the panel,
    which is the one keeping clear of that bar. Presenting, the panel is hidden (display: none) and the map has the
    window to itself again, so the margin stays. */

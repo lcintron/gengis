@@ -304,7 +304,7 @@ test('dialogs stay between the system bars (Android edge-to-edge: the insets com
   // (it sits in #mapwrap, not in a Leaflet corner, so the inset is its own and counted once)
   const trk = one('.trk-bar');
   assert.equal(trk.length, 2, 'the tracking bar: the base rule and the phone one');
-  assert.ok(trk.every(b => /bottom: calc\(\d+px \+ var\(--clk-inset, 0px\) \+ var\(--trk-inset, 0px\)\);/.test(b) && !inset('bottom').test(b)));
+  assert.ok(trk.every(b => /bottom: calc\(var\(--dock-h, \d+px\) \+ \d+px \+ var\(--trk-inset, 0px\)\);/.test(b) && !inset('bottom').test(b)));
   assert.ok(rules('html.native-app .trk-bar').some(b => /--trk-inset: env\(safe-area-inset-bottom, 0px\);/.test(b)), 'the inset only in the Android app');
   assert.ok(rules('html.native-app .leaflet-bottom').some(b => /margin-bottom: env\(safe-area-inset-bottom, 0px\);/.test(b)), 'the same room the map\'s corners get');
   // the export buttons' footer: the box ends above the bar, so no inset again
@@ -600,19 +600,106 @@ test('with a dialog up, the app\'s own keys do nothing on the map behind it (Del
   assert.match(keys, /if \(!covered\(\)\) MB\.ui\.focusSearch\(\);/);
 });
 
-test('the track-log bar sits above the clock when the clock shows, and above the phone\'s gesture bar', () => {
+test('the track-log bar sits above whatever the map\'s bottom corners hold, and above the phone\'s gesture bar', () => {
   const plain = css.replace(/\/\*[\s\S]*?\*\//g, '');
   const rules = sel => [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m => m[1].split(',').some(s => s.trim() === sel)).map(m => m[2]);
-  const lift = rules('#mapwrap.clock-on .trk-bar');
-  assert.equal(lift.length, 2, 'the clock\'s height: the base rule and the phone one');
-  assert.ok(lift.every(b => /--clk-inset: \d+px;/.test(b)), 'as the bar\'s own variable, so the Android inset still counts');
-  // the class is set and cleared by the clock itself, whether it is turned on, off, or applied at startup
+  const bar = rules('.trk-bar');
+  assert.equal(bar.length, 2, 'the bar: the base rule and the phone one');
+  assert.ok(bar.every(b => /bottom: calc\(var\(--dock-h, \d+px\) \+ \d+px \+ var\(--trk-inset, 0px\)\);/.test(b)),
+    'lifted by what the corners cover, with a sensible floor until that is measured, and the Android inset on top');
+  assert.equal(rules('#mapwrap.clock-on .trk-bar').length, 0, 'no guess at the clock\'s height any more: the corner itself is measured');
+  // measured in ui.js: the taller corner the bar crosses, written only when it changes (an observer watches the corners)
+  const ui = js['ui.js'];
+  assert.match(ui, /function dockHeight\(\) \{/, 'ui.js measures the corners');
+  assert.match(ui, /const bar = \$\('\.trk-bar', wrap\), br = bar && !bar\.hidden \? bar\.getBoundingClientRect\(\) : null;/, 'the bar\'s own span, while it shows');
+  assert.match(ui, /if \(wrap\.style\.getPropertyValue\('--dock-h'\) !== px\) wrap\.style\.setProperty\('--dock-h', px\);/, 'only on a change: no observer loop');
+  // the toolbar docking moves a corner sideways without resizing it, so the clearance is read again after it fits
+  assert.match(ui, /function fitAll\(\) \{ fitDock\(\); fitToolbar\(\); dockHeight\(\); \}/, 'measured last in a fit pass');
+  assert.ok(ui.indexOf('function dockHeight()') < ui.indexOf('function fitDock()'), 'a measurement of its own, so the pass can repeat it without the rest');
+  // the bar showing or hiding resizes nothing the observer watches: it asks for the room itself
+  assert.match(js['tracklogs.js'], /if \(was !== el\.hidden && MB\.ui && MB\.ui\.fitDock\) MB\.ui\.fitDock\(\);/);
+  // the clock still says it is showing, and has the room measured again as it comes and goes
   const clock = js['clock.js'];
   assert.match(clock, /const on = !!\(cfg\.show && MB\.map\);/);
   assert.match(clock, /if \(wrap\) wrap\.classList\.toggle\('clock-on', on\);/);
   assert.ok(clock.indexOf("classList.toggle('clock-on'") < clock.indexOf('if (!on) {'), 'set before it returns for a clock that is off');
-  // the bar lives in #mapwrap, where the class is
+  assert.equal((clock.match(/if \(MB\.ui && MB\.ui\.fitDock\) MB\.ui\.fitDock\(\);/g) || []).length, 2, 'turned on and turned off alike');
+  // the bar lives in #mapwrap, where the variable is
   assert.match(js['tracklogs.js'], /const host = document\.getElementById\('mapwrap'\) \|\| MB\.map\.getContainer\(\);/);
+});
+
+test('the map\'s bottom corners stack their readouts in a column, in a set order, each no wider than its column', () => {
+  const plain = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = sel => [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m => m[1].split(',').some(s => s.trim() === sel)).map(m => m[2]);
+  const one = sel => { const r = rules(sel); assert.ok(r.length, sel + ' found'); return r; };
+  const left = one('.leaflet-bottom.leaflet-left'), right = one('.leaflet-bottom.leaflet-right');
+  assert.ok(left.some(b => /display: flex;/.test(b) && /flex-direction: column;/.test(b) && /align-items: flex-start;/.test(b)), 'the left corner: a column');
+  assert.ok(right.some(b => /display: flex;/.test(b) && /flex-direction: column;/.test(b) && /align-items: flex-end;/.test(b)), 'the right corner: a column');
+  assert.ok(one('.leaflet-bottom .leaflet-control').some(b => /max-width: 100%;/.test(b) && /box-sizing: border-box;/.test(b)), 'nothing wider than its column');
+  // every readout down there has its place, so what shows never depends on the order the controls happened to be added in
+  const order = sel => {
+    const m = one(sel).map(b => /(?:^|;)\s*order: (\d+);/.exec(b)).filter(Boolean)[0];
+    assert.ok(m, sel + ': an order in the column');
+    return +m[1];
+  };
+  const hint = order('.mb-zoom-hint'), legend = order('.mb-alt-legend'), clk = order('.mb-clock');
+  const status = order('.mb-status'), attr = order('.leaflet-control-attribution'), scale = order('.mb-scale');
+  assert.ok(hint < legend && legend < clk && clk < status && status < attr,
+    'top to bottom: the zoom hint, the altitude legend, the clock, the coordinates, the credits at the foot');
+  assert.ok(legend < scale, 'the scale bar at the foot of its own column');
+  // the credits are cut with an ellipsis at every width (a phone is not the only narrow map), never sized by the window
+  const noMedia = plain.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\}\s*)*\}/g, '');
+  assert.match(noMedia, /\.leaflet-control-attribution \{[^}]*text-overflow: ellipsis;/, 'the ellipsis outside any media query');
+  assert.ok(rules('.leaflet-control-attribution').every(b => !/\d+vw/.test(b)), 'the credits are capped by their column, not by the window');
+  assert.ok(one('.mb-alt-legend').every(b => !/100vw/.test(b)), 'and so is the altitude legend');
+  assert.ok(one('.mb-busy .txt').some(b => /text-overflow: ellipsis;/.test(b)), 'a long list of what is loading is cut, not widening the coordinates');
+  // a narrow map: the left column has the width to itself, and what shares the scale bar's row stops short of it
+  assert.ok(rules('#mapwrap.narrow .leaflet-bottom.leaflet-left').some(b => /--dock-reserve: 0px;/.test(b)));
+  assert.ok(left.some(b => /right: var\(--dock-reserve, \d+px\);/.test(b)), 'otherwise it stops short of the right column');
+  // (a :is() list, so read from the stylesheet itself: the helper above splits a selector list on its commas)
+  assert.match(plain, /#mapwrap\.narrow :is\(\.leaflet-control-attribution, \.mb-status\) \{[^}]*max-width: calc\(100% - var\(--scale-room, 144px\)\);/,
+    'the credits and the coordinates leave the scale bar its room');
+  assert.ok(rules('#mapwrap.narrow .leaflet-bottom.leaflet-left').some(b => /--scale-room: 144px;/.test(b)), 'that room is the column\'s own variable');
+  // the toolbar docked on the right moves the scale bar in by the strip's width: the cap follows it
+  assert.ok(rules('#mapwrap.narrow.tb-right.tb-docked .leaflet-bottom.leaflet-left').some(b => /--scale-room: calc\(144px \+ var\(--tb-w, 52px\)\);/.test(b)),
+    'a strip docked on the right: that much more room kept for the scale bar');
+  // presenting hides the coordinates, so the legend, the hint and the clock drop into that row: they are capped too
+  assert.match(css, /body\.presenting [^{]*\.mb-status[^{]*\{ display: none !important; \}/, 'presenting hides the coordinates');
+  assert.match(plain, /body\.presenting #mapwrap\.narrow :is\(\.mb-alt-legend, \.mb-zoom-hint, \.mb-clock\) \{[^}]*max-width: calc\(100% - var\(--scale-room, 144px\)\);/,
+    'presenting on a narrow map: the legend, the hint and the clock leave the scale bar its room as well');
+  assert.match(plain, /#mapwrap\.narrow :is\(\.mb-alt-legend, \.mb-zoom-hint\) \{[^}]*margin: 0 0 6px 8px !important;/,
+    'the legend and the hint move to the left edge with it');
+  // in the Android app that full-width column keeps clear of a bar or cutout at the right as well
+  assert.ok(rules('html.native-app #mapwrap.narrow .leaflet-bottom.leaflet-left').some(b => /margin-right: env\(safe-area-inset-right, 0px\);/.test(b)));
+});
+
+test('a narrow map docks the altitude legend and the zoom hint in its left column, with a shorter scale bar', () => {
+  const ui = js['ui.js'];
+  assert.match(ui, /const NARROW_MAP = 560;/, 'the map\'s own width, not the window\'s');
+  assert.match(ui, /const narrow = wrap\.clientWidth < NARROW_MAP;/);
+  const fit = ui.slice(ui.indexOf('function fitDock()'), ui.indexOf('MB.ui.fitDock = fitDock;'));
+  assert.match(fit, /if \(narrow !== wrap\.classList\.contains\('narrow'\)\) \{[\s\S]*?wrap\.classList\.toggle\('narrow', narrow\);/, 'the class is written only when it changes');
+  assert.match(fit, /if \(MB\.adsb && MB\.adsb\.dock\) MB\.adsb\.dock\(narrow\);/, 'the overlays move corner with it');
+  assert.match(fit, /const maxWidth = narrow \? 120 : 200;/, 'a shorter scale bar fits beside the coordinates');
+  assert.match(fit, /if \(MB\.scaleControl && MB\.scaleControl\.options\.maxWidth !== maxWidth\) \{ MB\.scaleControl\.options\.maxWidth = maxWidth; MB\.scaleControl\.update\(\); \}/,
+    'set whenever it differs: the bar may be built after the width was last read');
+  // the controls are kept, so each keeps its element as it moves, and is moved only when the corner differs
+  const adsb = js['adsb.js'];
+  assert.match(adsb, /MB\.liveZoomHintCtl = new Hint\(\{ position: dockPos\(\) \}\)\.addTo\(MB\.map\)/, 'the hint control is kept');
+  assert.match(adsb, /this\.legendCtl = new Legend\(\{ position: dockPos\(\) \}\)\.addTo\(MB\.map\)/, 'and the legend control');
+  assert.match(adsb, /dock\(narrow\) \{\s*\r?\n\s*const pos = narrow \? 'bottomleft' : 'bottomright';/);
+  assert.match(adsb, /if \(ctl && ctl\.getPosition && ctl\.getPosition\(\) !== pos\) ctl\.setPosition\(pos\);/);
+  assert.match(adsb, /return wrap && wrap\.classList\.contains\('narrow'\) \? 'bottomleft' : 'bottomright';/, 'one made later starts in the corner in use');
+  // measured with the map's size and with the corners' own, and once the map is built
+  assert.match(ui, /const fitSoon = \(\) => \{ if \(pending\) return; pending = requestAnimationFrame\(\(\) => \{ pending = 0; fitAll\(\); \}\); \};\s*\r?\n\s*const ro = new ResizeObserver\(fitSoon\);/,
+    'one pass per frame: a fit that resizes a corner cannot set the observer off in the middle of it');
+  assert.match(ui, /BOTTOM_CORNERS\.forEach\(sel => \{ const c = \$\(sel, \$\('#mapwrap'\)\); if \(c\) ro\.observe\(c\); \}\);/, 'the corners too: a legend or the clock appearing changes what they cover');
+  assert.match(ui, /\} else addEventListener\('resize', fitAll\);/, 'no ResizeObserver: the window\'s size at least');
+  assert.match(ui, /MB\.ui\.setupScale\(\);\s*\r?\n\s*fitAll\(\);/, 'and once at startup, after the scale bar is there');
+  // the toolbar shrinks to fit above the corner on its own side, whichever side it is on
+  assert.match(ui, /const corner = \$\('\.leaflet-bottom\.leaflet-' \+ \(wrap\.classList\.contains\('tb-right'\) \? 'right' : 'left'\), wrap\);/);
+  assert.match(ui, /const below = Math\.max\(CORNER_ROOM, corner \? corner\.offsetHeight \+ 12 : 0\);/);
+  assert.ok(js['ui.js'].indexOf("classList.remove('docked')") < js['ui.js'].indexOf('const corner = $('), 'measured undocked, so a re-fit settles');
 });
 
 test('the README says what a dropped file becomes: a layer for KML, KMZ, shapefiles and zips, project objects for GeoJSON', () => {
