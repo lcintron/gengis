@@ -340,7 +340,8 @@ window.MB = window.MB || {};
       const d = this.drag;
       this.stopDrag();
       if (!d || !d.moved || !this.targets.length) return;
-      if (d.rot && !MB.normAngle(d.angle)) return; // turned back to where it started (Shift snapping does that): nothing to save
+      // turned back to where it started (Shift snapping does that): put back exactly as it was, nothing to save
+      if (d.rot && !MB.normAngle(d.angle)) { d.snaps.forEach(restore); this.place(); return; }
       if (d.rot) this.targets.forEach(reangle);
       this.targets.forEach(l => MB.emit('featurechange', l));
       MB.commit((d.rot ? 'rotate' : 'scale') + (this.targets.length > 1 ? ' group' : ''));

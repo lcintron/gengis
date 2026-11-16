@@ -1169,16 +1169,37 @@ window.MB = window.MB || {};
     $('#multiLayer', panel).addEventListener('change', e => { if (e.target.value) MB.moveMultiToLayer(e.target.value); });
   }
 
+  let rotSync = null; // the Rotation row of the object shown in Properties (null while none is), so the knob can refresh it
+
   // A "Rotation" row: how far the object is turned, in degrees (the Scale tool's knob does the same by hand). The
   // slider stops at 359: 360° is 0° again, and the thumb would sit at the far end showing the same angle as the
-  // near one. `set` is called with the angle on the slider; it does the turning and saves it.
-  function rotationRow(value, title, set) {
+  // near one. `get` reads the angle the object is at, `set` is called with the angle on the slider: it does the
+  // turning and saves it. rotSync keeps the row with the object while the knob turns it.
+  function rotationRow(get, title, set) {
     const wrap = document.createElement('div');
-    const v = Math.round(MB.normAngle(value)) % 360;
+    const round = () => Math.round(MB.normAngle(get())) % 360;
+    const v = round();
     wrap.innerHTML = `<div class="row"${title ? ` title="${esc(title)}"` : ''}><label>Rotation</label>` +
       `<input type="range" id="propRot" min="0" max="359" step="1" value="${v}"><span class="val" data-val="rot">${v}°</span></div>`;
     const inp = $('#propRot', wrap), out = $('[data-val="rot"]', wrap);
-    inp.addEventListener('input', () => { const deg = MB.normAngle(inp.value); out.textContent = Math.round(deg) + '°'; set(deg); });
+    let syncing = false;
+    inp.addEventListener('input', () => {
+      if (syncing) return; // the row showing the angle the knob left it at: nothing to turn and nothing to save
+      const deg = MB.normAngle(inp.value);
+      out.textContent = Math.round(deg) + '°';
+      set(deg);
+    });
+    // the angle as it is now, on the slider and in its number box (which follows the input event, as a name
+    // label's size row does); the panel is not drawn anew, so the keyboard stays where it is
+    rotSync = () => {
+      const deg = round();
+      if (+inp.value === deg) return;
+      syncing = true;
+      inp.value = String(deg);
+      out.textContent = deg + '°';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      syncing = false;
+    };
     return wrap;
   }
 
@@ -1187,6 +1208,7 @@ window.MB = window.MB || {};
     const f = MB.selected;
     panel.innerHTML = '';
     labelSizeSync = null; // (the label form sets it again, if there is one)
+    rotSync = null;       // (and so does the rotation row)
     panel.classList.remove('props-locked');
     $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
@@ -1258,7 +1280,7 @@ window.MB = window.MB || {};
       t.innerHTML = `<div class="row"><label>Text</label><textarea id="propText">${esc(f.pm && f.pm.textArea ? f.pm.getText() : m.text || '')}</textarea></div>`;
       panel.appendChild(t);
       $('#propText', panel).addEventListener('input', e => { if (f.pm) { f.pm.setText(e.target.value); m.text = e.target.value; MB.commitDebounced('text'); } });
-      panel.appendChild(rotationRow(MB.getRotation(f), 'How far the text is turned, clockwise', deg => {
+      panel.appendChild(rotationRow(() => MB.getRotation(f), 'How far the text is turned, clockwise', deg => {
         if (MB.getRotation(f) === deg) return; // the same angle: nothing to turn and nothing to save
         MB.setRotation(f, deg);
         MB.scaler.follow(f);
@@ -1278,13 +1300,13 @@ window.MB = window.MB || {};
     }
 
     if (m.type === 'rectangle') {
-      // A rectangle keeps no angle of its own: the slider shows where its first edge points, and its corners are
-      // turned by the difference between the angle on the slider and the one it is at.
-      let at = MB.normAngle(MB.ringAngle((f.getLatLngs() || [])[0] || []));
-      const row = rotationRow(at, 'Where the rectangle\'s first side points, clockwise from north', deg => {
-        const by = MB.normAngle(deg - at);
-        at = deg;
-        if (!by) return; // the same angle: nothing to turn and nothing to save
+      // A rectangle keeps no angle of its own: the slider shows where its first side points, and its corners are
+      // turned by the difference between the angle on the slider and the one the rectangle is at now (read afresh
+      // each time: the knob may have turned it since the panel was drawn).
+      const angleNow = () => MB.normAngle(MB.ringAngle((f.getLatLngs() || [])[0] || []));
+      const row = rotationRow(angleNow, 'Where the rectangle\'s first side points, clockwise from north', deg => {
+        const by = MB.normAngle(deg - angleNow());
+        if (by < 0.01 || by > 359.99) return; // the angle it is at already (bar a hair of dust from the pixel round-trip): nothing to turn and nothing to save
         MB.scaler.rotateBy(f, by);
         MB.emit('featurechange', f);
         MB.commitDebounced('rotate');
@@ -1556,6 +1578,10 @@ window.MB = window.MB || {};
       : `Hidden now (${MB.zoomIcon}${now}); shown while selected.`;
   };
 
+  // An image's angle for its slider: whole degrees (a free turn of the knob leaves a fraction behind, which would
+  // spill out of the readout).
+  const rotVal = svg => Math.round(MB.normAngle(svg.rotation)) % 360;
+
   function svgProps(f) {
     const svg = f.mb.svg, lib = MB.state.svgLibrary[svg.svgId] || {};
     const wrap = document.createElement('div');
@@ -1565,7 +1591,7 @@ window.MB = window.MB || {};
       <div class="row"><label>File</label><select data-k="svgId">${Object.values(MB.state.svgLibrary).map(l => `<option value="${l.id}"${l.id === svg.svgId ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>
       ${raster ? '<p class="note">A picture scales with the map: its width is on the ground.</p>' : `<div class="row"><label>Sizing</label><div class="seg small"><button data-mode="pin"${!isGround ? ' class="active"' : ''}>Fixed pixels</button><button data-mode="ground"${isGround ? ' class="active"' : ''}>Scale with map</button></div></div>`}
       <div class="row"><label>Width</label><input type="number" data-k="width" min="1" step="any" value="${wVal}"><span class="unit">${isGround ? MB.lengthUnitLabel() : 'px'}</span></div>
-      <div class="row"><label>Rotation</label><input type="range" data-k="rotation" min="0" max="359" step="1" value="${MB.normAngle(svg.rotation)}"><span class="val" data-val="rotation">${MB.normAngle(svg.rotation)}°</span></div>
+      <div class="row"><label>Rotation</label><input type="range" data-k="rotation" min="0" max="359" step="1" value="${rotVal(svg)}"><span class="val" data-val="rotation">${rotVal(svg)}°</span></div>
       <div class="row"><label>Opacity</label><input type="range" data-k="opacity" min="0" max="1" step="0.05" value="${svg.opacity == null ? 1 : svg.opacity}"><span class="val" data-val="opacity">${Math.round((svg.opacity == null ? 1 : svg.opacity) * 100)}%</span></div>
       <p class="note">${esc(lib.name || '')} · ${lib.width ? lib.width + '×' + lib.height : ''}</p></div>`;
     // a new sizing, the width converted so the image keeps about its size on screen; a symbol's angle is not an
@@ -1585,8 +1611,10 @@ window.MB = window.MB || {};
       MB.rebuildFeature(f);
       MB.commit('svg mode');
     }));
+    let syncing = false;
     $$('[data-k]', wrap).forEach(inp => {
       inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', () => {
+        if (syncing) return; // the row showing the angle the knob left the image at: nothing to change and nothing to save
         const k = inp.dataset.k;
         if (k === 'width') { const v = +inp.value; if (!(v > 0)) return; svg.width = isGround ? MB.toMeters(v) : v; }
         else if (k === 'svgId') {
@@ -1596,7 +1624,7 @@ window.MB = window.MB || {};
         }
         else svg[k] = k === 'rotation' ? MB.normAngle(inp.value) : +inp.value;
         const valEl = $(`[data-val="${k}"]`, wrap);
-        if (valEl) valEl.textContent = k === 'rotation' ? svg.rotation + '°' : Math.round(svg.opacity * 100) + '%';
+        if (valEl) valEl.textContent = k === 'rotation' ? rotVal(svg) + '°' : Math.round(svg.opacity * 100) + '%';
         MB.refreshSvg(f);
         MB.scaler.follow(f); // the Scale tool's box around the turned image
         if (f._mbHandle) f._mbHandle.setLatLng(f.getBounds().getCenter());
@@ -1604,6 +1632,18 @@ window.MB = window.MB || {};
         MB.commitDebounced('svg');
       });
     });
+    // the angle as it is now, after the knob turned the image (its number box follows the input event; nothing is
+    // turned or saved by it)
+    const rotInp = $('[data-k="rotation"]', wrap);
+    rotSync = () => {
+      const deg = rotVal(svg);
+      if (!rotInp || +rotInp.value === deg) return;
+      syncing = true;
+      rotInp.value = String(deg);
+      $('[data-val="rotation"]', wrap).textContent = deg + '°';
+      rotInp.dispatchEvent(new Event('input', { bubbles: true }));
+      syncing = false;
+    };
     return wrap;
   }
 
@@ -2173,7 +2213,7 @@ window.MB = window.MB || {};
     // zoom display: the list dims what the zoom hides, the selected object's note says whether it is shown
     MB.on('zoomdisplay', () => MB.ui.renderLayersSoon());
     MB.map.on('zoomend', () => MB.ui.renderZoomNote());
-    MB.on('featurechange', l => { if (l === MB.selected) MB.ui.renderMeasureBox(); });
+    MB.on('featurechange', l => { if (l === MB.selected) { MB.ui.renderMeasureBox(); if (rotSync) rotSync(); } }); // (the knob turned it: its Rotation row follows, the panel is not drawn anew)
     MB.on('project', () => { MB.ui.renderSettings(); MB.ui.renderSvgPanel(); $('#basemapSelect').value = MB.state.basemap; });
     MB.on('poi-request', term => { MB.ui.showTab('places'); setTimeout(() => MB.ui.runPoiSearch(term), 800); });
     MB.on('feature-contextmenu', info => MB.menus.feature(info));
