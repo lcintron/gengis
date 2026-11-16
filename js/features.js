@@ -618,7 +618,9 @@ window.MB = window.MB || {};
     const mpp = 156543.03392 * Math.cos(ll.lat * Math.PI / 180) / Math.pow(2, MB.map.getZoom());
     const mode = raster ? 'ground' : d.mode;
     const width = raster ? Math.min(320, MB.map.getSize().x / 4) * mpp : (d.mode === 'ground' ? d.widthM : d.widthPx);
-    const svg = Object.assign({ svgId, mode, rotation: d.rotation, opacity: d.opacity, width }, overrides || {});
+    // the default angle is a symbol's (a pinned image): one laid on the ground starts square with the map
+    const rotation = mode === 'ground' ? 0 : MB.normAngle(d.rotation);
+    const svg = Object.assign({ svgId, mode, rotation, opacity: d.opacity, width }, overrides || {});
     const layer = MB.buildSvgLayer(latlng, svg);
     if (!layer) return null;
     return MB.addFeature(layer, { type: 'svg', svg, name: lib.name.replace(/\.(svg|png|jpe?g|webp|gif)$/i, ''), style: MB.deepClone(MB.currentStyle) });
@@ -646,6 +648,18 @@ window.MB = window.MB || {};
 
   /* ---------- selection ---------- */
 
+  // How Geoman edits an object: the options vertex editing is turned on with.
+  // preventMarkerRemoval: Geoman takes a marker, text or circle off the map on a right-click while it is edited
+  // (behind the project's back: it stays in the project, unseen); the right-click is the object's menu. A line's or
+  // shape's vertex still goes on a right-click on it.
+  const editOpts = layer => ({ allowSelfIntersection: true, draggable: true, snappable: MB.state.snapping, snapDistance: 15, preventMarkerRemoval: !layer.getLatLngs });
+  // Its edit handles put out again, where its points are now: for a change made behind Geoman's back (the rotation
+  // field in Properties). Nothing is selected afresh, so the panel and the keyboard focus stay as they are.
+  MB.refreshEdit = function (layer) {
+    if (!layer || !layer.pm || !layer.pm.enabled || !layer.pm.enabled()) return;
+    try { layer.pm.disable(); layer.pm.enable(editOpts(layer)); } catch (e) { console.warn(e); }
+  };
+
   MB.selectFeature = function (layer) {
     if (!layer || MB.selected === layer) return;
     // an object of a grouped layer: the whole group is selected (geometry.js), not the object alone
@@ -668,10 +682,7 @@ window.MB = window.MB || {};
     } else if (layer.pm) {
       try {
         if (moveOnly) layer.pm.enableLayerDrag();
-        // preventMarkerRemoval: Geoman takes a marker, text or circle off the map on a right-click while it is edited
-        // (behind the project's back: it stays in the project, unseen); the right-click is the object's menu. A line's or
-        // shape's vertex still goes on a right-click on it.
-        else layer.pm.enable({ allowSelfIntersection: true, draggable: true, snappable: MB.state.snapping, snapDistance: 15, preventMarkerRemoval: !layer.getLatLngs });
+        else layer.pm.enable(editOpts(layer));
       } catch (e) { console.warn(e); }
     }
     if (editable && moveOnly) MB.scaler.attach(layer, { frame: true }); // what is being moved: its box, as the Scale tool's without handles

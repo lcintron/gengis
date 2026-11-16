@@ -159,20 +159,60 @@ test('the Scale box has a rotation knob: one drag, one undo step, Esc puts it ba
 test('Properties has an angle field for a text, an image and a rectangle', () => {
   const ui = read('js/ui.js');
   assert.match(ui, /function rotationRow\(value, title, set\) \{/);
-  assert.match(ui, /<input type="range" id="propRot" min="0" max="360" step="1" value="\$\{v\}"><span class="val" data-val="rot">\$\{v\}°<\/span>/);
-  assert.match(ui, /rotationRow\(MB\.getRotation\(f\), 'How far the text is turned, clockwise', deg => \{\s*\n\s*MB\.setRotation\(f, deg\);\s*\n\s*MB\.scaler\.follow\(f\);\s*\n\s*MB\.commitDebounced\('rotate'\);/);
-  // a rectangle keeps no angle: its corners are turned by the difference
-  assert.match(ui, /let at = MB\.normAngle\(MB\.ringAngle\(\(f\.getLatLngs\(\) \|\| \[\]\)\[0\] \|\| \[\]\)\) % 90;/);
-  assert.match(ui, /MB\.scaler\.rotateBy\(f, deg - at\);\s*\n\s*at = deg;\s*\n\s*MB\.emit\('featurechange', f\);\s*\n\s*MB\.commitDebounced\('rotate'\);/);
-  assert.match(ui, /if \(f\.pm && f\.pm\.enabled && f\.pm\.enabled\(\)\) \{ MB\.deselect\(\); MB\.selectFeature\(f\); \}/, 'its corner handles follow');
+  assert.match(ui, /<input type="range" id="propRot" min="0" max="359" step="1" value="\$\{v\}"><span class="val" data-val="rot">\$\{v\}°<\/span>/,
+    '359, not 360: the thumb at the far end would show the same angle as at the near one');
+  assert.match(ui, /const v = Math\.round\(MB\.normAngle\(value\)\) % 360;/, 'the thumb and the readout always agree');
+  assert.match(ui, /const deg = MB\.normAngle\(inp\.value\);\s*out\.textContent = Math\.round\(deg\) \+ '°';/);
+  assert.match(ui, /rotationRow\(MB\.getRotation\(f\), 'How far the text is turned, clockwise', deg => \{\s*\n\s*if \(MB\.getRotation\(f\) === deg\) return;[^\n]*\n\s*MB\.setRotation\(f, deg\);\s*\n\s*MB\.scaler\.follow\(f\);\s*\n\s*MB\.commitDebounced\('rotate'\);/);
+  // a rectangle keeps no angle of its own: the slider shows where its first side points, its corners are turned by
+  // the difference (never within a quarter turn only: the slider agrees with the knob's readout)
+  assert.match(ui, /let at = MB\.normAngle\(MB\.ringAngle\(\(f\.getLatLngs\(\) \|\| \[\]\)\[0\] \|\| \[\]\)\);/);
+  assert.doesNotMatch(ui, /MB\.ringAngle\(\(f\.getLatLngs\(\) \|\| \[\]\)\[0\] \|\| \[\]\)\) % 90/);
+  assert.match(ui, /const by = MB\.normAngle\(deg - at\);\s*\n\s*at = deg;\s*\n\s*if \(!by\) return;[^\n]*\n\s*MB\.scaler\.rotateBy\(f, by\);\s*\n\s*MB\.emit\('featurechange', f\);\s*\n\s*MB\.commitDebounced\('rotate'\);/);
   // an image: the row was for pinned ones only, and is for a ground one too now
   assert.doesNotMatch(ui, /isGround \? '' : `<div class="row"><label>Rotation<\/label>/);
-  assert.match(ui, /<input type="range" data-k="rotation" min="0" max="360" step="1" value="\$\{MB\.normAngle\(svg\.rotation\)\}"/);
+  assert.match(ui, /<input type="range" data-k="rotation" min="0" max="359" step="1" value="\$\{MB\.normAngle\(svg\.rotation\)\}"/);
   assert.match(ui, /svg\[k\] = k === 'rotation' \? MB\.normAngle\(inp\.value\) : \+inp\.value;/);
   // one object turned from the field: the geometry only, the caller saves it
   assert.match(read('js/scaletool.js'), /rotateBy\(layer, deg\) \{[\s\S]*?reangle\(layer\);/);
   // and the tool's hint says what the knob does
   assert.match(ui, /toolHints = \{[\s\S]*?scale: '[^']*drag the round handle to rotate \(Shift: 15° steps\)/);
+});
+
+test('arrow-stepping the rectangle\'s angle keeps the keyboard: its corner handles are put out again, it is never selected afresh', () => {
+  const ui = read('js/ui.js'), features = read('js/features.js');
+  // a range input fires change on every arrow key: a re-selection would rebuild Properties and drop the focus
+  const rect = ui.match(/if \(m\.type === 'rectangle'\) \{[\s\S]*?\n    \}/)[0];
+  assert.match(rect, /addEventListener\('change', \(\) => MB\.refreshEdit\(f\)\)/);
+  assert.doesNotMatch(rect, /MB\.deselect\(\)/);
+  assert.doesNotMatch(rect, /MB\.selectFeature\(/);
+  // the handles go out again with the very options the Select tool edits with
+  assert.match(features, /MB\.refreshEdit = function \(layer\) \{\s*\n\s*if \(!layer \|\| !layer\.pm \|\| !layer\.pm\.enabled \|\| !layer\.pm\.enabled\(\)\) return;\s*\n\s*try \{ layer\.pm\.disable\(\); layer\.pm\.enable\(editOpts\(layer\)\); \}/);
+  assert.match(features, /const editOpts = layer => \(\{ allowSelfIntersection: true, draggable: true, snappable: MB\.state\.snapping, snapDistance: 15, preventMarkerRemoval: !layer\.getLatLngs \}\);/);
+  assert.match(features, /else layer\.pm\.enable\(editOpts\(layer\)\);/, 'and that is what selecting an object uses');
+});
+
+test('an image laid on the ground starts square with the map: a symbol\'s angle never bleeds into it', () => {
+  const ui = read('js/ui.js'), features = read('js/features.js');
+  // a new image: the default angle is a pinned symbol's
+  assert.match(features, /const rotation = mode === 'ground' \? 0 : MB\.normAngle\(d\.rotation\);/);
+  assert.match(features, /const svg = Object\.assign\(\{ svgId, mode, rotation, opacity: d\.opacity, width \}/);
+  assert.match(features, /MB\.svgDefaults = \{ mode: 'pin', widthPx: 48, widthM: 20, rotation: 0, opacity: 1 \};/, 'and it is no angle at all to begin with');
+  // the placement defaults offer an angle for pinned images only (where it is used)
+  assert.match(ui, /\$\{isGround \? '' : `<div class="row" title="A symbol's own angle[^`]*id="svgDefRot" min="0" max="359" value="\$\{MB\.normAngle\(d\.rotation\)\}"/);
+  assert.match(ui, /const defRot = \$\('#svgDefRot', panel\);[\s\S]*?if \(defRot\) defRot\.addEventListener\('input'/, 'and the row being gone must not throw');
+  // switching an image between the two sizings: it starts unturned (a file written before a ground image could be
+  // turned may hold a pin's angle)
+  assert.match(ui, /const toMode = mode => \{[\s\S]*?svg\.rotation = 0;\s*\n\s*svg\.mode = mode;/);
+});
+
+test('a turn that nets to nothing leaves no undo step', () => {
+  const scale = read('js/scaletool.js');
+  assert.match(scale, /d\.angle = deg;/, 'how far the drag ended up turning it');
+  assert.match(scale, /if \(d\.rot && !MB\.normAngle\(d\.angle\)\) return;/, 'back where it started (Shift snapping): nothing committed');
+  const ui = read('js/ui.js');
+  assert.match(ui, /if \(MB\.getRotation\(f\) === deg\) return;/, 'the same angle typed again on a text: nothing saved');
+  assert.match(ui, /if \(!by\) return;/, 'nor on a rectangle');
 });
 
 test('the knob is styled round, hidden with no object to turn, and finger-sized on a touch screen', () => {

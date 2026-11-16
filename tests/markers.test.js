@@ -56,7 +56,9 @@ test('a marker is drawn, restyled and labelled by its shape; Properties offers t
 test('a right-click on an edited marker, text or circle opens its menu: Geoman never takes it off the map', () => {
   // Geoman's edit mode removes a marker (and a circle, and a text) on contextmenu unless preventMarkerRemoval: it is
   // gone from the map but still in the project, unseen and saved. Lines and shapes keep a vertex's right-click.
-  assert.match(read('js/features.js'), /layer\.pm\.enable\(\{[^}]*preventMarkerRemoval: !layer\.getLatLngs \}\)/);
+  const features = read('js/features.js');
+  assert.match(features, /const editOpts = layer => \(\{[^}]*preventMarkerRemoval: !layer\.getLatLngs \}\)/);
+  assert.match(features, /else layer\.pm\.enable\(editOpts\(layer\)\);/, 'the options vertex editing is turned on with');
 });
 
 test('a click on an object with attributes shows them, with no data under it too', () => {

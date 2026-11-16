@@ -299,6 +299,7 @@ window.MB = window.MB || {};
     // The selection as it was when the knob was grabbed, turned by deg about the pivot on screen.
     rotate(deg) {
       const d = this.drag, pivot = d.pivot;
+      d.angle = deg; // how far it ended up turned (nothing to save if that is nothing)
       const to = p => { const q = MB.rotateXY(p.x, p.y, pivot.x, pivot.y, deg); return L.point(q[0], q[1]); };
       d.snaps.forEach(sn => {
         transform(sn, to, 1); // its points (and its place) turned about the pivot
@@ -339,6 +340,7 @@ window.MB = window.MB || {};
       const d = this.drag;
       this.stopDrag();
       if (!d || !d.moved || !this.targets.length) return;
+      if (d.rot && !MB.normAngle(d.angle)) return; // turned back to where it started (Shift snapping does that): nothing to save
       if (d.rot) this.targets.forEach(reangle);
       this.targets.forEach(l => MB.emit('featurechange', l));
       MB.commit((d.rot ? 'rotate' : 'scale') + (this.targets.length > 1 ? ' group' : ''));
