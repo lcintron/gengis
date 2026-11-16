@@ -233,6 +233,7 @@ test('the release builds the Android app from the tag, the same way the Android 
   }
   assert.match(android, /SIGNED: \$\{\{ secrets\.ANDROID_KEYSTORE_BASE64 != '' \}\}/);
   assert.match(android, /if: env\.SIGNED == 'true'/, 'the release build only when the upload key is set');
+  assert.match(android, /permissions:\n {6}contents: read/, 'it only builds: the Release is published by the publish job');
   assert.match(android, /trap 'rm -f "\$RUNNER_TEMP\/upload\.jks"' EXIT/, 'the keystore is removed again');
 });
 
@@ -252,10 +253,16 @@ test('the release names the Android assets after the version, the signed APK in 
 test('a failed Android build does not hold back the Release, and nothing is published without a release', () => {
   const jobs = workflowJobs('.github/workflows/release.yml');
   assert.match(jobs.publish, /needs: \[version, build, android\]/);
-  assert.match(jobs.publish, /if: \$\{\{ always\(\) && needs\.version\.outputs\.released == 'true' && needs\.build\.result == 'success' \}\}/);
-  // deploy-pages has no always(), so a skipped publish skips it in turn
+  // the note about the Android download is appended to the generated notes, never in place of them
+  assert.match(jobs.publish, /generate_release_notes: true\n {10}append_body: true/);
+  assert.match(jobs.publish, /\*\*Android:\*\* `GenGIS-\$\{\{ needs\.version\.outputs\.version \}\}-android-debug\.apk`/);
+  // !cancelled() rather than always(): an android failure still publishes, a cancelled run does not
+  assert.match(jobs.publish, /if: \$\{\{ !cancelled\(\) && needs\.version\.outputs\.released == 'true' && needs\.build\.result == 'success' \}\}/);
+  assert.ok(!/always\(\)/.test(jobs.publish), 'a cancelled run must not publish a Release');
+  // deploy-pages asks publish's own result: without that, a failed android skips the deploy through publish
   assert.match(jobs['deploy-pages'], /needs: \[version, publish\]/);
-  assert.ok(!/always\(\)/.test(jobs['deploy-pages']), 'the site is deployed only when the Release was published');
+  assert.match(jobs['deploy-pages'], /if: \$\{\{ !cancelled\(\) && needs\.publish\.result == 'success' \}\}/);
+  assert.ok(!/always\(\)/.test(jobs['deploy-pages']), 'a cancelled run must not deploy the site');
 });
 
 test('arguments for cmd.exe are quoted when they need it', () => {

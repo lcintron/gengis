@@ -99,7 +99,7 @@ jobs:
           DRY: ${{ inputs.dry_run }}
         run: |
           if [ "$RELEASED" = "true" ]; then
-            echo "Released **$TAG**. The installers, the GitHub Release and the site deploy follow in this run." >> "$GITHUB_STEP_SUMMARY"
+            echo "Released **$TAG**. The installers, the Android APK, the GitHub Release and the site deploy follow in this run." >> "$GITHUB_STEP_SUMMARY"
           elif [ "$DRY" = "true" ] && [ -n "$TAG" ]; then
             echo "Dry run: this would release **$TAG**. Nothing was changed." >> "$GITHUB_STEP_SUMMARY"
           elif [ -n "$VERSION" ]; then
@@ -160,6 +160,8 @@ jobs:
     if: needs.version.outputs.released == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read   # it only builds; the Release is published by the publish job
     env:
       SIGNED: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}   # the upload key is set: signed release builds too
     steps:
@@ -223,9 +225,9 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [version, build, android]
-    # always(): the Android APK is best-effort, so a failed android job must not hold back the Release. Still
-    # skipped when nothing was released or the installers failed (and a skipped publish skips deploy-pages).
-    if: ${{ always() && needs.version.outputs.released == 'true' && needs.build.result == 'success' }}
+    # !cancelled(): the Android APK is best-effort, so a failed android job must not hold back the Release, but
+    # cancelling the run stops it. Skipped when nothing was released or the installers failed.
+    if: ${{ !cancelled() && needs.version.outputs.released == 'true' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -237,12 +239,18 @@ jobs:
           tag_name: ${{ needs.version.outputs.tag }}
           name: GenGIS ${{ needs.version.outputs.tag }}
           generate_release_notes: true
+          append_body: true   # the note below is kept alongside the generated notes, not in place of them
+          body: |
+            **Android:** `GenGIS-${{ needs.version.outputs.version }}-android-debug.apk` is a debug build, for testing and fresh installs: it will not install over a previous GenGIS APK (uninstall that one first). A signed release APK will replace it once app signing is set up.
           prerelease: ${{ contains(needs.version.outputs.tag, '-') }}
           files: installers/*
 
   deploy-pages:
     name: Deploy site from ${{ needs.version.outputs.tag }}
     needs: [version, publish]
+    # Gated on publish itself: a skipped publish skips the deploy, but a failed android job (which only
+    # reaches here as publish being "skipped" without this) must not keep a real release off the site.
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
