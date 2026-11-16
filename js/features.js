@@ -426,7 +426,7 @@ window.MB = window.MB || {};
 
   // Text that scales with the map: its size is textSize at zoom textRefZoom, doubling with each zoom step in.
   const zoomNow = () => (MB.map ? MB.map.getZoom() : 0);
-  const mapScale = st => (st.textScale === 'map' && st.textRefZoom != null ? Math.pow(2, zoomNow() - st.textRefZoom) : 1);
+  const mapScale = st => MB.zoomScale(st.textScale, st.textRefZoom, zoomNow()); // (the same formula as a name label's: js/util.js)
   // The size it shows at now, in px (what the size slider shows and sets, and what it keeps when switching to fixed
   // pixels): scaled, but never beyond MAX_SHOWN, where drawing stops growing.
   const MAX_SHOWN = 2000;
@@ -662,7 +662,7 @@ window.MB = window.MB || {};
   MB.styleClipboard = null;
   const SHAPE_KEYS = ['color', 'weight', 'opacity', 'dash', 'fill', 'fillColor', 'fillOpacity', 'fillPattern'];
   const TEXT_KEYS = Object.keys(MB.defaultStyle).filter(k => /^text/.test(k));
-  const LABEL_KEYS = ['color', 'size', 'bg', 'h', 'v'];
+  const LABEL_KEYS = ['color', 'size', 'bg', 'h', 'v', 'scale'];
   MB.styleKind = type => (type === 'text' ? 'text' : type === 'svg' ? null : 'shape');
   const pick = (o, keys) => { const r = {}; keys.forEach(k => { if (o[k] !== undefined) r[k] = MB.deepClone(o[k]); }); return r; };
 
@@ -672,7 +672,10 @@ window.MB = window.MB || {};
     const st = Object.assign({}, MB.defaultStyle, layer.mb.style);
     const style = pick(st, kind === 'text' ? TEXT_KEYS : SHAPE_KEYS);
     if (kind === 'text') { style.textSize = MB.textShownSize(st); delete style.textRefZoom; } // the size it shows at now
-    MB.styleClipboard = { kind, style, label: MB.labelTypes.includes(layer.mb.type) ? pick(MB.getLabel(layer), LABEL_KEYS) : null };
+    const lb = MB.labelTypes.includes(layer.mb.type) ? MB.getLabel(layer) : null;
+    const label = lb ? pick(lb, LABEL_KEYS) : null; // (no reference zoom: a pasted label starts from the target's zoom)
+    if (label) label.size = Math.max(1, Math.round(MB.labelShownPx(lb, zoomNow()))); // the size it shows at now
+    MB.styleClipboard = { kind, style, label };
     MB.toast(kind === 'text' ? 'Text style copied' : 'Style copied');
     MB.emit('styleclipboard');
   };
@@ -687,7 +690,8 @@ window.MB = window.MB || {};
     list.forEach(l => {
       MB.applyStyle(l, MB.deepClone(cb.style), { noCommit: true });
       if (cb.label && MB.labelTypes.includes(l.mb.type)) {
-        l.mb.label = Object.assign(MB.getLabel(l), MB.deepClone(cb.label));
+        const patch = MB.labelSizing(MB.getLabel(l), MB.deepClone(cb.label), zoomNow()); // a pasted map-scaled label is that size at this zoom
+        l.mb.label = Object.assign(MB.getLabel(l), patch);
         if (MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(l); else MB.updateLabel(l);
       }
       MB.emit('featurechange', l);
@@ -771,7 +775,10 @@ window.MB = window.MB || {};
   // takes the same place (the middle of a shape, under a point).
   function measureLabelPlace(layer) {
     const m = layer.mb, lb = MB.labelTypes.includes(m.type) && m.name ? MB.getLabel(layer) : null;
-    const nameH = lb && lb.show && lb.h === 'center' ? (+lb.size || 12) * 1.35 + 4 : 0; // see .mb-name-label
+    // How tall the name label stands there: its line and its padding and border, the whole of it scaled when it
+    // scales with the map (see .mb-name-label).
+    const sz = lb ? +lb.size || 12 : 12;
+    const nameH = lb && lb.show && lb.h === 'center' ? (sz * 1.35 + 4) * (MB.labelShownPx(lb, zoomNow()) / sz) : 0;
     const point = m.type === 'marker' || (m.type === 'svg' && !layer.setBounds);
     if (point) {
       const under = lb && lb.v === 'bottom' ? nameH + 2 : 0;
@@ -852,7 +859,8 @@ window.MB = window.MB || {};
   /* ---------- on-map name labels ---------- */
 
   MB.labelTypes = ['marker', 'line', 'polygon', 'rectangle', 'circle', 'svg'];
-  MB.defaultLabel = t => ({ show: false, v: (t === 'marker' || t === 'svg') ? 'top' : 'middle', h: 'center', size: 12, color: '#ffffff', bg: true });
+  // scale: 'screen' (the same size at every zoom) or 'map' (grows and shrinks with the map: size at zoom refZoom).
+  MB.defaultLabel = t => ({ show: false, v: (t === 'marker' || t === 'svg') ? 'top' : 'middle', h: 'center', size: 12, color: '#ffffff', bg: true, scale: 'screen' });
   MB.getLabel = layer => Object.assign(MB.defaultLabel(layer.mb.type), layer.mb.label || {});
 
   // A label takes a click for its object (selecting it, its popup), but not while its object is selected: then a
@@ -871,6 +879,7 @@ window.MB = window.MB || {};
   }
 
   function removeLabel(layer) {
+    scaledLabels.delete(layer);
     const mk = layer._mbLabel;
     if (!mk) return;
     const g = layer.mb && MB.groups[layer.mb.layerId];
@@ -879,12 +888,44 @@ window.MB = window.MB || {};
     layer._mbLabel = null;
   }
 
+  // Where the label sits around its anchor point, and (for a label that scales with the map) what it grows from:
+  // the side the object is on, so it grows away from the object, never over it.
+  const labelXY = lb => [lb.h === 'left' ? 'calc(-100% - 5px)' : lb.h === 'right' ? '5px' : '-50%',
+    lb.v === 'top' ? 'calc(-100% - 5px)' : lb.v === 'bottom' ? '5px' : '-50%'];
+  const labelTransform = (lb, s) => `translate(${labelXY(lb).join(',')})` + (s !== 1 ? ` scale(${s})` : '');
+  const labelOrigin = lb => (lb.h === 'left' ? '100%' : lb.h === 'right' ? '0%' : '50%') + ' ' + (lb.v === 'top' ? '100%' : lb.v === 'bottom' ? '0%' : '50%');
+  // Labels on the map that scale with it: only these are touched on a zoom (which fires over and over on a pinch).
+  const scaledLabels = new Set();
+  let labelZoomHooked = false;
+  function hookLabelZoom() {
+    if (labelZoomHooked || !MB.map) return;
+    labelZoomHooked = true;
+    MB.map.on('zoom zoomend', rescaleLabels);
+    MB.map.on('zoomend', () => scaledLabels.forEach(l => { if (isMeasureLabel(l.getTooltip && l.getTooltip())) MB.updateTooltip(l); })); // a measurement label stacks under the new size
+  }
+  // The scale of each map-scaled label, on the element itself: a new icon per zoom frame would replace it (and lose
+  // the press that is pinching).
+  function rescaleLabels() {
+    const z = zoomNow();
+    scaledLabels.forEach(layer => {
+      const el = layer._mbLabel && layer._mbLabel.getElement(), span = el && el.firstElementChild;
+      if (!span) return;
+      const lb = MB.getLabel(layer), px = MB.labelShownPx(lb, z);
+      span.style.transform = labelTransform(lb, px / (+lb.size || 12));
+      span.style.visibility = px < 3 ? 'hidden' : '';
+    });
+  }
+
   // Create / move / remove the name label of an object according to its label settings.
   MB.updateLabel = function (layer) {
     const m = layer.mb;
     if (!m || !MB.labelTypes.includes(m.type)) return;
     const lb = MB.getLabel(layer), g = MB.groups[m.layerId];
     if (!lb.show || !m.name || !shownNow(layer) || !g) { removeLabel(layer); return; }
+    if (lb.scale === 'map') {
+      if (typeof lb.refZoom !== 'number') { lb.refZoom = zoomNow(); if (m.label) m.label.refZoom = lb.refZoom; } // shown while scaling with the map
+      hookLabelZoom();
+    }
     // Anchor: a point on the object's bounding box (shapes) or a pixel offset around the icon (markers, fixed-size SVGs).
     let bounds = null, latlng, dx = 0, dy = 0;
     if (m.type === 'circle') bounds = layer.getLatLng().toBounds(layer.getRadius() * 2);
@@ -905,9 +946,11 @@ window.MB = window.MB || {};
       dx = lb.h === 'left' ? box.l : lb.h === 'right' ? box.r : (box.l + box.r) / 2;
       dy = lb.v === 'top' ? box.t : lb.v === 'bottom' ? box.b : (box.t + box.b) / 2;
     }
-    const tx = lb.h === 'left' ? 'calc(-100% - 5px)' : lb.h === 'right' ? '5px' : '-50%';
-    const ty = lb.v === 'top' ? 'calc(-100% - 5px)' : lb.v === 'bottom' ? '5px' : '-50%';
-    const css = `left:${dx}px;top:${dy}px;transform:translate(${tx},${ty});font-size:${+lb.size || 12}px;color:${lb.color};` +
+    // Its size: as set, or scaled about its anchor when it scales with the map (too small to read, it is not drawn).
+    const size = +lb.size || 12, px = MB.labelShownPx(lb, zoomNow());
+    const color = /^#[0-9a-f]{3,8}$/i.test(lb.color) ? lb.color : MB.defaultLabel(m.type).color; // (a project file's own value, written into a style attribute)
+    const css = `left:${dx}px;top:${dy}px;transform:${labelTransform(lb, px / size)};transform-origin:${labelOrigin(lb)};` +
+      `font-size:${size}px;color:${color};` + (px < 3 ? 'visibility:hidden;' : '') +
       (lb.bg ? '' : 'background:transparent;border-color:transparent;text-shadow:0 0 3px #000,0 0 2px #000,0 0 1px #000;');
     hookHeld();
     const icon = L.divIcon({ className: labelClass(layer), html: `<span class="mb-name-label" style="${css}">${MB.escapeHtml(m.name)}</span>`, iconSize: [0, 0] });
@@ -920,10 +963,12 @@ window.MB = window.MB || {};
       layer._mbLabel.on('click contextmenu', e => layer.fire(e.type, e)); // the name is its object: a click on it is a click on the object
       g.addLayer(layer._mbLabel);
     }
+    if (lb.scale === 'map') scaledLabels.add(layer); else scaledLabels.delete(layer);
   };
 
   MB.setLabel = function (layer, patch) {
-    layer.mb.label = Object.assign(MB.getLabel(layer), patch || {});
+    patch = MB.labelSizing(MB.getLabel(layer), Object.assign({}, patch || {}), zoomNow());
+    layer.mb.label = Object.assign(MB.getLabel(layer), patch);
     if (MB.ui && MB.ui.bindNameTip) MB.ui.bindNameTip(layer); else MB.updateLabel(layer);
     MB.commitDebounced('label');
   };
