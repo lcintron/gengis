@@ -441,6 +441,39 @@ window.MB = window.MB || {};
     return { l: -h, r: h, t: -h, b: h };
   };
 
+  /* ---------- sizes that scale with the map ----------
+   * A text (style.textScale) and an object's name label (label.scale) are either the same size at every zoom
+   * ('screen', the default) or drawn as if printed on the map ('map'): the size they are set to at their reference
+   * zoom, doubling with each zoom step in. */
+  // The factor a map-scaled size is drawn at: 1 at refZoom. Anything else (fixed pixels, no reference zoom yet, a
+  // project file's own nonsense) is drawn as set.
+  MB.zoomScale = function (mode, refZoom, zoom) {
+    const ref = typeof refZoom === 'number' ? refZoom : NaN;
+    return mode === 'map' && isFinite(ref) ? Math.pow(2, (+zoom || 0) - ref) : 1;
+  };
+  // The size a name label shows at now, in px: never beyond LABEL_MAX_PX, where it stops growing (a label larger
+  // than that would swallow the clicks around it).
+  MB.LABEL_MAX_PX = 200;
+  MB.labelShownPx = function (lb, zoom) {
+    const size = +(lb && lb.size) || 12;
+    return Math.min(size * MB.zoomScale(lb && lb.scale, lb && lb.refZoom, zoom), Math.max(MB.LABEL_MAX_PX, size));
+  };
+  // A change to a label's sizing, as a text's (js/features.js textSizing): switching to 'map' keeps the size it
+  // shows (from this zoom on); back to fixed pixels, it keeps the size it shows now; a new size while it scales with
+  // the map is the size at this zoom. The patch is changed in place and returned.
+  MB.labelSizing = function (cur, patch, zoom) {
+    cur = cur || {}; patch = patch || {};
+    const was = cur.scale === 'map' ? 'map' : 'screen'; // (a project file's own value: one of the two)
+    if ('scale' in patch) patch.scale = patch.scale === 'map' ? 'map' : 'screen';
+    const mode = 'scale' in patch ? patch.scale : was;
+    if (mode !== was) {
+      if (mode === 'map') patch.refZoom = +zoom || 0;
+      else { if (!('size' in patch)) patch.size = Math.max(1, Math.round(MB.labelShownPx(cur, zoom))); patch.refZoom = null; }
+    }
+    if ('size' in patch && mode === 'map') patch.refZoom = +zoom || 0;
+    return patch;
+  };
+
   // text, or a Blob as it is (an exported picture). True: the file is on its way (the browser and the desktop app
   // save it themselves); in the Android app this is MB.download of js/native.js, which answers false on a cancel.
   MB.download = function (filename, text, mime) {

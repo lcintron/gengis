@@ -1139,6 +1139,7 @@ window.MB = window.MB || {};
     const panel = $('#propsBody');
     const f = MB.selected;
     panel.innerHTML = '';
+    labelSizeSync = null; // (the label form sets it again, if there is one)
     panel.classList.remove('props-locked');
     $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
@@ -1267,20 +1268,43 @@ window.MB = window.MB || {};
     panel.insertBefore(note, panel.firstChild);
   }
 
+  let labelSizeSync = null; // the size row of the label shown in Properties (null while none is), so the zoom can refresh it
+
   function labelForm(f) {
-    const lb = MB.getLabel(f);
+    const lb = MB.getLabel(f), mode = lb.scale === 'map' ? 'map' : 'screen';
+    const shownPx = () => Math.round(MB.labelShownPx(MB.getLabel(f), MB.map ? MB.map.getZoom() : 0));
+    const sz = shownPx();
     const seg = (k, opts) => `<div class="seg small icons" data-ls="${k}">${opts.map(o => `<button type="button" data-v="${o[0]}" title="${o[2]}" aria-label="${o[2]}"${lb[k] === o[0] ? ' class="active"' : ''}>${o[1]}</button>`).join('')}</div>`;
+    const sizing = `<div class="seg small" data-ls="scale">${[['screen', 'Fixed pixels'], ['map', 'Scale with map']].map(o =>
+      `<button type="button" data-v="${o[0]}"${mode === o[0] ? ' class="active"' : ''} aria-pressed="${mode === o[0]}">${o[1]}</button>`).join('')}</div>`;
     const wrap = document.createElement('div');
     wrap.innerHTML = `<div class="section"><h3>Name label</h3>
       <label class="check"><input type="checkbox" data-lk="show"${lb.show ? ' checked' : ''}> Show name on the map</label>
       <div class="row align-row"><label>Alignment</label>${seg('h', [['left', ALIGN.left, 'Left of the object'], ['center', ALIGN.center, 'Centered on the object'], ['right', ALIGN.right, 'Right of the object']])}${seg('v', [['top', ALIGN.top, 'Above the object'], ['middle', ALIGN.middle, 'On the object'], ['bottom', ALIGN.bottom, 'Below the object']])}</div>
-      <div class="row"><label>Text color</label><input type="color" data-lk="color" value="${lb.color}"><span class="grow"></span></div>
-      <div class="row"><label>Text size</label><input type="range" data-lk="size" min="9" max="36" step="1" value="${lb.size}"><span class="val" data-lv="size">${lb.size}px</span></div>
+      <div class="row"><label>Text color</label><input type="color" data-lk="color" value="${esc(lb.color)}"><span class="grow"></span></div>
+      <div class="row" title="The size it shows at now"><label>Text size</label><input type="range" data-lk="size" data-soft-max="${MB.LABEL_MAX_PX}" min="${Math.max(1, Math.min(9, sz))}" max="${Math.max(36, sz)}" step="1" value="${sz}"><span class="val" data-lv="size">${sz}px</span></div>
+      <div class="row" title="Fixed pixels: the same size at every zoom. Scale with map: grows and shrinks with the map, like a label printed on it"><label>Sizing</label>${sizing}</div>
       <label class="check"><input type="checkbox" data-lk="bg"${lb.bg ? ' checked' : ''}> Label background</label>
       ${f.mb.name ? '' : '<p class="note" data-note>Enter a name above to show a label.</p>'}
     </div>`;
+    // The size row shows the size the label is drawn at now: it follows the zoom and a change of sizing, and its own
+    // change is no label change (the slider's number box follows it through the input event).
+    let syncing = false;
+    const showSize = () => {
+      const inp = $('[data-lk="size"]', wrap), px = shownPx();
+      if (!inp || +inp.value === px) return;
+      syncing = true;
+      if (px > +inp.max) inp.max = String(px);
+      if (px < +inp.min) inp.min = String(Math.max(1, px));
+      inp.value = String(px);
+      $('[data-lv="size"]', wrap).textContent = px + 'px';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      syncing = false;
+    };
+    labelSizeSync = showSize;
     $$('[data-lk]', wrap).forEach(inp => {
       const handler = () => {
+        if (syncing) return;
         const k = inp.dataset.lk;
         const v = inp.type === 'checkbox' ? inp.checked : (inp.type === 'range' ? +inp.value : inp.value);
         if (k === 'size') $('[data-lv="size"]', wrap).textContent = v + 'px';
@@ -1293,10 +1317,11 @@ window.MB = window.MB || {};
     $$('[data-ls]', wrap).forEach(group => group.addEventListener('click', e => {
       const b = e.target.closest('button[data-v]');
       if (!b) return;
-      $$('button', group).forEach(x => x.classList.toggle('active', x === b));
-      const patch = {}; patch[group.dataset.ls] = b.dataset.v;
-      if (!MB.getLabel(f).show) patch.show = true, ($('[data-lk="show"]', wrap).checked = true);
+      $$('button', group).forEach(x => { x.classList.toggle('active', x === b); if (x.hasAttribute('aria-pressed')) x.setAttribute('aria-pressed', x === b); });
+      const k = group.dataset.ls, patch = {}; patch[k] = b.dataset.v;
+      if (k !== 'scale' && !MB.getLabel(f).show) patch.show = true, ($('[data-lk="show"]', wrap).checked = true); // (a sizing switches no hidden label on)
       MB.setLabel(f, patch);
+      if (k === 'scale') showSize(); // back to fixed pixels: the size it showed at is now its size
     }));
     return wrap;
   }
@@ -2055,6 +2080,12 @@ window.MB = window.MB || {};
     MB.on('multi-contextmenu', info => MB.menus.multi(info));
     // a selected text that scales with the map: its size slider follows the zoom
     MB.map.on('zoomend', () => { const f = MB.selected; if (f && f.mb.type === 'text' && f.mb.style.textScale === 'map') MB.ui.renderProps(); });
+    // the same for a name label that scales with the map: only its size row follows (Properties drawn anew would
+    // take the keyboard out of the name and attribute boxes)
+    MB.map.on('zoomend', () => {
+      const f = MB.selected;
+      if (labelSizeSync && f && f.mb && MB.labelTypes.includes(f.mb.type) && MB.getLabel(f).scale === 'map') labelSizeSync();
+    });
     // zoom display: the list dims what the zoom hides, the selected object's note says whether it is shown
     MB.on('zoomdisplay', () => MB.ui.renderLayersSoon());
     MB.map.on('zoomend', () => MB.ui.renderZoomNote());
