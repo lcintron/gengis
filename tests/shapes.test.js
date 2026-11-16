@@ -32,6 +32,8 @@ function turnedRect(lat, lng, deg, len, depth) {
 // A ring as a project file keeps it (features.js rounds every coordinate to 7 decimals on the way out).
 const lat = p => (p.lat != null ? p.lat : p[0]), lng = p => (p.lng != null ? p.lng : p[1]);
 const round7 = ring => ring.map(p => [+lat(p).toFixed(7), +lng(p).toFixed(7)]);
+// A ring as a GeoJSON file holds it: Leaflet writes 6 decimals unless told otherwise.
+const round6 = ring => ring.map(p => [+lat(p).toFixed(6), +lng(p).toFixed(6)]);
 // A drag, as Geoman does it: the same degrees added to every corner (which is not the same distance in the
 // projection, so the shape comes out slightly skewed).
 const dragNorth = (ring, deg) => ring.map(p => [lat(p) + deg, lng(p)]);
@@ -194,7 +196,7 @@ test('a turned rectangle keeps its corners through a save, an undo, a copy and a
   assert.match(rect[1], /layer\.pm\._setAngle\(MB\.ringAngle\(ring\)\)/, 'and its angle, so dragging a corner keeps it rectangular');
   assert.match(rect[1], /L\.rectangle\(L\.latLngBounds\(all\), st\)/, 'an upright one is still built from its bounds');
   // the strict test is for an import only: a polygon tagged "rectangle" that is not one keeps its shape
-  assert.match(read('js/storage.js'), /const rect = p\.type === 'rectangle' && MB\.isRectRing\(rings\[0\]\);/);
+  assert.match(read('js/storage.js'), /const rect = p\.type === 'rectangle' && MB\.isRectRing\(rings\[0\], true\);/);
 });
 
 test('a drag does not skew a turned rectangle: it is squared up again when the drag ends', () => {
@@ -216,7 +218,8 @@ test('a drag does not skew a turned rectangle: it is squared up again when the d
   assert.ok(far(MB.squareRect(sq), sq) < 1e-9, 'squaring a squared one is a no-op');
   assert.equal(MB.squareRect([[10, 20], [11, 21], [11, 20]]), null, 'three corners: nothing to square');
 
-  assert.match(read('js/features.js'), /layer\.on\('pm:dragend', \(\) => \{ resquare\(layer\); changed\('move'\); \}\)/, 'squared when a drag ends (the Move tool and a drag in Select)');
+  assert.equal(MB.squareRect([[0, 0], [1, 1], [1, 0], [0, 1]]), null, 'a ring that crosses itself has no width: left as it is, not flattened to a line');
+  assert.match(read('js/features.js'), /layer\.on\('pm:dragend', \(\) => \{ resquare\(layer\); changed\('move'\); \}\)/, 'squared when a drag ends (the Move tool: Geoman drags a whole layer there)');
   assert.match(read('js/features.js'), /function resquare\(layer\) \{[\s\S]*?MB\.squareRect\(ring\)/);
 });
 
@@ -359,4 +362,46 @@ test('the arrow keys move along a group of radio buttons that is itself the root
   press('ArrowLeft');
   assert.equal(doc.activeElement, buttons[2], 'and the other way');
   assert.equal(press('Enter'), false, 'other keys are left alone');
+});
+
+// What the GeoJSON importer makes of a ring tagged "rectangle" (js/storage.js): kept as a rectangle when it is near
+// enough to be one, a turned one squared up exact; null stands for "comes in as a polygon".
+const importRect = ring => {
+  if (!MB.isRectRing(ring, true)) return null;
+  const sq = MB.rectRing(ring) && MB.squareRect(ring);
+  return sq ? sq.map(q => [q.lat, q.lng]) : ring;
+};
+
+test("the app's own GeoJSON brings a small turned rectangle back as a rectangle, not a polygon", () => {
+  // About 20 x 8 m, turned: the 6 decimals Leaflet writes by default are 0.11 m, which leaves a shape this small a
+  // hair off square, and the strict test called it a polygon. Rectangles now go out with 7 decimals, and whatever
+  // decimals a file holds, a near-rectangle is snapped back to exact on the way in.
+  const small = [10, 30, 45, 70, 115, 200, 300].map(deg => turnedRect(32.08, -81.09, deg, 3.7e-6, 1.5e-6));
+  let strictLost = 0;
+  for (const ring of small) {
+    const at6 = round6(ring), at7 = round7(ring);
+    assert.equal(MB.isRectRing(at7), true, '7 decimals (what a rectangle is exported with now): still a rectangle');
+    if (!MB.isRectRing(at6)) strictLost++;
+    assert.equal(MB.isRectRing(at6, true), true, '6 decimals: near enough to be one');
+    const back = importRect(at6);
+    assert.ok(back, 'imported as a rectangle, not a free polygon');
+    assert.equal(MB.isRectRing(back), true, 'and square again, so the next save keeps it');
+    assert.equal(MB.isAxisRect(back), false, 'still turned');
+    assert.ok(MB.rectRing(back), 'restored corner for corner, never as its box');
+    assert.ok(far(back, at6) < 2e-6, 'and within a quarter of a meter of what the file held');
+  }
+  assert.ok(strictLost > 0, 'the strict test really does lose some of them at 6 decimals (what this guards against)');
+  // a ring that is no rectangle still comes in as a polygon, with its own shape
+  assert.equal(importRect([[10, 20], [10.5, 20.5], [10.5, 21.5], [10, 21]]), null, 'a parallelogram stays a polygon');
+  assert.equal(importRect([[10, 20], [11, 20], [11, 21]]), null, 'and a triangle');
+
+  const storage = read('js/storage.js');
+  assert.match(storage, /l\.toGeoJSON\(m\.type === 'rectangle' \? 7 : undefined\)\.geometry/, 'rectangles are written with 7 decimals');
+  assert.match(storage, /const rect = p\.type === 'rectangle' && MB\.isRectRing\(rings\[0\], true\);/, 'and read with the generous test');
+  assert.match(storage, /const sq = MB\.squareRect\(rings\[0\]\);/, 'a turned one squared up exact');
+  // the ghost's color is cached (it is redrawn on every move): cleared wherever the next object's color can change,
+  // which is refreshDraw (the New shapes panel changes it from there without any features event)
+  const refresh = /refreshDraw\(\) \{[\s\S]*?\n    \},/.exec(read('js/tools.js'));
+  assert.ok(refresh, 'js/tools.js has refreshDraw');
+  assert.match(refresh[0], /MB\.circleRadius\.color = null;/, 'the radius ghost takes the new color too');
 });

@@ -75,6 +75,7 @@ window.MB = window.MB || {};
 
     // Called when the default style or active layer changes while a draw tool is active.
     refreshDraw() {
+      MB.circleRadius.color = null; // the next object's color: the radius ghost takes it afresh
       // the text tool waiting for its layer to be shown, or its layer just hidden
       if (this.current === 'text' && this.textWaits !== !MB.activeLayer().visible) { this.startDraw('text'); return; }
       if (this.shapes[this.current]) {
@@ -206,8 +207,7 @@ window.MB = window.MB || {};
     el: null, ghost: null, color: null, // (the ghost's color, worked out once: it is drawn on every move)
 
     init() {
-      MB.on('units', () => this.useDefaultUnit());
-      MB.on('features', () => { this.color = null; }); // the next object's color may have changed (the ghost's)
+      MB.on('units', () => this.useDefaultUnit()); // (the ghost's color is cleared in MB.tools.refreshDraw)
       // the center placed with a radius typed: that is the whole circle, no second click
       const Circle = L.PM && L.PM.Draw && L.PM.Draw.Circle && L.PM.Draw.Circle.prototype;
       if (Circle && Circle._placeCenterMarker && !Circle._mbRadiusBox) {

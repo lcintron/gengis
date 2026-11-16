@@ -65,7 +65,9 @@ window.MB = window.MB || {};
           props.radius = l.getRadius();
           break;
         }
-        default: geometry = l.toGeoJSON().geometry;
+        // A turned rectangle's corners are worked out from each other, so the 6 decimals Leaflet writes by default
+        // leave it a hair off square: rectangles go out with the 7 a project file keeps, and come back as drawn.
+        default: geometry = l.toGeoJSON(m.type === 'rectangle' ? 7 : undefined).geometry;
       }
       if (geometry) features.push({ type: 'Feature', properties: props, geometry });
     });
@@ -116,9 +118,15 @@ window.MB = window.MB || {};
           case 'MultiLineString':
             MB.restoreFeature(Object.assign(base, { type: 'line', latlngs: c.map(ls => ls.map(pt => [pt[1], pt[0]])) })); n++; break;
           case 'Polygon': {
-            // tagged a rectangle, but only if it really is one: anything else keeps its shape as a polygon
+            // Tagged a rectangle, and near enough to be one: kept as one, with a turned one squared up exact (the
+            // decimals a file keeps leave a small shape a hair off square, and it would come in as a polygon).
+            // Anything else keeps its shape, as a polygon.
             const rings = c.map(r => r.map(pt => [pt[1], pt[0]]));
-            const rect = p.type === 'rectangle' && MB.isRectRing(rings[0]);
+            const rect = p.type === 'rectangle' && MB.isRectRing(rings[0], true);
+            if (rect && MB.rectRing(rings[0])) {
+              const sq = MB.squareRect(rings[0]);
+              if (sq) rings[0] = sq.map(q => [q.lat, q.lng]);
+            }
             MB.restoreFeature(Object.assign(base, { type: rect ? 'rectangle' : (p.type === 'measure-area' ? 'measure-area' : 'polygon'), latlngs: rings })); n++; break;
           }
           case 'MultiPolygon':

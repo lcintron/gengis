@@ -280,15 +280,17 @@ window.MB = window.MB || {};
 
   // Whether a ring really is a rectangle on the map (four corners whose diagonals halve each other and are the same
   // length): a rotated one that would be lost if it were restored from its bounding box. The tolerance allows for
-  // the 7 decimals a project file keeps.
-  MB.isRectRing = function (latlngs) {
+  // the 7 decimals a project file keeps. `near`: a tolerance generous enough for a file written with fewer decimals
+  // (a percent of the shape, and never under about 0.6 m) — what comes back is squared up again (MB.squareRect),
+  // so a rectangle is not left a polygon over rounding by whatever wrote it.
+  MB.isRectRing = function (latlngs, near) {
     const pts = ringPts(latlngs);
     if (pts.length !== 4) return false;
     const q = pts.map(p => MB.mercXY(p.lat, p.lng));
     const d1 = Math.sqrt((q[2].x - q[0].x) ** 2 + (q[2].y - q[0].y) ** 2);
     const d2 = Math.sqrt((q[3].x - q[1].x) ** 2 + (q[3].y - q[1].y) ** 2);
     const mid = Math.sqrt(((q[1].x + q[3].x - q[0].x - q[2].x) / 2) ** 2 + ((q[1].y + q[3].y - q[0].y - q[2].y) / 2) ** 2);
-    const tol = Math.max(Math.max(d1, d2) * 1e-3, 1e-8);
+    const tol = near ? Math.max(Math.max(d1, d2) * 1e-2, 1e-7) : Math.max(Math.max(d1, d2) * 1e-3, 1e-8); // (1e-7 rad: about 0.6 m)
     return mid <= tol && Math.abs(d1 - d2) <= tol;
   };
 
@@ -326,11 +328,12 @@ window.MB = window.MB || {};
     const ax = ((q[1].x - q[0].x) + (q[2].x - q[3].x)) / 2, ay = ((q[1].y - q[0].y) + (q[2].y - q[3].y)) / 2;
     const bx = ((q[3].x - q[0].x) + (q[2].x - q[1].x)) / 2, by = ((q[3].y - q[0].y) + (q[2].y - q[1].y)) / 2;
     const h = Math.sqrt(ax * ax + ay * ay);
-    if (!(h > 0)) return null;
+    if (!(h > 1e-12)) return null;
     const ux = ax / h, uy = ay / h; // along the first edge
     let vx = -uy, vy = ux;          // square to it, on the side the other pair points
     if (bx * vx + by * vy < 0) { vx = -vx; vy = -vy; }
     const w = bx * vx + by * vy;
+    if (!(w > 1e-12)) return null; // no width to it (a ring crossing itself): left as it is, not flattened to a line
     const corner = (s, t) => MB.mercLatLng(cx + ux * h * s / 2 + vx * w * t / 2, cy + uy * h * s / 2 + vy * w * t / 2);
     return [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
   };

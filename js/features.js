@@ -336,9 +336,9 @@ window.MB = window.MB || {};
     return { latlng: e.latlng, cp, x: r.left + cp.x, y: r.top + cp.y };
   }
 
-  // A turned rectangle just dragged: Geoman moves every corner by the same degrees, which is not the same distance
-  // in the projection, so the shape comes out slightly skewed. It is squared up again here (same center, turn and
-  // size), so a hundred drags do not pile the skew up into a parallelogram.
+  // A turned rectangle just dragged with the Move tool: Geoman moves every corner by the same degrees, which is not
+  // the same distance in the projection, so the shape comes out slightly skewed. It is squared up again here (same
+  // center, turn and size), so a hundred drags do not pile the skew up into a parallelogram.
   function resquare(layer) {
     if (!layer.mb || layer.mb.type !== 'rectangle' || !layer.getLatLngs) return;
     const ring = (layer.getLatLngs() || [])[0] || [];
@@ -346,10 +346,7 @@ window.MB = window.MB || {};
     const sq = MB.squareRect(ring);
     if (!sq) return;
     layer.setLatLngs(sq.map(p => L.latLng(p.lat, p.lng)));
-    if (layer.pm) {
-      layer.pm._setAngle(MB.ringAngle(sq));
-      try { if (layer.pm.enabled() && layer.pm._initMarkers) layer.pm._initMarkers(); } catch (e) { /* its handles follow next time */ }
-    }
+    if (layer.pm) layer.pm._setAngle(MB.ringAngle(sq)); // (a drag is the Move tool's: no edit handles out to re-place)
   }
 
   function bindFeatureEvents(layer) {
