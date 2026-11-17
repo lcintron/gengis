@@ -6,7 +6,9 @@ name: Release
 #      use the bump chosen in the form), update the version shown in the app, commit, tag and push.
 #      With "auto" and only chore/docs/ci commits since the last tag there is nothing to release and the
 #      run stops here.
-#   2. "build": build the Windows, macOS and Linux installers from that tag.
+#   2. "build": build the Windows, macOS and Linux installers from that tag. The macOS app is universal (Apple
+#      Silicon and Intel) and ad-hoc signed, so it runs once the user allows it; it is signed with a Developer ID
+#      and notarized by Apple instead, with no edit here, once the APPLE_* secrets are set.
 #   3. "android": build the Android APK from the same tag: a signed APK and Play bundle (.aab) when the
 #      ANDROID_* signing secrets are set, otherwise a debug APK (installable for testing). Best-effort:
 #      a failed Android build does not hold back the installers or the Release.
@@ -117,6 +119,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
+    env:
+      MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}   # a Developer ID certificate is set: signed and notarized macOS build
     steps:
       - uses: actions/checkout@v7
         with:
@@ -139,9 +143,46 @@ jobs:
             echo "::warning::GOOGLE_DESKTOP_CLIENT_SECRET is not set: the desktop app will not offer Google Drive"
           fi
       - name: Build installers
+        if: runner.os != 'macOS'
         run: npx electron-builder --publish never
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned builds; add signing secrets here when available
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # the Windows and Linux installers are unsigned
+      - name: Build macOS app (ad-hoc signed)
+        # No Developer ID certificate: ad-hoc signed (scripts/mac-adhoc.js), which is what Apple Silicon needs to
+        # run the app at all. macOS still asks the user to allow it the first time (the release note says how).
+        if: runner.os == 'macOS' && env.MAC_SIGNED != 'true'
+        run: npx electron-builder --publish never --config scripts/mac-adhoc.js
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Build macOS app (Developer ID, notarized)
+        if: runner.os == 'macOS' && env.MAC_SIGNED == 'true'
+        env:
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # a signed app that is not notarized is still blocked: stop rather than ship one
+          for v in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then echo "::error::The $v secret is not set (needed to notarize the macOS app)."; exit 1; fi
+          done
+          npx electron-builder --publish never
+      - name: Check the macOS signature
+        # Both paths produce a universal app; which signature it carries depends on the certificate.
+        if: runner.os == 'macOS'
+        run: |
+          app=$(ls -d dist/mac*/GenGIS.app | head -n1)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          archs=$(lipo -archs "$app/Contents/MacOS/GenGIS"); echo "$archs"
+          case "$archs" in *x86_64*arm64*|*arm64*x86_64*) ;; *) echo "::error::not a universal app: $archs"; exit 1 ;; esac
+          info=$(codesign -dv --verbose=4 "$app" 2>&1); echo "$info"
+          if [ "$MAC_SIGNED" = "true" ]; then
+            echo "$info" | grep -q 'Authority=Developer ID Application'
+            xcrun stapler validate "$app"
+          else
+            echo "$info" | grep -q 'Signature=adhoc'
+          fi
       - name: Collect artifacts
         shell: bash
         run: |
@@ -240,14 +281,22 @@ jobs:
         # overwrites the release body instead of appending the generated notes again: action-gh-release falls
         # back to the existing body when the workflow body is empty. The note itself is only for a debug APK,
         # which a signed build does not attach and a failed android job leaves out altogether.
+        # The macOS note goes the same way: only while the app is ad-hoc signed rather than notarized by Apple.
+        env:
+          MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
         run: |
           apk=$(ls installers/GenGIS-*-android-debug.apk 2>/dev/null | head -n1 || true)
+          dmg=$(ls installers/GenGIS-*-mac-*.dmg 2>/dev/null | head -n1 || true)
           {
             echo 'body<<APKNOTE_EOF'
             if [ -n "$apk" ]; then
               echo "**Android:** \`$(basename "$apk")\` is a debug build, for testing and fresh installs: it will not install over a previous GenGIS APK (uninstall that one first). A signed release APK will replace it once app signing is set up."
             else
               echo '<!-- release notes -->'
+            fi
+            if [ -n "$dmg" ] && [ "$MAC_SIGNED" != "true" ]; then
+              echo
+              echo '**macOS:** the app is not notarized by Apple yet, so macOS blocks it the first time. Open it once, then choose System Settings → Privacy & Security → Open Anyway (macOS 14 and earlier: right-click the app → Open). Or in Terminal: `xattr -dr com.apple.quarantine /Applications/GenGIS.app`. One download covers Apple Silicon and Intel Macs.'
             fi
             echo APKNOTE_EOF
           } >> "$GITHUB_OUTPUT"

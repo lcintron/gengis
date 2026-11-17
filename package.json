@@ -11,7 +11,7 @@
     "start": "electron .",
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
-    "dist:mac": "electron-builder --mac --publish never",
+    "dist:mac": "electron-builder --mac --publish never --config scripts/mac-adhoc.js",
     "dist:linux": "electron-builder --linux --publish never",
     "test": "node --expose-gc --test --test-timeout=300000 \"tests/*.test.js\"",
     "android:web": "node scripts/build-web.js",
@@ -30,7 +30,15 @@
     "fileAssociations": [{ "ext": "gengis", "name": "GenGIS project", "description": "GenGIS project", "mimeType": "application/x-gengis", "role": "Editor" }],
     "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "icons/icon.ico" },
     "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "include": "installer/protocol.nsh" },
-    "mac": { "target": ["dmg", "zip"], "category": "public.app-category.productivity" },
+    "mac": {
+      "appId": "com.luiscintron.gengis",
+      "target": [{ "target": "dmg", "arch": ["universal"] }, { "target": "zip", "arch": ["universal"] }],
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "entitlements": "installer/entitlements.mac.plist",
+      "entitlementsInherit": "installer/entitlements.mac.plist",
+      "notarize": true
+    },
     "linux": { "target": ["AppImage", "deb"], "category": "Science", "maintainer": "Luis Cintron" }
   },
   "devDependencies": {
@@ -41,6 +49,6 @@
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/share": "^8.0.3",
     "electron": "^33.0.0",
-    "electron-builder": "^26.0.0"
+    "electron-builder": "^26.15.3"
   }
 }

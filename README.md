@@ -11,6 +11,8 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 
 **Use it now** at [g2.luiscintron.com](https://g2.luiscintron.com) (installable, works offline), or get the native app for [Windows, macOS or Linux](https://github.com/lcintron/gengis/releases/latest) or [Android](#android-app). No account or API key needed.
 
+**On macOS:** one download covers Apple Silicon and Intel Macs (a universal app), but it is not notarized by Apple yet, so macOS blocks it the first time: open it once, then choose **System Settings → Privacy & Security → Open Anyway** (macOS 14 and earlier: right-click the app → **Open**). In Terminal, `xattr -dr com.apple.quarantine /Applications/GenGIS.app` does the same.
+
 ![GenGIS on the desktop: Tampa Bay with airspace and LAANC ceilings](docs/screenshots/desktop-map.jpg)
 
 <p align="center">
@@ -151,7 +153,7 @@ npm test                  # automated tests, no installs needed
 `make` runs the same tasks (`make serve`, `make build`, `make release DRY=1`).
 
 - **Tests** cover cloud sign-in and sync against a fake Microsoft and a fake Google, the desktop app's sign-in, load and stress runs, and checks of the page itself. They run on every pull request.
-- **Releases** run in CI: Actions → Release → Run workflow on `main`, or `gh workflow run release.yml -f bump=auto`. The version bump follows conventional commits. The workflow tags the release, builds the Windows, macOS and Linux installers, publishes a GitHub Release and deploys the site. A dry run only reports the version.
+- **Releases** run in CI: Actions → Release → Run workflow on `main`, or `gh workflow run release.yml -f bump=auto`. The version bump follows conventional commits. The workflow tags the release, builds the Windows, macOS and Linux installers, publishes a GitHub Release and deploys the site. A dry run only reports the version. The macOS app is universal and ad-hoc signed until the Apple signing secrets (`APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) are set, after which it is signed with a Developer ID and notarized by Apple; **macOS build (manual)** builds it on demand without cutting a release.
 - **Android** builds in CI: Actions → Android → Run workflow, or any pull request that touches the app.
   - It makes a debug APK for testing.
   - Once the signing secrets are set, it also makes a signed `.aab` for Google Play and a signed `.apk`.

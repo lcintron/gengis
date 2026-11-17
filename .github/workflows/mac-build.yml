@@ -1,0 +1,65 @@
+name: macOS build (manual)
+
+# A dry run of the release workflow's macOS leg: the same build and the same signature check, on demand and without
+# cutting a release. Ad-hoc signed and universal today; signed with a Developer ID and notarized once the APPLE_*
+# secrets are set (release.yml does both the same way). The app lands as a workflow artifact.
+# Not a release build: it skips release.yml's "Cloud sign-in secrets" step, so this app offers OneDrive but not Google Drive.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check the macOS app
+    runs-on: macos-latest
+    env:
+      MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}   # a Developer ID certificate is set: signed and notarized macOS build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false   # no lock file to key a cache on
+      - name: Install build tooling
+        run: npm install --no-audit --no-fund
+      - name: Build macOS app (ad-hoc signed)
+        if: env.MAC_SIGNED != 'true'
+        run: npx electron-builder --publish never --config scripts/mac-adhoc.js
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Build macOS app (Developer ID, notarized)
+        if: env.MAC_SIGNED == 'true'
+        env:
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # a signed app that is not notarized is still blocked: stop rather than ship one
+          for v in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then echo "::error::The $v secret is not set (needed to notarize the macOS app)."; exit 1; fi
+          done
+          npx electron-builder --publish never
+      - name: Check the macOS signature
+        run: |
+          app=$(ls -d dist/mac*/GenGIS.app | head -n1)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          archs=$(lipo -archs "$app/Contents/MacOS/GenGIS"); echo "$archs"
+          case "$archs" in *x86_64*arm64*|*arm64*x86_64*) ;; *) echo "::error::not a universal app: $archs"; exit 1 ;; esac
+          info=$(codesign -dv --verbose=4 "$app" 2>&1); echo "$info"
+          if [ "$MAC_SIGNED" = "true" ]; then
+            echo "$info" | grep -q 'Authority=Developer ID Application'
+            xcrun stapler validate "$app"
+          else
+            echo "$info" | grep -q 'Signature=adhoc'
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gengis-macos
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
