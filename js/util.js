@@ -650,7 +650,7 @@ window.MB = window.MB || {};
     return lum < 0.18 ? '#ffffff' : HALO_DARK;
   };
   // An icon marker's drawing: the icon in the marker's color over a wider contrasting copy when outlined, `size` px
-  // across, turned by `angle` (only a normalised angle reaches the CSS). The same geometry as the picker's (icons.js).
+  // across, turned by `angle` (only a normalized angle reaches the CSS). The same geometry as the picker's (icons.js).
   MB.iconMarkerSvg = function (inner, color, size, halo, angle) {
     const a = MB.normAngle(angle);
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 26 26" width="${size}" height="${size}" fill="none" stroke-linecap="round" stroke-linejoin="round"` +

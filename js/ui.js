@@ -1072,7 +1072,7 @@ window.MB = window.MB || {};
     let html = '';
     if (sections.includes('stroke')) {
       html += `<div class="section"><h3>${sections.includes('markerOnly') ? 'Marker' : 'Border / line'}</h3>
-        <div class="row"><label>Color</label><input type="color" data-k="color" value="${st.color}"><span class="grow"></span></div>`;
+        <div class="row"><label>Color</label><input type="color" data-k="color" value="${esc(st.color)}"><span class="grow"></span></div>`;
       if (sections.includes('markerOnly')) { // its shape: the pin, a smaller symbol centered on the point, or an icon
         const shape = MB.markerShape(st), size = MB.markerSize(st);
         const name = typeof st.markerIcon === 'string' ? st.markerIcon : '';
@@ -1190,6 +1190,7 @@ window.MB = window.MB || {};
   }
 
   let rotSync = null; // the Rotation row of the object shown in Properties (null while none is), so the knob can refresh it
+  let sizeSync = null; // and a marker's Size row, so the Scale tool's handles can
 
   // A "Rotation" row: how far the object is turned, in degrees (the Scale tool's knob does the same by hand). The
   // slider stops at 359: 360° is 0° again, and the thumb would sit at the far end showing the same angle as the
@@ -1229,16 +1230,31 @@ window.MB = window.MB || {};
     const b = $('#propsBody .marker-shapes button.active');
     if (b) b.focus();
   }
-  // The icon picker for a marker, seeded with its own color and outline: what comes back goes on the marker (and
-  // the color chosen there with it — it is the one just chosen for this marker). Closed without one, nothing
-  // changes; either way Properties is drawn anew, so the shape segment goes back to the shape the marker is on.
+  // The Scale tool's box around the marker whose shape just changed: an icon marker can be resized and turned, a
+  // plain one cannot. A plain marker picked under the Scale tool is never attached at all (attach() says markers
+  // have a fixed size and leaves the box off), so what the box should be is read from the selection, not from what
+  // the scaler happens to hold — otherwise Dot → Icon could never give it one. A group's box (several targets) and
+  // the Move tool's frame are left alone.
+  function rescaleBox(f) {
+    if (!MB.scaler || MB.tools.current !== 'scale' || MB.selected !== f || MB.scaler.frame) return;
+    const held = MB.scaler.targets || [];
+    if (held.length && !(held.length === 1 && held[0] === f)) return;
+    if (MB.canScale(f)) MB.scaler.attach(f); else MB.scaler.detach();
+  }
+  // The icon picker for a marker, seeded with its own color and outline. What comes back goes on the marker — its
+  // color only when one was really picked there, so a marker whose own color the picker cannot show ('red',
+  // 'rgb(…)', #rgb, #rrggbbaa from a file) keeps it. Closed without an icon, nothing changes; either way Properties
+  // is drawn anew, so the shape segment goes back to the shape the marker is on.
   function pickMarkerIcon(f) {
     if (!MB.icons) return;
     const m = f.mb;
     MB.icons.pick({ color: m.style.color, halo: m.style.markerHalo !== false }).then(res => {
       // the marker may have been deselected, deleted or locked while the picker was up
       if (res && res.name && MB.selected === f && MB.featureLayers[m.id] === f && !MB.isFeatureLocked(f)) {
-        MB.applyStyle(f, { markerShape: 'icon', markerIcon: res.name, color: res.color, markerHalo: res.halo !== false });
+        const patch = { markerShape: 'icon', markerIcon: res.name, markerHalo: res.halo !== false };
+        if (res.colorChosen) patch.color = res.color;
+        MB.applyStyle(f, patch);
+        rescaleBox(f); // an icon now: under the Scale tool it gets the box and the knob
         MB.emit('features'); // its swatch in the layer list
       }
       if (MB.selected === f) { MB.ui.renderProps(); focusShape(); }
@@ -1251,6 +1267,7 @@ window.MB = window.MB || {};
     panel.innerHTML = '';
     labelSizeSync = null; // (the label form sets it again, if there is one)
     rotSync = null;       // (and so does the rotation row)
+    sizeSync = null;      // (and the marker form its size row)
     panel.classList.remove('props-locked');
     $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
@@ -1337,11 +1354,25 @@ window.MB = window.MB || {};
         if (patch.markerShape === 'icon' && MB.markerShape(Object.assign({}, m.style, patch)) !== 'icon') { pickMarkerIcon(f); return; }
         const reshaped = 'markerShape' in patch && (patch.markerShape === 'icon') !== (MB.markerShape(m.style) === 'icon');
         MB.applyStyle(f, patch);
-        if (reshaped) { MB.ui.renderProps(); focusShape(); } // the icon's own rows and its Rotation row come and go
+        if (reshaped) {
+          rescaleBox(f); // under the Scale tool, the box fits what the marker is now
+          MB.ui.renderProps(); focusShape(); // the icon's own rows and its Rotation row come and go
+        }
       });
       panel.appendChild(form);
       const pickBtn = $('[data-act="pick-icon"]', form);
       if (pickBtn) pickBtn.addEventListener('click', () => pickMarkerIcon(f));
+      // The size as it is now, after the Scale tool's handles resized the marker: the slider and its readout are
+      // set outright, nothing is applied or saved (as rotSync does for the angle). The panel is not drawn anew, so
+      // the keyboard stays where it is.
+      const sizeInp = $('[data-k="markerSize"]', form), sizeOut = $('[data-val="markerSize"]', form);
+      if (sizeInp) sizeSync = () => {
+        const px = MB.markerSize(m.style);
+        if (+sizeInp.value === px) return;
+        if (px > +sizeInp.max) sizeInp.max = String(px);
+        sizeInp.value = String(px);
+        if (sizeOut) sizeOut.textContent = px + 'px';
+      };
       if (MB.markerShape(m.style) === 'icon') panel.appendChild(rotationRow(() => MB.getRotation(f), 'How far the icon is turned, clockwise', deg => {
         if (MB.getRotation(f) === deg) return; // the same angle: nothing to turn and nothing to save
         MB.setRotation(f, deg);
@@ -2270,7 +2301,7 @@ window.MB = window.MB || {};
     // zoom display: the list dims what the zoom hides, the selected object's note says whether it is shown
     MB.on('zoomdisplay', () => MB.ui.renderLayersSoon());
     MB.map.on('zoomend', () => MB.ui.renderZoomNote());
-    MB.on('featurechange', l => { if (l === MB.selected) { MB.ui.renderMeasureBox(); if (rotSync) rotSync(); } }); // (the knob turned it: its Rotation row follows, the panel is not drawn anew)
+    MB.on('featurechange', l => { if (l === MB.selected) { MB.ui.renderMeasureBox(); if (rotSync) rotSync(); if (sizeSync) sizeSync(); } }); // (the knob turned it, a handle resized it: its Rotation and Size rows follow, the panel is not drawn anew)
     MB.on('project', () => { MB.ui.renderSettings(); MB.ui.renderSvgPanel(); $('#basemapSelect').value = MB.state.basemap; });
     MB.on('poi-request', term => { MB.ui.showTab('places'); setTimeout(() => MB.ui.runPoiSearch(term), 800); });
     MB.on('feature-contextmenu', info => MB.menus.feature(info));

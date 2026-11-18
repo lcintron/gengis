@@ -1,10 +1,10 @@
 /* GenGIS - icons (the toolbar's Icon button, or I)
- * - a picker over the Lucide icons (data/icons.js, built by scripts/build-icons.js; ISC licence): search by name and
+ * - a picker over the Lucide icons (data/icons.js, built by scripts/build-icons.js; ISC license): search by name and
  *   tags, a color, and an outline that keeps the icon readable on imagery
  * - the icon chosen arms the Icon tool (js/tools.js) and the map's next click places it as a marker, which takes the
  *   next color of the palette like every new object (its color, size, outline and angle: Properties)
  * - pick(): the same picker choosing an icon for something else (an imported layer's symbols, a marker in
- *   Properties): { name, color, halo }, or null when closed without one; svg(name, color, halo) draws one
+ *   Properties): { name, color, halo, colorChosen }, or null when closed without one; svg(name, color, halo) draws one
  * - need(): the set loaded because something has to draw an icon (a project opened with icon markers in it)
  */
 window.MB = window.MB || {};
@@ -22,8 +22,20 @@ window.MB = window.MB || {};
       (halo ? `<g stroke="${HALO}" stroke-opacity=".6" stroke-width="4.5">${inner}</g>` : '') + `<g stroke="${color}" stroke-width="2">${inner}</g></svg>`;
   }
 
+  // An object's own color as the picker can show it: '#rrggbb', a 3-digit hex expanded, an 8-digit one without its
+  // alpha. A named or rgb() color (a file's own, or GeoJSON's marker-color) is none of those: '' — the picker keeps
+  // the color it had, and the object keeps its own unless a color is picked here (MB.icons.pick, js/ui.js).
+  function seedColor(c) {
+    const s = String(c == null ? '' : c).trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/.test(s)) return s;
+    if (/^#[0-9a-f]{3}$/.test(s)) return '#' + s.slice(1).replace(/./g, x => x + x);
+    if (/^#[0-9a-f]{8}$/.test(s)) return s.slice(0, 7);
+    return '';
+  }
+  MB.iconSeedColor = seedColor;
+
   MB.icons = {
-    dlg: null, loading: null, color: '#ffffff', halo: true, query: '',
+    dlg: null, loading: null, color: '#ffffff', halo: true, pickHalo: true, colorChosen: false, query: '',
 
     init() {
       const dlg = this.dlg = document.getElementById('iconDialog');
@@ -36,9 +48,9 @@ window.MB = window.MB || {};
       const search = dlg.querySelector('#iconSearch');
       search.addEventListener('input', MB.debounce(() => { this.query = search.value; this.render(); }, 120));
       search.addEventListener('keydown', e => { if (e.key === 'ArrowDown') { const first = dlg.querySelector('#iconGrid [data-icon]'); if (first) { e.preventDefault(); first.focus(); } } });
-      dlg.querySelector('#iconSwatches').addEventListener('click', e => { const b = e.target.closest('[data-color]'); if (b) this.setColor(b.dataset.color); });
-      dlg.querySelector('#iconColor').addEventListener('input', e => this.setColor(e.target.value));
-      dlg.querySelector('#iconHalo').addEventListener('change', e => { this.halo = e.target.checked; this.render(); });
+      dlg.querySelector('#iconSwatches').addEventListener('click', e => { const b = e.target.closest('[data-color]'); if (b) this.setColor(b.dataset.color, true); });
+      dlg.querySelector('#iconColor').addEventListener('input', e => this.setColor(e.target.value, true));
+      dlg.querySelector('#iconHalo').addEventListener('change', e => this.setHalo(e.target.checked));
       const grid = dlg.querySelector('#iconGrid');
       grid.addEventListener('click', e => { const b = e.target.closest('[data-icon]'); if (b) this.choose(b.dataset.icon); });
       grid.addEventListener('keydown', e => this.gridKeys(e));
@@ -70,7 +82,7 @@ window.MB = window.MB || {};
       MB.ui.openDialog(this.dlg);
       // the search takes the keyboard, except on a touch screen, where its keyboard would cover half the icons
       if (!matchMedia('(pointer: coarse)').matches) this.dlg.querySelector('#iconSearch').focus();
-      this.dlg.querySelector('#iconHalo').checked = this.halo;
+      this.dlg.querySelector('#iconHalo').checked = this.haloNow();
       // Placing a marker, the color here would only mislead: the marker takes the next color of the palette, as
       // every new object does, so the icons preview in that color and the color control is out of the way. Picking
       // an icon for something else, its own color is chosen here.
@@ -88,11 +100,22 @@ window.MB = window.MB || {};
       if (this.picking || !MB.newShapeStyle) return this.color;
       return MB.markerColor(MB.newShapeStyle());
     },
-    setColor(c) {
-      this.color = /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : this.color;
+    // A color for the picker; `byUser` when it was picked here (a swatch or the color box), which is what lets an
+    // object take it (an object's own color is only seeded: see seedColor).
+    setColor(c, byUser) {
+      const ok = /^#[0-9a-f]{6}$/i.test(c);
+      if (ok) this.color = String(c).toLowerCase();
+      if (ok && byUser) this.colorChosen = true;
       this.dlg.querySelector('#iconColor').value = this.color;
       this.renderSwatches();
       this.dlg.querySelector('#iconGrid').style.color = this.tint(); // the icons draw in currentColor: no redraw
+    },
+    // The outline: while picking for an object, the object's own (so the placing default is left alone); otherwise
+    // the default the next placed marker takes, kept from one placement to the next.
+    haloNow() { return this.picking ? this.pickHalo !== false : this.halo !== false; },
+    setHalo(v) {
+      if (this.picking) this.pickHalo = !!v; else this.halo = !!v;
+      this.render();
     },
     renderSwatches() {
       this.dlg.querySelector('#iconSwatches').innerHTML = SWATCHES.map(c => `<button type="button" data-color="${c}" class="${c === this.color ? 'active' : ''}" style="--c:${c}" title="${c}" aria-label="Color ${c}" aria-pressed="${c === this.color}"></button>`).join('');
@@ -111,7 +134,7 @@ window.MB = window.MB || {};
       if (!MB.iconData || this.dlg.classList.contains('hidden')) return;
       const grid = this.dlg.querySelector('#iconGrid'), all = this.matches(), list = all.slice(0, SHOWN);
       grid.style.color = this.tint();
-      grid.innerHTML = list.length ? list.map(([n, , svg], i) => `<button type="button" role="option" data-icon="${esc(n)}" title="${esc(n)}" aria-label="${esc(n)}" tabindex="${i ? -1 : 0}">${iconSvg(svg, 'currentColor', this.halo)}</button>`).join('')
+      grid.innerHTML = list.length ? list.map(([n, , svg], i) => `<button type="button" role="option" data-icon="${esc(n)}" title="${esc(n)}" aria-label="${esc(n)}" tabindex="${i ? -1 : 0}">${iconSvg(svg, 'currentColor', this.haloNow())}</button>`).join('')
         : '<p class="note">No icon matches. Try another word.</p>';
       this.dlg.querySelector('#iconCount').textContent = all.length > list.length
         ? `${list.length} of ${all.length} icons shown: type to narrow them down.` : `${all.length} icon${all.length === 1 ? '' : 's'}.`;
@@ -133,8 +156,8 @@ window.MB = window.MB || {};
     // The Icon tool, armed with it, so the map's next click places it as a marker (nothing is added until then); or,
     // picking for something else, handed to it.
     choose(name) {
-      const color = this.color, halo = this.halo;
-      if (this.picking) { MB.ui.closeDialog(this.dlg); this.settle({ name, color, halo }); return; }
+      const color = this.color, halo = this.haloNow(), colorChosen = this.colorChosen;
+      if (this.picking) { MB.ui.closeDialog(this.dlg); this.settle({ name, color, halo, colorChosen }); return; }
       MB.ui.closeDialog(this.dlg);
       MB.iconPlace.arm({ name, halo });
       if (MB.tools.current !== 'icon') MB.tools.set('icon'); else MB.emit('tool', 'icon'); // (setting the tool it is on would toggle back to Select)
@@ -145,16 +168,19 @@ window.MB = window.MB || {};
       const icon = MB.iconData && MB.iconData.icons.find(i => i[0] === name);
       return icon ? iconSvg(icon[2], color || '#ffffff', halo !== false) : '';
     },
-    // The picker, choosing an icon: a promise of { name, color, halo }, or null when closed without one. It shows
-    // above the dialog that asked.
+    // The picker, choosing an icon: a promise of { name, color, halo, colorChosen }, or null when closed without
+    // one. The object's own color and outline seed it, without touching what a placed marker takes; colorChosen
+    // says whether the color that comes back was picked here (so it can be put on the object) or is only the seed.
+    // It shows above the dialog that asked.
     pick(opts) {
       this.settle(null);
       const p = new Promise(res => { this.picking = res; });
-      if (opts && 'halo' in opts) this.halo = opts.halo !== false;
+      this.pickHalo = opts && 'halo' in opts ? opts.halo !== false : this.halo;
+      this.colorChosen = false;
       this.dlg.style.zIndex = 4100;
       this.dlg.querySelector('#iconTitle').textContent = 'Choose an icon';
       this.open();
-      this.setColor((opts && opts.color) || this.color); // (the object's own color: only a valid one is kept)
+      this.setColor(seedColor(opts && opts.color) || this.color); // (a color the picker cannot show: it keeps the one it had)
       return p;
     },
     settle(v) {

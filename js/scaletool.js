@@ -89,13 +89,19 @@ window.MB = window.MB || {};
 
   // The object as snapshotted, its points through `to` (screen pixels) and its sizes times s; (ax, ay): the point
   // that stays put, for a text (whose box does not grow quite in step with its font: its padding stays, sizes are
-  // whole pixels, so it is moved to keep that point's place on its box).
-  function transform(sn, to, s, ax, ay) {
+  // whole pixels, so it is moved to keep that point's place on its box) and for an icon marker (whose size stops at
+  // its limits). `lone`: the only object being scaled, so its own size is what the box follows.
+  function transform(sn, to, s, ax, ay, lone) {
     const layer = sn.layer, t = layer.mb.type;
     if (t === 'circle') { layer.setLatLng(ll(to(sn.center))); layer.setRadius(Math.max(0.01, sn.radius * s)); }
     else if (t === 'marker') {
-      layer.setLatLng(ll(to(sn.pos)));
-      if (s !== 1 && sn.size) MB.applyStyle(layer, { markerSize: Math.max(6, Math.min(96, Math.round(sn.size * s))) }, { noCommit: true }); // an icon marker: its size in px
+      // an icon marker: its size in px, between 6 and 96. Scaled on its own, its place follows the size it really
+      // takes, so the corner opposite the handle stays put once the size has stopped growing (in a group it keeps
+      // moving with the group: the others still scale by the group's own factor).
+      const size = sn.size && s !== 1 ? Math.max(6, Math.min(96, Math.round(sn.size * s))) : 0;
+      const es = size && lone ? size / sn.size : s; // the factor its place really takes (an icon marker is scaled alike both ways)
+      layer.setLatLng(ll(es === s ? to(sn.pos) : L.point(ax + (sn.pos.x - ax) * es, ay + (sn.pos.y - ay) * es)));
+      if (size) MB.applyStyle(layer, { markerSize: size }, { noCommit: true });
     }
     else if (t === 'text') {
       if (s === 1) layer.setLatLng(ll(to(sn.pos)));
@@ -292,7 +298,8 @@ window.MB = window.MB || {};
     // The selection as it was when the handle was grabbed, scaled by sx, sy about the point (ax, ay) on screen.
     scale(sx, sy, ax, ay) {
       const to = p => L.point(ax + (p.x - ax) * sx, ay + (p.y - ay) * sy);
-      this.drag.snaps.forEach(sn => transform(sn, to, sx, ax, ay));
+      const lone = this.drag.snaps.length === 1; // one object: the box is its own, so a size that stops stops its place too
+      this.drag.snaps.forEach(sn => transform(sn, to, sx, ax, ay, lone));
       this.place();
     },
 

@@ -24,6 +24,57 @@ function loadUtil(withIcons) {
 const MB = loadUtil(true);
 const icon = st => MB.markerIcon(Object.assign({ markerShape: 'icon', markerIcon: 'plane' }, st));
 
+// js/util.js and js/scaletool.js together, with the map's pixel work stubbed: enough to scale a snapshot by hand
+// (container pixels in, container pixels out; a style patch lands on the layer).
+function loadScaler() {
+  const L = {
+    divIcon: o => ({ options: o }), point: (x, y) => ({ x, y }),
+    Circle: class {}, Marker: class {}, latLng: v => v, latLngBounds: () => ({}),
+    DomEvent: { disableClickPropagation() {}, disableScrollPropagation() {} }, DomUtil: {}
+  };
+  const ctx = { window: {}, L, console, Math, Date, setTimeout, document: { createElement: () => ({ style: {}, classList: { add() {}, toggle() {} }, querySelectorAll: () => [], querySelector: () => null, appendChild() {} }) } };
+  vm.createContext(ctx);
+  for (const f of ['js/util.js', 'js/scaletool.js']) vm.runInContext(read(f), ctx, { filename: f });
+  const M = ctx.window.MB;
+  M.map = { containerPointToLatLng: p => ({ lat: p.y, lng: p.x }), hasLayer: () => false }; // nothing drawn: the box measures nothing
+  M.applyStyle = (layer, patch) => { Object.assign(layer.mb.style, patch); };
+  M.updateTooltip = () => {};
+  M.hasRotation = () => false;
+  M.isFeatureLocked = () => false;
+  M.canRotate = () => true; // (js/features.js; the box only uses it for the knob's class, which nothing is drawn of here)
+  M.iconData = { icons: [['plane', 'jet', '<path d="M2 12h20"/>']] };
+  M.toasts = [];
+  M.toast = t => M.toasts.push(t);
+  M.scaler.box = { style: {}, classList: { add() {}, remove() {}, toggle() {} } }; // the box itself is only shown or hidden
+  return M;
+}
+// js/icons.js over a fake dialog: the picker's own state, without a page (the icon set itself is not needed).
+function loadIcons() {
+  const el = () => ({ value: '', checked: false, innerHTML: '', textContent: '', style: {}, focus() {} });
+  const els = {};
+  for (const id of ['#iconColor', '#iconSwatches', '#iconGrid', '#iconTitle', '#iconHalo', '#iconCount', '#iconSearch']) els[id] = el();
+  const ctx = { window: {}, L: { divIcon: o => ({ options: o }) }, console, Math, Date, setTimeout, matchMedia: () => ({ matches: true }) };
+  vm.createContext(ctx);
+  for (const f of ['js/util.js', 'js/icons.js']) vm.runInContext(read(f), ctx, { filename: f });
+  const M = ctx.window.MB;
+  M.ui = { openDialog() {}, closeDialog() {} };
+  M.icons.dlg = { style: {}, classList: { contains: () => false, toggle() {} }, querySelector: s => els[s] || null };
+  M.icons.load = () => Promise.resolve(); // the set is fetched by the real one; nothing here draws an icon
+  M.iconPlace = { icon: null, arm(i) { this.icon = i; } };
+  M.tools = { current: 'select', set(n) { this.current = n; } };
+  M.emit = () => {};
+  return M;
+}
+
+// A marker as the Scale tool holds it mid-drag: its place and size when the handle was grabbed.
+function markerSnap(S, style, at) {
+  const layer = { mb: { type: 'marker', style: Object.assign({}, style) }, _ll: { lat: at.y, lng: at.x },
+    getLatLng() { return this._ll; }, setLatLng(v) { this._ll = v; } };
+  const sn = { layer, pos: { x: at.x, y: at.y }, orig: { style: Object.assign({}, style), ll: { lat: at.y, lng: at.x } } };
+  if (S.markerShape(layer.mb.style) === 'icon') sn.size = S.markerSize(layer.mb.style); // as js/scaletool.js snapshots one
+  return sn;
+}
+
 test('a marker is drawn as an icon only when it has one: its name, never markup from a file', () => {
   assert.equal(MB.markerShape({ markerShape: 'icon', markerIcon: 'plane' }), 'icon');
   assert.equal(MB.markerShape({ markerShape: 'icon' }), 'pin', 'an icon shape with no icon: the pin, as an unknown shape');
@@ -68,7 +119,7 @@ test('the outline behind an icon is on unless it is turned off, and contrasts wi
   assert.match(icon({ color: '#0b1118' }).options.html, /<g stroke="#ffffff" stroke-opacity="\.6"/);
 });
 
-test('an icon marker is turned in CSS, and only a normalised angle gets there', () => {
+test('an icon marker is turned in CSS, and only a normalized angle gets there', () => {
   assert.match(icon({ markerRotation: 45 }).options.html, /style="transform:rotate\(45deg\)"/);
   assert.match(icon({ markerRotation: -90 }).options.html, /style="transform:rotate\(270deg\)"/);
   assert.match(icon({ markerRotation: 400 }).options.html, /style="transform:rotate\(40deg\)"/);
@@ -154,7 +205,7 @@ test('a project opened with icon markers in it loads the icon set and draws them
   assert.match(need, /if \(MB\.refreshIconMarkers\) MB\.refreshIconMarkers\(\)/);
   assert.match(need, /catch\(\(\) => \{ this\.needing = false; \}\)/, 'a failed load is tried again by the next draw');
   assert.doesNotMatch(need, /this\.dlg/, 'it runs before the picker exists (an autosaved project is restored first)');
-  assert.match(icons, /this\.settle\(\{ name, color, halo \}\)/, 'what the picker resolves with');
+  assert.match(icons, /this\.settle\(\{ name, color, halo, colorChosen \}\)/, 'what the picker resolves with');
 });
 
 test('an icon marker can be turned and scaled; a plain marker still cannot', () => {
@@ -167,7 +218,8 @@ test('an icon marker can be turned and scaled; a plain marker still cannot', () 
   assert.match(scale, /MB\.canScale = layer => !!layer && !!layer\.mb && \(layer\.mb\.type !== 'marker' \|\| iconMarker\(layer\)\);/);
   assert.match(scale, /\|\| turnedRect\(layer\) \|\| iconMarker\(layer\)/, 'it keeps its proportions whichever handle is dragged');
   assert.match(scale, /if \(iconMarker\(layer\)\) sn\.size = MB\.markerSize\(layer\.mb\.style\);/, 'its size is snapshotted');
-  assert.match(scale, /if \(s !== 1 && sn\.size\) MB\.applyStyle\(layer, \{ markerSize: Math\.max\(6, Math\.min\(96, Math\.round\(sn\.size \* s\)\)\) \}, \{ noCommit: true \}\);/);
+  assert.match(scale, /const size = sn\.size && s !== 1 \? Math\.max\(6, Math\.min\(96, Math\.round\(sn\.size \* s\)\)\) : 0;/);
+  assert.match(scale, /if \(size\) MB\.applyStyle\(layer, \{ markerSize: size \}, \{ noCommit: true \}\);/);
   assert.match(scale, /if \('markerSize' in o\.style\) layer\.mb\.style\.markerSize = o\.style\.markerSize; else delete layer\.mb\.style\.markerSize;/,
     'Esc puts the size back, gone again when it had none of its own');
   assert.match(scale, /pick a line, shape, text, image or icon marker to scale/, 'the toast for a plain marker says what can be');
@@ -190,12 +242,13 @@ test('Properties switches a marker to an icon and back: the icon, its outline an
   assert.match(ui, /function iconGlyph\(name, px\) \{\s*\n\s*const inner = MB\.iconInner\(name\);/, 'the glyph comes from the set by name');
   // switching to the icon shape with none chosen opens the picker; the panel is drawn anew either way
   assert.match(ui, /if \(patch\.markerShape === 'icon' && MB\.markerShape\(Object\.assign\(\{\}, m\.style, patch\)\) !== 'icon'\) \{ pickMarkerIcon\(f\); return; \}/);
-  assert.match(ui, /if \(reshaped\) \{ MB\.ui\.renderProps\(\); focusShape\(\); \}/);
+  assert.match(ui, /MB\.ui\.renderProps\(\); focusShape\(\); \/\/ the icon's own rows and its Rotation row come and go/);
   const pick = ui.match(/function pickMarkerIcon\(f\) \{[\s\S]*?\n  \}/)[0];
   assert.match(pick, /MB\.icons\.pick\(\{ color: m\.style\.color, halo: m\.style\.markerHalo !== false \}\)/, 'seeded with the marker\'s own look');
   assert.match(pick, /if \(res && res\.name && MB\.selected === f && MB\.featureLayers\[m\.id\] === f && !MB\.isFeatureLocked\(f\)\)/,
     'deselected, deleted or locked while the picker was up: nothing is applied');
-  assert.match(pick, /MB\.applyStyle\(f, \{ markerShape: 'icon', markerIcon: res\.name, color: res\.color, markerHalo: res\.halo !== false \}\)/);
+  assert.match(pick, /const patch = \{ markerShape: 'icon', markerIcon: res\.name, markerHalo: res\.halo !== false \};/);
+  assert.match(pick, /if \(res\.colorChosen\) patch\.color = res\.color;/, 'the color only when it was picked there');
   assert.match(pick, /if \(MB\.selected === f\) \{ MB\.ui\.renderProps\(\); focusShape\(\); \}/, 'and the keyboard is given back');
   assert.match(ui, /function focusShape\(\) \{\s*\n\s*const b = \$\('#propsBody \.marker-shapes button\.active'\);/);
   // the angle row, like a text's
@@ -224,4 +277,139 @@ test('an icon marker is drawn as a block that turns about its middle, and the sh
   assert.match(html, /<input type="checkbox" id="iconHalo" checked> Outline<\/label>/);
   assert.match(html, /Click the map to place the icon as a marker/);
   assert.match(read('README.md'), /icons as a marker you can color, size, outline and turn/, 'the README says what an icon becomes');
+});
+
+/* ---------- review fixes ---------- */
+
+test('the picker only recolors a marker when a color was really picked there; the placing outline stays its own', async () => {
+  const I = loadIcons();
+  // an object's own color, as the picker can show it
+  assert.equal(I.iconSeedColor('#f00'), '#ff0000', 'a 3-digit hex is expanded');
+  assert.equal(I.iconSeedColor('#1E88E5'), '#1e88e5');
+  assert.equal(I.iconSeedColor('#1e88e5cc'), '#1e88e5', 'an 8-digit one, without its alpha');
+  assert.equal(I.iconSeedColor('red'), '', 'a named color is none the picker can show');
+  assert.equal(I.iconSeedColor('rgb(10, 20, 30)'), '');
+  assert.equal(I.iconSeedColor(null), '');
+
+  I.icons.color = '#ffffff'; I.icons.halo = true;
+  // a marker the picker cannot show the color of: the picker keeps its own, and nothing comes back to put on it
+  const p1 = I.icons.pick({ color: 'rgb(10, 20, 30)', halo: false });
+  assert.equal(I.icons.color, '#ffffff', 'the picker keeps the color it had');
+  assert.equal(I.icons.haloNow(), false, 'the marker\'s own outline is what is shown and offered');
+  assert.equal(I.icons.halo, true, 'the placing default is left alone');
+  I.icons.choose('plane');
+  const r1 = await p1;
+  assert.deepEqual([r1.name, r1.color, r1.colorChosen, r1.halo], ['plane', '#ffffff', false, false]);
+  assert.equal(I.icons.halo, true, 'still left alone after the pick');
+  assert.equal(I.iconPlace.icon, null, 'picking for an object arms no placement');
+
+  // the outline toggled while picking is the object's too
+  const p2 = I.icons.pick({ color: '#f00', halo: true });
+  assert.equal(I.icons.color, '#ff0000', 'a 3-digit hex seeds it');
+  I.icons.setHalo(false);
+  I.icons.choose('plane');
+  assert.equal((await p2).halo, false);
+  assert.equal(I.icons.halo, true, 'and the placing default is untouched by that too');
+
+  // a color picked in the picker is the user's choice: it does go on the object
+  const p3 = I.icons.pick({ color: '#f00' });
+  I.icons.setColor('#1e88e5', true);
+  I.icons.choose('plane');
+  const r3 = await p3;
+  assert.deepEqual([r3.color, r3.colorChosen], ['#1e88e5', true]);
+  // a color the picker refuses is no choice at all
+  const p4 = I.icons.pick({ color: '#f00' });
+  I.icons.setColor('nonsense', true);
+  I.icons.choose('plane');
+  assert.deepEqual([(await p4).color, (await p4).colorChosen], ['#ff0000', false]);
+
+  // placing: the outline is the default, which the picks never changed, and the tool is armed with it
+  I.icons.setHalo(false);
+  assert.equal(I.icons.halo, false, 'off the picking path the checkbox sets the default itself');
+  I.icons.choose('plane');
+  assert.deepEqual([I.iconPlace.icon.name, I.iconPlace.icon.halo], ['plane', false]);
+  assert.equal(I.tools.current, 'icon');
+});
+
+test('a lone icon marker scaled past its size limit stays put; in a group it still moves with the group', () => {
+  const S = loadScaler();
+  const run = (s, snaps) => { S.scaler.drag = { snaps }; S.scaler.scale(s, s, 0, 0); };
+  const at = sn => [sn.layer.getLatLng().lng, sn.layer.getLatLng().lat];
+  const a = markerSnap(S, { markerShape: 'icon', markerIcon: 'plane', markerSize: 28 }, { x: 100, y: 50 });
+  // within the limits: its size and its place scale together
+  run(2, [a]);
+  assert.equal(a.layer.mb.style.markerSize, 56);
+  assert.deepEqual(at(a), [200, 100]);
+  // past the limit: the size stops at 96 and its place follows the size it really took, so the anchored corner
+  // stays put (by the raw factor it would slide on across the map, and the slide would be committed)
+  run(10, [a]);
+  assert.equal(a.layer.mb.style.markerSize, 96);
+  const f = 96 / 28;
+  assert.ok(Math.abs(at(a)[0] - 100 * f) < 1e-9, 'scaled by the size it took, not by 10');
+  assert.ok(Math.abs(at(a)[1] - 50 * f) < 1e-9);
+  assert.ok(at(a)[0] < 1000, 'nowhere near where the raw factor would put it');
+  // and the same at the smallest size
+  run(0.05, [a]);
+  assert.equal(a.layer.mb.style.markerSize, 6);
+  assert.ok(Math.abs(at(a)[0] - 100 * (6 / 28)) < 1e-9);
+  // a group: every object moves by the group's own factor (the others scale by it), the icon's size still stops
+  const b = markerSnap(S, { markerShape: 'icon', markerIcon: 'plane', markerSize: 28 }, { x: 100, y: 50 });
+  const plain = markerSnap(S, { markerShape: 'dot', markerSize: 16 }, { x: 200, y: 50 });
+  run(10, [b, plain]);
+  assert.equal(b.layer.mb.style.markerSize, 96);
+  assert.deepEqual(at(b), [1000, 500], 'its place moves with the group');
+  assert.equal(plain.layer.mb.style.markerSize, 16, 'a plain marker is only moved, never resized');
+  assert.deepEqual(at(plain), [2000, 500]);
+});
+
+test('review fixes: the Size row follows a handle resize, the Scale box follows a shape switch, a file\'s color is escaped', () => {
+  const ui = read('js/ui.js');
+  // the Size row is kept in step like the Rotation row, so the panel need not be drawn anew (the keyboard stays)
+  assert.match(ui, /let sizeSync = null;/);
+  assert.match(ui, /sizeSync = null;\s+\/\/ \(and the marker form its size row\)/, 'and let go with the panel');
+  assert.match(ui, /if \(rotSync\) rotSync\(\); if \(sizeSync\) sizeSync\(\);/, 'both follow a change to the object shown');
+  assert.match(ui, /if \(sizeInp\) sizeSync = \(\) => \{\s*\n\s*const px = MB\.markerSize\(m\.style\);/);
+  assert.match(ui, /if \(\+sizeInp\.value === px\) return;/, 'nothing to do when it agrees already');
+  assert.match(ui, /sizeOut\.textContent = px \+ 'px';/, 'the readout too');
+  // the Scale box fits what the marker is now (worked out from the selection: see rescaleBox below)
+  assert.match(ui, /function rescaleBox\(f\) \{/);
+  assert.match(ui, /if \(reshaped\) \{\s*\n\s*rescaleBox\(f\);/);
+  // a file's own color into the color box: escaped
+  assert.match(ui, /<input type="color" data-k="color" value="\$\{esc\(st\.color\)\}">/);
+  // the picker's color only when it was picked there
+  assert.match(ui, /if \(res\.colorChosen\) patch\.color = res\.color;/);
+  assert.doesNotMatch(ui, /markerIcon: res\.name, color: res\.color/, 'never applied unasked');
+  assert.match(read('js/scaletool.js'), /const lone = this\.drag\.snaps\.length === 1;/);
+  // US spelling in what this feature touched
+  assert.match(read('js/util.js'), /only a normalized angle reaches the CSS/);
+  assert.match(read('js/icons.js'), /ISC license/);
+  assert.match(read('index.html'), /\(ISC license\)/);
+  assert.doesNotMatch(read('js/icons.js'), /licence|normalised|colour/);
+});
+
+test('the Scale tool holds an icon marker but never a plain one, so a shape switch works the box out from the selection', () => {
+  const S = loadScaler();
+  const mk = style => ({ mb: { type: 'marker', style }, getLatLng: () => ({ lat: 0, lng: 0 }) });
+  const plain = mk({ markerShape: 'dot' }), ic = mk({ markerShape: 'icon', markerIcon: 'plane' });
+  // a plain marker is never attached: it is told markers have a fixed size and the box stays off
+  S.scaler.attach(plain);
+  assert.equal(S.scaler.targets.length, 0);
+  assert.match(S.toasts[0], /^Markers have a fixed size/);
+  // an icon marker is held, and let go again
+  S.scaler.attach(ic);
+  assert.equal(S.scaler.targets.length, 1);
+  assert.equal(S.scaler.targets[0], ic);
+  S.scaler.detach();
+  assert.equal(S.scaler.targets.length, 0, 'Icon → Dot leaves nothing held: the other way round cannot look at that');
+
+  // so Properties decides from the selection, both ways, and does the same after the picker hands one back
+  const ui = read('js/ui.js');
+  const re = ui.match(/function rescaleBox\(f\) \{[\s\S]*?\n  \}/)[0];
+  assert.match(re, /if \(!MB\.scaler \|\| MB\.tools\.current !== 'scale' \|\| MB\.selected !== f \|\| MB\.scaler\.frame\) return;/,
+    'the object selected under the Scale tool, not what the scaler holds');
+  assert.match(re, /if \(held\.length && !\(held\.length === 1 && held\[0\] === f\)\) return;/, 'a group\'s box is left alone');
+  assert.match(re, /if \(MB\.canScale\(f\)\) MB\.scaler\.attach\(f\); else MB\.scaler\.detach\(\);/);
+  assert.match(ui, /rescaleBox\(f\); \/\/ under the Scale tool, the box fits what the marker is now/, 'on a shape switch');
+  assert.match(ui, /rescaleBox\(f\); \/\/ an icon now: under the Scale tool it gets the box and the knob/, 'and when the picker hands an icon back');
+  assert.doesNotMatch(ui, /MB\.scaler\.targets\.length === 1 && MB\.scaler\.targets\[0\] === f && !MB\.scaler\.frame/, 'never gated on what it holds');
 });
