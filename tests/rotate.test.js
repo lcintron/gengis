@@ -92,8 +92,8 @@ test('a text carries how far it is turned: normalised when it is made, saved onl
   // the angle an object has of its own, and what can be turned at all
   assert.match(features, /MB\.getRotation = function/);
   assert.match(features, /MB\.setRotation = function/);
-  assert.match(features, /MB\.canRotate = layer => [^\n]*type !== 'circle' && layer\.mb\.type !== 'marker'/,
-    'a circle is round already and a pin stands upright');
+  assert.match(features, /MB\.canRotate = layer => [^\n]*type !== 'circle' && \(layer\.mb\.type !== 'marker' \|\| MB\.markerShape\(layer\.mb\.style\) === 'icon'\)/,
+    'a circle is round already and a pin stands upright (an icon marker turns)');
   assert.match(features, /transform:rotate\(\$\{MB\.normAngle\(svg\.rotation\)\}deg\)/,
     'a pinned image: its angle through normAngle too (a crafted Infinity never reaches the CSS)');
 });
@@ -137,7 +137,7 @@ test('the Scale box has a rotation knob: one drag, one undo step, Esc puts it ba
   assert.match(rot, /MB\.rotateXY\(p\.x, p\.y, pivot\.x, pivot\.y, deg\)/);
   assert.match(rot, /transform\(sn, to, 1\)/);
   assert.match(rot, /if \(sn\.rot != null\) MB\.setRotation\(sn\.layer, sn\.rot \+ deg\)/);
-  assert.match(scale, /if \(t === 'text' \|\| t === 'svg'\) sn\.rot = MB\.getRotation\(layer\);/, 'snapshotted, for Esc to put back');
+  assert.match(scale, /if \(MB\.hasRotation\(layer\)\) sn\.rot = MB\.getRotation\(layer\);/, 'snapshotted, for Esc to put back');
   assert.match(scale, /if \(sn\.rot != null\) MB\.setRotation\(layer, sn\.rot\);/, 'and put back');
   // one commit per drag, labelled as a turn; a turned rectangle has Geoman work its angle out again
   assert.match(scale, /MB\.commit\(\(d\.rot \? 'rotate' : 'scale'\) \+ \(this\.targets\.length > 1 \? ' group' : ''\)\)/);
@@ -146,7 +146,7 @@ test('the Scale box has a rotation knob: one drag, one undo step, Esc puts it ba
   assert.match(scale.match(/\n    cancel\(\) \{[\s\S]*?\n    \},/)[0], /if \(rot\) this\.targets\.forEach\(reangle\);/);
   // a rectangle snaps to its own edge, a line or a polygon has no angle to snap to
   const sa = scale.match(/function startAngle\(layer\) \{[\s\S]*?\n  \}/)[0];
-  assert.match(sa, /if \(t === 'text' \|\| t === 'svg'\) return MB\.getRotation\(layer\);/);
+  assert.match(sa, /if \(MB\.hasRotation\(layer\)\) return MB\.getRotation\(layer\);/);
   assert.match(sa, /MB\.ringAngle\(\(layer\.getLatLngs\(\) \|\| \[\]\)\[0\] \|\| \[\]\)/);
   assert.match(sa, /return null;/);
   // a turned ground image: its box on screen, not its (upright) bounds

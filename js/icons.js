@@ -1,11 +1,11 @@
 /* GenGIS - icons (the toolbar's Icon button, or I)
  * - a picker over the Lucide icons (data/icons.js, built by scripts/build-icons.js; ISC licence): search by name and
- *   tags, a color, and a dark outline that keeps a light icon readable on imagery
- * - the icon chosen goes into the image library as an SVG (the same icon in the same color is used again) and the
- *   map's next click places it, as an SVG from the Images panel is placed
- * - pick(): the same picker choosing an icon for something else (an imported layer's symbols): { name, color }, or
- *   null when closed without one; svg(name, color, halo) draws one; libraryId(name, color, halo) puts one in the
- *   image library (once) for an object of the project
+ *   tags, a color, and an outline that keeps the icon readable on imagery
+ * - the icon chosen arms the Icon tool (js/tools.js) and the map's next click places it as a marker, which takes the
+ *   next color of the palette like every new object (its color, size, outline and angle: Properties)
+ * - pick(): the same picker choosing an icon for something else (an imported layer's symbols, a marker in
+ *   Properties): { name, color, halo }, or null when closed without one; svg(name, color, halo) draws one
+ * - need(): the set loaded because something has to draw an icon (a project opened with icon markers in it)
  */
 window.MB = window.MB || {};
 (function (MB) {
@@ -57,21 +57,42 @@ window.MB = window.MB || {};
       return this.loading;
     },
 
+    // The set, loaded because something has to draw an icon now (a saved project's icon markers, opened long before
+    // the picker ever is): the markers are drawn again once it is there, and a failed load is tried again by the
+    // next draw. This runs before init() too (MB.loadAutosave, app.js), so it touches no dialog.
+    need() {
+      if (MB.iconData || this.needing) return;
+      this.needing = true;
+      this.load().then(() => { if (MB.refreshIconMarkers) MB.refreshIconMarkers(); }).catch(() => { this.needing = false; });
+    },
+
     open() {
       MB.ui.openDialog(this.dlg);
       // the search takes the keyboard, except on a touch screen, where its keyboard would cover half the icons
       if (!matchMedia('(pointer: coarse)').matches) this.dlg.querySelector('#iconSearch').focus();
+      this.dlg.querySelector('#iconHalo').checked = this.halo;
+      // Placing a marker, the color here would only mislead: the marker takes the next color of the palette, as
+      // every new object does, so the icons preview in that color and the color control is out of the way. Picking
+      // an icon for something else, its own color is chosen here.
+      this.dlg.classList.toggle('icon-placing', !this.picking);
       this.renderSwatches();
       const grid = this.dlg.querySelector('#iconGrid');
       if (!MB.iconData) grid.innerHTML = '<p class="note">Loading icons…</p>';
+      grid.style.color = this.tint();
       this.load().then(() => this.render()).catch(e => { grid.innerHTML = `<p class="note">${esc(e.message)}</p>`; });
     },
 
+    // The color the grid previews the icons in: the one chosen while picking for an object; while placing, the color
+    // the new marker will really take.
+    tint() {
+      if (this.picking || !MB.newShapeStyle) return this.color;
+      return MB.markerColor(MB.newShapeStyle());
+    },
     setColor(c) {
       this.color = /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : this.color;
       this.dlg.querySelector('#iconColor').value = this.color;
       this.renderSwatches();
-      this.dlg.querySelector('#iconGrid').style.color = this.color; // the icons draw in currentColor: no redraw
+      this.dlg.querySelector('#iconGrid').style.color = this.tint(); // the icons draw in currentColor: no redraw
     },
     renderSwatches() {
       this.dlg.querySelector('#iconSwatches').innerHTML = SWATCHES.map(c => `<button type="button" data-color="${c}" class="${c === this.color ? 'active' : ''}" style="--c:${c}" title="${c}" aria-label="Color ${c}" aria-pressed="${c === this.color}"></button>`).join('');
@@ -89,7 +110,7 @@ window.MB = window.MB || {};
     render() {
       if (!MB.iconData || this.dlg.classList.contains('hidden')) return;
       const grid = this.dlg.querySelector('#iconGrid'), all = this.matches(), list = all.slice(0, SHOWN);
-      grid.style.color = this.color;
+      grid.style.color = this.tint();
       grid.innerHTML = list.length ? list.map(([n, , svg], i) => `<button type="button" role="option" data-icon="${esc(n)}" title="${esc(n)}" aria-label="${esc(n)}" tabindex="${i ? -1 : 0}">${iconSvg(svg, 'currentColor', this.halo)}</button>`).join('')
         : '<p class="note">No icon matches. Try another word.</p>';
       this.dlg.querySelector('#iconCount').textContent = all.length > list.length
@@ -109,16 +130,14 @@ window.MB = window.MB || {};
       items[i].tabIndex = -1; next.tabIndex = 0; next.focus();
     },
 
-    // Into the library (once per icon and look), then placed with the map's next click; or, picking for something
-    // else, handed to it.
+    // The Icon tool, armed with it, so the map's next click places it as a marker (nothing is added until then); or,
+    // picking for something else, handed to it.
     choose(name) {
-      if (this.picking) { const color = this.color; MB.ui.closeDialog(this.dlg); this.settle({ name, color }); return; }
-      const id = this.libraryId(name, this.color, this.halo);
-      if (!id) return;
-      MB.commit('add icon');
+      const color = this.color, halo = this.halo;
+      if (this.picking) { MB.ui.closeDialog(this.dlg); this.settle({ name, color, halo }); return; }
       MB.ui.closeDialog(this.dlg);
-      MB.svgPlace.svgId = id;
-      if (MB.tools.current !== 'svg') MB.tools.set('svg'); else MB.emit('tool', 'svg');
+      MB.iconPlace.arm({ name, halo });
+      if (MB.tools.current !== 'icon') MB.tools.set('icon'); else MB.emit('tool', 'icon'); // (setting the tool it is on would toggle back to Select)
     },
 
     // An icon as SVG markup ('' when unknown, or before the icons are loaded: load() first).
@@ -126,30 +145,16 @@ window.MB = window.MB || {};
       const icon = MB.iconData && MB.iconData.icons.find(i => i[0] === name);
       return icon ? iconSvg(icon[2], color || '#ffffff', halo !== false) : '';
     },
-    // The image library's entry for an icon in a color (made the first time): its id, or null.
-    libraryId(name, color, halo) {
-      halo = halo !== false;
-      const key = `lucide:${name}:${color}:${halo ? 1 : 0}`;
-      let entry = Object.values(MB.state.svgLibrary).find(l => l.iconKey === key);
-      if (!entry) {
-        const svg = this.svg(name, color, halo);
-        if (!svg) return null;
-        const id = MB.uid();
-        entry = MB.state.svgLibrary[id] = { id, name, dataUrl: MB.svgDataUrl(svg), aspect: 1, width: 26, height: 26, iconKey: key };
-        MB.emit('svglibrary');
-      }
-      return entry.id;
-    },
-    // The picker, choosing an icon: a promise of { name, color }, or null when closed without one. It shows above
-    // the dialog that asked.
+    // The picker, choosing an icon: a promise of { name, color, halo }, or null when closed without one. It shows
+    // above the dialog that asked.
     pick(opts) {
       this.settle(null);
-      if (opts && opts.color) this.color = opts.color;
+      const p = new Promise(res => { this.picking = res; });
+      if (opts && 'halo' in opts) this.halo = opts.halo !== false;
       this.dlg.style.zIndex = 4100;
       this.dlg.querySelector('#iconTitle').textContent = 'Choose an icon';
-      const p = new Promise(res => { this.picking = res; });
       this.open();
-      this.setColor(this.color);
+      this.setColor((opts && opts.color) || this.color); // (the object's own color: only a valid one is kept)
       return p;
     },
     settle(v) {

@@ -426,6 +426,7 @@ window.MB = window.MB || {};
     }
     else if (t === 'marker') {
       layer.setIcon(MB.markerIcon(st));
+      if (MB.markerShape(st) === 'icon' && !MB.iconData && MB.icons) MB.icons.need(); // drawn as a dot until the icon set is there
       const el = layer.getElement && layer.getElement();
       if (el && (MB.selected === layer || (MB.multi && MB.multi.has(layer)))) L.DomUtil.addClass(el, 'mb-selected');
       if (el && layer.pm && layer.pm.layerDragEnabled && layer.pm.layerDragEnabled()) L.DomUtil.addClass(el, 'leaflet-pm-draggable'); // (a new icon element: its classes again, the move cursor too)
@@ -436,6 +437,15 @@ window.MB = window.MB || {};
     else if (t === 'text') MB.applyTextStyle(layer);
     else if (t === 'svg') MB.refreshSvg(layer);
     if (!opts.noCommit) MB.commitDebounced('style');
+  };
+
+  // The icon set has just loaded: every marker drawn as a placeholder dot until now is drawn again.
+  MB.refreshIconMarkers = function () {
+    Object.keys(MB.featureLayers).forEach(id => {
+      const l = MB.featureLayers[id];
+      if (l && l.mb && l.mb.type === 'marker' && MB.markerShape(l.mb.style) === 'icon') MB.applyStyle(l, {}, { noCommit: true });
+    });
+    if (MB.scaler) MB.scaler.place(); // the Scale box around the one selected: around the icon now, not the dot
   };
 
   // Text that scales with the map: its size is textSize at zoom textRefZoom, doubling with each zoom step in.
@@ -520,13 +530,19 @@ window.MB = window.MB || {};
   }
 
   /* ---------- rotation ---------- */
-  // A text and an image carry how far they are turned (their drawing is rotated in CSS, about its middle); a line,
-  // shape or rectangle has no angle of its own — its points are turned instead (js/scaletool.js).
+  // A text, an image and an icon marker carry how far they are turned (their drawing is rotated in CSS, about its
+  // middle); a line, shape or rectangle has no angle of its own — its points are turned instead (js/scaletool.js).
+  MB.hasRotation = function (layer) {
+    const m = layer && layer.mb;
+    if (!m) return false;
+    return m.type === 'text' || m.type === 'svg' || (m.type === 'marker' && MB.markerShape(m.style) === 'icon');
+  };
   MB.getRotation = function (layer) {
     const m = layer && layer.mb;
     if (!m) return 0;
     if (m.type === 'text') return MB.normAngle(m.rotation);
     if (m.type === 'svg') return MB.normAngle(m.svg && m.svg.rotation);
+    if (m.type === 'marker') return MB.markerShape(m.style) === 'icon' ? MB.normAngle(m.style.markerRotation) : 0;
     return 0;
   };
   MB.setRotation = function (layer, deg) {
@@ -535,11 +551,16 @@ window.MB = window.MB || {};
     const a = MB.normAngle(deg);
     if (m.type === 'text') { m.rotation = a; MB.textTransform(layer); }
     else if (m.type === 'svg' && m.svg) { m.svg.rotation = a; MB.refreshSvg(layer); }
+    else if (m.type === 'marker' && MB.markerShape(m.style) === 'icon') {
+      MB.applyStyle(layer, { markerRotation: a }, { noCommit: true });
+      if (!a) delete m.style.markerRotation; // square again: the key goes (an untouched marker keeps its file as it was)
+    }
     else return;
     MB.updateTooltip(layer); // its name label and measurements sit around the turned object
   };
-  // What can be turned: everything but a circle (round already) and a marker (a pin stands upright).
-  MB.canRotate = layer => !!layer && !!layer.mb && layer.mb.type !== 'circle' && layer.mb.type !== 'marker';
+  // What can be turned: everything but a circle (round already) and a plain marker (a pin stands upright; an icon
+  // marker turns).
+  MB.canRotate = layer => !!layer && !!layer.mb && layer.mb.type !== 'circle' && (layer.mb.type !== 'marker' || MB.markerShape(layer.mb.style) === 'icon');
 
   /* ---------- SVG features ---------- */
 

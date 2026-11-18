@@ -121,6 +121,12 @@ html.tb-right body.presenting #mapwrap .leaflet-top.leaflet-right { top: max(60p
 .marker-shapes button { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; min-height: 30px; padding: 4px 8px; }
 .marker-shapes svg { display: block; pointer-events: none; }
 @media (pointer: coarse) { .marker-shapes button { min-width: 40px; min-height: 40px; } } /* a finger's size */
+.shape-row { flex-wrap: wrap; } /* six shapes: they wrap inside the box where the panel is narrow (a small phone's) */
+/* the icon a marker is drawn with: the icon itself, then its name, cut short with an ellipsis when it is long */
+.marker-icon-btn { flex: 0 1 auto; min-width: 0; justify-content: flex-start; }
+.marker-icon-btn svg { flex: 0 0 auto; width: 16px; height: 16px; }
+.marker-icon-btn .icon-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (pointer: coarse) { .marker-icon-btn { min-height: 40px; } } /* a finger's size */
 /* Settings fields: a small label over a full-width control, evenly spaced (Units, Grid systems) */
 .field { margin-bottom: 14px; }
 .field:last-child { margin-bottom: 0; }
@@ -226,7 +232,7 @@ svg.mi { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentC
 .mb-scale-box.below .mb-rot-h { top: calc(100% + 28px); }
 .mb-scale-box.below .mb-rot-h::before { top: auto; bottom: 100%; }
 .mb-scale-box.dragging .mb-rot-h { opacity: .6; cursor: grabbing; }
-.mb-scale-box.frame .mb-rot-h, .mb-scale-box.no-rotate .mb-rot-h { display: none; } /* the Move tool's frame, a circle, a marker */
+.mb-scale-box.frame .mb-rot-h, .mb-scale-box.no-rotate .mb-rot-h { display: none; } /* the Move tool's frame, a circle, a plain marker */
 #map.mb-scale-tool .leaflet-interactive, #map.mb-scale-tool .mb-svg-pin, #map.mb-scale-tool .pm-text-marker { cursor: pointer !important; }
 body.presenting .mb-scale-box { display: none !important; }
 @media (pointer: coarse) {
@@ -356,7 +362,7 @@ body.presenting .mb-scale-box { display: none !important; }
 .leaflet-bar a { background: var(--bg-2); color: var(--text); border-bottom-color: var(--border); }
 .leaflet-bar a:hover { background: var(--bg-3); }
 /* Leaflet lights a focused button almost white (#f4f4f4): a click left it lit until the focus moved on. Focus keeps
-   the button's own colour; the keyboard's focus gets a ring instead. */
+   the button's own color; the keyboard's focus gets a ring instead. */
 .leaflet-bar a:focus { background: var(--bg-2); }
 .leaflet-bar a:focus:hover { background: var(--bg-3); }
 .leaflet-bar a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -453,6 +459,7 @@ body.presenting #mapwrap.narrow :is(.mb-alt-legend, .mb-zoom-hint, .mb-clock) { 
 .mb-pin.mb-selected svg, .mb-svg-pin.mb-selected img { filter: drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 2px var(--accent)); }
 path.mb-selected { filter: drop-shadow(0 0 3px rgba(29,179,169,.95)); }
 .mb-svg-pin img { display: block; pointer-events: none; transform-origin: center; }
+.mb-pin-icon svg { display: block; transform-origin: 50% 50%; } /* an icon marker turns about its own middle */
 .mb-svg-ground.mb-selected { outline: 2px dashed var(--accent); outline-offset: 2px; }
 .mb-handle span {
   display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.4);
@@ -792,6 +799,12 @@ body.presenting .mb-present-ctl, body.presenting .present-logo { display: block;
 .icon-swatches button.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--accent); }
 .icon-custom input { width: 30px; height: 26px; padding: 0 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; }
 .icon-halo { margin: 0; font-size: 12px; color: var(--text-dim); }
+/* Placing an icon as a marker, the color is not chosen here: the marker takes the next color of the palette, as
+   every new object does, and the icons preview in it. Picking an icon for an object, its color is chosen here. */
+#iconDialog.icon-placing #iconSwatches, #iconDialog.icon-placing .icon-custom { display: none; }
+#iconDialog .icon-place-note { display: none; }
+#iconDialog.icon-placing .icon-place-note { display: inline; }
+#iconDialog.icon-placing .icon-pick-note { display: none; }
 .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px; max-height: min(52vh, 420px); overflow: auto; padding: 8px;
   background: #2b3445; border: 1px solid var(--border); border-radius: 10px; }
 .icon-grid button { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 8px; background: transparent; cursor: pointer; padding: 6px; }

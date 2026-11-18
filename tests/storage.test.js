@@ -140,6 +140,29 @@ test('an attribute named "__proto__" survives the GeoJSON export and import as a
   assert.equal(seen.toasts.pop(), 'Imported 1 features into "map"');
 });
 
+test('an icon marker keeps its icon, outline, size and angle through the GeoJSON export and import', async () => {
+  const { MB } = load();
+  project(MB);
+  const style = { color: '#2f80ed', markerShape: 'icon', markerIcon: 'plane', markerHalo: false, markerSize: 44, markerRotation: 135 };
+  MB.featureLayers = { f1: { mb: { id: 'f1', name: 'Tower', layerId: 'L1', type: 'marker', style, getLatLng: null } } };
+  MB.featureLayers.f1.getLatLng = () => ({ lat: 1, lng: 2 });
+  MB.getLayer = () => ({ name: 'Layer 1' });
+  MB.svgCenter = () => ({ lat: 1, lng: 2 });
+  let text = '';
+  MB.download = async (name, t) => { text = t; return true; };
+  await MB.exportGeoJSON();
+  assert.deepEqual(JSON.parse(text).features[0].properties.style, style, 'the style travels whole');
+
+  const made = [];
+  Object.assign(MB, {
+    batch: fn => fn(), createLayer: name => ({ id: 'L-' + name }), restoreFeature: d => { made.push(d); return d; },
+    applyZOrder() {}, emit() {}, commit() {}, currentStyle: {}, groups: {}, state: { projectName: 'My map', svgLibrary: {} }
+  });
+  MB.importGeoJSON(JSON.parse(text), 'map.geojson');
+  assert.equal(made[0].type, 'marker');
+  assert.deepEqual(made[0].style, style, 'and comes back as the same icon marker: no code of its own needed');
+});
+
 test('a file that cannot even be read says so: never an unanswered failure with nothing on screen', async () => {
   const { MB } = load();
   const seen = project(MB);
