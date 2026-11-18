@@ -3,7 +3,7 @@
 #   make install      install the Electron build tooling
 #   make build        build the desktop app for this machine's OS (output in dist/)
 #   make build-win    build the Windows installer (NSIS)
-#   make build-mac    build the macOS disk image (needs macOS)
+#   make build-mac    build the macOS disk image, ad-hoc signed (needs macOS)
 #   make build-linux  build the Linux AppImage and .deb
 #   make dist-all     build all three on one machine (fully supported only on macOS)
 #   make release      used by the Release workflow (CI=1): bump the version from the conventional commits
@@ -39,8 +39,9 @@ build: install
 build-win: install
 	$(NPX) electron-builder --win --publish never
 
+# ad-hoc signed (scripts/mac-adhoc.js): a local build has no Developer ID, and an unsigned app is "damaged" on Apple Silicon
 build-mac: install
-	$(NPX) electron-builder --mac --publish never
+	$(NPX) electron-builder --mac --publish never --config scripts/mac-adhoc.js
 
 build-linux: install
 	$(NPX) electron-builder --linux --publish never
