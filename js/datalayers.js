@@ -1138,7 +1138,10 @@ window.MB = window.MB || {};
             const el = f.getElement && f.getElement(), shown = el ? Array.from(el.querySelectorAll('img, svg, textarea')) : [];
             if (el && (shown.length ? shown.some(covers) : covers(el))) marks.push(f);
           }
-          else if (f.getBounds && f.getBounds().contains(latlng)) shapes.push(f); // ground images
+          else if (f.getBounds) { // ground images: a turned one by what it covers on screen, its bounds being upright
+            const el = MB.normAngle(f.mb.svg && f.mb.svg.rotation) && f.getElement && f.getElement();
+            if (el ? covers(el) : f.getBounds().contains(latlng)) shapes.push(f);
+          }
         } catch (e) { /* ignore */ }
       });
     });

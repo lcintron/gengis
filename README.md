@@ -64,7 +64,7 @@ Informational only: not for navigation or flight authorization.
 
 | Key | Action |
 | --- | --- |
-| V / G / K | Select / Move / Scale |
+| V / G / K | Select / Move / Scale and rotate (drag the round handle; Shift: 15° steps) |
 | M / T / L / P / R / C / S | Marker / Text / Line / Polygon / Shape / Circle / Image |
 | N | Freehand annotation |
 | I | Icons |

@@ -348,6 +348,34 @@ window.MB = window.MB || {};
     return ((deg % 360) + 360) % 360;
   };
 
+  /* ---------- angles ---------- */
+
+  // An angle in degrees, however it comes in: [0, 360). Anything that is not a finite number is no turn at all
+  // (a project file's own value, and the only new one that reaches a CSS transform).
+  MB.normAngle = function (v) {
+    const d = +v;
+    if (!isFinite(d)) return 0;
+    return ((d % 360) + 360) % 360;
+  };
+  // The nearest multiple of `step` degrees (Shift while turning: 15° steps).
+  MB.snapAngle = function (deg, step) {
+    const d = +deg, s = +step;
+    if (!isFinite(d)) return 0;
+    if (!(s > 0)) return d;
+    return Math.round(d / s) * s;
+  };
+  // A point turned `deg` clockwise about (cx, cy), in screen pixels (which count y downwards).
+  MB.rotateXY = function (x, y, cx, cy, deg) {
+    const r = MB.normAngle(deg) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+    const dx = x - cx, dy = y - cy;
+    return [cx + dx * c - dy * s, cy + dx * s + dy * c];
+  };
+  // The angle of the edge p0 → p1 in screen pixels, in the same convention as MB.ringAngle (0 for an edge running
+  // up the screen, 90 for one running right).
+  MB.edgeAngleXY = function (p0, p1) {
+    return MB.normAngle(Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI + 90);
+  };
+
   /* ---------- units ---------- */
 
   function fmt(n, d) {
