@@ -392,10 +392,12 @@ window.MB = window.MB || {};
       } else this.dock();
     },
 
-    // Under the tool's instructions, at the top of the map: nothing to measure yet.
+    // Under the tool's instructions, at the top of the map: nothing to measure yet. Another tool's draw can end here
+    // (pm:drawend is the map's), and then the label belongs nowhere: it stays off the map.
     dock() {
       const el = this.el;
       if (!el) return;
+      if (MB.tools.current !== 'circle') { el.style.display = 'none'; this.line.style.display = 'none'; this.attached = false; return; }
       el.style.display = 'inline-flex';
       el.classList.add('docked');
       this.line.style.display = 'none';

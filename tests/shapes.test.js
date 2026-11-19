@@ -653,6 +653,41 @@ test('a radius only read out does not sit in the label looking typed once the ci
   assert.match(read('js/tools.js'), /MB\.map\.on\('pm:drawend', \(\) => \{ hide\(\); MB\.circleRadius\.endDraw\(\); \}\)/);
 });
 
+test("another tool's draw ending leaves the radius label off the map", () => {
+  // pm:drawend is the map's, not the circle tool's: a line, polygon or rectangle finished with Continue drawing on,
+  // R cycling the rectangle's mode (disableDraw, then startDraw) and a finger drag given up on all reach it
+  const c = circleBox();
+  c.placeCenter(0, 0);
+  c.moveTo(0, 400 / DEG_PX);
+  c.MB.circleRadius.update();
+  assert.equal(c.MB.circleRadius.attached, true, 'attached to the circle being drawn, to begin with');
+  for (const tool of ['line', 'polygon', 'rectangle']) {
+    c.MB.tools.current = tool;
+    c.MB.circleRadius.showLive(400);
+    c.MB.circleRadius.endDraw();
+    assert.equal(c.label.style.display, 'none', 'the ' + tool + ' tool: no radius label under its hint');
+    assert.equal(c.line.style.display, 'none', 'and no dimension line');
+    assert.equal(c.MB.circleRadius.attached, false);
+    assert.equal(c.box.value, '', 'a radius read out is cleared all the same');
+  }
+  // the dashed ghost of a typed radius goes too, whichever tool's draw it was that ended
+  c.MB.tools.current = 'circle';
+  c.type('500');
+  c.MB.circleRadius.showGhost(c.ll(0, 0.004));
+  assert.ok(c.MB.circleRadius.ghost, 'the ghost is drawn');
+  c.MB.tools.current = 'rectangle';
+  c.MB.circleRadius.endDraw();
+  assert.equal(c.MB.circleRadius.ghost, null, 'and taken off the map');
+  assert.equal(c.label.style.display, 'none');
+  assert.equal(c.MB.circleRadius.locked, 500, 'the typed radius waits for the circle tool');
+  // back in the circle tool, it docks as it should
+  c.MB.tools.current = 'circle';
+  c.MB.circleRadius.endDraw();
+  assert.equal(c.label.style.display, 'inline-flex');
+  assert.ok(c.label.classes.has('docked'));
+  assert.deepEqual(c.at(), ['355px', '38px']);
+});
+
 test('the live radius written into the label reads back as the radius it shows', () => {
   // the real showLive: the radius of the circle being dragged out, as plain digits short enough to read and still a
   // length parseDistance brings back (an empty box for anything too small to be a radius at all)
