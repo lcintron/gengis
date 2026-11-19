@@ -1383,16 +1383,18 @@ window.MB = window.MB || {};
       panel.appendChild(form);
       const pickBtn = $('[data-act="pick-icon"]', form);
       if (pickBtn) pickBtn.addEventListener('click', () => pickMarkerIcon(f));
-      // The size as it is now, after the Scale tool's handles resized the marker: the slider and its readout are
-      // set outright, nothing is applied or saved (as rotSync does for the angle). The panel is not drawn anew, so
-      // the keyboard stays where it is.
+      // The size as it is now, after the Scale tool's handles resized the marker: the slider, its readout and its
+      // number box are set outright, nothing is applied or saved (as rotSync does for the angle). The panel is not
+      // drawn anew, so the keyboard stays where it is.
       const sizeInp = $('[data-k="markerSize"]', form), sizeOut = $('[data-val="markerSize"]', form);
       if (sizeInp) sizeSync = () => {
         const px = MB.markerSize(m.style);
         if (+sizeInp.value === px) return;
         if (px > +sizeInp.max) sizeInp.max = String(px);
+        if (px < +sizeInp.min) sizeInp.min = String(Math.max(1, px)); // the handles shrink an icon below the slider's low end
         sizeInp.value = String(px);
         if (sizeOut) sizeOut.textContent = px + 'px';
+        MB.ui.showSlider(sizeInp); // the number box beside it, which no input event reaches here
       };
       if (MB.markerShape(m.style) === 'icon') panel.appendChild(rotationRow(() => MB.getRotation(f), 'How far the icon is turned, clockwise', deg => {
         if (MB.getRotation(f) === deg) return; // the same angle: nothing to turn and nothing to save
