@@ -1,10 +1,10 @@
-/* GenGIS - preset shapes (the toolbar's Shapes button)
- * - the button opens a palette beside the toolbar: rectangle, triangle, pentagon, hexagon, octagon, star, lightning;
- *   the shape chosen stays on the button, and R draws it again
- * - the rectangle is the drawing tool's own (corner to corner, from its center, or three points: MB.rectDraw at the
- *   foot of this file); the others are drawn by dragging a box on the map (Shift
- *   keeps the shape's own proportions) or by a click (a default size), and saved as a polygon named after the shape,
- *   edited, measured and styled like any other
+/* GenGIS - preset shapes (the toolbar's Polygon button) and the rectangle's modes
+ * - the Polygon button opens a palette beside the toolbar: polygon, triangle, pentagon, hexagon, octagon, star,
+ *   lightning; the shape chosen stays on the button, and P goes back to the plain polygon
+ * - the polygon itself is the drawing tool's own; the presets are drawn by dragging a box on the map (Shift keeps the
+ *   shape's own proportions) or by a click (a default size), and saved as a polygon named after the shape, edited,
+ *   measured and styled like any other
+ * - the Rectangle button opens a menu of its three modes (MB.rectDraw at the foot of this file); R cycles them
  */
 window.MB = window.MB || {};
 (function (MB) {
@@ -22,7 +22,8 @@ window.MB = window.MB || {};
     return pts;
   };
   const PRESETS = [
-    { id: 'rectangle', name: 'Rectangle' },
+    // the plain polygon the drawing tool makes: the toolbar's own icon (every other preset is drawn from its outline)
+    { id: 'polygon', name: 'Polygon', icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8.5 6.2-3.2 10H6.7L3.5 9.2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>' },
     { id: 'triangle', name: 'Triangle', pts: regular(3) },
     { id: 'pentagon', name: 'Pentagon', pts: regular(5) },
     { id: 'hexagon', name: 'Hexagon', pts: regular(6) },
@@ -40,51 +41,88 @@ window.MB = window.MB || {};
   });
   const byId = id => PRESETS.find(p => p.id === id) || PRESETS[0];
 
-  // The shape as an icon (24 x 24, its proportions kept).
+  // The shape as an icon (24 x 24, its proportions kept), or the one it brought.
   function iconSvg(p) {
+    if (p.icon) return p.icon;
     const s = 17, w = p.aspect >= 1 ? s : s * p.aspect, h = p.aspect >= 1 ? s / p.aspect : s, x = 12 - w / 2, y = 12 - h / 2;
     const d = p.unit.map(([u, v], i) => (i ? 'L' : 'M') + (x + u * w).toFixed(2) + ' ' + (y + v * h).toFixed(2)).join('') + 'Z';
     return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`;
   }
 
+  /* ----- a toolbar button's flyout menu ----- */
+  // The shapes palette and the rectangle's modes share this: the panel opens beside the toolbar on the side with
+  // room (it can be on either side, and docked), the arrow keys walk its items, and it closes on Escape, a click
+  // outside, the window resizing or any change of tool. opts: { item: the items' selector, cols: the grid's width,
+  // mark: ticks the item in use }.
+  function flyout(btn, pal, opts) {
+    document.getElementById('mapwrap').appendChild(pal);
+    const api = {
+      isOpen() { return !pal.classList.contains('hidden'); },
+      open() {
+        opts.mark();
+        pal.classList.remove('hidden');
+        const b = btn.getBoundingClientRect(), wrap = document.getElementById('mapwrap').getBoundingClientRect();
+        const tb = document.getElementById('toolbar').getBoundingClientRect(), right = tb.left + tb.width / 2 < wrap.left + wrap.width / 2;
+        const left = right ? tb.right + 8 : tb.left - 8 - pal.offsetWidth;
+        const top = Math.max(wrap.top + 8, Math.min(b.top, wrap.bottom - pal.offsetHeight - 8));
+        pal.style.left = (left - wrap.left) + 'px';
+        pal.style.top = (top - wrap.top) + 'px';
+        btn.setAttribute('aria-expanded', 'true');
+        const first = pal.querySelector('.active') || pal.querySelector(opts.item);
+        if (first) first.focus();
+      },
+      close() {
+        if (!api.isOpen()) return;
+        pal.classList.add('hidden');
+        btn.setAttribute('aria-expanded', 'false');
+      },
+      toggle() { if (api.isOpen()) api.close(); else api.open(); }
+    };
+    const mine = '#' + pal.id + ', #' + btn.id;
+    pal.addEventListener('keydown', e => {
+      const items = Array.from(pal.querySelectorAll(opts.item)), i = items.indexOf(document.activeElement);
+      const cols = opts.cols || 1;
+      const d = (cols > 1 ? { ArrowRight: 1, ArrowDown: cols, ArrowLeft: -1, ArrowUp: -cols } : { ArrowDown: 1, ArrowUp: -1 })[e.key];
+      if (d && i >= 0) { e.preventDefault(); items[Math.max(0, Math.min(items.length - 1, i + d))].focus(); }
+      if (e.key === 'Escape') { e.stopPropagation(); api.close(); btn.focus(); }
+    });
+    document.addEventListener('pointerdown', e => { if (!e.target.closest(mine)) api.close(); });
+    pal.addEventListener('focusout', e => { if (!e.relatedTarget || !e.relatedTarget.closest(mine)) api.close(); }); // tabbed away
+    window.addEventListener('resize', () => api.close());
+    MB.on('tool', () => api.close());
+    return api;
+  }
+
   MB.shapes = {
     presets: PRESETS,
     get current() { return byId(MB.settings && MB.settings.shapePreset).id; },
-    toolOf(id) { return id === 'rectangle' ? 'rectangle' : 'shape'; },
-    btn: null, palette: null, preview: null, down: null,
+    toolOf(id) { return id === 'polygon' ? 'polygon' : 'shape'; },
+    btn: null, palette: null, menu: null, preview: null, down: null,
 
     init() {
-      MB.rectDraw.patch(); // the rectangle tool's three modes, before anything is drawn
-      MB.rectDraw.apply();
+      MB.rectDraw.init(); // the rectangle tool's three modes and their menu, before anything is drawn
       const btn = this.btn = document.getElementById('shapeBtn');
       if (!btn) return;
       const pal = this.palette = document.createElement('div');
       pal.id = 'shapePalette';
-      pal.className = 'shape-palette hidden';
+      pal.className = 'tool-flyout shape-palette hidden';
       pal.setAttribute('role', 'menu');
       pal.setAttribute('aria-label', 'Shapes');
       pal.innerHTML = PRESETS.map(p => `<button type="button" role="menuitemradio" data-shape="${p.id}" title="${p.name}" aria-label="${p.name}">${iconSvg(p)}</button>`).join('');
-      document.getElementById('mapwrap').appendChild(pal);
+      this.menu = flyout(btn, pal, {
+        item: '[data-shape]', cols: 4,
+        mark: () => pal.querySelectorAll('[data-shape]').forEach(x => { const on = x.dataset.shape === this.current; x.classList.toggle('active', on); x.setAttribute('aria-checked', on); })
+      });
       btn.addEventListener('click', e => {
         e.stopPropagation();
         if (MB.tools.current === btn.dataset.tool) { this.close(); MB.tools.set('select'); return; } // drawing: the button puts it away
-        if (pal.classList.contains('hidden')) this.open(); else this.close();
+        this.menu.toggle();
       });
       pal.addEventListener('click', e => {
         const b = e.target.closest('[data-shape]');
         if (!b) return;
         this.choose(b.dataset.shape);
       });
-      pal.addEventListener('keydown', e => {
-        const items = Array.from(pal.querySelectorAll('[data-shape]')), i = items.indexOf(document.activeElement);
-        const d = { ArrowRight: 1, ArrowDown: 4, ArrowLeft: -1, ArrowUp: -4 }[e.key];
-        if (d && i >= 0) { e.preventDefault(); items[Math.max(0, Math.min(items.length - 1, i + d))].focus(); }
-        if (e.key === 'Escape') { e.stopPropagation(); this.close(); btn.focus(); }
-      });
-      document.addEventListener('pointerdown', e => { if (!e.target.closest('#shapePalette, #shapeBtn')) this.close(); });
-      pal.addEventListener('focusout', e => { if (!e.relatedTarget || !e.relatedTarget.closest('#shapePalette, #shapeBtn')) this.close(); }); // tabbed away
-      window.addEventListener('resize', () => this.close());
-      MB.on('tool', () => this.close());
       // drawing a preset: a box dragged on the map
       const c = MB.map.getContainer();
       c.addEventListener('pointerdown', e => this.onDown(e));
@@ -97,31 +135,15 @@ window.MB = window.MB || {};
 
     // The button shows the shape it draws, and stands for its tool (the toolbar marks the tool in use).
     renderButton() {
-      const p = byId(this.current);
+      const p = byId(this.current), plain = p.id === 'polygon';
       this.btn.dataset.tool = this.toolOf(p.id);
-      this.btn.title = `Shapes: ${p.name} (R)`;
-      this.btn.setAttribute('aria-label', `Shapes: ${p.name}`);
+      this.btn.title = plain ? 'Polygon (P)' : `Polygon: ${p.name} (P)`;
+      this.btn.setAttribute('aria-label', plain ? 'Polygon' : `Polygon: ${p.name}`);
       this.btn.innerHTML = iconSvg(p).replace('<svg ', '<svg class="shape-icon" ');
     },
 
-    open() {
-      const pal = this.palette, b = this.btn.getBoundingClientRect(), wrap = document.getElementById('mapwrap').getBoundingClientRect();
-      pal.querySelectorAll('[data-shape]').forEach(x => { const on = x.dataset.shape === this.current; x.classList.toggle('active', on); x.setAttribute('aria-checked', on); });
-      pal.classList.remove('hidden');
-      // beside the toolbar, on the side with room (the toolbar can be on either side)
-      const tb = document.getElementById('toolbar').getBoundingClientRect(), right = tb.left + tb.width / 2 < wrap.left + wrap.width / 2;
-      const left = right ? tb.right + 8 : tb.left - 8 - pal.offsetWidth;
-      const top = Math.max(wrap.top + 8, Math.min(b.top, wrap.bottom - pal.offsetHeight - 8));
-      pal.style.left = (left - wrap.left) + 'px';
-      pal.style.top = (top - wrap.top) + 'px';
-      this.btn.setAttribute('aria-expanded', 'true');
-      (pal.querySelector('.active') || pal.querySelector('[data-shape]')).focus();
-    },
-    close() {
-      if (!this.palette || this.palette.classList.contains('hidden')) return;
-      this.palette.classList.add('hidden');
-      this.btn.setAttribute('aria-expanded', 'false');
-    },
+    open() { if (this.menu) this.menu.open(); },
+    close() { if (this.menu) this.menu.close(); },
 
     choose(id) {
       MB.settings.shapePreset = byId(id).id;
@@ -132,8 +154,15 @@ window.MB = window.MB || {};
       if (MB.tools.current !== tool) MB.tools.set(tool); // already drawing presets: the next one is this shape
       else MB.emit('tool', tool); // the toolbar and the hint
     },
-    // R: draw the button's shape (again: put the tool away, as any tool's key does)
-    activate() { MB.tools.set(this.toolOf(this.current)); },
+    // P: a plain polygon, and the button goes back to it (as any tool's key, a second press puts the tool away)
+    polygonKey() {
+      if (this.current !== 'polygon') {
+        MB.settings.shapePreset = 'polygon';
+        MB.saveSettings();
+        if (this.btn) this.renderButton();
+      }
+      MB.tools.set('polygon');
+    },
 
     /* ----- drawing a preset by dragging a box ----- */
     // A drag draws, so the map does not pan; a double-click is two shapes' clicks, so it does not zoom either.
@@ -149,7 +178,7 @@ window.MB = window.MB || {};
     active() { return MB.tools.current === 'shape'; },
 
     onDown(e) {
-      if (!this.active() || e.button !== 0 || e.target.closest('.leaflet-control, #toolbar, #shapePalette, .leaflet-popup')) return;
+      if (!this.active() || e.button !== 0 || e.target.closest('.leaflet-control, #toolbar, #shapePalette, #rectPalette, .leaflet-popup')) return;
       e.preventDefault();
       this.down = { p: MB.map.mouseEventToContainerPoint(e), id: e.pointerId };
       try { MB.map.getContainer().setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
@@ -209,29 +238,31 @@ window.MB = window.MB || {};
   };
 
   /* ----- the rectangle tool's three modes -----
-   * Corner (two opposite corners, as it always was), Center (the center, then a corner) and Three-point (two clicks
-   * for one side, a third for the depth: a rectangle at any angle). The mode is remembered on this device and
-   * chosen in the tool hint; Geoman draws the rectangle either way, with its preview, snapping and readout.
+   * Center (the center, then a corner), Diagonal (two opposite corners, as it always was) and 3 Points (two clicks
+   * for one side, a third for the depth: a rectangle at any angle). The mode is remembered on this device and chosen
+   * on the toolbar's Rectangle button (R cycles them); Geoman draws the rectangle either way, with its preview,
+   * snapping and readout.
    */
   const RECT_MODES = [
     {
-      id: 'corner', name: 'Corner', title: 'Corner to corner',
-      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="4" cy="6" r="2.4" fill="currentColor"/><circle cx="20" cy="18" r="2.4" fill="currentColor"/></svg>'
-    },
-    {
-      id: 'center', name: 'Center', title: 'Center, then a corner',
+      id: 'center', name: 'Center', title: 'Click the center, then a corner',
       icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="20" cy="18" r="2.4" fill="currentColor"/></svg>'
     },
     {
-      id: 'three', name: 'Angled', title: 'Two points for one side, then the depth',
+      id: 'corner', name: 'Diagonal', title: 'Click one corner, then the opposite corner',
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="4" cy="6" r="2.4" fill="currentColor"/><circle cx="20" cy="18" r="2.4" fill="currentColor"/></svg>'
+    },
+    {
+      id: 'three', name: '3 Points', title: 'Click two points for one side, then a third for the depth',
       icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12L7.3 17L16.3 11L13 6Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="4" cy="12" r="2.4" fill="currentColor"/><circle cx="13" cy="6" r="2.4" fill="currentColor"/></svg>'
     }
   ];
+  const byMode = id => RECT_MODES.find(m => m.id === id) || RECT_MODES[1];
   const MIN_RECT_PX = 2; // less across than this: nothing is drawn (a stray click, not a rectangle)
 
   MB.rectDraw = {
     modes: RECT_MODES,
-    el: null,
+    btn: null, palette: null, menu: null,
     pending: null, // the corners a three-point rectangle is to get (read in tools.js when it is created)
 
     get mode() {
@@ -239,40 +270,69 @@ window.MB = window.MB || {};
       return RECT_MODES.some(x => x.id === m) ? m : 'corner';
     },
 
+    init() {
+      this.patch(); // the three modes, before anything is drawn
+      this.apply();
+      const btn = this.btn = document.getElementById('rectBtn');
+      if (!btn) return;
+      const pal = this.palette = document.createElement('div');
+      pal.id = 'rectPalette';
+      pal.className = 'tool-flyout mode-flyout hidden';
+      pal.setAttribute('role', 'menu');
+      pal.setAttribute('aria-label', 'Rectangle mode');
+      pal.innerHTML = RECT_MODES.map(m => `<button type="button" role="menuitemradio" data-rect-mode="${m.id}" title="${m.title}" aria-checked="false">${m.icon}<span>${m.name}</span></button>`).join('');
+      this.menu = flyout(btn, pal, {
+        item: '[data-rect-mode]',
+        mark: () => pal.querySelectorAll('[data-rect-mode]').forEach(b => { const on = b.dataset.rectMode === this.mode; b.classList.toggle('active', on); b.setAttribute('aria-checked', on); })
+      });
+      // the button is the menu: it never puts the tool away (Esc or V does that)
+      btn.addEventListener('click', e => { e.stopPropagation(); this.menu.toggle(); });
+      pal.addEventListener('click', e => { const b = e.target.closest('[data-rect-mode]'); if (b) this.choose(b.dataset.rectMode); });
+      this.renderButton();
+    },
+
+    // The button shows the mode it draws in.
+    renderButton() {
+      const btn = this.btn;
+      if (!btn) return;
+      const m = byMode(this.mode);
+      btn.title = `Rectangle: ${m.name} (R)`;
+      btn.setAttribute('aria-label', `Rectangle: ${m.name}`);
+      btn.innerHTML = m.icon.replace('<svg ', '<svg class="shape-icon" ');
+    },
+
+    // A mode chosen on the menu: draw in it (already drawing: carry on in the new mode).
+    choose(m) {
+      if (this.menu) this.menu.close();
+      this.setMode(m);
+      if (MB.tools.current !== 'rectangle') MB.tools.set('rectangle');
+      else MB.emit('tool', 'rectangle'); // the same mode again: the toolbar and the hint all the same
+    },
+
     setMode(m) {
       if (!RECT_MODES.some(x => x.id === m) || m === this.mode) return;
       MB.settings.rectMode = m;
       MB.saveSettings();
       this.apply();
+      this.renderButton();
       if (MB.tools.current === 'rectangle') { MB.map.pm.disableDraw(); MB.tools.startDraw('rectangle'); } // a half-drawn one goes
       MB.emit('tool', 'rectangle'); // the hint's instructions and the buttons
+    },
+
+    // The mode after this one, the menu's order round again.
+    next() {
+      const i = RECT_MODES.findIndex(m => m.id === this.mode);
+      return RECT_MODES[(i + 1) % RECT_MODES.length].id;
+    },
+    // R: the rectangle tool in the mode last used; pressed again, the next mode (the tool stays put)
+    key() {
+      if (MB.tools.current !== 'rectangle') { MB.tools.set('rectangle'); return; }
+      this.setMode(this.next());
     },
 
     // The center mode's first point is a center, not a corner: Geoman's start marker shows an X there (css/app.css).
     apply() {
       if (MB.map) MB.map.getContainer().classList.toggle('mb-rect-center', this.mode === 'center');
-    },
-
-    // The buttons, where the tool's instructions go (one node, kept and re-used: ui.js appends it each render).
-    controls() {
-      if (!this.el) {
-        const el = this.el = document.createElement('div');
-        el.className = 'seg small rect-modes';
-        el.setAttribute('role', 'radiogroup');
-        el.setAttribute('aria-label', 'Rectangle mode');
-        el.innerHTML = RECT_MODES.map(m => `<button type="button" role="radio" data-rect-mode="${m.id}" title="${m.title}" aria-checked="false">${m.icon}<span>${m.name}</span></button>`).join('');
-        el.addEventListener('click', e => { const b = e.target.closest('[data-rect-mode]'); if (b) this.setMode(b.dataset.rectMode); });
-        el.addEventListener('keydown', e => { if (e.key !== 'Escape' && e.key !== 'Tab') e.stopPropagation(); }); // the app's letter shortcuts stay out
-        MB.ui.radios(el);
-      }
-      const cur = this.mode;
-      this.el.querySelectorAll('[data-rect-mode]').forEach(b => {
-        const on = b.dataset.rectMode === cur;
-        b.classList.toggle('active', on);
-        b.setAttribute('aria-checked', on);
-        b.tabIndex = on ? 0 : -1;
-      });
-      return this.el;
     },
 
     /* Geoman's rectangle draws from two opposite corners. The other two modes work out the corners themselves (in

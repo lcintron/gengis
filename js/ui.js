@@ -16,7 +16,7 @@ window.MB = window.MB || {};
     line: 'Click to add points. Double-click (or click the last point) to finish. Click the first point to close it into a polygon.',
     polygon: 'Click to add vertices. Click the first vertex or double-click to finish.',
     rectangle: 'Click one corner, then click the opposite corner.',
-    // (the rectangle's mode: its buttons sit in the hint, shapes.js)
+    // (the rectangle's mode is chosen on its toolbar button's menu, shapes.js)
     shape: 'Drag a box to draw the shape (Shift keeps its proportions), or click for a default size.',
     circle: 'Click the center, then click to set the radius.',
     svg: 'Click the map to place the image. Choose a different one in the Images panel.',
@@ -24,7 +24,7 @@ window.MB = window.MB || {};
     'measure-distance': 'Click points to measure. Double-click or Enter to finish (saved to the active layer), Esc to cancel.',
     'measure-area': 'Click at least 3 points. Double-click or Enter to finish (saved to the active layer), Esc to cancel.'
   };
-  // The rectangle tool, by the mode chosen in the hint (js/shapes.js).
+  // The rectangle tool, by the mode chosen on its toolbar button (js/shapes.js).
   const rectHints = {
     corner: toolHints.rectangle,
     center: 'Click the center, then a corner.',
@@ -593,7 +593,7 @@ window.MB = window.MB || {};
       BOTTOM_CORNERS.forEach(sel => { const c = $(sel, $('#mapwrap')); if (c) ro.observe(c); });
     } else addEventListener('resize', fitAll); // older browsers: the window's size at least
     MB.ui.applyToolbarSide(); // fits it too
-    $$('#toolbar button[data-tool]:not(#shapeBtn)').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool))); // Shapes opens its palette (shapes.js)
+    $$('#toolbar button[data-tool]:not(#shapeBtn):not(#rectBtn)').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool))); // Polygon and Rectangle open their menus (shapes.js)
     MB.on('tool', name => {
       $$('#toolbar button[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
       $('#iconBtn').classList.toggle('active', name === 'icon'); // (it opens the picker, so it has no data-tool of its own)
@@ -618,7 +618,6 @@ window.MB = window.MB || {};
     hint.classList.toggle('ink', name === 'annotate');
     if (name === 'annotate') { // the annotation tool: its options where the instructions go (drawn once; ink.js redraws it)
       if (hint.dataset.mode !== 'ink') { hint.dataset.mode = 'ink'; MB.ink.renderBar(hint); }
-      hint.classList.remove('has-controls');
       hint.classList.remove('hidden');
       return;
     }
@@ -634,16 +633,9 @@ window.MB = window.MB || {};
     if (name === 'circle' && MB.circleRadius.locked) text = `Radius ${MB.formatDistance(MB.circleRadius.locked)}: click the map to place the circle.`;
     const layer = MB.activeLayer();
     const hidden = ADDING_TOOLS.includes(name) && layer && !layer.visible;
-    // The tool's own controls, where its instructions go: the rectangle's modes (shapes.js) and the circle's radius
-    // box (tools.js), each one node, built once and kept. The instructions and the warning are their own children
-    // and are changed in place, so a control is never taken off the page: a radius being typed keeps the keyboard
-    // and the caret.
-    const controls = name === 'rectangle' ? MB.rectDraw.controls() : name === 'circle' ? MB.circleRadius.controls() : null;
-    hint.classList.toggle('has-controls', !!controls);
-    // what the last tool left here goes (its own controls, the annotation bar), and the controls come last
-    Array.from(hint.children).forEach(el => { if (el !== controls && !el.classList.contains('hint-text') && !el.classList.contains('hint-warn')) el.remove(); });
-    if (controls && controls.parentNode !== hint) hint.appendChild(controls);
-    const before = controls && controls.parentNode === hint ? controls : null; // the text and the warning come first
+    // What the last tool left here goes (the annotation bar). The instructions and the warning are their own
+    // children and are changed in place, so neither is taken off the page while it is read out.
+    Array.from(hint.children).forEach(el => { if (!el.classList.contains('hint-text') && !el.classList.contains('hint-warn')) el.remove(); });
     let txt = $('.hint-text', hint);
     if (text) {
       if (!txt) { txt = document.createElement('div'); txt.className = 'hint-text'; hint.insertBefore(txt, hint.firstChild); }
@@ -655,12 +647,13 @@ window.MB = window.MB || {};
         warn = document.createElement('div');
         warn.className = 'hint-warn';
         warn.setAttribute('role', 'alert');
-        hint.insertBefore(warn, before);
+        hint.appendChild(warn);
       }
       warn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           <span>Layer “${esc(layer.name)}” is hidden: what you add won't show.</span><button type="button" class="btn small" data-act="show-layer">Show layer</button>`;
     } else if (warn) warn.remove();
-    hint.classList.toggle('hidden', !text && !hidden && !controls);
+    hint.classList.toggle('hidden', !text && !hidden);
+    if (MB.circleRadius) MB.circleRadius.redock(); // the radius box docks under the hint: its height just changed
   }
   MB.ui.renderToolHint = renderToolHint;
 
@@ -2269,7 +2262,8 @@ window.MB = window.MB || {};
       if (e.key.toLowerCase() === 'i' && MB.icons) { e.preventDefault(); MB.icons.open(); return; } // the icon picker
       const map = { v: 'select', g: 'move', k: 'scale', m: 'marker', t: 'text', l: 'line', p: 'polygon', r: 'rectangle', c: 'circle', s: 'svg', n: 'annotate', d: 'measure-distance', a: 'measure-area' };
       const tool = map[e.key.toLowerCase()];
-      if (tool === 'rectangle' && MB.shapes) { e.preventDefault(); MB.shapes.activate(); return; } // R: the Shapes button's shape
+      if (tool === 'rectangle' && MB.rectDraw) { e.preventDefault(); MB.rectDraw.key(); return; } // R: the rectangle, and its next mode
+      if (tool === 'polygon' && MB.shapes) { e.preventDefault(); MB.shapes.polygonKey(); return; } // P: a plain polygon, whatever preset the button holds
       if (tool) { e.preventDefault(); MB.tools.set(tool); }
     });
   }
