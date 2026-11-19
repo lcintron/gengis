@@ -554,12 +554,16 @@ test('the radius label sits on the dimension line, and stays docked when the lin
   const wider = layout(Object.assign({ cx: 300, cy: 300, rPx: 350 }, box));
   assert.deepEqual([wider.x, wider.y], [314, 286], 'the label never follows the pointer');
   assert.equal(wider.lineLen, 350, 'only the line grows');
-  // too short a line to hold the label: it stays docked, where it is still and can be typed in
+  // no room on the line for the label yet: it stays docked, where it is still and can be typed in
   assert.equal(layout(Object.assign({ cx: 300, cy: 300, rPx: 100 }, box)).dock, true);
-  // and once attached it is kept so through 16 px, so a radius wavering at the threshold cannot flap it
+  // but once attached it stays attached, however short the line gets: a pointer coming in towards the label must
+  // never flip it between the line and the dock
   const held = Object.assign({}, box, { attached: true });
-  assert.equal(layout(Object.assign({ cx: 300, cy: 300, rPx: 100 }, held)).dock, false, 'just inside: still attached');
-  assert.equal(layout(Object.assign({ cx: 300, cy: 300, rPx: 90 }, held)).dock, true, 'well inside: docked again');
+  for (const rPx of [100, 40, 4, 0]) {
+    const h = layout(Object.assign({ cx: 300, cy: 300, rPx }, held));
+    assert.equal(h.dock, false, rPx + ' px of line: still attached');
+    assert.deepEqual([h.x, h.y], [314, 286], 'and in the very same place');
+  }
   // clamped into the map by 8 px, on every side
   o = layout(Object.assign({ cx: 795, cy: 598, rPx: 300 }, box));
   assert.deepEqual([o.x, o.y], [702, 564], 'the far corner: still wholly on screen');
@@ -604,9 +608,19 @@ test('the radius label is docked while the radius is typed, and attaches once a 
   c.MB.circleRadius.update();
   assert.deepEqual(c.at(), ['414px', '286px'], 'the same place, whatever the radius');
   assert.equal(c.line.style.width, '400px');
-  // dragged back in until the line cannot hold the label: it docks rather than jump about near the pointer
-  c.moveTo(0, 90 / DEG_PX);
-  c.MB.circleRadius.update();
+  // the pointer coming in on the label from the lower left: the radius shrinks past the label's own width, and the
+  // label must stay exactly where it is (it would otherwise flip between the line and the dock as it is approached)
+  for (const px of [300, 120, 60, 20, 5]) {
+    const off = px / Math.SQRT2 / DEG_PX;
+    c.moveTo(-off, -off);
+    c.MB.circleRadius.update();
+    assert.equal(c.MB.circleRadius.attached, true, px + ' px out, to the lower left: still attached');
+    assert.deepEqual(c.at(), ['414px', '286px'], 'and still in the same place');
+  }
+  assert.equal(c.line.style.display, 'none', 'with too little line left to draw an arrow at each end');
+  // the circle made (or the tool left): the label docks, so the next one starts docked (Continue drawing)
+  c.MB.circleRadius.endDraw();
+  assert.equal(c.MB.circleRadius.attached, false);
   assert.ok(c.label.classes.has('docked'));
   assert.deepEqual(c.at(), ['355px', '38px'], 'and is measured back into its docked place');
   assert.equal(c.line.style.display, 'none');

@@ -354,6 +354,7 @@ window.MB = window.MB || {};
     // The circle tool is on (the label goes on the map, docked) or off (it goes away).
     forTool(name) {
       if (!this.el) return;
+      this.attached = false; // the tool is coming or going: the label starts docked either way
       if (name === 'circle') { this.el.style.display = 'inline-flex'; this.redock(); return; }
       const box = this.box();
       if (box && document.activeElement === box) box.blur();
@@ -362,11 +363,11 @@ window.MB = window.MB || {};
     },
 
     // The draw is over (the circle is made, or the tool is going): a radius only read out is not one that was typed,
-    // so it goes rather than sit in the docked box looking typed.
+    // so it goes rather than sit in the docked box looking typed. The label docks, ready for the next circle.
     endDraw() {
       this.showGhost(null);
       if (this.live) this.clearBox();
-      this.update();
+      this.dock(); // (and the next circle's label attaches afresh, once there is room on its line)
     },
 
     // The docked place may have moved (the tool hint's height, the map's width, the label's own width).
@@ -415,25 +416,26 @@ window.MB = window.MB || {};
       el.style.display = 'inline-flex'; // shown before it is measured (a zoom may have hidden it)
       const size = MB.map.getSize(), p = MB.map.latLngToContainerPoint(anchor);
       const o = this.layout({ cx: p.x, cy: p.y, rPx: this.radiusPx(anchor, meters), w: el.offsetWidth, h: el.offsetHeight, mapW: size.x, mapH: size.y, attached: this.attached });
-      if (o.dock) { this.dock(); return; } // too short a line to hold the label: it stays docked, still and reachable
+      if (o.dock) { this.dock(); return; } // no room on the line for the label yet: it stays docked, still and reachable
       el.classList.remove('docked');
       this.attached = true;
       el.style.left = o.x + 'px';
       el.style.top = o.y + 'px';
       const line = this.line;
-      line.style.display = 'block';
+      line.style.display = o.lineLen >= 10 ? 'block' : 'none'; // too short for an arrow at each end: the label alone says it
       line.style.left = Math.round(p.x) + 'px';
       line.style.top = Math.round(p.y) + 'px';
       line.style.width = o.lineLen + 'px';
     },
 
     // Where the label goes, in container pixels: on the line, 14 px clear of the center, which depends on the
-    // center alone and so never follows the pointer. A line too short to hold it leaves it docked instead (where it
-    // is still and can be typed in); once attached it stays so through 16 px of hysteresis, so it cannot flap.
+    // center alone and so never follows the pointer. Until there is room on the line for it, it stays docked (where
+    // it is still and can be typed in); once attached it stays attached until the draw ends, however short the line
+    // becomes - a pointer coming in towards the label must not flip it between the line and the dock.
     layout(o) {
-      const GAP = 14, EDGE = 8, ROOM = o.w + 24;
+      const GAP = 14, EDGE = 8;
       const lineLen = Math.max(0, Math.round(o.rPx));
-      if (o.rPx < (o.attached ? ROOM - 16 : ROOM)) return { dock: true, lineLen };
+      if (!o.attached && o.rPx < o.w + 24) return { dock: true, lineLen };
       const x = Math.max(EDGE, Math.min(o.cx + GAP, o.mapW - o.w - EDGE));
       const y = Math.max(EDGE, Math.min(o.cy - o.h / 2, o.mapH - o.h - EDGE));
       return { x: Math.round(x), y: Math.round(y), lineLen, dock: false };
