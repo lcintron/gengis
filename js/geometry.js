@@ -315,6 +315,7 @@ window.MB = window.MB || {};
 
   MB.snap = {
     marker: null,
+    first: null, // the first vertex of the shape being drawn: snapping there closes it
     show(e) {
       const ll = e && e.snapLatLng;
       if (!ll) return;
@@ -328,11 +329,12 @@ window.MB = window.MB || {};
           kind = 'vertex';
           if (other instanceof L.Polyline && !(other instanceof L.Polygon) && (bi === 0 || bi === pts.length - 1)) kind = 'endpoint';
           if (!other.getLatLngs) kind = 'point';
+          if (this.first && other === this.first) kind = 'close'; // back on the first vertex: the click closes the shape
         }
       } catch (err) { /* ignore */ }
       const color = kind === 'edge' ? '#ffd166' : '#2ecc71';
-      const radius = kind === 'endpoint' ? 11 : 8;
-      const text = { edge: 'on edge', vertex: 'vertex', endpoint: 'line end', point: 'point' }[kind];
+      const radius = kind === 'endpoint' || kind === 'close' ? 11 : 8;
+      const text = { edge: 'on edge', vertex: 'vertex', endpoint: 'line end', point: 'point', close: 'close' }[kind];
       if (!this.marker) {
         this.marker = L.circleMarker(ll, { radius, color, weight: 3, fill: false, interactive: false, pmIgnore: true, pane: 'mb-snap' });
         this.marker.bindTooltip(text, { permanent: true, direction: 'right', offset: [12, 0], className: 'mb-snap-tip', pane: 'mb-snap' });
@@ -355,22 +357,34 @@ window.MB = window.MB || {};
         wl.on('pm:snap', ev => MB.snap.show(ev));
         wl.on('pm:unsnap', () => MB.snap.hide());
         MB.tools._closeLine = false;
-        if (e.shape === 'Line') {
-          // Clicking back on the first point closes the outline: pm:create then stores it as a polygon.
-          // (The drawing library finishes the line when its first vertex marker is clicked, without adding a point,
-          //  so remember that the finish came from the first vertex.)
-          wl.on('pm:vertexadded', ev => {
-            const lls = wl.getLatLngs();
-            if (lls.length === 1 && ev.marker && ev.marker.on) {
-              ev.marker.on('mousedown', () => { if (wl.getLatLngs().length >= 3) MB.tools._closeLine = true; });
+        MB.snap.first = null;
+        if (e.shape !== 'Line' && e.shape !== 'Polygon') return;
+        // Clicking back on the first point closes the outline: pm:create then stores it as a polygon.
+        // (The drawing library finishes the line when its first vertex marker is clicked, without adding a point,
+        //  so remember that the finish came from the first vertex.)
+        let first = null; // the first vertex's marker, kept for the magnet and the snap ring
+        wl.on('pm:vertexadded', ev => {
+          const lls = wl.getLatLngs();
+          if (lls.length === 1 && ev.marker) {
+            first = MB.snap.first = ev.marker;
+            if (e.shape === 'Line' && ev.marker.on) ev.marker.on('mousedown', () => { if (wl.getLatLngs().length >= 3) MB.tools._closeLine = true; });
+          }
+          if (e.shape !== 'Line') return;
+          // From the third vertex on, the first one pulls the pointer in, as the polygon tool's does: it is handed to
+          // the drawing library's own magnet (which is what the polygon's first vertex gets when it is made).
+          if (lls.length === 3 && first) {
+            const d = MB.map.pm.Draw.Line;
+            if (d && d._otherSnapLayers && d._cleanupSnapping) {
+              d._otherSnapLayers.push(first);
+              if (d.options.snappable) d._cleanupSnapping(); // the snap list is rebuilt with it (without snapping on, it is the only one)
             }
-            if (lls.length >= 4 && MB.pxDist(lls[0], lls[lls.length - 1]) <= MB.SNAP_PX) {
-              setTimeout(() => { try { MB.map.pm.Draw.Line._finishShape(); } catch (err) { /* ignore */ } }, 0);
-            }
-          });
-        }
+          }
+          if (lls.length >= 4 && MB.pxDist(lls[0], lls[lls.length - 1]) <= MB.SNAP_PX) {
+            setTimeout(() => { try { MB.map.pm.Draw.Line._finishShape(); } catch (err) { /* ignore */ } }, 0);
+          }
+        });
       });
-      MB.map.on('pm:drawend', () => MB.snap.hide());
+      MB.map.on('pm:drawend', () => { MB.snap.hide(); MB.snap.first = null; });
     }
   };
 })(window.MB);

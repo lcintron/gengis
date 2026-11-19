@@ -1,6 +1,7 @@
 'use strict';
-// The drawing tools' shapes: a typed length (MB.parseDistance), the rectangle math behind the tool's three modes
-// (js/shapes.js) and the checks that tell a turned rectangle from an upright one (js/features.js, js/scaletool.js).
+// The drawing tools' shapes: a typed length (MB.parseDistance), the rectangle math behind the tool's three modes and
+// the menu that chooses them (js/shapes.js), the circle's radius label (js/tools.js), the line tool's close-the-shape
+// magnet (js/geometry.js) and the checks that tell a turned rectangle from an upright one (features.js, scaletool.js).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -18,6 +19,91 @@ function loadUtil() {
   return ctx.window.MB;
 }
 const MB = loadUtil();
+
+// The few DOM pieces js/shapes.js touches: a node that remembers its classes, attributes and handlers.
+function fakeEl(tag) {
+  return {
+    tagName: (tag || 'DIV').toUpperCase(), id: '', className: '', title: '', innerHTML: '', dataset: {}, style: {},
+    children: [], handlers: {}, attrs: {}, classes: new Set(),
+    classList: {
+      add(c) { this.el.classes.add(c); }, remove(c) { this.el.classes.delete(c); },
+      contains(c) { return this.el.classes.has(c); },
+      toggle(c, on) { const want = on === undefined ? !this.el.classes.has(c) : !!on; if (want) this.el.classes.add(c); else this.el.classes.delete(c); return want; }
+    },
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return this.attrs[k] == null ? null : this.attrs[k]; },
+    addEventListener(t, fn) { (this.handlers[t] = this.handlers[t] || []).push(fn); },
+    fire(t, e) { (this.handlers[t] || []).forEach(fn => fn(Object.assign({ stopPropagation() {}, preventDefault() {}, target: { closest: () => null } }, e))); },
+    appendChild(c) { this.children.push(c); return c; },
+    querySelector: () => null, querySelectorAll: () => [],
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+    focus() {}, closest: () => null
+  };
+}
+const el = tag => { const e = fakeEl(tag); e.classList.el = e; return e; };
+
+// js/shapes.js over a fake page: the toolbar's two menu buttons and a stand-in for the settings, the tools and the
+// map, so what the keys and the menus do can be followed without a browser.
+function loadShapes() {
+  const els = { mapwrap: el(), toolbar: el(), shapeBtn: el('button'), rectBtn: el('button') };
+  const ctx = {
+    window: { addEventListener() {} }, L: {}, console, Math, Date, setTimeout,
+    document: { addEventListener() {}, getElementById: id => els[id] || null, createElement: tag => el(tag) }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(read('js/shapes.js'), ctx, { filename: 'js/shapes.js' });
+  const M = ctx.window.MB, out = { MB: M, tools: [], saves: 0, events: [], shapeBtn: els.shapeBtn, rectBtn: els.rectBtn };
+  M.settings = {};
+  M.saveSettings = () => { out.saves++; };
+  M.tools = { current: 'select', set(n) { this.current = n; out.tools.push(n); }, startDraw() {} };
+  M.emit = (...a) => out.events.push(a);
+  M.on = () => {};
+  M.map = { getContainer: () => els.mapwrap, on() {}, pm: { disableDraw() {} } };
+  M.shapes.init();
+  return out;
+}
+
+// MB.circleRadius.layout, as it stands in js/tools.js: where the radius label goes, in container pixels.
+const layout = vm.runInNewContext('({ ' + read('js/tools.js').match(/\n    layout\(o\) \{[\s\S]*?\n    \},/)[0].trim().replace(/,$/, '') + ' }).layout', { Math });
+
+// js/geometry.js's snap ring and its drawing listeners, over a fake map: enough to follow what the first vertex of a
+// line or a polygon does as the shape is drawn.
+function loadGeometry() {
+  const src = read('js/geometry.js');
+  const snap = /\n  MB\.snap = \{[\s\S]*?\n  \};/.exec(src)[0], geo = /\n  MB\.geometry = \{[\s\S]*?\n  \};/.exec(src)[0];
+  const M = { SNAP_PX: 15, tools: {}, pxDist: (a, b) => Math.hypot(a.lat - b.lat, a.lng - b.lng) };
+  const L = {
+    Polyline: class {}, Polygon: class {},
+    circleMarker: (ll, o) => ({ o, text: null, setLatLng() {}, setStyle(s) { Object.assign(this.o, s); }, setRadius(r) { this.o.radius = r; },
+      bindTooltip(t) { this.text = t; }, setTooltipContent(t) { this.text = t; }, addTo() { return this; } })
+  };
+  const on = {};
+  M.map = {
+    createPane: () => ({ style: {} }), hasLayer: () => true, removeLayer() {},
+    on(ev, fn) { ev.split(' ').forEach(t => (on[t] = on[t] || []).push(fn)); },
+    pm: { Draw: {} }
+  };
+  const ctx = { MB: M, L, console, Math, setTimeout, flattenAll: ll => (Array.isArray(ll) ? ll : [ll]) };
+  vm.runInNewContext(snap + '\n' + geo, ctx, { filename: 'js/geometry.js (snap, geometry)' });
+  M.geometry.init();
+  return { MB: M, fire: (t, e) => (on[t] || []).forEach(f => f(e)) };
+}
+
+// A shape being drawn, as Geoman's working layer: vertices pushed on, each one fired as pm:vertexadded.
+function drawing(g, shape) {
+  const wl = { lls: [], h: {}, on(t, fn) { (this.h[t] = this.h[t] || []).push(fn); }, getLatLngs() { return this.lls; } };
+  g.fire('pm:drawstart', { shape, workingLayer: wl });
+  return {
+    wl, markers: [],
+    add(lat, lng) {
+      wl.lls.push({ lat, lng });
+      const marker = { nth: wl.lls.length, on() {} };
+      this.markers.push(marker);
+      (wl.h['pm:vertexadded'] || []).forEach(fn => fn({ marker }));
+      return marker;
+    }
+  };
+}
 
 const D2R = Math.PI / 180;
 // Mercator x, y back to a point on the map (MB.mercXY the other way round).
@@ -229,36 +315,111 @@ test('the Scale tool resizes a turned rectangle alike both ways (one axis would 
   assert.match(scale, /const uniform = layer => \['circle', 'text', 'svg'\]\.includes\(layer\.mb\.type\) \|\| turnedRect\(layer\)/);
 });
 
-test('the rectangle tool offers its three modes in the tool hint, and remembers the one chosen', () => {
-  const shapes = read('js/shapes.js'), ui = read('js/ui.js'), css = read('css/app.css');
-  for (const id of ['corner', 'center', 'three']) assert.match(shapes, new RegExp("id: '" + id + "'"), 'the ' + id + ' mode');
+test('the rectangle button opens a menu of its three modes, and the one chosen is remembered', () => {
+  const shapes = read('js/shapes.js'), ui = read('js/ui.js'), css = read('css/app.css'), html = read('index.html');
+  // the ids are what a saved rectMode holds: they stay as they were, whatever the modes are called or ordered
+  const modes = /const RECT_MODES = \[([\s\S]*?)\n  \];/.exec(shapes);
+  assert.ok(modes, 'js/shapes.js lists the rectangle modes');
+  assert.deepEqual([...modes[1].matchAll(/id: '(\w+)', name: '([^']+)'/g)].map(m => [m[1], m[2]]),
+    [['center', 'Center'], ['corner', 'Diagonal'], ['three', '3 Points']], "the menu's order, the saved ids kept");
+  assert.match(shapes, /return RECT_MODES\.some\(x => x\.id === m\) \? m : 'corner';/, 'anything else saved falls back to the diagonal');
   assert.match(shapes, /MB\.settings\.rectMode = m;\s*\n\s*MB\.saveSettings\(\);/, 'the mode is kept on this device');
-  assert.match(shapes, /data-rect-mode="\$\{m\.id\}"/);
-  assert.match(shapes, /\[data-rect-mode\]/, 'its buttons have a handler of their own (not a data-act)');
-  assert.doesNotMatch(shapes, /data-act="rect/, 'no action a menu would have to handle');
-  assert.match(shapes, /setAttribute\('role', 'radiogroup'\)/);
-  assert.match(shapes, /setAttribute\('aria-label', 'Rectangle mode'\)/);
-  assert.match(shapes, /MB\.ui\.radios\(el\)/, 'the buttons are the keyboard\'s too');
+  assert.match(shapes, /role="menuitemradio" data-rect-mode="\$\{m\.id\}"/, 'a menu of radio choices');
+  assert.match(shapes, /pal\.setAttribute\('aria-label', 'Rectangle mode'\)/);
   assert.match(shapes, /if \(MB\.tools\.current === 'rectangle'\) \{ MB\.map\.pm\.disableDraw\(\); MB\.tools\.startDraw\('rectangle'\); \}/, 'a half-drawn rectangle goes when the mode changes');
-  // the hint says what to click in each mode, and holds the buttons
+  // the button itself: its own id, the mode's icon and name on it, and the menu it opens
+  assert.match(html, /<button data-tool="rectangle" id="rectBtn" class="has-menu" title="Rectangle: Diagonal \(R\)" aria-haspopup="menu" aria-expanded="false" aria-controls="rectPalette">/);
+  assert.match(html, /<button data-tool="polygon" id="shapeBtn" class="has-menu"[^>]*aria-controls="shapePalette">/, 'and the presets moved under the Polygon button');
+  assert.match(shapes, /btn\.title = `Rectangle: \$\{m\.name\} \(R\)`;/);
+  assert.match(shapes, /btn\.addEventListener\('click', e => \{ e\.stopPropagation\(\); this\.menu\.toggle\(\); \}\)/, 'the button is the menu: it never puts the tool away');
+  assert.match(ui, /\$\$\('#toolbar button\[data-tool\]:not\(#shapeBtn\):not\(#rectBtn\)'\)/, 'so neither menu button sets its tool on a plain click');
+  // the modes are gone from the tool hint; the hint still says what to click in each
+  assert.doesNotMatch(ui, /MB\.(rectDraw|circleRadius)\.controls/, 'no controls in the hint any more');
+  assert.doesNotMatch(shapes, /controls\(\)/);
+  assert.doesNotMatch(ui, /has-controls/);
+  assert.doesNotMatch(css, /has-controls|\.rect-modes/);
   assert.match(ui, /center: 'Click the center, then a corner\.'/);
   assert.match(ui, /three: 'Click two points for one side, then a third for the depth\.'/);
   assert.match(ui, /if \(name === 'rectangle'\) text = rectHints\[MB\.rectDraw\.mode\] \|\| text;/);
-  assert.match(ui, /name === 'rectangle' \? MB\.rectDraw\.controls\(\)/);
-  assert.match(ui, /hint\.classList\.toggle\('has-controls', !!controls\)/);
   // the three-point rectangle reaches the new object with its own corners
   assert.match(read('js/tools.js'), /if \(type === 'rectangle' && MB\.rectDraw\.pending\)/);
   assert.match(read('js/tools.js'), /layer\.pm\._setAngle\(MB\.ringAngle\(ring\)\)/);
-  assert.match(css, /\.tool-hint\.has-controls \{ pointer-events: auto; \}/);
-  assert.match(css, /\.rect-modes span \{ display: none; \}/, 'a phone shows the modes by their icons');
+  // the menu: a row of icon and name each, the one in use lighter, finger-sized on a phone and a touch screen
+  assert.match(css, /\.mode-flyout \{ display: flex; flex-direction: column;/);
+  assert.match(css, /\.mode-flyout svg \{ width: 20px; height: 20px;/);
+  assert.match(css, /\.mode-flyout button\.active \{ background: var\(--bg-3\); color: var\(--text\);/);
+  const phone = css.match(/@media \(max-width: 640px\) \{\n  #topbar[\s\S]*?\n\}/)[0];
+  assert.match(phone, /\.mode-flyout button \{ min-height: 40px; \}/, 'a phone: finger-sized rows');
+  const coarse = css.match(/@media \(hover: none\) and \(pointer: coarse\) \{\n  \/\* touch[\s\S]*?\n\}/)[0];
+  assert.match(coarse, /\.mode-flyout button \{ min-height: 40px; \}/, 'and a touch screen of any size');
   assert.match(css, /\.mb-rect-center \.rect-start-marker\.visible::before/, 'the center mode marks its center with an X');
 });
 
-test('the circle takes a typed radius, in the box in its tool hint', () => {
+test('R draws a rectangle, and pressed again cycles to the next mode without leaving the tool', () => {
+  const s = loadShapes();
+  assert.equal(s.MB.rectDraw.mode, 'corner', 'nothing saved yet: the diagonal');
+  // from another tool: the mode last used, no change
+  s.MB.rectDraw.key();
+  assert.deepEqual(s.tools, ['rectangle']);
+  assert.equal(s.MB.rectDraw.mode, 'corner', 'the tool is turned on in the mode it was left in');
+  // in the tool: each press is the next mode, the menu's order round again, and the tool stays put
+  const seen = [];
+  for (let i = 0; i < 4; i++) { s.MB.rectDraw.key(); seen.push(s.MB.rectDraw.mode); }
+  assert.deepEqual(seen, ['three', 'center', 'corner', 'three'], 'center → corner → three → round again');
+  assert.deepEqual(s.tools, ['rectangle'], 'R never puts the tool away');
+  assert.equal(s.MB.settings.rectMode, 'three', 'and the mode is saved');
+  assert.ok(s.saves > 0);
+  assert.match(s.rectBtn.title, /^Rectangle: 3 Points \(R\)$/, 'the button shows the mode it draws in');
+  assert.equal(s.rectBtn.getAttribute('aria-label'), 'Rectangle: 3 Points');
+  // a mode chosen on the menu: the tool goes on in it (already drawing: it carries on in the new mode)
+  s.tools.length = 0;
+  s.MB.tools.current = 'select';
+  s.MB.rectDraw.choose('center');
+  assert.equal(s.MB.rectDraw.mode, 'center');
+  assert.deepEqual(s.tools, ['rectangle']);
+  s.tools.length = 0;
+  s.MB.rectDraw.choose('center'); // the same one again: nothing changes, the tool is still the rectangle's
+  assert.equal(s.MB.rectDraw.mode, 'center');
+  assert.deepEqual(s.tools, [], 'already drawing: the tool is not set again (which would put it away)');
+});
+
+test('the preset shapes sit under the Polygon button; P draws a plain polygon', () => {
+  const s = loadShapes();
+  assert.deepEqual([...s.MB.shapes.presets].map(p => p.id), ['polygon', 'triangle', 'pentagon', 'hexagon', 'octagon', 'star', 'lightning'],
+    'the plain polygon first, no rectangle among them');
+  assert.equal(s.MB.shapes.current, 'polygon', 'nothing saved: the plain polygon');
+  s.MB.settings.shapePreset = 'rectangle'; // what a device that chose the rectangle before holds
+  assert.equal(s.MB.shapes.current, 'polygon', 'an id that is no preset any more falls back to the polygon');
+  assert.equal(s.MB.shapes.toolOf('polygon'), 'polygon');
+  assert.equal(s.MB.shapes.toolOf('star'), 'shape');
+  assert.equal(s.shapeBtn.title, 'Polygon (P)');
+  // a preset chosen: the button draws it with the preset tool
+  s.MB.shapes.choose('star');
+  assert.equal(s.MB.settings.shapePreset, 'star');
+  assert.equal(s.shapeBtn.dataset.tool, 'shape');
+  assert.equal(s.shapeBtn.title, 'Polygon: Star (P)');
+  assert.deepEqual(s.tools, ['shape']);
+  // P: back to the plain polygon, whatever the button held
+  s.tools.length = 0;
+  s.MB.tools.current = 'shape';
+  s.MB.shapes.polygonKey();
+  assert.equal(s.MB.settings.shapePreset, 'polygon');
+  assert.equal(s.shapeBtn.dataset.tool, 'polygon');
+  assert.deepEqual(s.tools, ['polygon']);
+  const ui = read('js/ui.js');
+  assert.match(ui, /if \(tool === 'rectangle' && MB\.rectDraw\) \{ e\.preventDefault\(\); MB\.rectDraw\.key\(\); return; \}/);
+  assert.match(ui, /if \(tool === 'polygon' && MB\.shapes\) \{ e\.preventDefault\(\); MB\.shapes\.polygonKey\(\); return; \}/);
+  assert.doesNotMatch(read('js/shapes.js'), /activate\(\)/, 'the old R-draws-the-preset entry point is gone');
+  assert.match(read('index.html'), /<kbd>R<\/kbd> rectangle \(again: next mode\)/);
+  assert.match(read('README.md'), /Rectangle \(again: its next mode\)/);
+});
+
+test('the circle takes a typed radius, in a label on the map at the end of a dimension line', () => {
   const tools = read('js/tools.js'), ui = read('js/ui.js'), css = read('css/app.css');
   assert.match(tools, /id="radiusInput"/);
   assert.match(tools, /id="radiusUnit"/);
-  assert.match(tools, /<label for="radiusInput">Radius<\/label>/, 'the box is labelled');
+  assert.match(tools, /<label for="radiusInput">R<\/label>/, 'the label says what the value is');
+  assert.match(tools, /aria-label="Radius" placeholder="type a value"/);
   assert.match(tools, /aria-label="Radius unit"/);
   assert.match(tools, /aria-label="Clear radius"/);
   assert.match(tools, /MB\.parseDistance\(text, sel\.value\)/);
@@ -270,21 +431,90 @@ test('the circle takes a typed radius, in the box in its tool hint', () => {
   assert.match(tools, /opts\.minRadiusCircle = r; opts\.maxRadiusCircle = r;/, 'the draw starts with it');
   assert.match(tools, /if \(this\.current === 'circle' && name !== 'circle'\) MB\.circleRadius\.reset\(\)/, 'leaving the tool clears it');
   assert.match(tools, /e\.stopPropagation\(\); \/\/ the app's single-key shortcuts stay out of a typed value/);
+  // the label lives in the map's container and is only ever moved (never re-parented: that would drop the caret and
+  // a phone's keyboard), and a tap on it is not a click on the map
+  const mount = /mount\(\) \{[\s\S]*?\n    \},/.exec(tools);
+  assert.ok(mount, 'js/tools.js builds the label in mount()');
+  assert.match(mount[0], /el\.className = 'mb-dim radius-row';/);
+  assert.match(mount[0], /MB\.map\.getContainer\(\)\.appendChild\(el\)/);
+  assert.match(mount[0], /line\.className = 'mb-dim-line';/, 'with the dimension line');
+  assert.match(mount[0], /L\.DomEvent\.disableClickPropagation\(el\)/);
+  assert.match(mount[0], /L\.DomEvent\.disableScrollPropagation\(el\)/);
+  assert.match(read('js/ink.js'), /#toolbar, \.mb-scale-box, \.mb-dim'\)/, 'a finger on the label draws nothing on the map either');
+  // docked under the instructions until there is a circle, attached to it after; never taken off the page while
+  // it is being typed in
+  assert.match(tools, /if \(name === 'circle'\) \{ this\.el\.style\.display = 'inline-flex'; this\.update\(\); return; \}/);
+  assert.match(tools, /if \(document\.activeElement === this\.box\(\)\) \{ this\.dock\(\); return; \}/);
+  assert.match(tools, /MB\.map\.on\('move zoomend viewreset resize', \(\) => this\.update\(\)\)/, 'it follows the map');
+  assert.match(tools, /MB\.map\.on\('zoomstart', \(\) => this\.hide\(\)\)/);
+  assert.match(tools, /MB\.circleRadius\.place\(center\.getLatLng\(\), MB\.circleRadius\.locked \|\| r\);\s*\n\s*MB\.circleRadius\.showLive\(r\);/,
+    'a radius dragged out is shown on the line and read out in the label');
+  assert.match(tools, /if \(!box \|\| this\.locked \|\| \(box\.value && !this\.live\)\) return;/, 'a value typed by hand is never written over');
+  assert.match(tools, /box\.addEventListener\('input', \(\) => \{ this\.live = false; this\.read\(\); \}\)/);
+  assert.match(tools, /if \(document\.activeElement === box\) box\.select\(\)/, 'the first digit typed replaces the readout');
+  // Enter with the center placed is the second click, even on a radius only read out (and never for no radius)
+  const finish = /finish\(\) \{[\s\S]*?\n    \},/.exec(tools);
+  assert.match(finish[0], /if \(!\(r > 0\)\) return false;/);
+  assert.match(finish[0], /draw\._finishShape\(\);\s*\n\s*return true;/);
+  assert.match(tools, /if \(e\.key === 'Enter'\) \{ e\.preventDefault\(\); if \(!this\.finish\(\)\) box\.blur\(\); \}/);
   // a digit typed with the circle tool on starts a radius (the key itself must reach the box)
   const keys = /if \(MB\.tools\.current === 'circle'[\s\S]*?\n      \}/.exec(ui);
   assert.ok(keys, 'js/ui.js sends a digit to the radius box');
   assert.doesNotMatch(keys[0], /preventDefault/, 'the digit lands in the box, so the press is not taken');
-  assert.match(ui, /name === 'circle' \? MB\.circleRadius\.controls\(\)/);
   assert.match(ui, /Radius \$\{MB\.formatDistance\(MB\.circleRadius\.locked\)\}: click the map to place the circle\./);
-  // the hint is redrawn as the radius is typed: the box must not be taken off the page (it would lose the keyboard
-  // and the caret), so the instructions and the warning are changed in place around it
+  // the hint no longer holds any control, and the box docks under it: it is re-placed whenever the hint is redrawn
   const render = /function renderToolHint\(\) \{[\s\S]*?\n  \}/.exec(ui);
   assert.ok(render, 'js/ui.js has renderToolHint');
   assert.doesNotMatch(render[0], /hint\.innerHTML =/, 'the hint is not rebuilt whole');
-  assert.match(render[0], /if \(controls && controls\.parentNode !== hint\) hint\.appendChild\(controls\)/, 'the box stays where it is');
+  assert.match(render[0], /if \(MB\.circleRadius\) MB\.circleRadius\.update\(\);/);
   assert.match(render[0], /txt\.textContent = text;/);
+  assert.match(css, /\.mb-dim \{[^}]*position: absolute;[^}]*cursor: auto;/, 'the label is placed by hand, and is not the map\'s crosshair');
+  assert.match(css, /\.mb-dim \{[^}]*tabular-nums/);
+  assert.match(css, /\.mb-dim-line \{[^}]*border-top: 1px solid var\(--accent\);/);
+  assert.match(css, /\.mb-dim-line::before, \.mb-dim-line::after \{/, 'an arrowhead at each end');
+  assert.match(css, /body\.presenting \.mb-dim, body\.presenting \.mb-dim-line \{ display: none !important; \}/);
   assert.match(css, /#radiusInput \{[^}]*tabular-nums/);
   assert.match(css, /#radiusInput, #radiusUnit \{ height: 36px; font-size: 16px; \}/, 'finger-sized, and no zoom on focus');
+});
+
+test('the radius label sits on the dimension line, under the circle when it does not fit, always inside the map', () => {
+  const box = { w: 90, h: 28, mapW: 800, mapH: 600 };
+  // a wide circle: the label on the line, 14 px clear of the center (never under the pointer, which sets the radius)
+  let o = layout(Object.assign({ cx: 300, cy: 300, rPx: 200 }, box));
+  assert.deepEqual([o.x, o.y], [314, 286], 'beside the center, centered on the line');
+  assert.equal(o.lineLen, 200, 'the line runs from the center out to the edge');
+  assert.equal(o.below, false);
+  // too short a line to hold the label: under the circle instead, centered on it
+  o = layout(Object.assign({ cx: 300, cy: 300, rPx: 40 }, box));
+  assert.equal(o.below, true);
+  assert.deepEqual([o.x, o.y], [255, 350], 'below the circle, out of the way of the line');
+  assert.equal(o.lineLen, 40, 'the line is still drawn');
+  // clamped into the map by 8 px, on every side
+  o = layout(Object.assign({ cx: 795, cy: 598, rPx: 300 }, box));
+  assert.deepEqual([o.x, o.y], [702, 564], 'the far corner: still wholly on screen');
+  o = layout(Object.assign({ cx: 2, cy: 1, rPx: 10 }, box));
+  assert.deepEqual([o.x, o.y], [8, 21], 'and the near one (where it would hang off the left edge)');
+  assert.equal(layout(Object.assign({ cx: 300, cy: 300, rPx: 0 }, box)).lineLen, 0, 'no radius yet: no line');
+});
+
+test('the live radius written into the label reads back as the radius it shows', () => {
+  // tools.js writes the radius of the circle being dragged out into the box as plain digits: short enough to read,
+  // and still a length parseDistance brings back (an empty box for anything too small to be a radius at all)
+  const liveText = (meters, unit) => {
+    const txt = String(+(meters / MB.distanceUnits[unit]).toPrecision(4));
+    return MB.parseDistance(txt, unit) ? txt : '';
+  };
+  for (const unit of ['m', 'km', 'ft', 'mi', 'NM']) {
+    for (const meters of [0.5, 12, 480, 1234.5, 98765]) {
+      const txt = liveText(meters, unit);
+      assert.doesNotMatch(txt, /e/i, meters + ' m in ' + unit + ' is written out in full ("' + txt + '")');
+      const back = MB.parseDistance(txt, unit);
+      assert.ok(back, meters + ' m in ' + unit + ' ("' + txt + '") is still a radius');
+      assert.ok(Math.abs(back.meters - meters) < Math.max(meters * 1e-3, 1e-9), 'and within a thousandth of it (4 digits of it are shown)');
+    }
+    assert.equal(liveText(0.0001, unit), '', 'the drag has barely started: nothing to show yet');
+  }
+  assert.match(read('js/tools.js'), /const text = MB\.parseDistance\(txt, sel\.value\) \? txt : '';/);
 });
 
 test('a finger or stylus can drag a rectangle or a circle out, while the mouse works as before', () => {
@@ -312,9 +542,15 @@ test('a finger or stylus can drag a rectangle or a circle out, while the mouse w
 test('the vendored Geoman still has every private name the rectangle and circle tools build on', () => {
   const geoman = read('vendor/geoman/leaflet-geoman.min.js');
   for (const name of ['_syncRectangleSize', '_finishShape', '_placeStartingMarkers', '_placeCenterMarker', '_styleMarkers',
-    '_centerMarker', '_hintMarker', '_startMarker', '_layerGroup', '_snapped', 'minRadiusCircle', 'maxRadiusCircle', '_setAngle']) {
-    assert.ok(geoman.includes(name), 'vendor/geoman: ' + name + ' (used by js/shapes.js and js/tools.js)');
+    '_centerMarker', '_hintMarker', '_startMarker', '_layerGroup', '_snapped', 'minRadiusCircle', 'maxRadiusCircle', '_setAngle',
+    '_otherSnapLayers', '_cleanupSnapping']) {
+    assert.ok(geoman.includes(name), 'vendor/geoman: ' + name + ' (used by js/shapes.js, js/tools.js and js/geometry.js)');
   }
+  // the line's magnet is the polygon's own: its first vertex marker goes into the snap list, and the list is rebuilt
+  assert.match(geoman, /this\._otherSnapLayers\.push\(t\)-1,this\.options\.snappable&&this\._cleanupSnapping\(\)/,
+    'vendor/geoman: that is what the polygon does with its first vertex (js/geometry.js does it for the line)');
+  assert.match(geoman, /else if\(this\._otherSnapLayers&&this\._otherSnapLayers\.length>0\)/,
+    'vendor/geoman: and they pull the pointer in even with snapping off');
   // the names are wrapped where they are, so an update that renames one is caught here too
   assert.match(read('js/shapes.js'), /L\.PM\.Draw\.Rectangle && L\.PM\.Draw\.Rectangle\.prototype/);
   assert.match(read('js/shapes.js'), /!P\.enable \|\| !P\._syncRectangleSize \|\| !P\._finishShape/, 'a Geoman without them is left alone');
@@ -322,10 +558,10 @@ test('the vendored Geoman still has every private name the rectangle and circle 
   assert.match(read('js/tools.js'), /if \(Circle && Circle\._placeCenterMarker && !Circle\._mbRadiusBox\)/);
 });
 
-test('the arrow keys move along a group of radio buttons that is itself the root given (the rectangle modes)', () => {
+test('the arrow keys move along a group of radio buttons that is itself the root given', () => {
   // MB.ui.radios, as it stands in js/ui.js, run against a stand-in for the buttons: before, it looked for groups
-  // INSIDE what it was given, so a group handed in whole (shapes.js hands in its own radiogroup) got no handler at
-  // all and its unchosen buttons were left out of the keyboard's reach.
+  // INSIDE what it was given, so a group handed in whole got no handler at all and its unchosen buttons were left
+  // out of the keyboard's reach.
   const src = read('js/ui.js');
   const fn = /MB\.ui\.radios = function[\s\S]*?\n  \};/.exec(src);
   assert.ok(fn, 'js/ui.js has MB.ui.radios');
@@ -404,4 +640,52 @@ test("the app's own GeoJSON brings a small turned rectangle back as a rectangle,
   const refresh = /refreshDraw\(\) \{[\s\S]*?\n    \},/.exec(read('js/tools.js'));
   assert.ok(refresh, 'js/tools.js has refreshDraw');
   assert.match(refresh[0], /MB\.circleRadius\.color = null;/, 'the radius ghost takes the new color too');
+});
+
+test("the line tool's first vertex pulls the pointer in from the third vertex on, like the polygon's", () => {
+  const g = loadGeometry();
+  const line = { options: { snappable: true }, _otherSnapLayers: [], cleanups: 0, _cleanupSnapping() { this.cleanups++; }, _finishShape() {} };
+  g.MB.map.pm.Draw.Line = line;
+  const d = drawing(g, 'Line');
+  d.add(0, 0);
+  assert.equal(g.MB.snap.first, d.markers[0], 'the first vertex is kept: the snap ring names it');
+  assert.deepEqual(line._otherSnapLayers, [], 'one point: there is nothing to close yet');
+  d.add(0, 100);
+  assert.deepEqual(line._otherSnapLayers, [], 'two: closing them would make no shape');
+  d.add(100, 100);
+  assert.deepEqual(line._otherSnapLayers, [d.markers[0]], 'three: the first vertex goes to the magnet');
+  assert.equal(line.cleanups, 1, 'and the snap list is rebuilt with it');
+  d.add(100, 0);
+  assert.equal(line._otherSnapLayers.length, 1, 'handed over once only, however long the line gets');
+  assert.equal(line.cleanups, 1);
+  // the polygon's magnet is the drawing library's own: nothing is added for it here
+  line._otherSnapLayers = []; line.cleanups = 0;
+  const p = drawing(g, 'Polygon');
+  p.add(0, 0); p.add(0, 100); p.add(100, 100);
+  assert.deepEqual(line._otherSnapLayers, [], 'the polygon looks after itself');
+  assert.equal(line.cleanups, 0);
+  assert.equal(g.MB.snap.first, p.markers[0], 'but its first vertex is known all the same');
+  g.fire('pm:drawend', {});
+  assert.equal(g.MB.snap.first, null, 'and forgotten when the drawing ends');
+  // closing by a click on the first vertex: either the marker's own press or the pointer pulled onto it
+  const tools = read('js/tools.js');
+  assert.match(tools, /const atFirst = !!hintLL && MB\.isLatLng\(lls\[0\]\) && MB\.pxDist\(lls\[0\], hintLL\) <= 1\.5;/);
+  assert.match(tools, /const byClick = \(this\._closeLine \|\| atFirst\) && lls\.length >= 3 && MB\.isLatLng\(lls\[0\]\);/);
+  assert.match(tools, /const pts = \(byProximity \? lls\.slice\(0, -1\) : lls\)/, 'a vertex dropped on the first one is not kept twice');
+  assert.match(tools, /MB\.restoreFeature\(\{ type: 'polygon', latlngs: \[pts\], layerId: MB\.activeLayer\(\)\.id, style: MB\.newShapeStyle\(true\) \}\)/);
+  assert.match(tools, /MB\.toast\('Closed outline: saved as a polygon \(/);
+});
+
+test('the snap ring on the first vertex of the shape being drawn says "close"', () => {
+  const g = loadGeometry();
+  const marker = { getLatLng: () => ({ lat: 1, lng: 2 }) }; // a vertex marker: no latlngs of its own
+  const ev = { snapLatLng: { lat: 1, lng: 2 }, layerInteractedWith: marker };
+  g.MB.snap.first = marker;
+  g.MB.snap.show(ev);
+  assert.equal(g.MB.snap.marker.text, 'close', 'back on the first vertex: the click closes the shape');
+  assert.equal(g.MB.snap.marker.o.radius, 11, 'and the ring is the bigger one');
+  g.MB.snap.first = { getLatLng: () => ({ lat: 9, lng: 9 }) }; // another shape's first vertex
+  g.MB.snap.show(ev);
+  assert.equal(g.MB.snap.marker.text, 'point', 'any other point is a point');
+  assert.equal(g.MB.snap.marker.o.radius, 8);
 });

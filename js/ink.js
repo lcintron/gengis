@@ -94,9 +94,9 @@ window.MB = window.MB || {};
     },
 
     /* ---------- drawing ---------- */
-    onMap(e) { // over the map itself, not a control, the toolbar or the hint
+    onMap(e) { // over the map itself, not a control, the toolbar, the hint or a tool's own box on the map
       const t = e.target;
-      return t && t.closest && t.closest('.leaflet-container') && !t.closest('.leaflet-control-container, .tool-hint, #toolbar, .mb-scale-box');
+      return t && t.closest && t.closest('.leaflet-container') && !t.closest('.leaflet-control-container, .tool-hint, #toolbar, .mb-scale-box, .mb-dim');
     },
     down(e) {
       if (this.stroke && e.pointerType !== this.stroke.type) { e.preventDefault(); e.stopPropagation(); return; } // a palm on the glass while writing: nothing

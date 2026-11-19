@@ -67,7 +67,7 @@ Informational only: not for navigation or flight authorization.
 | Key | Action |
 | --- | --- |
 | V / G / K | Select / Move / Scale and rotate (drag the round handle; Shift: 15° steps) |
-| M / T / L / P / R / C / S | Marker / Text / Line / Polygon / Shape / Circle / Image |
+| M / T / L / P / R / C / S | Marker / Text / Line / Polygon (its button: preset shapes) / Rectangle (again: its next mode) / Circle / Image |
 | N | Freehand annotation |
 | I | Icons |
 | D / A | Measure distance / area (Enter finishes) |
