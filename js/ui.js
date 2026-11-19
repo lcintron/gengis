@@ -66,6 +66,7 @@ window.MB = window.MB || {};
     const num = box.querySelector('input');
     num.max = +((+range.dataset.softMax || max) * scale).toFixed(4); num.step = 'any';
     const show = () => { num.min = +(min() * scale).toFixed(4); num.value = +(+range.value * scale).toFixed(decimals); };
+    range._mbShow = show; // for MB.ui.showSlider: a slider set from code, whose box has no input event to follow
     const soft = +range.dataset.softMax || 0; // a slider whose end is only where dragging stops (a text's size): typed values go past it
     const set = v => {
       if (!isFinite(v)) { show(); return; }
@@ -103,6 +104,10 @@ window.MB = window.MB || {};
     sync(); show();
   }
   MB.ui.stepper = stepper;
+  // A slider set from code (the Scale tool resized the object): its number box shows the new value and the end the
+  // slider has now, without an input event — so nothing behind the slider re-applies or saves anything. A slider
+  // with no box yet (one just built): nothing to show.
+  MB.ui.showSlider = range => { if (range && range._mbShow) range._mbShow(); };
   function enhanceSliders(root) { (root.matches && root.matches('input[type="range"]') ? [root] : root.querySelectorAll ? root.querySelectorAll('input[type="range"]') : []).forEach(stepper); }
   new MutationObserver(list => list.forEach(r => r.addedNodes.forEach(n => {
     if (n.nodeType === 1 && !(n.closest && n.closest('.leaflet-pane'))) enhanceSliders(n);
@@ -1170,6 +1175,7 @@ window.MB = window.MB || {};
   }
 
   let rotSync = null; // the Rotation row of the object shown in Properties (null while none is), so the knob can refresh it
+  let textSizeSync = null; // and a text's Size row, so the Scale tool's handles can
 
   // A "Rotation" row: how far the object is turned, in degrees (the Scale tool's knob does the same by hand). The
   // slider stops at 359: 360° is 0° again, and the thumb would sit at the far end showing the same angle as the
@@ -1209,6 +1215,7 @@ window.MB = window.MB || {};
     panel.innerHTML = '';
     labelSizeSync = null; // (the label form sets it again, if there is one)
     rotSync = null;       // (and so does the rotation row)
+    textSizeSync = null;  // (and the text form its size row)
     panel.classList.remove('props-locked');
     $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
@@ -1286,7 +1293,21 @@ window.MB = window.MB || {};
         MB.scaler.follow(f);
         MB.commitDebounced('rotate');
       }));
-      panel.appendChild(styleForm(['text'], () => m.style, patch => MB.applyStyle(f, patch)));
+      const form = styleForm(['text'], () => m.style, patch => MB.applyStyle(f, patch));
+      panel.appendChild(form);
+      // The size it shows at now, after the Scale tool's handles resized the text: the slider, its readout and its
+      // number box are set outright, with nothing applied and nothing saved (as rotSync does for the angle). The
+      // panel is not drawn anew, so the keyboard stays where it is.
+      const sizeInp = $('[data-k="textSize"]', form), sizeOut = $('[data-val="textSize"]', form);
+      if (sizeInp) textSizeSync = () => {
+        const px = MB.textShownSize(m.style);
+        if (+sizeInp.value === px) return;
+        if (px > +sizeInp.max) sizeInp.max = String(px);
+        if (px < +sizeInp.min) sizeInp.min = String(Math.max(1, px));
+        sizeInp.value = String(px);
+        if (sizeOut) sizeOut.textContent = px + 'px';
+        MB.ui.showSlider(sizeInp); // the number box beside it, which no input event reaches here
+      };
     } else if (m.type === 'svg') {
       panel.appendChild(svgProps(f));
     } else if (m.type === 'marker') {
@@ -2213,7 +2234,7 @@ window.MB = window.MB || {};
     // zoom display: the list dims what the zoom hides, the selected object's note says whether it is shown
     MB.on('zoomdisplay', () => MB.ui.renderLayersSoon());
     MB.map.on('zoomend', () => MB.ui.renderZoomNote());
-    MB.on('featurechange', l => { if (l === MB.selected) { MB.ui.renderMeasureBox(); if (rotSync) rotSync(); } }); // (the knob turned it: its Rotation row follows, the panel is not drawn anew)
+    MB.on('featurechange', l => { if (l === MB.selected) { MB.ui.renderMeasureBox(); if (rotSync) rotSync(); if (textSizeSync) textSizeSync(); } }); // (the knob turned it, a handle resized it: its Rotation and Size rows follow, the panel is not drawn anew)
     MB.on('project', () => { MB.ui.renderSettings(); MB.ui.renderSvgPanel(); $('#basemapSelect').value = MB.state.basemap; });
     MB.on('poi-request', term => { MB.ui.showTab('places'); setTimeout(() => MB.ui.runPoiSearch(term), 800); });
     MB.on('feature-contextmenu', info => MB.menus.feature(info));
