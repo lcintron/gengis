@@ -75,6 +75,67 @@ function markerSnap(S, style, at) {
   return sn;
 }
 
+// A marker's Size row in Properties, driven by the real sizeSync out of js/ui.js and the real stepper around it, over
+// a fake row (as tests/textsize.test.js does for a text's): the slider, its px readout, the number box beside it, and
+// the real MB.markerSize the row is built from.
+const uiSrc = read('js/ui.js');
+const SIZE_SYNC = uiSrc.match(/const sizeInp = \$\('\[data-k="markerSize"\]', form\)[\s\S]*?\n      \};/)[0];
+const STEPPER = uiSrc.slice(uiSrc.indexOf('function stepper(range)'), uiSrc.indexOf('function enhanceSliders(root)'));
+// The row as styleForm writes it (js/ui.js), for a shape and the size that marker is now: its own template, run here.
+const SIZE_ROW = uiSrc.match(/<div class="row" data-row="markerSize"[\s\S]*?<\/div>/)[0];
+const rowHtml = (shape, size) => vm.runInNewContext('`' + SIZE_ROW + '`', { shape, size, Math });
+const rowEnds = html => { const a = {}; html.replace(/(min|max|value)="([^"]*)"/g, (_, k, v) => { if (!(k in a)) a[k] = +v; return ''; }); return a; };
+
+function sizeRow(opts) {
+  const L = { divIcon: o => ({ options: o }) };
+  const ctx = { window: {}, L, console, Math, Date, setTimeout, clearTimeout, setInterval, clearInterval };
+  vm.createContext(ctx);
+  vm.runInContext(read('js/util.js'), ctx, { filename: 'util.js' });
+  const M = ctx.window.MB, calls = [], dispatched = [];
+  ctx.MB = M;
+  M.ui = {};
+  M.applyStyle = () => calls.push('applyStyle');
+  M.commit = () => calls.push('commit');
+  M.commitDebounced = () => calls.push('commitDebounced');
+  // the few DOM pieces a size row and the stepper around it use
+  const el = (tag, attrs) => Object.assign({
+    tagName: tag.toUpperCase(), dataset: {}, style: {}, title: '', hidden: false, disabled: false, children: [], handlers: {},
+    classList: { toggle() {}, contains: () => false },
+    addEventListener(t, fn) { (this.handlers[t] = this.handlers[t] || []).push(fn); },
+    dispatchEvent(ev) { dispatched.push(ev.type); (this.handlers[ev.type] || []).forEach(fn => fn(ev)); return true; },
+    fire(t) { this.dispatchEvent({ type: t }); },
+    after() {}, closest: () => null, select() {}, focus() {}, blur() {},
+    querySelector(sel) { return this.children.find(c => c.tagName === sel.toUpperCase()) || null; },
+    querySelectorAll(sel) { return this.children.filter(c => c.tagName === sel.toUpperCase()); }
+  }, attrs || {});
+  const out = el('span', { textContent: opts.value + 'px', classList: { toggle() {}, contains: c => c === 'val' } });
+  const inp = el('input', { type: 'range', min: String(opts.min), max: String(opts.max), step: '1',
+    nextElementSibling: out }); // as styleForm builds it (no soft end: a marker's size stops at the slider's own)
+  // a range input as a browser keeps it: a value outside min..max is clamped, at build time and whenever it is set,
+  // so the order the ends and the value are set in matters
+  let val = Math.min(+inp.max, Math.max(+inp.min, opts.value));
+  Object.defineProperty(inp, 'value', {
+    get: () => String(val), set(v) { val = Math.min(+inp.max, Math.max(+inp.min, +v)); }, enumerable: true, configurable: true
+  });
+  const num = el('input'), up = el('button', { dataset: { d: '1' } }), down = el('button', { dataset: { d: '-1' } });
+  const box = el('span', { children: [num, up, down] });
+  Object.assign(ctx, { document: { createElement: () => box }, MutationObserver: class { observe() {} },
+    Event: class { constructor(t) { this.type = t; } }, esc: s => String(s) });
+  vm.runInContext(STEPPER, ctx, { filename: 'stepper' });
+  if (opts.stepper) vm.runInContext('stepper(range);', Object.assign(ctx, { range: inp }), { filename: 'stepper-run' });
+  ctx.m = { style: opts.style };
+  ctx.form = {};
+  ctx.$ = sel => (sel === '[data-k="markerSize"]' ? inp : sel === '[data-val="markerSize"]' ? out : null);
+  const sync = vm.runInContext('(() => { let sizeSync = null;\n' + SIZE_SYNC + '\nreturn sizeSync; })()', ctx, { filename: 'sizeSync' });
+  return { MB: M, inp, out, num, up, down, calls, dispatched, sync, shown: () => M.markerSize(opts.style) };
+}
+// The same row, with its ends and value as styleForm's own template builds them for this marker: Properties drawn anew
+// (a reselect, a shape switch, undo) instead of the sync.
+function builtSizeRow(style, opts) {
+  const size = MB.markerSize(style), a = rowEnds(rowHtml(MB.markerShape(style), size));
+  return Object.assign(sizeRow(Object.assign({ style }, a, opts)), { built: a });
+}
+
 test('a marker is drawn as an icon only when it has one: its name, never markup from a file', () => {
   assert.equal(MB.markerShape({ markerShape: 'icon', markerIcon: 'plane' }), 'icon');
   assert.equal(MB.markerShape({ markerShape: 'icon' }), 'pin', 'an icon shape with no icon: the pin, as an unknown shape');
@@ -234,7 +295,7 @@ test('Properties switches a marker to an icon and back: the icon, its outline an
   // the shape row: six shapes, the icon's own rows only when it is one
   assert.match(ui, /data-set="markerShape"/);
   assert.match(ui, /class="seg small marker-shapes shape-row"/);
-  assert.match(ui, /max="\$\{shape === 'icon' \? 96 : 40\}" step="1" value="\$\{size\}"/);
+  assert.match(ui, /max="\$\{Math\.max\(shape === 'icon' \? 96 : 40, size\)\}" step="1" value="\$\{size\}"/, 'an icon reaches 96 px, a shape 40 - and either, the size it is now');
   assert.match(ui, /data-k="markerSize"/);
   assert.match(ui, /data-act="pick-icon"[^\n]*aria-label="Icon: \$\{esc\(name\)\}\. Choose another"/, 'the name is escaped into the label');
   assert.match(ui, /<span class="icon-name">\$\{esc\(name\)\}<\/span>/);
@@ -385,6 +446,115 @@ test('review fixes: the Size row follows a handle resize, the Scale box follows 
   assert.match(read('js/icons.js'), /ISC license/);
   assert.match(read('index.html'), /\(ISC license\)/);
   assert.doesNotMatch(read('js/icons.js'), /licence|normalised|colour/);
+});
+
+test('the number box beside the marker\'s Size slider follows the sync too, with nothing dispatched and nothing saved', () => {
+  // the Scale tool's handles grew the icon from 28 px to 72 (js/scaletool.js applies the style, with no commit)
+  const r = sizeRow({ value: 28, min: 8, max: 96, stepper: true, style: { markerShape: 'icon', markerIcon: 'plane', markerSize: 72 } });
+  assert.equal(r.shown(), 72);
+  assert.equal(+r.num.value, 28, 'the box as the row was built');
+  assert.equal(r.out.hidden, true, 'the plain readout is hidden: the box is what is on screen');
+  r.sync();
+  assert.equal(r.inp.value, '72', 'the slider is where the icon is now');
+  assert.equal(r.out.textContent, '72px', 'and so is its readout');
+  assert.equal(+r.num.value, 72, 'the number on screen is the size the icon is now');
+  assert.equal(+r.num.max, 96, 'the box keeps the end an icon has');
+  assert.deepEqual(r.dispatched, [], 'the slider fired nothing: nothing behind it re-applied or saved the size');
+  assert.deepEqual(r.calls, [], 'nothing applied, nothing saved');
+  assert.equal(r.inp.min, '8', 'the slider keeps the ends it had');
+  assert.equal(r.inp.max, '96');
+  assert.match(SIZE_SYNC, /MB\.ui\.showSlider\(sizeInp\);/, 'the box is what showSlider is there for');
+  assert.doesNotMatch(SIZE_SYNC, /applyStyle|commit|dispatchEvent/, 'the sync applies nothing and saves nothing');
+});
+
+test('an icon shrunk below its slider\'s low end lowers it, so the slider and the box show the size it really is', () => {
+  // the handles take an icon marker down to 6 px (js/scaletool.js), below the min="8" the row is built with
+  const r = sizeRow({ value: 28, min: 8, max: 96, stepper: true, style: { markerShape: 'icon', markerIcon: 'plane', markerSize: 6 } });
+  assert.equal(r.shown(), 6);
+  r.sync();
+  assert.equal(r.inp.min, '6', 'the low end follows it down, so the browser clamps nothing');
+  assert.equal(r.inp.value, '6');
+  assert.equal(r.out.textContent, '6px');
+  assert.equal(+r.num.value, 6, 'the number box shows 6, not the 8 the slider started at');
+  assert.equal(+r.num.min, 6, 'and takes the end the slider has now');
+  assert.deepEqual(r.dispatched, []);
+  assert.deepEqual(r.calls, []);
+  // the box steps on from there: down stays at the smallest size an icon has, up goes on from it
+  r.down.dispatchEvent({ type: 'pointerdown', button: 0, preventDefault() {} });
+  r.down.fire('pointerup'); // (held down it would repeat)
+  assert.equal(r.inp.value, '6', 'a nudge down from the smallest size stays there');
+  assert.equal(+r.num.value, 6);
+  r.up.dispatchEvent({ type: 'pointerdown', button: 0, preventDefault() {} });
+  r.up.fire('pointerup');
+  assert.equal(r.inp.value, '7');
+  assert.equal(+r.num.value, 7);
+  // the low end never goes under 1, whatever size is read (MB.markerSize stops at 6, so this is the guard alone)
+  assert.match(SIZE_SYNC, /if \(px < \+sizeInp\.min\) sizeInp\.min = String\(Math\.max\(1, px\)\);/);
+  assert.ok(+r.inp.min >= 1);
+});
+
+test('the size the marker\'s row shows already is no change at all, and a size past the slider\'s end widens it', () => {
+  const r = sizeRow({ value: 32, min: 8, max: 96, stepper: true, style: { markerShape: 'icon', markerIcon: 'plane', markerSize: 32 } });
+  r.out.textContent = 'untouched';
+  r.sync();
+  assert.equal(r.inp.value, '32');
+  assert.equal(r.out.textContent, 'untouched', 'no readout rewritten');
+  assert.equal(+r.num.value, 32);
+  assert.deepEqual(r.dispatched, []);
+  assert.deepEqual(r.calls, []);
+  // a dot marker's row ends at 40: switched to an icon and grown, the slider reaches the size it is now
+  const d = sizeRow({ value: 28, min: 8, max: 40, stepper: true, style: { markerShape: 'icon', markerIcon: 'plane', markerSize: 80 } });
+  d.sync();
+  assert.equal(d.inp.max, '80');
+  assert.equal(d.inp.value, '80');
+  assert.equal(+d.num.value, 80);
+  // and a row just built, with no box beside it yet: set all the same, nothing throws
+  const bare = sizeRow({ value: 28, min: 8, max: 96, style: { markerShape: 'icon', markerIcon: 'plane', markerSize: 48 } });
+  assert.doesNotThrow(() => bare.sync());
+  assert.equal(bare.inp.value, '48');
+  assert.equal(bare.out.textContent, '48px');
+});
+
+test('the Size row is built around the size the marker is now, so a reselect keeps it: 6 px shows 6, not the slider\'s 8', () => {
+  // an icon the handles took down to 6 px, then Properties drawn anew (a reselect, an undo, a shape switch)
+  const style = { markerShape: 'icon', markerIcon: 'plane', markerSize: 6 };
+  const r = builtSizeRow(style, { stepper: true });
+  assert.deepEqual(r.built, { min: 6, max: 96, value: 6 }, 'the row\'s own ends take the size in');
+  assert.equal(r.inp.value, '6', 'nothing for the browser to clamp');
+  assert.equal(+r.num.value, 6, 'and the number box shows the size it really is');
+  assert.equal(r.out.textContent, '6px');
+  // (built with a low end of 8, as it was, the browser clamps the 6 away: the fake slider clamps the same)
+  const old = sizeRow({ value: 6, min: 8, max: 96, stepper: true, style });
+  assert.equal(old.inp.value, '8');
+  assert.equal(+old.num.value, 8);
+  // so the box's down arrow cannot grow it: the smallest size stays the smallest
+  r.down.dispatchEvent({ type: 'pointerdown', button: 0, preventDefault() {} });
+  r.down.fire('pointerup');
+  assert.equal(r.inp.value, '6', 'a "decrease" never nudges it up to 8');
+  assert.equal(+r.num.value, 6);
+  // a size within the slider's own ends leaves them as they were
+  assert.deepEqual(rowEnds(rowHtml('icon', 28)), { min: 8, max: 96, value: 28 });
+  assert.deepEqual(rowEnds(rowHtml('dot', 16)), { min: 8, max: 40, value: 16 });
+  assert.match(rowHtml('pin', 32), /data-row="markerSize" hidden/, 'a pin has one size: its row stays hidden');
+});
+
+test('a plain shape\'s Size row reaches the 48 px MB.markerSize allows it, whatever size an icon was switched from', () => {
+  // an icon at 80 px switched to Dot: markerSize keeps 48 of it, and the row (max 40 for a shape) must reach that
+  const style = { markerShape: 'dot', markerSize: 80 };
+  assert.equal(MB.markerSize(style), 48);
+  const r = builtSizeRow(style, { stepper: true });
+  assert.ok(r.built.max >= 48, 'the row reaches the size the marker is now');
+  assert.deepEqual(r.built, { min: 8, max: 48, value: 48 });
+  assert.equal(r.inp.value, '48', 'the slider shows 48, never the 40 it would be clamped to');
+  assert.equal(+r.num.value, 48);
+  assert.equal(r.out.textContent, '48px');
+  // and a shape switch to or from an icon draws Properties anew, so the row is rebuilt with those ends
+  const marker = uiSrc.slice(uiSrc.indexOf("} else if (m.type === 'marker') {"), uiSrc.indexOf("} else if (m.type === 'ink') {"));
+  assert.match(marker, /const reshaped = 'markerShape' in patch && \(patch\.markerShape === 'icon'\) !== \(MB\.markerShape\(m\.style\) === 'icon'\);/);
+  assert.match(marker, /if \(reshaped\) \{\s*\n\s*rescaleBox\(f\); [^\n]*\n\s*MB\.ui\.renderProps\(\);/, 'the icon\'s rows come and go with a redraw');
+  // between two plain shapes the row is only kept as it is: they share one limit, so its ends still fit
+  assert.match(uiSrc, /if \(group\.dataset\.set === 'markerShape'\) \{ const row = \$\('\[data-row="markerSize"\]', wrap\); if \(row\) row\.hidden = b\.dataset\.v === 'pin'; \}/);
+  assert.equal(rowEnds(rowHtml('square', 48)).max, 48);
 });
 
 test('the Scale tool holds an icon marker but never a plain one, so a shape switch works the box out from the selection', () => {

@@ -212,8 +212,8 @@ test('the Rotation row follows the knob: its value and readout are resynced, nev
   assert.match(ui, /const rotInp = \$\('\[data-k="rotation"\]', wrap\);\s*\n\s*rotSync = \(\) => \{[\s\S]*?rotVal\(svg\)[\s\S]*?rotInp\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\);/);
   assert.match(ui, /\$\$\('\[data-k\]', wrap\)\.forEach\(inp => \{[\s\S]*?if \(syncing\) return;/);
   // and the knob's featurechange is what calls it (Properties itself is only drawn anew on a selection change)
-  assert.match(ui, /MB\.on\('featurechange', l => \{ if \(l === MB\.selected\) \{ MB\.ui\.renderMeasureBox\(\); if \(rotSync\) rotSync\(\); if \(sizeSync\) sizeSync\(\); \} \}\)/,
-    'along with a marker\'s Size row, which a handle resize changes');
+  assert.match(ui, /MB\.on\('featurechange', l => \{ if \(l === MB\.selected\) \{ MB\.ui\.renderMeasureBox\(\); if \(rotSync\) rotSync\(\); if \(sizeSync\) sizeSync\(\); if \(textSizeSync\) textSizeSync\(\); \} \}\)/,
+    'along with a marker\'s Size row, which a handle resize changes, and a text\'s (tests/iconmarkers.test.js, tests/textsize.test.js)');
   assert.match(read('js/scaletool.js'), /this\.targets\.forEach\(l => MB\.emit\('featurechange', l\)\);/, 'which the end of a knob drag emits');
 });
 
