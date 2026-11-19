@@ -10,13 +10,15 @@ window.MB = window.MB || {};
   const MIN = 4; // px: the smallest a selection can be scaled down to, across
   const SNAP_DEG = 15; // the steps a turn takes with Shift held
 
-  // Objects that keep their proportions whatever the handle: a circle stays round, a text and an image keep their
-  // shape, and a turned rectangle stays a rectangle (stretched one way only it would skew into a parallelogram).
-  // A selection with one of them scales alike both ways.
+  // Objects that keep their proportions whatever the handle: a circle stays round, a text, an image and an icon
+  // marker keep their shape, and a turned rectangle stays a rectangle (stretched one way only it would skew into a
+  // parallelogram). A selection with one of them scales alike both ways.
   const turnedRect = layer => layer.mb.type === 'rectangle' && layer.getLatLngs && !MB.isAxisRect(layer.getLatLngs()[0] || []);
-  const uniform = layer => ['circle', 'text', 'svg'].includes(layer.mb.type) || turnedRect(layer);
-  // Markers are pins of a fixed size: nothing to scale (in a group they move with it).
-  MB.canScale = layer => !!layer && !!layer.mb && layer.mb.type !== 'marker';
+  const iconMarker = layer => layer.mb.type === 'marker' && MB.markerShape(layer.mb.style) === 'icon';
+  const uniform = layer => ['circle', 'text', 'svg'].includes(layer.mb.type) || turnedRect(layer) || iconMarker(layer);
+  // The plain markers are symbols of a fixed size: nothing to scale (in a group they move with it). An icon marker
+  // is scaled, as its size in px (markerSize).
+  MB.canScale = layer => !!layer && !!layer.mb && (layer.mb.type !== 'marker' || iconMarker(layer));
 
   // Screen pixels, unrounded (Leaflet's latLngToContainerPoint rounds to whole pixels: every scaling would move the
   // vertices onto the pixel grid, by up to half a pixel's worth of ground when zoomed out).
@@ -75,9 +77,9 @@ window.MB = window.MB || {};
     if (t === 'circle') { sn.center = cp(layer.getLatLng()); sn.radius = layer.getRadius(); }
     else if (t === 'text') { sn.pos = cp(layer.getLatLng()); sn.size = MB.textShownSize(layer.mb.style); }
     else if (t === 'svg') { sn.pos = cp(MB.svgCenter(layer)); sn.width = +layer.mb.svg.width; }
-    else if (t === 'marker') sn.pos = cp(layer.getLatLng());
+    else if (t === 'marker') { sn.pos = cp(layer.getLatLng()); if (iconMarker(layer)) sn.size = MB.markerSize(layer.mb.style); } // an icon marker is resized too
     else sn.pts = mapNested(layer.getLatLngs(), cp);
-    if (t === 'text' || t === 'svg') sn.rot = MB.getRotation(layer); // its own angle, turned along with its place
+    if (MB.hasRotation(layer)) sn.rot = MB.getRotation(layer); // its own angle, turned along with its place
     sn.orig = { lls: layer.getLatLngs && !(layer instanceof L.Circle) ? mapNested(layer.getLatLngs(), p => L.latLng(p.lat, p.lng)) : null,
       ll: layer.getLatLng ? L.latLng(layer.getLatLng()) : null, radius: layer.getRadius ? layer.getRadius() : null,
       bounds: t === 'svg' && layer.setBounds ? L.latLngBounds(layer.getBounds().getSouthWest(), layer.getBounds().getNorthEast()) : null,
@@ -87,11 +89,20 @@ window.MB = window.MB || {};
 
   // The object as snapshotted, its points through `to` (screen pixels) and its sizes times s; (ax, ay): the point
   // that stays put, for a text (whose box does not grow quite in step with its font: its padding stays, sizes are
-  // whole pixels, so it is moved to keep that point's place on its box).
-  function transform(sn, to, s, ax, ay) {
+  // whole pixels, so it is moved to keep that point's place on its box) and for an icon marker (whose size stops at
+  // its limits). `lone`: the only object being scaled, so its own size is what the box follows.
+  function transform(sn, to, s, ax, ay, lone) {
     const layer = sn.layer, t = layer.mb.type;
     if (t === 'circle') { layer.setLatLng(ll(to(sn.center))); layer.setRadius(Math.max(0.01, sn.radius * s)); }
-    else if (t === 'marker') layer.setLatLng(ll(to(sn.pos)));
+    else if (t === 'marker') {
+      // an icon marker: its size in px, between 6 and 96. Scaled on its own, its place follows the size it really
+      // takes, so the corner opposite the handle stays put once the size has stopped growing (in a group it keeps
+      // moving with the group: the others still scale by the group's own factor).
+      const size = sn.size && s !== 1 ? Math.max(6, Math.min(96, Math.round(sn.size * s))) : 0;
+      const es = size && lone ? size / sn.size : s; // the factor its place really takes (an icon marker is scaled alike both ways)
+      layer.setLatLng(ll(es === s ? to(sn.pos) : L.point(ax + (sn.pos.x - ax) * es, ay + (sn.pos.y - ay) * es)));
+      if (size) MB.applyStyle(layer, { markerSize: size }, { noCommit: true });
+    }
     else if (t === 'text') {
       if (s === 1) layer.setLatLng(ll(to(sn.pos)));
       else {
@@ -121,7 +132,13 @@ window.MB = window.MB || {};
     if (t === 'circle') { layer.setLatLng(o.ll); layer.setRadius(o.radius); }
     else if (t === 'text') { Object.assign(layer.mb.style, o.style); MB.applyTextStyle(layer); layer.setLatLng(o.ll); }
     else if (t === 'svg') { layer.mb.svg.width = o.svgWidth; if (o.bounds) layer.setBounds(o.bounds); else layer.setLatLng(o.ll); MB.refreshSvg(layer); }
-    else if (t === 'marker') layer.setLatLng(o.ll);
+    else if (t === 'marker') {
+      layer.setLatLng(o.ll);
+      if (sn.size) { // an icon marker: the size it was (gone again when it had none of its own)
+        if ('markerSize' in o.style) layer.mb.style.markerSize = o.style.markerSize; else delete layer.mb.style.markerSize;
+        MB.applyStyle(layer, {}, { noCommit: true });
+      }
+    }
     else layer.setLatLngs(o.lls);
     if (sn.rot != null) MB.setRotation(layer, sn.rot); // as far turned as it was
     MB.updateTooltip(layer);
@@ -131,7 +148,7 @@ window.MB = window.MB || {};
   // rectangle's first edge); null for an object with no angle of its own, whose turn is snapped instead.
   function startAngle(layer) {
     const t = layer.mb.type;
-    if (t === 'text' || t === 'svg') return MB.getRotation(layer);
+    if (MB.hasRotation(layer)) return MB.getRotation(layer);
     if (t === 'rectangle' && layer.getLatLngs) return MB.ringAngle((layer.getLatLngs() || [])[0] || []);
     return null;
   }
@@ -175,11 +192,11 @@ window.MB = window.MB || {};
       this.detach();
       const frame = !!(opts && opts.frame);
       layers = [].concat(layers).filter(Boolean);
-      if (!frame && layers.length === 1 && !MB.canScale(layers[0])) { MB.toast('Markers have a fixed size: pick a line, shape, text or image to scale'); return; }
+      if (!frame && layers.length === 1 && !MB.canScale(layers[0])) { MB.toast('Markers have a fixed size: pick a line, shape, text, image or icon marker to scale'); return; }
       this.targets = layers;
       this.frame = frame;
       this.box.classList.toggle('frame', frame);
-      // nothing to turn: the Move tool's frame, or a lone circle (round already) or marker (a pin stands upright)
+      // nothing to turn: the Move tool's frame, or a lone circle (round already) or plain marker (a pin stands upright)
       this.box.classList.toggle('no-rotate', frame || (layers.length === 1 && !MB.canRotate(layers[0])));
       this.place();
     },
@@ -281,7 +298,8 @@ window.MB = window.MB || {};
     // The selection as it was when the handle was grabbed, scaled by sx, sy about the point (ax, ay) on screen.
     scale(sx, sy, ax, ay) {
       const to = p => L.point(ax + (p.x - ax) * sx, ay + (p.y - ay) * sy);
-      this.drag.snaps.forEach(sn => transform(sn, to, sx, ax, ay));
+      const lone = this.drag.snaps.length === 1; // one object: the box is its own, so a size that stops stops its place too
+      this.drag.snaps.forEach(sn => transform(sn, to, sx, ax, ay, lone));
       this.place();
     },
 

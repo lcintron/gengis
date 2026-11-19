@@ -20,6 +20,7 @@ window.MB = window.MB || {};
     shape: 'Drag a box to draw the shape (Shift keeps its proportions), or click for a default size.',
     circle: 'Click the center, then click to set the radius.',
     svg: 'Click the map to place the image. Choose a different one in the Images panel.',
+    icon: 'Click the map to place the icon as a marker. Press I to choose another.',
     'measure-distance': 'Click points to measure. Double-click or Enter to finish (saved to the active layer), Esc to cancel.',
     'measure-area': 'Click at least 3 points. Double-click or Enter to finish (saved to the active layer), Esc to cancel.'
   };
@@ -590,6 +591,7 @@ window.MB = window.MB || {};
     $$('#toolbar button[data-tool]:not(#shapeBtn)').forEach(b => b.addEventListener('click', () => MB.tools.set(b.dataset.tool))); // Shapes opens its palette (shapes.js)
     MB.on('tool', name => {
       $$('#toolbar button[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
+      $('#iconBtn').classList.toggle('active', name === 'icon'); // (it opens the picker, so it has no data-tool of its own)
       renderToolHint();
       if (name === 'svg') MB.ui.showTab('svg');
       MB.ui.renderSvgPanel();
@@ -603,7 +605,7 @@ window.MB = window.MB || {};
   }
 
   // The tools that add something to the active layer.
-  const ADDING_TOOLS = ['marker', 'text', 'line', 'polygon', 'rectangle', 'shape', 'circle', 'svg', 'measure-distance', 'measure-area'];
+  const ADDING_TOOLS = ['marker', 'text', 'line', 'polygon', 'rectangle', 'shape', 'circle', 'svg', 'icon', 'measure-distance', 'measure-area'];
 
   // The hint under the toolbar: how to use the tool, and a warning when what it adds goes to a hidden layer.
   function renderToolHint() {
@@ -619,6 +621,9 @@ window.MB = window.MB || {};
     let text = toolHints[name] || '';
     if (name === 'svg' && MB.svgPlace.svgId && MB.state.svgLibrary[MB.svgPlace.svgId]) {
       text = 'Click the map to place "' + MB.state.svgLibrary[MB.svgPlace.svgId].name + '". Choose a different one in the Images panel.';
+    }
+    if (name === 'icon' && MB.iconPlace.icon) {
+      text = 'Click the map to place "' + MB.iconPlace.icon.name + '" as a marker. Press I to choose another.'; // (the name lands in textContent below)
     }
     if (name === 'rectangle') text = rectHints[MB.rectDraw.mode] || text;
     if (name === 'circle' && MB.circleRadius.locked) text = `Radius ${MB.formatDistance(MB.circleRadius.locked)}: click the map to place the circle.`;
@@ -1042,6 +1047,14 @@ window.MB = window.MB || {};
     pasteStyle: svgIcon('M5 4h11v4H5zM16 6h3v5h-8v3M10 14h2v7h-2z') // a paint roller
   };
 
+  // An icon of the set, drawn small in the current text color (the marker shape button, the Icon row): a generic
+  // glyph while the set is not loaded yet, or when the name is unknown. Only the name ever comes from a file.
+  function iconGlyph(name, px) {
+    const inner = MB.iconInner(name);
+    if (inner) return MB.iconMarkerSvg(inner, 'currentColor', px, false, 0);
+    return `<svg viewBox="0 0 24 24" width="${px}" height="${px}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2l2.5 6.3 6.3 2.5-6.3 2.5-2.5 6.3-2.5-6.3L3.2 12l6.3-2.5z"/></svg>`; // a sparkle
+  }
+
   // The Paste style button's tip: what is on the clipboard, and whether it fits this object.
   function pasteTip(f) {
     const cb = MB.styleClipboard;
@@ -1059,12 +1072,19 @@ window.MB = window.MB || {};
     let html = '';
     if (sections.includes('stroke')) {
       html += `<div class="section"><h3>${sections.includes('markerOnly') ? 'Marker' : 'Border / line'}</h3>
-        <div class="row"><label>Color</label><input type="color" data-k="color" value="${st.color}"><span class="grow"></span></div>`;
-      if (sections.includes('markerOnly')) { // its shape: the pin, or a smaller symbol centred on the point
+        <div class="row"><label>Color</label><input type="color" data-k="color" value="${esc(st.color)}"><span class="grow"></span></div>`;
+      if (sections.includes('markerOnly')) { // its shape: the pin, a smaller symbol centered on the point, or an icon
         const shape = MB.markerShape(st), size = MB.markerSize(st);
-        html += `<div class="row"><label>Shape</label><div class="seg small marker-shapes" data-set="markerShape" role="group" aria-label="Marker shape">${Object.keys(MB.markerShapes).map(k =>
-          `<button type="button" data-v="${k}"${shape === k ? ' class="active"' : ''} title="${MB.markerShapes[k]}" aria-label="${MB.markerShapes[k]}" aria-pressed="${shape === k}">${k === 'pin' ? MB.pinIconSvg('currentColor').replace('width="26" height="40"', 'width="11" height="17"') : MB.shapeSvg(k, 'currentColor', 14)}</button>`).join('')}</div></div>
-        <div class="row" data-row="markerSize"${shape === 'pin' ? ' hidden' : ''}><label>Size</label><input type="range" data-k="markerSize" min="8" max="40" step="1" value="${size}" aria-label="Marker size"><span class="val" data-val="markerSize">${size}px</span></div>`;
+        const name = typeof st.markerIcon === 'string' ? st.markerIcon : '';
+        const glyph = k => k === 'pin' ? MB.pinIconSvg('currentColor').replace('width="26" height="40"', 'width="11" height="17"')
+          : k === 'icon' ? iconGlyph(name, 14) : MB.shapeSvg(k, 'currentColor', 14);
+        html += `<div class="row"><label>Shape</label><div class="seg small marker-shapes shape-row" data-set="markerShape" role="group" aria-label="Marker shape">${Object.keys(MB.markerShapes).map(k =>
+          `<button type="button" data-v="${k}"${shape === k ? ' class="active"' : ''} title="${MB.markerShapes[k]}" aria-label="${MB.markerShapes[k]}" aria-pressed="${shape === k}">${glyph(k)}</button>`).join('')}</div></div>
+        <div class="row" data-row="markerSize"${shape === 'pin' ? ' hidden' : ''}><label>Size</label><input type="range" data-k="markerSize" min="8" max="${shape === 'icon' ? 96 : 40}" step="1" value="${size}" aria-label="Marker size"><span class="val" data-val="markerSize">${size}px</span></div>`;
+        if (shape === 'icon') { // which icon, and its outline (its angle: the Rotation row below the form)
+          html += `<div class="row"><label>Icon</label><button type="button" class="btn small with-icon marker-icon-btn" data-act="pick-icon" title="Choose another icon" aria-label="Icon: ${esc(name)}. Choose another">${iconGlyph(name, 16)}<span class="icon-name">${esc(name)}</span></button><span class="grow"></span></div>
+        <label class="check" title="A contrasting outline behind the icon, so it reads on any map"><input type="checkbox" data-k="markerHalo"${st.markerHalo !== false ? ' checked' : ''}> Outline</label>`;
+        }
       }
       if (!sections.includes('markerOnly')) {
         html += `<div class="row"><label>Width</label><input type="range" data-k="weight" min="0.5" max="${sections.includes('wide') ? 40 : 16}" step="0.5" value="${st.weight}"><span class="val" data-val="weight">${st.weight}px</span></div>
@@ -1170,6 +1190,7 @@ window.MB = window.MB || {};
   }
 
   let rotSync = null; // the Rotation row of the object shown in Properties (null while none is), so the knob can refresh it
+  let sizeSync = null; // and a marker's Size row, so the Scale tool's handles can
 
   // A "Rotation" row: how far the object is turned, in degrees (the Scale tool's knob does the same by hand). The
   // slider stops at 359: 360° is 0° again, and the thumb would sit at the far end showing the same angle as the
@@ -1203,12 +1224,50 @@ window.MB = window.MB || {};
     return wrap;
   }
 
+  // The keyboard back on the marker shape it is on, after Properties has been drawn anew (what was focused, the
+  // shape button or the Icon button, went with it).
+  function focusShape() {
+    const b = $('#propsBody .marker-shapes button.active');
+    if (b) b.focus();
+  }
+  // The Scale tool's box around the marker whose shape just changed: an icon marker can be resized and turned, a
+  // plain one cannot. A plain marker picked under the Scale tool is never attached at all (attach() says markers
+  // have a fixed size and leaves the box off), so what the box should be is read from the selection, not from what
+  // the scaler happens to hold — otherwise Dot → Icon could never give it one. A group's box (several targets) and
+  // the Move tool's frame are left alone.
+  function rescaleBox(f) {
+    if (!MB.scaler || MB.tools.current !== 'scale' || MB.selected !== f || MB.scaler.frame) return;
+    const held = MB.scaler.targets || [];
+    if (held.length && !(held.length === 1 && held[0] === f)) return;
+    if (MB.canScale(f)) MB.scaler.attach(f); else MB.scaler.detach();
+  }
+  // The icon picker for a marker, seeded with its own color and outline. What comes back goes on the marker — its
+  // color only when one was really picked there, so a marker whose own color the picker cannot show ('red',
+  // 'rgb(…)', #rgb, #rrggbbaa from a file) keeps it. Closed without an icon, nothing changes; either way Properties
+  // is drawn anew, so the shape segment goes back to the shape the marker is on.
+  function pickMarkerIcon(f) {
+    if (!MB.icons) return;
+    const m = f.mb;
+    MB.icons.pick({ color: m.style.color, halo: m.style.markerHalo !== false }).then(res => {
+      // the marker may have been deselected, deleted or locked while the picker was up
+      if (res && res.name && MB.selected === f && MB.featureLayers[m.id] === f && !MB.isFeatureLocked(f)) {
+        const patch = { markerShape: 'icon', markerIcon: res.name, markerHalo: res.halo !== false };
+        if (res.colorChosen) patch.color = res.color;
+        MB.applyStyle(f, patch);
+        rescaleBox(f); // an icon now: under the Scale tool it gets the box and the knob
+        MB.emit('features'); // its swatch in the layer list
+      }
+      if (MB.selected === f) { MB.ui.renderProps(); focusShape(); }
+    });
+  }
+
   MB.ui.renderProps = function () {
     const panel = $('#propsBody');
     const f = MB.selected;
     panel.innerHTML = '';
     labelSizeSync = null; // (the label form sets it again, if there is one)
     rotSync = null;       // (and so does the rotation row)
+    sizeSync = null;      // (and the marker form its size row)
     panel.classList.remove('props-locked');
     $('#propsSub').textContent = MB.multi && MB.multi.size > 1 ? MB.multi.size + ' objects' : (f ? (f.mb.name || MB.typeLabels[f.mb.type]) : 'new shapes');
     if (MB.multi && MB.multi.size > 1) { renderMulti(panel); return; }
@@ -1290,7 +1349,36 @@ window.MB = window.MB || {};
     } else if (m.type === 'svg') {
       panel.appendChild(svgProps(f));
     } else if (m.type === 'marker') {
-      panel.appendChild(styleForm(['stroke', 'markerOnly'], () => m.style, patch => MB.applyStyle(f, patch)));
+      const form = styleForm(['stroke', 'markerOnly'], () => m.style, patch => {
+        // switched to an icon without one chosen yet: the picker first (nothing changes if it is closed again)
+        if (patch.markerShape === 'icon' && MB.markerShape(Object.assign({}, m.style, patch)) !== 'icon') { pickMarkerIcon(f); return; }
+        const reshaped = 'markerShape' in patch && (patch.markerShape === 'icon') !== (MB.markerShape(m.style) === 'icon');
+        MB.applyStyle(f, patch);
+        if (reshaped) {
+          rescaleBox(f); // under the Scale tool, the box fits what the marker is now
+          MB.ui.renderProps(); focusShape(); // the icon's own rows and its Rotation row come and go
+        }
+      });
+      panel.appendChild(form);
+      const pickBtn = $('[data-act="pick-icon"]', form);
+      if (pickBtn) pickBtn.addEventListener('click', () => pickMarkerIcon(f));
+      // The size as it is now, after the Scale tool's handles resized the marker: the slider and its readout are
+      // set outright, nothing is applied or saved (as rotSync does for the angle). The panel is not drawn anew, so
+      // the keyboard stays where it is.
+      const sizeInp = $('[data-k="markerSize"]', form), sizeOut = $('[data-val="markerSize"]', form);
+      if (sizeInp) sizeSync = () => {
+        const px = MB.markerSize(m.style);
+        if (+sizeInp.value === px) return;
+        if (px > +sizeInp.max) sizeInp.max = String(px);
+        sizeInp.value = String(px);
+        if (sizeOut) sizeOut.textContent = px + 'px';
+      };
+      if (MB.markerShape(m.style) === 'icon') panel.appendChild(rotationRow(() => MB.getRotation(f), 'How far the icon is turned, clockwise', deg => {
+        if (MB.getRotation(f) === deg) return; // the same angle: nothing to turn and nothing to save
+        MB.setRotation(f, deg);
+        MB.scaler.follow(f);
+        MB.commitDebounced('rotate');
+      }));
     } else if (m.type === 'ink') {
       panel.appendChild(styleForm(['stroke', 'wide'], () => m.style, patch => MB.applyStyle(f, patch)));
     } else if (m.type === 'line' || m.type === 'measure-line') {
@@ -2213,7 +2301,7 @@ window.MB = window.MB || {};
     // zoom display: the list dims what the zoom hides, the selected object's note says whether it is shown
     MB.on('zoomdisplay', () => MB.ui.renderLayersSoon());
     MB.map.on('zoomend', () => MB.ui.renderZoomNote());
-    MB.on('featurechange', l => { if (l === MB.selected) { MB.ui.renderMeasureBox(); if (rotSync) rotSync(); } }); // (the knob turned it: its Rotation row follows, the panel is not drawn anew)
+    MB.on('featurechange', l => { if (l === MB.selected) { MB.ui.renderMeasureBox(); if (rotSync) rotSync(); if (sizeSync) sizeSync(); } }); // (the knob turned it, a handle resized it: its Rotation and Size rows follow, the panel is not drawn anew)
     MB.on('project', () => { MB.ui.renderSettings(); MB.ui.renderSvgPanel(); $('#basemapSelect').value = MB.state.basemap; });
     MB.on('poi-request', term => { MB.ui.showTab('places'); setTimeout(() => MB.ui.runPoiSearch(term), 800); });
     MB.on('feature-contextmenu', info => MB.menus.feature(info));

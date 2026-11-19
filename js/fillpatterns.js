@@ -1,5 +1,5 @@
 /* GenGIS - fill patterns for shapes: instead of a flat fill, a shape can be hatched, cross-hatched, dotted or
- * gridded. Each is an SVG <pattern> drawn in the fill colour; the shape's fill opacity still dims the whole thing.
+ * gridded. Each is an SVG <pattern> drawn in the fill color; the shape's fill opacity still dims the whole thing.
  * The patterns live in one <defs> inside the map container, so they are captured by the image/PDF export too.
  * A pattern tile is 8x8 user units; the strokes keep their width whatever the shape's size (userSpaceOnUse).
  */
@@ -13,7 +13,7 @@ window.MB = window.MB || {};
     vertical: 'Vertical', grid: 'Grid', dots: 'Dots'
   };
 
-  // The tile's innards for each pattern, drawn in `c` (the fill colour). Lines are 1.3 wide; dots are filled.
+  // The tile's innards for each pattern, drawn in `c` (the fill color). Lines are 1.3 wide; dots are filled.
   function shapes(pattern, c) {
     const line = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1.3"/>`;
     switch (pattern) {
@@ -27,7 +27,7 @@ window.MB = window.MB || {};
   }
 
   let defs = null;
-  const made = {}; // id -> true, so each pattern+colour is built once
+  const made = {}; // id -> true, so each pattern+color is built once
   function defsEl() {
     if (defs && defs.isConnected) return defs;
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -40,7 +40,7 @@ window.MB = window.MB || {};
     return defs;
   }
 
-  // Make sure the <pattern> for this pattern+colour exists, and return its id (for fill="url(#id)").
+  // Make sure the <pattern> for this pattern+color exists, and return its id (for fill="url(#id)").
   MB.fillPattern = {
     ensure(pattern, color) {
       const col = String(color || '#000000').toLowerCase();
@@ -58,7 +58,7 @@ window.MB = window.MB || {};
       return id;
     },
     // Apply (or clear) a pattern on a path's fill. Returns true when a pattern was set. Leaflet rebuilds the <path>
-    // (and resets its fill to the flat colour) every time the layer is added to the map - on a layer or object being
+    // (and resets its fill to the flat color) every time the layer is added to the map - on a layer or object being
     // shown, a zoom rule revealing it, a move to another layer - so the pattern is re-applied on each 'add' too.
     apply(layer, style) {
       if (!layer) return false;
