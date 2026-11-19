@@ -653,7 +653,7 @@ window.MB = window.MB || {};
           <span>Layer “${esc(layer.name)}” is hidden: what you add won't show.</span><button type="button" class="btn small" data-act="show-layer">Show layer</button>`;
     } else if (warn) warn.remove();
     hint.classList.toggle('hidden', !text && !hidden);
-    if (MB.circleRadius) MB.circleRadius.update(); // the radius box docks under the hint: its height just changed
+    if (MB.circleRadius) MB.circleRadius.redock(); // the radius box docks under the hint: its height just changed
   }
   MB.ui.renderToolHint = renderToolHint;
 

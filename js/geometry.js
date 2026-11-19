@@ -366,20 +366,21 @@ window.MB = window.MB || {};
         wl.on('pm:vertexadded', ev => {
           const lls = wl.getLatLngs();
           if (lls.length === 1 && ev.marker) {
-            first = MB.snap.first = ev.marker;
+            first = ev.marker;
             if (e.shape === 'Line' && ev.marker.on) ev.marker.on('mousedown', () => { if (wl.getLatLngs().length >= 3) MB.tools._closeLine = true; });
           }
-          if (e.shape !== 'Line') return;
-          // From the third vertex on, the first one pulls the pointer in, as the polygon tool's does: it is handed to
-          // the drawing library's own magnet (which is what the polygon's first vertex gets when it is made).
+          // From the third vertex on there is a shape to close: the first vertex pulls the pointer in, and the snap
+          // ring there says so. The line's first vertex is handed to the drawing library's own magnet, which is
+          // what the polygon's gets when it is made.
           if (lls.length === 3 && first) {
-            const d = MB.map.pm.Draw.Line;
+            MB.snap.first = first;
+            const d = e.shape === 'Line' && MB.map.pm.Draw.Line;
             if (d && d._otherSnapLayers && d._cleanupSnapping) {
               d._otherSnapLayers.push(first);
               if (d.options.snappable) d._cleanupSnapping(); // the snap list is rebuilt with it (without snapping on, it is the only one)
             }
           }
-          if (lls.length >= 4 && MB.pxDist(lls[0], lls[lls.length - 1]) <= MB.SNAP_PX) {
+          if (e.shape === 'Line' && lls.length >= 4 && MB.pxDist(lls[0], lls[lls.length - 1]) <= MB.SNAP_PX) {
             setTimeout(() => { try { MB.map.pm.Draw.Line._finishShape(); } catch (err) { /* ignore */ } }, 0);
           }
         });

@@ -207,7 +207,7 @@ window.MB = window.MB || {};
           tip.style.top = (p.y + 16 + h > size.y ? p.y - 16 - h : p.y + 16) + 'px';
         });
       });
-      MB.map.on('pm:drawend', () => { hide(); MB.circleRadius.showGhost(null); MB.circleRadius.update(); }); // (the circle is made: the label docks again)
+      MB.map.on('pm:drawend', () => { hide(); MB.circleRadius.endDraw(); }); // (the circle is made, or the tool is going: the label docks again)
     }
   };
 
@@ -217,17 +217,21 @@ window.MB = window.MB || {};
   // size); drag one out instead and the label reads the radius out as it grows. Geoman does the pinning: its
   // smallest and largest radius, set to the same value, hold the circle being drawn to it.
   // The label is one node, made once and never re-parented (that would drop the caret and a phone's keyboard): it
-  // sits in the map's container and is moved with left / top, docked under the tool hint until there is a circle.
+  // sits in the map's container and is moved with left / top. It is docked under the tool hint until a center is
+  // placed, so it never moves with the pointer and can always be typed in.
 
   MB.circleRadius = {
     locked: null, // meters, or null for "as dragged"
     live: false,  // the value in the box is a readout of the circle being dragged, not typed
+    attached: false, // on the circle's dimension line, rather than docked under the tool hint
+    dockDirty: true, // the docked place is to be measured again (the hint's height or the map's width changed)
     el: null, line: null, ghost: null, color: null, // (the ghost's color, worked out once: it is drawn on every move)
 
     init() {
       this.mount();
       MB.on('units', () => this.useDefaultUnit()); // (the ghost's color is cleared in MB.tools.refreshDraw)
-      MB.map.on('move zoomend viewreset resize', () => this.update());
+      MB.map.on('move zoomend viewreset', () => this.update());
+      MB.map.on('resize', () => this.redock()); // the docked place is measured from the map's width
       MB.map.on('zoomstart', () => this.hide()); // mid-zoom the center is nowhere in particular
       // the center placed with a radius typed: that is the whole circle, no second click
       const Circle = L.PM && L.PM.Draw && L.PM.Draw.Circle && L.PM.Draw.Circle.prototype;
@@ -260,15 +264,17 @@ window.MB = window.MB || {};
       MB.map.getContainer().appendChild(el);
       L.DomEvent.disableClickPropagation(el); // typing in the label is not a click on the map (which would place a circle)
       L.DomEvent.disableScrollPropagation(el);
+      L.DomEvent.on(el, 'mousemove', L.DomEvent.stopPropagation); // the pointer over the label does not drag the radius out from under it
       const box = this.box(), sel = this.unitSel();
       sel.value = MB.inputUnit('radius').label;
       box.addEventListener('input', () => { this.live = false; this.read(); }); // typed over: no longer a readout
       box.addEventListener('focus', () => { if (this.live) box.select(); }); // the first digit typed replaces the readout
-      sel.addEventListener('change', () => { if (this.live) this.clearBox(); this.read(); box.focus(); }); // a readout is in the old unit
+      sel.addEventListener('change', () => { if (this.live) this.clearBox(); this.dockDirty = true; this.read(); box.focus(); }); // a readout is in the old unit
       const keys = e => {
         e.stopPropagation(); // the app's single-key shortcuts stay out of a typed value
-        if (e.key === 'Enter') { e.preventDefault(); if (!this.finish()) box.blur(); }
-        else if (e.key === 'Escape') { e.preventDefault(); this.reset(); box.blur(); }
+        const t = e.currentTarget; // the value box or the unit beside it
+        if (e.key === 'Enter') { e.preventDefault(); if (!this.finish()) t.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); if (t === box) this.reset(); t.blur(); } // the typed value is the box's own to clear
       };
       box.addEventListener('keydown', keys);
       sel.addEventListener('keydown', keys);
@@ -348,12 +354,23 @@ window.MB = window.MB || {};
     // The circle tool is on (the label goes on the map, docked) or off (it goes away).
     forTool(name) {
       if (!this.el) return;
-      if (name === 'circle') { this.el.style.display = 'inline-flex'; this.update(); return; }
+      if (name === 'circle') { this.el.style.display = 'inline-flex'; this.redock(); return; }
       const box = this.box();
       if (box && document.activeElement === box) box.blur();
       this.el.style.display = 'none';
       this.line.style.display = 'none';
     },
+
+    // The draw is over (the circle is made, or the tool is going): a radius only read out is not one that was typed,
+    // so it goes rather than sit in the docked box looking typed.
+    endDraw() {
+      this.showGhost(null);
+      if (this.live) this.clearBox();
+      this.update();
+    },
+
+    // The docked place may have moved (the tool hint's height, the map's width, the label's own width).
+    redock() { this.dockDirty = true; this.update(); },
 
     // Out of the way (a zoom): docked instead while it is being typed in, so the keyboard and the caret stay.
     hide() {
@@ -363,15 +380,15 @@ window.MB = window.MB || {};
       this.line.style.display = 'none';
     },
 
-    // Attached to the circle being drawn, or docked under the tool hint when there is none yet.
+    // Attached to the circle being drawn, docked under the tool hint until its center is placed (while the radius is
+    // typed, the dashed ghost is what follows the pointer: the label stays where it can be typed in).
     update() {
       if (!this.el || MB.tools.current !== 'circle') return;
       const draw = MB.map.pm.Draw && MB.map.pm.Draw.Circle, hint = draw && draw._hintMarker;
       const center = draw && draw._centerMarker;
       if (center && draw._layerGroup && draw._layerGroup.hasLayer(center)) {
         this.place(center.getLatLng(), this.locked || (hint ? center.getLatLng().distanceTo(hint.getLatLng()) : 0));
-      } else if (this.ghost && hint && this.locked) this.place(hint.getLatLng(), this.locked); // the circle to come, under the pointer
-      else this.dock();
+      } else this.dock();
     },
 
     // Under the tool's instructions, at the top of the map: nothing to measure yet.
@@ -381,6 +398,10 @@ window.MB = window.MB || {};
       el.style.display = 'inline-flex';
       el.classList.add('docked');
       this.line.style.display = 'none';
+      const was = this.attached;
+      this.attached = false;
+      if (!was && !this.dockDirty) return; // already docked where it belongs: nothing to measure again (this runs on every move)
+      this.dockDirty = false;
       const r = MB.map.getContainer().getBoundingClientRect(), hint = document.getElementById('toolHint');
       const hr = hint && !hint.classList.contains('hidden') ? hint.getBoundingClientRect() : null;
       el.style.left = Math.round(Math.max(8, (r.width - el.offsetWidth) / 2)) + 'px';
@@ -391,29 +412,31 @@ window.MB = window.MB || {};
     place(anchor, meters) {
       const el = this.el;
       if (!el || !(meters > 0)) { this.dock(); return; }
-      el.style.display = 'inline-flex';
-      el.classList.remove('docked');
+      el.style.display = 'inline-flex'; // shown before it is measured (a zoom may have hidden it)
       const size = MB.map.getSize(), p = MB.map.latLngToContainerPoint(anchor);
-      const o = this.layout({ cx: p.x, cy: p.y, rPx: this.radiusPx(anchor, meters), w: el.offsetWidth, h: el.offsetHeight, mapW: size.x, mapH: size.y });
+      const o = this.layout({ cx: p.x, cy: p.y, rPx: this.radiusPx(anchor, meters), w: el.offsetWidth, h: el.offsetHeight, mapW: size.x, mapH: size.y, attached: this.attached });
+      if (o.dock) { this.dock(); return; } // too short a line to hold the label: it stays docked, still and reachable
+      el.classList.remove('docked');
+      this.attached = true;
       el.style.left = o.x + 'px';
       el.style.top = o.y + 'px';
       const line = this.line;
-      line.style.display = o.lineLen >= 10 ? 'block' : 'none'; // too short to show an arrow at each end
+      line.style.display = 'block';
       line.style.left = Math.round(p.x) + 'px';
       line.style.top = Math.round(p.y) + 'px';
       line.style.width = o.lineLen + 'px';
     },
 
-    // Where the label goes, in container pixels: on the line, 14 px clear of the center (never under the pointer,
-    // which sets the radius), or under the circle when the line is too short to hold it; always inside the map.
+    // Where the label goes, in container pixels: on the line, 14 px clear of the center, which depends on the
+    // center alone and so never follows the pointer. A line too short to hold it leaves it docked instead (where it
+    // is still and can be typed in); once attached it stays so through 16 px of hysteresis, so it cannot flap.
     layout(o) {
-      const GAP = 14, EDGE = 8;
-      const below = o.rPx < o.w + 24;
-      let x = below ? o.cx - o.w / 2 : o.cx + GAP;
-      let y = below ? o.cy + o.rPx + 10 : o.cy - o.h / 2;
-      x = Math.max(EDGE, Math.min(x, o.mapW - o.w - EDGE));
-      y = Math.max(EDGE, Math.min(y, o.mapH - o.h - EDGE));
-      return { x: Math.round(x), y: Math.round(y), lineLen: Math.max(0, Math.round(o.rPx)), below };
+      const GAP = 14, EDGE = 8, ROOM = o.w + 24;
+      const lineLen = Math.max(0, Math.round(o.rPx));
+      if (o.rPx < (o.attached ? ROOM - 16 : ROOM)) return { dock: true, lineLen };
+      const x = Math.max(EDGE, Math.min(o.cx + GAP, o.mapW - o.w - EDGE));
+      const y = Math.max(EDGE, Math.min(o.cy - o.h / 2, o.mapH - o.h - EDGE));
+      return { x: Math.round(x), y: Math.round(y), lineLen, dock: false };
     },
 
     // The radius in container pixels: the circle's east edge, worked out as Leaflet draws one.

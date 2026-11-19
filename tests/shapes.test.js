@@ -33,7 +33,7 @@ function fakeEl(tag) {
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return this.attrs[k] == null ? null : this.attrs[k]; },
     addEventListener(t, fn) { (this.handlers[t] = this.handlers[t] || []).push(fn); },
-    fire(t, e) { (this.handlers[t] || []).forEach(fn => fn(Object.assign({ stopPropagation() {}, preventDefault() {}, target: { closest: () => null } }, e))); },
+    fire(t, e) { (this.handlers[t] || []).forEach(fn => fn(Object.assign({ stopPropagation() {}, preventDefault() {}, target: { closest: () => null }, currentTarget: this }, e))); },
     appendChild(c) { this.children.push(c); return c; },
     querySelector: () => null, querySelectorAll: () => [],
     getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
@@ -66,6 +66,69 @@ function loadShapes() {
 // MB.circleRadius.layout, as it stands in js/tools.js: where the radius label goes, in container pixels.
 const layout = vm.runInNewContext('({ ' + read('js/tools.js').match(/\n    layout\(o\) \{[\s\S]*?\n    \},/)[0].trim().replace(/,$/, '') + ' }).layout', { Math });
 
+// The real MB.circleRadius out of js/tools.js, over a fake map and a fake label: its own code decides where the
+// label goes, what the box holds, and what Enter and Escape do. The map is scaled so that a radius in meters is the
+// same number of container pixels (at the equator, which is where the fake circles are drawn).
+const DEG_PX = 40075017 / 360; // container pixels per degree of longitude
+function circleBox(opts) {
+  const o = Object.assign({ w: 90, h: 28, mapW: 800, mapH: 600, hintH: 30, cx: 400, cy: 300 }, opts);
+  const doc = { activeElement: null, getElementById: id => (id === 'toolHint' ? hint : null), createElement: () => made[n++] };
+  // a control that remembers whether it was focused, blurred or selected
+  const ctl = tag => {
+    const e = el(tag);
+    e.value = ''; e.blurs = 0; e.focuses = 0; e.selects = 0;
+    e.focus = () => { doc.activeElement = e; e.focuses++; };
+    e.blur = () => { if (doc.activeElement === e) doc.activeElement = null; e.blurs++; };
+    e.select = () => { e.selects++; };
+    e.removeAttribute = k => { delete e.attrs[k]; };
+    return e;
+  };
+  const box = ctl('input'), sel = ctl('select'), clear = ctl('button');
+  const rect = (w, h) => () => ({ left: 0, top: 0, right: w, bottom: h, width: w, height: h });
+  const wrap = el(), hint = el(), line = el(), label = el();
+  wrap.getBoundingClientRect = rect(o.mapW, o.mapH);
+  hint.getBoundingClientRect = rect(o.mapW, o.hintH);
+  label.offsetWidth = o.w; label.offsetHeight = o.h;
+  label.querySelector = s => (s === '#radiusInput' ? box : s === '#radiusUnit' ? sel : s === '.radius-clear' ? clear : null);
+  const made = [line, label]; // mount() makes the line first, then the label
+  let n = 0;
+  const ll = (lat, lng) => ({ lat, lng, distanceTo: b => Math.hypot(b.lat - lat, b.lng - lng) * DEG_PX });
+  const draw = {
+    options: {}, enabled: () => true, finishes: 0, _finishShape() { this.finishes++; },
+    _hintMarker: { ll: ll(0, 0), getLatLng() { return this.ll; }, fire() {} },
+    _centerMarker: null, _layerGroup: { hasLayer(m) { return !!m && m === draw._centerMarker; } }
+  };
+  const L = {
+    divIcon: i => ({ options: i }),
+    latLng: (lat, lng) => ll(lat, lng),
+    circle: (at, opt) => ({ options: opt, setStyle(s) { Object.assign(this.options, s); }, setLatLng(v) { this.at = v; }, setRadius(r) { this.options.radius = r; }, addTo() { return this; } }),
+    DomEvent: { disableClickPropagation() {}, disableScrollPropagation() {}, on() {}, stopPropagation() {} }
+  };
+  const ctx = { window: {}, L, console, Math, Date, Object, String, document: doc };
+  vm.createContext(ctx);
+  vm.runInContext(read('js/util.js'), ctx, { filename: 'js/util.js' }); // the real parseDistance, inputUnit and units
+  const M = ctx.window.MB;
+  M.state = { units: 'metric' };
+  M.tools = { current: 'circle' };
+  M.on = () => {};
+  M.newShapeStyle = () => ({ color: '#1db3a9' });
+  const out = { MB: M, label, line, box, sel, clear, draw, doc, ll, hints: 0 };
+  M.ui = { renderToolHint() { out.hints++; M.circleRadius.redock(); } }; // as js/ui.js does
+  M.map = {
+    getContainer: () => wrap, getSize: () => ({ x: o.mapW, y: o.mapH }),
+    latLngToContainerPoint: p => ({ x: o.cx + p.lng * DEG_PX, y: o.cy - p.lat * DEG_PX }),
+    on() {}, hasLayer: () => true, removeLayer() {}, pm: { Draw: { Circle: draw } }
+  };
+  vm.runInContext('var MB = window.MB;' + /\n  MB\.circleRadius = \{[\s\S]*?\n  \};/.exec(read('js/tools.js'))[0], ctx, { filename: 'js/tools.js (MB.circleRadius)' });
+  M.circleRadius.init();
+  M.circleRadius.forTool('circle');
+  out.at = () => [label.style.left, label.style.top];
+  out.type = v => { box.value = v; box.fire('input'); };            // typed by hand
+  out.moveTo = (lat, lng) => { draw._hintMarker.ll = ll(lat, lng); }; // the pointer (Geoman's hint marker)
+  out.placeCenter = (lat, lng) => { draw._centerMarker = { getLatLng: () => ll(lat, lng) }; };
+  return out;
+}
+
 // js/geometry.js's snap ring and its drawing listeners, over a fake map: enough to follow what the first vertex of a
 // line or a polygon does as the shape is drawn.
 function loadGeometry() {
@@ -97,7 +160,7 @@ function drawing(g, shape) {
     wl, markers: [],
     add(lat, lng) {
       wl.lls.push({ lat, lng });
-      const marker = { nth: wl.lls.length, on() {} };
+      const marker = { nth: wl.lls.length, on() {}, getLatLng: () => ({ lat, lng }) };
       this.markers.push(marker);
       (wl.h['pm:vertexadded'] || []).forEach(fn => fn({ marker }));
       return marker;
@@ -365,7 +428,7 @@ test('R draws a rectangle, and pressed again cycles to the next mode without lea
   // in the tool: each press is the next mode, the menu's order round again, and the tool stays put
   const seen = [];
   for (let i = 0; i < 4; i++) { s.MB.rectDraw.key(); seen.push(s.MB.rectDraw.mode); }
-  assert.deepEqual(seen, ['three', 'center', 'corner', 'three'], 'center → corner → three → round again');
+  assert.deepEqual(seen, ['three', 'center', 'corner', 'three'], 'the menu order from the diagonal: three points, center, diagonal, round again');
   assert.deepEqual(s.tools, ['rectangle'], 'R never puts the tool away');
   assert.equal(s.MB.settings.rectMode, 'three', 'and the mode is saved');
   assert.ok(s.saves > 0);
@@ -440,13 +503,16 @@ test('the circle takes a typed radius, in a label on the map at the end of a dim
   assert.match(mount[0], /line\.className = 'mb-dim-line';/, 'with the dimension line');
   assert.match(mount[0], /L\.DomEvent\.disableClickPropagation\(el\)/);
   assert.match(mount[0], /L\.DomEvent\.disableScrollPropagation\(el\)/);
+  assert.match(mount[0], /L\.DomEvent\.on\(el, 'mousemove', L\.DomEvent\.stopPropagation\)/, 'the pointer over the label does not drag the radius');
   assert.match(read('js/ink.js'), /#toolbar, \.mb-scale-box, \.mb-dim'\)/, 'a finger on the label draws nothing on the map either');
   // docked under the instructions until there is a circle, attached to it after; never taken off the page while
   // it is being typed in
-  assert.match(tools, /if \(name === 'circle'\) \{ this\.el\.style\.display = 'inline-flex'; this\.update\(\); return; \}/);
+  assert.match(tools, /if \(name === 'circle'\) \{ this\.el\.style\.display = 'inline-flex'; this\.redock\(\); return; \}/);
   assert.match(tools, /if \(document\.activeElement === this\.box\(\)\) \{ this\.dock\(\); return; \}/);
-  assert.match(tools, /MB\.map\.on\('move zoomend viewreset resize', \(\) => this\.update\(\)\)/, 'it follows the map');
+  assert.match(tools, /MB\.map\.on\('move zoomend viewreset', \(\) => this\.update\(\)\)/, 'it follows the map');
+  assert.match(tools, /MB\.map\.on\('resize', \(\) => this\.redock\(\)\)/);
   assert.match(tools, /MB\.map\.on\('zoomstart', \(\) => this\.hide\(\)\)/);
+  assert.match(tools, /if \(!was && !this\.dockDirty\) return;/, 'docked already and nothing changed: nothing is measured again');
   assert.match(tools, /MB\.circleRadius\.place\(center\.getLatLng\(\), MB\.circleRadius\.locked \|\| r\);\s*\n\s*MB\.circleRadius\.showLive\(r\);/,
     'a radius dragged out is shown on the line and read out in the label');
   assert.match(tools, /if \(!box \|\| this\.locked \|\| \(box\.value && !this\.live\)\) return;/, 'a value typed by hand is never written over');
@@ -456,7 +522,7 @@ test('the circle takes a typed radius, in a label on the map at the end of a dim
   const finish = /finish\(\) \{[\s\S]*?\n    \},/.exec(tools);
   assert.match(finish[0], /if \(!\(r > 0\)\) return false;/);
   assert.match(finish[0], /draw\._finishShape\(\);\s*\n\s*return true;/);
-  assert.match(tools, /if \(e\.key === 'Enter'\) \{ e\.preventDefault\(\); if \(!this\.finish\(\)\) box\.blur\(\); \}/);
+  assert.match(tools, /if \(e\.key === 'Enter'\) \{ e\.preventDefault\(\); if \(!this\.finish\(\)\) t\.blur\(\); \}/);
   // a digit typed with the circle tool on starts a radius (the key itself must reach the box)
   const keys = /if \(MB\.tools\.current === 'circle'[\s\S]*?\n      \}/.exec(ui);
   assert.ok(keys, 'js/ui.js sends a digit to the radius box');
@@ -466,7 +532,7 @@ test('the circle takes a typed radius, in a label on the map at the end of a dim
   const render = /function renderToolHint\(\) \{[\s\S]*?\n  \}/.exec(ui);
   assert.ok(render, 'js/ui.js has renderToolHint');
   assert.doesNotMatch(render[0], /hint\.innerHTML =/, 'the hint is not rebuilt whole');
-  assert.match(render[0], /if \(MB\.circleRadius\) MB\.circleRadius\.update\(\);/);
+  assert.match(render[0], /if \(MB\.circleRadius\) MB\.circleRadius\.redock\(\);/);
   assert.match(render[0], /txt\.textContent = text;/);
   assert.match(css, /\.mb-dim \{[^}]*position: absolute;[^}]*cursor: auto;/, 'the label is placed by hand, and is not the map\'s crosshair');
   assert.match(css, /\.mb-dim \{[^}]*tabular-nums/);
@@ -477,44 +543,153 @@ test('the circle takes a typed radius, in a label on the map at the end of a dim
   assert.match(css, /#radiusInput, #radiusUnit \{ height: 36px; font-size: 16px; \}/, 'finger-sized, and no zoom on focus');
 });
 
-test('the radius label sits on the dimension line, under the circle when it does not fit, always inside the map', () => {
-  const box = { w: 90, h: 28, mapW: 800, mapH: 600 };
-  // a wide circle: the label on the line, 14 px clear of the center (never under the pointer, which sets the radius)
+test('the radius label sits on the dimension line, and stays docked when the line is too short to hold it', () => {
+  const box = { w: 90, h: 28, mapW: 800, mapH: 600, attached: false };
+  // a wide circle: the label on the line, 14 px clear of the center, centered on it
   let o = layout(Object.assign({ cx: 300, cy: 300, rPx: 200 }, box));
   assert.deepEqual([o.x, o.y], [314, 286], 'beside the center, centered on the line');
   assert.equal(o.lineLen, 200, 'the line runs from the center out to the edge');
-  assert.equal(o.below, false);
-  // too short a line to hold the label: under the circle instead, centered on it
-  o = layout(Object.assign({ cx: 300, cy: 300, rPx: 40 }, box));
-  assert.equal(o.below, true);
-  assert.deepEqual([o.x, o.y], [255, 350], 'below the circle, out of the way of the line');
-  assert.equal(o.lineLen, 40, 'the line is still drawn');
+  assert.equal(o.dock, false);
+  // where it goes is worked out from the center alone: a radius dragged wider does not move it
+  const wider = layout(Object.assign({ cx: 300, cy: 300, rPx: 350 }, box));
+  assert.deepEqual([wider.x, wider.y], [314, 286], 'the label never follows the pointer');
+  assert.equal(wider.lineLen, 350, 'only the line grows');
+  // too short a line to hold the label: it stays docked, where it is still and can be typed in
+  assert.equal(layout(Object.assign({ cx: 300, cy: 300, rPx: 100 }, box)).dock, true);
+  // and once attached it is kept so through 16 px, so a radius wavering at the threshold cannot flap it
+  const held = Object.assign({}, box, { attached: true });
+  assert.equal(layout(Object.assign({ cx: 300, cy: 300, rPx: 100 }, held)).dock, false, 'just inside: still attached');
+  assert.equal(layout(Object.assign({ cx: 300, cy: 300, rPx: 90 }, held)).dock, true, 'well inside: docked again');
   // clamped into the map by 8 px, on every side
   o = layout(Object.assign({ cx: 795, cy: 598, rPx: 300 }, box));
   assert.deepEqual([o.x, o.y], [702, 564], 'the far corner: still wholly on screen');
-  o = layout(Object.assign({ cx: 2, cy: 1, rPx: 10 }, box));
-  assert.deepEqual([o.x, o.y], [8, 21], 'and the near one (where it would hang off the left edge)');
-  assert.equal(layout(Object.assign({ cx: 300, cy: 300, rPx: 0 }, box)).lineLen, 0, 'no radius yet: no line');
+  o = layout(Object.assign({ cx: 2, cy: 1, rPx: 300 }, box));
+  assert.deepEqual([o.x, o.y], [16, 8], 'and the near one');
+  assert.equal(layout(Object.assign({ cx: 300, cy: 300, rPx: 0 }, box)).dock, true, 'no radius yet: docked');
+});
+
+test('the radius label is docked while the radius is typed, and attaches once a center is placed', () => {
+  const c = circleBox();
+  assert.ok(c.label.classes.has('docked'), 'the circle tool is on: the label is docked under the hint');
+  assert.equal(c.label.style.display, 'inline-flex');
+  assert.equal(c.line.style.display, 'none');
+  assert.deepEqual(c.at(), ['355px', '38px'], 'centered on the map, just under the hint');
+  // a radius typed with no center yet: the dashed ghost follows the pointer, the label does not budge
+  c.type('500');
+  assert.equal(c.MB.circleRadius.locked, 500);
+  c.moveTo(0, 0.004);
+  c.MB.circleRadius.showGhost(c.ll(0, 0.004));
+  c.MB.circleRadius.update();
+  assert.ok(c.MB.circleRadius.ghost, 'the ghost is drawn');
+  assert.ok(c.label.classes.has('docked'), 'and the label is still docked');
+  assert.deepEqual(c.at(), ['355px', '38px']);
+  // the center placed: the label attaches to the dimension line, beside the center
+  c.placeCenter(0, 0);
+  c.MB.circleRadius.update();
+  assert.equal(c.MB.circleRadius.attached, true);
+  assert.ok(!c.label.classes.has('docked'));
+  assert.deepEqual(c.at(), ['414px', '286px'], '14 px right of the center (400, 300), centered on the line');
+  assert.deepEqual([c.line.style.left, c.line.style.top, c.line.style.width], ['400px', '300px', '500px']);
+  assert.equal(c.line.style.display, 'block');
+  // the pointer moving over the label (or anywhere else) leaves it exactly where it is
+  for (const lng of [0.002, 0.009, -0.004]) { c.moveTo(0, lng); c.MB.circleRadius.update(); }
+  assert.deepEqual(c.at(), ['414px', '286px'], 'a typed radius: the place depends on the center alone');
+  // a radius dragged out instead: the label keeps its place while the line grows
+  c.MB.circleRadius.reset();
+  c.moveTo(0, 200 / DEG_PX);
+  c.MB.circleRadius.update();
+  assert.deepEqual(c.at(), ['414px', '286px']);
+  assert.equal(c.line.style.width, '200px');
+  c.moveTo(0, 400 / DEG_PX);
+  c.MB.circleRadius.update();
+  assert.deepEqual(c.at(), ['414px', '286px'], 'the same place, whatever the radius');
+  assert.equal(c.line.style.width, '400px');
+  // dragged back in until the line cannot hold the label: it docks rather than jump about near the pointer
+  c.moveTo(0, 90 / DEG_PX);
+  c.MB.circleRadius.update();
+  assert.ok(c.label.classes.has('docked'));
+  assert.deepEqual(c.at(), ['355px', '38px'], 'and is measured back into its docked place');
+  assert.equal(c.line.style.display, 'none');
+  // the tool put away: the label goes with it, and the keyboard with it
+  c.box.focus();
+  c.MB.tools.current = 'select';
+  c.MB.circleRadius.forTool('select');
+  assert.equal(c.label.style.display, 'none');
+  assert.equal(c.box.blurs, 1, 'a phone keyboard is not left over an empty map');
+});
+
+test('a radius only read out does not sit in the label looking typed once the circle is made', () => {
+  const c = circleBox();
+  c.placeCenter(0, 0);
+  c.moveTo(0, 480 / DEG_PX);
+  c.MB.circleRadius.showLive(480);
+  assert.equal(c.box.value, '480', 'the radius being dragged out is read out in the label');
+  assert.equal(c.MB.circleRadius.live, true);
+  assert.equal(c.MB.circleRadius.locked, null, 'a readout pins nothing: the drag still sets the radius');
+  c.MB.circleRadius.endDraw();
+  assert.equal(c.box.value, '', 'the circle is made: the readout goes');
+  assert.equal(c.MB.circleRadius.live, false);
+  // a value typed by hand is never written over, and survives the draw ending
+  c.type('250');
+  c.MB.circleRadius.showLive(999);
+  assert.equal(c.box.value, '250', 'the typed radius stands');
+  c.MB.circleRadius.endDraw();
+  assert.equal(c.box.value, '250');
+  assert.equal(c.MB.circleRadius.locked, 250, 'and the next circle still gets it');
+  assert.match(read('js/tools.js'), /MB\.map\.on\('pm:drawend', \(\) => \{ hide\(\); MB\.circleRadius\.endDraw\(\); \}\)/);
 });
 
 test('the live radius written into the label reads back as the radius it shows', () => {
-  // tools.js writes the radius of the circle being dragged out into the box as plain digits: short enough to read,
-  // and still a length parseDistance brings back (an empty box for anything too small to be a radius at all)
-  const liveText = (meters, unit) => {
-    const txt = String(+(meters / MB.distanceUnits[unit]).toPrecision(4));
-    return MB.parseDistance(txt, unit) ? txt : '';
-  };
+  // the real showLive: the radius of the circle being dragged out, as plain digits short enough to read and still a
+  // length parseDistance brings back (an empty box for anything too small to be a radius at all)
+  const c = circleBox();
   for (const unit of ['m', 'km', 'ft', 'mi', 'NM']) {
+    c.sel.value = unit;
     for (const meters of [0.5, 12, 480, 1234.5, 98765]) {
-      const txt = liveText(meters, unit);
+      c.MB.circleRadius.clearBox();
+      c.MB.circleRadius.showLive(meters);
+      const txt = c.box.value;
       assert.doesNotMatch(txt, /e/i, meters + ' m in ' + unit + ' is written out in full ("' + txt + '")');
-      const back = MB.parseDistance(txt, unit);
+      const back = c.MB.parseDistance(txt, unit);
       assert.ok(back, meters + ' m in ' + unit + ' ("' + txt + '") is still a radius');
       assert.ok(Math.abs(back.meters - meters) < Math.max(meters * 1e-3, 1e-9), 'and within a thousandth of it (4 digits of it are shown)');
     }
-    assert.equal(liveText(0.0001, unit), '', 'the drag has barely started: nothing to show yet');
+    c.MB.circleRadius.clearBox();
+    c.MB.circleRadius.showLive(0.0001);
+    assert.equal(c.box.value, '', 'the drag has barely started: nothing to show yet');
   }
-  assert.match(read('js/tools.js'), /const text = MB\.parseDistance\(txt, sel\.value\) \? txt : '';/);
+  // the box reads out what the drag does, so the first key typed replaces it
+  c.sel.value = 'm';
+  c.box.focus();
+  c.MB.circleRadius.clearBox();
+  c.MB.circleRadius.showLive(300);
+  assert.equal(c.box.selects, 1, 'written while it has the keyboard: selected, so typing over it is one keypress');
+});
+
+test('Enter and Escape in the radius label act on the control they were pressed in', () => {
+  const c = circleBox();
+  c.type('500');
+  // Escape in the unit beside the value: the keyboard goes, the radius stays (only the box clears its own value)
+  c.sel.fire('keydown', { key: 'Escape' });
+  assert.equal(c.MB.circleRadius.locked, 500, 'the typed radius is not thrown away');
+  assert.equal(c.box.value, '500');
+  assert.equal(c.sel.blurs, 1);
+  assert.equal(c.box.blurs, 0, 'and never the box, which was not the one pressed in');
+  // Enter there with no center placed: the same (there is no second click to make)
+  c.sel.fire('keydown', { key: 'Enter' });
+  assert.equal(c.draw.finishes, 0);
+  assert.equal(c.sel.blurs, 2);
+  assert.equal(c.box.blurs, 0);
+  // Enter in the box with the center placed and a radius: that IS the second click
+  c.placeCenter(0, 0);
+  c.box.fire('keydown', { key: 'Enter' });
+  assert.equal(c.draw.finishes, 1, 'the circle is made');
+  assert.equal(c.box.blurs, 0, 'the keyboard stays for the next one');
+  // Escape in the box: the radius goes with the keyboard
+  c.box.fire('keydown', { key: 'Escape' });
+  assert.equal(c.MB.circleRadius.locked, null);
+  assert.equal(c.box.value, '');
+  assert.equal(c.box.blurs, 1);
 });
 
 test('a finger or stylus can drag a rectangle or a circle out, while the mouse works as before', () => {
@@ -648,13 +823,13 @@ test("the line tool's first vertex pulls the pointer in from the third vertex on
   g.MB.map.pm.Draw.Line = line;
   const d = drawing(g, 'Line');
   d.add(0, 0);
-  assert.equal(g.MB.snap.first, d.markers[0], 'the first vertex is kept: the snap ring names it');
   assert.deepEqual(line._otherSnapLayers, [], 'one point: there is nothing to close yet');
   d.add(0, 100);
   assert.deepEqual(line._otherSnapLayers, [], 'two: closing them would make no shape');
   d.add(100, 100);
   assert.deepEqual(line._otherSnapLayers, [d.markers[0]], 'three: the first vertex goes to the magnet');
   assert.equal(line.cleanups, 1, 'and the snap list is rebuilt with it');
+  assert.equal(g.MB.snap.first, d.markers[0], 'and the ring there says what a click would do');
   d.add(100, 0);
   assert.equal(line._otherSnapLayers.length, 1, 'handed over once only, however long the line gets');
   assert.equal(line.cleanups, 1);
@@ -664,7 +839,7 @@ test("the line tool's first vertex pulls the pointer in from the third vertex on
   p.add(0, 0); p.add(0, 100); p.add(100, 100);
   assert.deepEqual(line._otherSnapLayers, [], 'the polygon looks after itself');
   assert.equal(line.cleanups, 0);
-  assert.equal(g.MB.snap.first, p.markers[0], 'but its first vertex is known all the same');
+  assert.equal(g.MB.snap.first, p.markers[0], 'but its first vertex is named all the same');
   g.fire('pm:drawend', {});
   assert.equal(g.MB.snap.first, null, 'and forgotten when the drawing ends');
   // closing by a click on the first vertex: either the marker's own press or the pointer pulled onto it
@@ -688,4 +863,17 @@ test('the snap ring on the first vertex of the shape being drawn says "close"', 
   g.MB.snap.show(ev);
   assert.equal(g.MB.snap.marker.text, 'point', 'any other point is a point');
   assert.equal(g.MB.snap.marker.o.radius, 8);
+});
+
+test('the "close" ring waits until there is a shape to close: three vertices', () => {
+  const g = loadGeometry();
+  g.MB.map.pm.Draw.Polygon = {}; // (the polygon's magnet is the drawing library's own)
+  const p = drawing(g, 'Polygon');
+  const first = p.add(0, 0);
+  const ring = () => { g.MB.snap.show({ snapLatLng: first.getLatLng(), layerInteractedWith: first }); return g.MB.snap.marker.text; };
+  assert.equal(ring(), 'point', 'one vertex: the first one is just a point to snap to');
+  p.add(0, 100);
+  assert.equal(ring(), 'point', 'two: there is no shape to close yet');
+  p.add(100, 100);
+  assert.equal(ring(), 'close', 'three: a click there closes the polygon');
 });
