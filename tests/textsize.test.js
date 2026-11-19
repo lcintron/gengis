@@ -158,7 +158,7 @@ test('the Size row belongs to the selected text alone, and goes with every redra
   const defaults = ui.slice(ui.indexOf('<h3>New shapes</h3>'), ui.indexOf('const m = f.mb;'));
   assert.doesNotMatch(defaults, /textSizeSync/, 'the defaults form has a size slider of its own and syncs nothing');
   // and only the object shown in Properties has its row refreshed
-  assert.match(ui, /MB\.on\('featurechange', l => \{ if \(l === MB\.selected\) \{ MB\.ui\.renderMeasureBox\(\); if \(rotSync\) rotSync\(\); if \(textSizeSync\) textSizeSync\(\); \} \}\);/);
+  assert.match(ui, /MB\.on\('featurechange', l => \{ if \(l === MB\.selected\) \{ MB\.ui\.renderMeasureBox\(\); if \(rotSync\) rotSync\(\); if \(sizeSync\) sizeSync\(\); if \(textSizeSync\) textSizeSync\(\); \} \}\);/);
 });
 
 test('a Scale drag of a text is what refreshes the row: once at the end, never per frame', () => {
@@ -167,7 +167,7 @@ test('a Scale drag of a text is what refreshes the row: once at the end, never p
   const end = scale.match(/\n    end\(\) \{[\s\S]*?\n    \},/)[0];
   assert.match(end, /this\.targets\.forEach\(l => MB\.emit\('featurechange', l\)\);/);
   assert.match(end, /MB\.commit\(\(d\.rot \? 'rotate' : 'scale'\)/);
-  const transform = scale.match(/function transform\(sn, to, s, ax, ay\) \{[\s\S]*?\n  \}/)[0];
+  const transform = scale.match(/function transform\(sn, to, s, ax, ay, lone\) \{[\s\S]*?\n  \}/)[0];
   assert.doesNotMatch(transform, /featurechange/, 'nothing per frame of the drag: the row follows when it is let go');
   // Esc puts the size back and emits none: the row was never touched during the drag, so it shows that size already
   const cancel = scale.match(/\n    cancel\(\) \{[\s\S]*?\n    \},/)[0];

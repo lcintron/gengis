@@ -17,6 +17,7 @@ window.MB = window.MB || {};
       MB.map.pm.disableDraw();
       MB.measure.stop();
       MB.svgPlace.stop();
+      MB.iconPlace.stop();
       if (MB.shapes) MB.shapes.stop();
       MB.ink.stop();
       MB.drawDrag.stop();
@@ -34,6 +35,7 @@ window.MB = window.MB || {};
       else if (name === 'measure-distance') { MB.deselect(); MB.measure.start('distance'); }
       else if (name === 'measure-area') { MB.deselect(); MB.measure.start('area'); }
       else if (name === 'svg') { MB.deselect(); MB.svgPlace.start(); }
+      else if (name === 'icon') { MB.deselect(); MB.iconPlace.start(); } // an icon as a marker (js/icons.js)
       else if (name === 'shape') { MB.deselect(); MB.shapes.start(); } // a preset shape (js/shapes.js)
       else if (name === 'annotate') { MB.deselect(); MB.ink.start(); }
       MB.emit('tool', name);
@@ -590,6 +592,41 @@ window.MB = window.MB || {};
       if (!layer) return;
       MB.commit('place svg');
       MB.noteAdded(layer);
+      if (!MB.state.continueDrawing) { MB.tools.set('select'); MB.selectFeature(layer); }
+    }
+  };
+
+  /* ---------- icon placement tool ---------- */
+
+  // The icon chosen in the picker (js/icons.js), placed by the map's next click as a marker named after it. The
+  // marker takes the next color of the palette, as every new object does; its color, size, outline and angle are
+  // changed in Properties afterwards.
+  MB.iconPlace = {
+    active: false, icon: null,
+    arm(icon) { this.icon = icon && icon.name ? { name: String(icon.name), halo: icon.halo !== false } : null; },
+    start() {
+      if (!this.icon) { // nothing armed (the tool reached from elsewhere): the picker chooses one first
+        MB.toast('Press I to choose an icon first');
+        setTimeout(() => MB.tools.set('select'), 0);
+        return;
+      }
+      this.active = true;
+      MB.map.on('click', this._click, this);
+    },
+    stop() {
+      if (!this.active) return;
+      this.active = false;
+      MB.map.off('click', this._click, this);
+    },
+    _click(e) {
+      const icon = this.icon;
+      if (!icon) return;
+      const style = Object.assign(MB.newShapeStyle(true), { markerShape: 'icon', markerIcon: icon.name, markerHalo: icon.halo !== false });
+      const layer = MB.restoreFeature({ type: 'marker', latlng: [e.latlng.lat, e.latlng.lng], layerId: MB.activeLayer().id, name: icon.name, style });
+      if (!layer) return;
+      MB.commit('place icon');
+      MB.noteAdded(layer);
+      MB.tools.refreshDraw(); // the next object gets the next color
       if (!MB.state.continueDrawing) { MB.tools.set('select'); MB.selectFeature(layer); }
     }
   };

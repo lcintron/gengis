@@ -596,27 +596,79 @@ window.MB = window.MB || {};
   };
 
   // A marker's shape (style.markerShape; a pin when unset) and, for the small shapes, its size in px
-  // (style.markerSize). The small shapes are centred on their point; the pin stands on it.
-  MB.markerShapes = { pin: 'Pin', dot: 'Dot', diamond: 'Diamond', square: 'Square', triangle: 'Triangle' };
+  // (style.markerSize). The small shapes are centered on their point; the pin stands on it. The 'icon' shape is any
+  // icon of the set (style.markerIcon: its name, never its markup), outlined (style.markerHalo) and turnable
+  // (style.markerRotation).
+  MB.markerShapes = { pin: 'Pin', dot: 'Dot', diamond: 'Diamond', square: 'Square', triangle: 'Triangle', icon: 'Icon' };
   const SHAPE_PATHS = {
     dot: '<circle cx="10" cy="10" r="8"/>',
     diamond: '<path d="M10 1.5 18.5 10 10 18.5 1.5 10z"/>',
     square: '<rect x="3" y="3" width="14" height="14" rx="1.5"/>',
     triangle: '<path d="M10 2.2 18.6 17.4H1.4z"/>'
   };
-  MB.markerShape = st => (st && Object.prototype.hasOwnProperty.call(SHAPE_PATHS, st.markerShape)) ? st.markerShape : 'pin'; // (a file's own value: only these)
-  MB.markerSize = st => Math.max(6, Math.min(48, Math.round(+(st && st.markerSize) || 16)));
+  MB.markerShape = function (st) {
+    if (st && st.markerShape === 'icon' && typeof st.markerIcon === 'string' && st.markerIcon) return 'icon'; // an icon needs its name
+    return (st && Object.prototype.hasOwnProperty.call(SHAPE_PATHS, st.markerShape)) ? st.markerShape : 'pin'; // (a file's own value: only these)
+  };
+  // An icon is drawn larger by default and can be scaled further (the Scale tool resizes one); the small shapes keep
+  // their own default and limit.
+  MB.markerSize = function (st) {
+    const icon = MB.markerShape(st) === 'icon';
+    return Math.max(6, Math.min(icon ? 96 : 48, Math.round(+(st && st.markerSize) || (icon ? 28 : 16))));
+  };
+  // The color a marker is drawn in: a hex, a named color or an rgb()/rgba() — anything else (a file's own value,
+  // which goes into the marker's markup) falls back to the default.
+  const COLOR_OK = /^(#[0-9a-f]{3,8}|[a-z]{3,20}|rgba?\([\d\s.,%]+\))$/i;
+  MB.markerColor = function (st) {
+    const c = st && typeof st.color === 'string' ? st.color.trim() : '';
+    return COLOR_OK.test(c) ? c : '#e4572e';
+  };
   MB.shapeSvg = function (shape, color, size) {
     const p = SHAPE_PATHS[shape] || SHAPE_PATHS.dot;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 20 20">` +
       `<g fill="none" stroke="#000" stroke-opacity=".45" stroke-width="4" stroke-linejoin="round">${p}</g>` + // a dark edge on any background
       `<g fill="${color}" stroke="#fff" stroke-width="2" stroke-linejoin="round">${p}</g></svg>`;
   };
+  // An icon's inner SVG, by name, from the set loaded on demand (data/icons.js, js/icons.js): '' when it is not
+  // there yet or the name is unknown. The lookup is built once per set, not once per marker.
+  let iconIndex = null, iconIndexOf = null;
+  MB.iconInner = function (name) {
+    const data = MB.iconData;
+    if (!data || !Array.isArray(data.icons) || typeof name !== 'string' || !name) return '';
+    if (iconIndexOf !== data) { iconIndex = new Map(data.icons.map(i => [i[0], i[2]])); iconIndexOf = data; }
+    return iconIndex.get(name) || '';
+  };
+  // The outline behind an icon: light behind a dark color, dark behind a light one, so either reads on imagery.
+  const HALO_DARK = '#0b1118';
+  MB.haloColor = function (color) {
+    const s = String(color || '').trim();
+    const hex = /^#([0-9a-f]{6})$/i.test(s) ? s.slice(1) : (/^#([0-9a-f]{3})$/i.test(s) ? s.slice(1).replace(/./g, c => c + c) : '');
+    if (!hex) return HALO_DARK; // a named or rgb() color: the dark one
+    const n = parseInt(hex, 16);
+    const lin = v => { const x = v / 255; return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+    const lum = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+    return lum < 0.18 ? '#ffffff' : HALO_DARK;
+  };
+  // An icon marker's drawing: the icon in the marker's color over a wider contrasting copy when outlined, `size` px
+  // across, turned by `angle` (only a normalized angle reaches the CSS). The same geometry as the picker's (icons.js).
+  MB.iconMarkerSvg = function (inner, color, size, halo, angle) {
+    const a = MB.normAngle(angle);
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 26 26" width="${size}" height="${size}" fill="none" stroke-linecap="round" stroke-linejoin="round"` +
+      (a ? ` style="transform:rotate(${a}deg)"` : '') + '>' +
+      (halo ? `<g stroke="${MB.haloColor(color)}" stroke-opacity=".6" stroke-width="4.5">${inner}</g>` : '') +
+      `<g stroke="${color}" stroke-width="2">${inner}</g></svg>`;
+  };
   MB.markerIcon = function (st) {
-    const shape = MB.markerShape(st), color = (st && st.color) || '#e4572e';
+    const shape = MB.markerShape(st), color = MB.markerColor(st);
     if (shape === 'pin') return MB.pinIcon(color);
     const s = MB.markerSize(st);
-    return L.divIcon({ className: 'mb-pin mb-pin-' + shape, html: MB.shapeSvg(shape, color, s), iconSize: [s, s], iconAnchor: [s / 2, s / 2],
+    let html;
+    if (shape === 'icon') {
+      const inner = MB.iconInner(st.markerIcon);
+      // the set is not loaded yet, or the name is unknown: a dot the same size, drawn again once it is (features.js)
+      html = inner ? MB.iconMarkerSvg(inner, color, s, st.markerHalo !== false, st.markerRotation) : MB.shapeSvg('dot', color, s);
+    } else html = MB.shapeSvg(shape, color, s);
+    return L.divIcon({ className: 'mb-pin mb-pin-' + shape, html, iconSize: [s, s], iconAnchor: [s / 2, s / 2],
       popupAnchor: [0, -s / 2], tooltipAnchor: [0, -s / 2] });
   };
   // The marker's box around its point, in px (where its name label and measurements go).

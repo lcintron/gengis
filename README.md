@@ -25,7 +25,7 @@ Offline-first geospatial intelligence app: map, measure and annotate, overlay li
 
 **Map and annotate**
 - Draw markers, text, lines, polygons, circles and preset shapes, with snapping, labels, colors, fill patterns and fonts.
-- Place pictures, SVGs and 1,600+ [Lucide](https://lucide.dev) icons.
+- Place pictures and SVGs, or any of 1,600+ [Lucide](https://lucide.dev) icons as a marker you can color, size, outline and turn.
 - Draw freehand with a stylus (its eraser end erases), or Shift + drag with a mouse.
 - Move, resize, join and duplicate objects; copy a style onto others.
 - Organize your work in layers and groups, with show/hide, lock and undo/redo.

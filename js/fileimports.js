@@ -1438,7 +1438,7 @@ window.MB = window.MB || {};
     },
     // The layer's features into the project as its own objects, in a layer of the same name: each named by its title
     // (by its label, when labels show, which then shows on it too), its attributes and colors with it, a point drawn
-    // with an icon as that icon, one drawn as a dot as a dot marker.
+    // with an icon as an icon marker, one drawn as a dot as a dot marker.
     async toProject(id) {
       const rec = layers.get(id);
       if (!rec || !MB.restoreFeature) return;
@@ -1461,8 +1461,10 @@ window.MB = window.MB || {};
           const base = { layerId: target.id, name, style, attrs: Object.keys(attrs).length ? attrs : undefined,
             label: lb.show && name ? { show: true, size: +lb.size || 12, color: lb.color || '#ffffff', bg: lb.bg !== false } : undefined };
           const ll = c => [c[1], c[0]], g = f.geometry, c = g.coordinates;
-          const svgId = p.kind === 'point' && p.sym.icon && MB.icons ? MB.icons.libraryId(p.sym.icon, (p.sym.own && p.sym.own.marker) || p.sym.color, true) : null;
-          const point = q => MB.restoreFeature(Object.assign({}, base, svgId ? { type: 'svg', latlng: ll(q), svg: { svgId, mode: 'pin', rotation: 0, opacity: 1, width: size } } : { type: 'marker', latlng: ll(q) }));
+          // a point drawn with an icon: an icon marker of the project, the icon by name and in the symbol's color
+          const icon = p.kind === 'point' && p.sym && typeof p.sym.icon === 'string' ? p.sym.icon : '';
+          const iconStyle = icon ? Object.assign({}, style, { color: (p.sym.own && p.sym.own.marker) || p.sym.color, markerShape: 'icon', markerIcon: icon, markerHalo: true, markerSize: size }) : null;
+          const point = q => MB.restoreFeature(Object.assign({}, base, { type: 'marker', latlng: ll(q) }, iconStyle ? { style: iconStyle } : {}));
           try {
             if (g.type === 'Point') point(c);
             else if (g.type === 'MultiPoint') c.forEach(point);
