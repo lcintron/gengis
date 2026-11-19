@@ -1079,13 +1079,15 @@ window.MB = window.MB || {};
       html += `<div class="section"><h3>${sections.includes('markerOnly') ? 'Marker' : 'Border / line'}</h3>
         <div class="row"><label>Color</label><input type="color" data-k="color" value="${esc(st.color)}"><span class="grow"></span></div>`;
       if (sections.includes('markerOnly')) { // its shape: the pin, a smaller symbol centered on the point, or an icon
+        // The Size slider's ends take in the size the marker is now, so the browser clamps nothing: the Scale tool's
+        // handles go down to 6 px, and a shape switched to one with a smaller limit keeps the size it had.
         const shape = MB.markerShape(st), size = MB.markerSize(st);
         const name = typeof st.markerIcon === 'string' ? st.markerIcon : '';
         const glyph = k => k === 'pin' ? MB.pinIconSvg('currentColor').replace('width="26" height="40"', 'width="11" height="17"')
           : k === 'icon' ? iconGlyph(name, 14) : MB.shapeSvg(k, 'currentColor', 14);
         html += `<div class="row"><label>Shape</label><div class="seg small marker-shapes shape-row" data-set="markerShape" role="group" aria-label="Marker shape">${Object.keys(MB.markerShapes).map(k =>
           `<button type="button" data-v="${k}"${shape === k ? ' class="active"' : ''} title="${MB.markerShapes[k]}" aria-label="${MB.markerShapes[k]}" aria-pressed="${shape === k}">${glyph(k)}</button>`).join('')}</div></div>
-        <div class="row" data-row="markerSize"${shape === 'pin' ? ' hidden' : ''}><label>Size</label><input type="range" data-k="markerSize" min="8" max="${shape === 'icon' ? 96 : 40}" step="1" value="${size}" aria-label="Marker size"><span class="val" data-val="markerSize">${size}px</span></div>`;
+        <div class="row" data-row="markerSize"${shape === 'pin' ? ' hidden' : ''}><label>Size</label><input type="range" data-k="markerSize" min="${Math.min(8, size)}" max="${Math.max(shape === 'icon' ? 96 : 40, size)}" step="1" value="${size}" aria-label="Marker size"><span class="val" data-val="markerSize">${size}px</span></div>`;
         if (shape === 'icon') { // which icon, and its outline (its angle: the Rotation row below the form)
           html += `<div class="row"><label>Icon</label><button type="button" class="btn small with-icon marker-icon-btn" data-act="pick-icon" title="Choose another icon" aria-label="Icon: ${esc(name)}. Choose another">${iconGlyph(name, 16)}<span class="icon-name">${esc(name)}</span></button><span class="grow"></span></div>
         <label class="check" title="A contrasting outline behind the icon, so it reads on any map"><input type="checkbox" data-k="markerHalo"${st.markerHalo !== false ? ' checked' : ''}> Outline</label>`;
