@@ -45,6 +45,7 @@ window.MB = window.MB || {};
 
   /* ---------- the dialog ---------- */
   U.open = function () {
+    if (MB.ui.commitName) MB.ui.commitName(); // a name typed in the top bar and not left yet is the project's name here too
     if (!dlg) {
       dlg = document.createElement('div');
       dlg.id = 'cloudDialog'; dlg.className = 'modal hidden';
@@ -56,10 +57,15 @@ window.MB = window.MB || {};
     preload(C().offered());
     U.render();
     MB.ui.openDialog(dlg);
+    // the pending save, so the rows read the record as it is now; not awaited before showing (claiming the lock
+    // can take up to 5 s)
+    MB.projects.flush().then(() => { if (isOpen()) U.render(); }).catch(() => { /* the rows show the live name anyway */ });
     C().pull(false);
     loadAll();
   };
   const isOpen = () => dlg && !dlg.classList.contains('hidden');
+  // A render a moment from now: several events landing together (a save, a sync) are one redraw.
+  const renderSoon = () => { if (isOpen()) { clearTimeout(renderTimer); renderTimer = setTimeout(U.render, 150); } };
   // A provider that signs in in a pop-up loads its sign-in beforehand (a pop-up opened after a wait is blocked).
   const preload = ids => ids.forEach(id => { const p = MB.cloudProviders[id]; if (p && p.preload) p.preload(); });
 
@@ -83,6 +89,10 @@ window.MB = window.MB || {};
     const box = dlg.querySelector('.modal-box'), c = C();
     const offered = c.offered(), accs = c.accounts;
     const list = accs.length ? await MB.projects.list() : [];
+    // The open project as it is now: its record was last written a save ago, so a name just typed in the top bar
+    // is not in it yet and the row would still offer to name it. Only this tab's own project, the one it saves.
+    const live = MB.projects.owns() ? list.findIndex(r => r.id === MB.state.projectId) : -1;
+    if (live >= 0) list[live] = Object.assign({}, list[live], { name: MB.state.projectName, fileBacked: !!MB.projects.fileBacked });
     const active = document.activeElement && box.contains(document.activeElement) ? document.activeElement : null;
     if (active && active.tagName === 'SELECT') { clearTimeout(renderTimer); renderTimer = setTimeout(U.render, 600); return; } // a list being chosen from: after
     const focusKey = active ? active.dataset.key : null, scroll = box.scrollTop;
@@ -325,11 +335,12 @@ window.MB = window.MB || {};
       act.title = need === 'conflict' ? 'Edited here and in the cloud: choose which to keep' : 'Signed out of the cloud: sign in to sync';
       renderSettings();
       preload([...new Set(c.accounts.map(x => x.provider))]); // (a connected account's "Sign in" button beside the save status)
-      if (isOpen()) { clearTimeout(renderTimer); renderTimer = setTimeout(U.render, 150); }
+      renderSoon();
     };
     MB.on('cloudsync', paint);
     MB.on('cloud-return', () => U.open());
     MB.on('project', paint);
+    MB.on('saved', renderSoon); // the renamed project landed in the database: its row says so
     paint();
   }
 

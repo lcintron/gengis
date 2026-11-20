@@ -109,16 +109,16 @@ window.MB = window.MB || {};
           ${keyGroups.map(gk => { const g = MB.builtinKeyGroups[gk]; const cur = MB.builtinKey(gk); return `
           <form class="form-grid builtin-key" data-group="${gk}">
             <label>${esc(g.name)}</label>
-            <div class="row" style="margin:0"><input name="key" type="text" value="${esc(cur)}" placeholder="paste your ${esc(g.name)} key" autocomplete="off" spellcheck="false"><button class="btn small primary" type="submit">Save</button></div>
+            <div class="row" style="margin:0"><input name="key" type="text" value="${esc(cur)}" placeholder="paste your ${esc(g.name)} key" autocomplete="off" spellcheck="false"><button class="btn small primary with-icon" type="submit">${MB.ICON.save}Save</button></div>
             ${(g.options || []).map(o => `<label>${esc(o.label)}</label><select name="opt_${o.key}">${o.choices.map(c => `<option value="${c[0]}"${MB.builtinOption(o.key, o.choices[0][0]) === c[0] ? ' selected' : ''}>${esc(c[1])}</option>`).join('')}</select>`).join('')}
             <span></span><p class="note" style="margin:0">${esc(g.note)} <a href="${g.signup}" target="_blank" rel="noopener">Get a key</a> · <b>${cur ? 'key set' : 'no key'}</b></p>
           </form>`; }).join('')}
         </div>
         <p class="note">XYZ tiles (<code>{z}/{x}/{y}</code>, optional <code>{s}</code>, <code>{r}</code>, <code>{key}</code>) or WMS.</p>
         <div class="section"><h3>Configured providers</h3>
-          <div class="btn-row"><button type="button" class="btn small" data-import="1" title="MOBAC map sources, as ATAK takes them: one .xml, or a .zip of many">Import map sources (.xml / .zip)…</button></div>
+          <div class="btn-row"><button type="button" class="btn small with-icon wrap" data-import="1" title="MOBAC map sources, as ATAK takes them: one .xml, or a .zip of many">${MB.ICON.upload}Import map sources (.xml / .zip)…</button></div>
           ${list.length ? '<div class="prov-list">' + list.map(x => `<div class="prov-item"><span class="pname">${esc(x.name)}</span><span class="badge">${x.type === 'multi' ? 'BLENDED' : x.type.toUpperCase()}</span>${x.group ? `<span class="badge" title="Imported map source">${esc(x.group)}</span>` : ''}${x.url.includes('{key}') ? `<span class="badge${x.key ? '' : ' warn'}">${x.key ? 'key set' : 'needs key'}</span>` : ''}
-            <span class="grow"></span><button class="btn small" data-use="${x.id}">Use</button>${x.type === 'multi' ? '' : MB.iconBtn('edit', 'Edit', `data-edit="${x.id}"`, '', 'Edit ' + x.name)}${MB.iconBtn('trash', 'Remove', `data-del="${x.id}"`, 'danger', 'Remove ' + x.name)}</div>`).join('') + '</div>'
+            <span class="grow"></span><button type="button" class="btn small with-icon" data-use="${x.id}" aria-label="Use ${esc(x.name)}">${MB.ICON.check}Use</button>${x.type === 'multi' ? '' : MB.iconBtn('edit', 'Edit', `data-edit="${x.id}"`, '', 'Edit ' + x.name)}${MB.iconBtn('trash', 'Remove', `data-del="${x.id}"`, 'danger', 'Remove ' + x.name)}</div>`).join('') + '</div>'
           : '<p class="note">None yet.</p>'}
         </div>
         <div class="section"><h3>${editing ? 'Edit provider' : 'Add provider'}</h3>
@@ -134,7 +134,7 @@ window.MB = window.MB || {};
             <label>Tile size</label><select name="tileSize"><option value="256"${+p.tileSize !== 512 ? ' selected' : ''}>256 px</option><option value="512"${+p.tileSize === 512 ? ' selected' : ''}>512 px (MapTiler, Mapbox)</option></select>
             <label>WMS layers</label><input name="layers" type="text" value="${esc(p.layers || '')}" placeholder="comma-separated layer names (WMS only)">
             <label>WMS format</label><input name="format" type="text" value="${esc(p.format || 'image/png')}" placeholder="image/png">
-            <span></span><div class="btn-row"><button class="btn primary with-icon" type="submit">${editing ? 'Save changes' : MB.ICON.plus + 'Add provider'}</button>${editing ? '<button class="btn ghost" type="button" data-cancel="1">Cancel</button>' : ''}</div>
+            <span></span><div class="btn-row"><button class="btn primary with-icon" type="submit">${editing ? MB.ICON.save + 'Save changes' : MB.ICON.plus + 'Add provider'}</button>${editing ? `<button class="btn ghost with-icon" type="button" data-cancel="1">${MB.ICON.close}Cancel</button>` : ''}</div>
           </form>
         </div>`;
       $$('form.builtin-key', panel).forEach(kf => kf.addEventListener('submit', e => {
@@ -204,7 +204,7 @@ window.MB = window.MB || {};
           <label>Key parameter</label><input name="geocoderKeyParam" type="text" value="${esc(v('geocoderKeyParam'))}" placeholder="e.g. key or api_key (empty if none)">
           <label>API key</label><input name="geocoderKey" type="text" value="${esc(v('geocoderKey'))}" autocomplete="off" spellcheck="false">
           <label>Overpass endpoints</label><textarea name="overpassUrls" rows="4">${esc((v('overpassUrls') || []).join('\n'))}</textarea>
-          <span></span><div class="btn-row"><button class="btn primary" type="submit">Save</button><button class="btn ghost" type="button" data-reset="1">Reset to defaults</button></div>
+          <span></span><div class="btn-row"><button class="btn primary with-icon" type="submit">${MB.ICON.save}Save</button><button class="btn ghost with-icon" type="button" data-reset="1">${MB.ICON.reset}Reset to defaults</button></div>
         </form>`;
       const form = $('#searchForm', panel);
       $('select[name="preset"]', form).addEventListener('change', e => {

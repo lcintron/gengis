@@ -182,6 +182,8 @@ svg.mi { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentC
 /* a small button with an icon before its words (Settings → Project) */
 .btn.with-icon { display: inline-flex; align-items: center; gap: 6px; }
 .btn.with-icon svg.mi { width: 14px; height: 14px; color: currentColor; }
+.btn.with-icon > svg, .btn.with-icon > .mbi { flex: none; } /* a narrow panel squeezes the words, never the icon */
+.btn.wrap { white-space: normal; text-align: left; } /* a long label (a layer's name in it) wraps instead of running out of the panel */
 /* the search, in the panel below 800 px wide (ui.js) */
 .more-menu .more-search { display: none; }
 .more-menu.with-search .more-search { display: block; }
@@ -733,7 +735,7 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   .btn, .icon-btn { min-height: 36px; }
   .layer-node .icon-btn.mini, .obj-item .icon-btn.mini, .info-line .icon-btn.mini { width: 28px; height: 28px; min-height: 28px; }
   /* the icon actions in dialogs, popups and panels: a finger-sized square */
-  :is(.recent-item, .prov-item, .area-head, .mb-popup-actions, .panel-head, .btn-row) .icon-btn.mini { width: 36px; height: 36px; }
+  :is(.recent-item, .prov-item, .area-head, .mb-popup-actions, .panel-head, .btn-row, .poi-item) .icon-btn.mini { width: 36px; height: 36px; }
 }
 @media (hover: none) and (pointer: coarse) {
   /* touch: bigger hit areas, no hover-only affordances */

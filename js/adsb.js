@@ -790,7 +790,7 @@ window.MB = window.MB || {};
           .catch(() => { if (this.popup === popup) box.innerHTML = '<div class="note">Look-up failed. Try again later.</div>'; });
       };
       if (this.lookups.has(key)) { show(); return; }
-      box.innerHTML = '<button type="button" class="btn small">Look up aircraft details</button>';
+      box.innerHTML = `<button type="button" class="btn small with-icon">${MB.ICON.search}Look up aircraft details</button>`;
       // stop the click here: the button is replaced below, and Leaflet takes a click from a detached element for a map click (which closes the popup)
       box.querySelector('button').addEventListener('click', ev => { L.DomEvent.stop(ev); show(); });
     },

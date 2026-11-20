@@ -1243,7 +1243,7 @@ window.MB = window.MB || {};
       const attrs = Object.keys(m.attrs || {}).slice(0, 20).map(k => [k, String(m.attrs[k])]); // its attributes too
       const rows = [['Type', type], ['Layer', lay ? lay.name : ''], ['Size', measure]].map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>` : '').join('') +
         attrs.map(([k, v]) => v ? `<tr><td>${esc(k)}</td><td>${MB.richValue(v)}</td></tr>` : '').join(''); // (an attribute with formatting: kept, made safe)
-      const act = presenting ? '' : `<div class="btn-row"${h.layer === MB.selected ? ' hidden' : ''}><button type="button" class="btn small" data-select="${i}">Select</button></div>`; // (another object at the point, one under it: to edit it; hidden on the one already selected, while it is: selectionShown)
+      const act = presenting ? '' : `<div class="btn-row"${h.layer === MB.selected ? ' hidden' : ''}><button type="button" class="btn small with-icon" data-select="${i}">${MB.ICON.pointer}Select</button></div>`; // (another object at the point, one under it: to edit it; hidden on the one already selected, while it is: selectionShown)
       const open = i === 0 ? ' open' : ''; // the one in front (listed first) opens: an object clicked
       return `<details class="mb-ident mb-ident-own" name="mb-ident" data-i="${i}"${open}><summary><span class="mb-ident-ds">${esc(lay ? lay.name : 'Your objects')}</span><span class="mb-ident-label">${esc(String(name))}</span></summary><table class="mb-datatable">${rows}</table>${act}</details>`;
     };
