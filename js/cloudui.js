@@ -42,6 +42,9 @@ window.MB = window.MB || {};
   let dlg = null, renderTimer = null;
   const remote = {}; // accountId -> { files, loading, error, seq }: the account's cloud folder as last listed
   const busy = {};   // fileId -> 'open' | 'delete' while that is under way (kept here: every render rebuilds the rows)
+  // projectId -> true from the choice made until the resolve settles: its three choices stay disabled through the
+  // redraws meanwhile (the resolve flushes the project, and that save draws the rows again)
+  const resolving = {};
 
   /* ---------- the dialog ---------- */
   U.open = function () {
@@ -180,10 +183,11 @@ window.MB = window.MB || {};
     const where = accs.length > 1
       ? `<select data-sync="${esc(r.id)}" data-key="p-${esc(r.id)}" aria-label="Sync ${esc(r.name)} to"${draft ? ' disabled' : ''}><option value="">Off</option>${accs.map(a => `<option value="${esc(a.id)}"${accId === a.id ? ' selected' : ''}>${esc(provName(a.provider))} · ${esc(a.email)}</option>`).join('')}</select>`
       : toggle(`data-sync="${esc(r.id)}" data-acc="${esc(accs[0].id)}" data-key="p-${esc(r.id)}"`, on, 'Sync ' + r.name, draft);
+    const off = resolving[r.id] ? ' disabled' : ''; // the choice is being carried out: not a second time
     const conflict = state === 'conflict' ? `<div class="cloud-conflict" role="group" aria-label="Choose which version to keep">
-        <button type="button" class="btn small primary" data-resolve="both" data-id="${esc(r.id)}" title="Keep this version, and save the cloud version as a separate project">Keep both</button>
-        <button type="button" class="btn small" data-resolve="cloud" data-id="${esc(r.id)}" title="Replace this version with the cloud version (this one is kept in Recent projects → earlier copies)">Use cloud</button>
-        <button type="button" class="btn small" data-resolve="mine" data-id="${esc(r.id)}" title="Replace the cloud version with this one (the cloud keeps the old one in its version history)">Use mine</button></div>` : '';
+        <button type="button" class="btn small primary" data-resolve="both" data-id="${esc(r.id)}" title="Keep this version, and save the cloud version as a separate project"${off}>Keep both</button>
+        <button type="button" class="btn small" data-resolve="cloud" data-id="${esc(r.id)}" title="Replace this version with the cloud version (this one is kept in Recent projects → earlier copies)"${off}>Use cloud</button>
+        <button type="button" class="btn small" data-resolve="mine" data-id="${esc(r.id)}" title="Replace the cloud version with this one (the cloud keeps the old one in its version history)"${off}>Use mine</button></div>` : '';
     const why = l && l.error && state === 'error' ? l.error : label;
     return `<div class="cloud-row${r.id === MB.state.projectId ? ' current' : ''}${on ? '' : ' off'}" data-name="${esc(String(r.name || '').toLowerCase())}">
         <span class="cloud-st ${esc(state)}" role="img" aria-label="${esc(why)}" title="${esc(why)}">${I[state] || I.off}</span>
@@ -285,7 +289,14 @@ window.MB = window.MB || {};
       if (sel.value) C().setAuto(sel.value, true); else if (was) C().setAuto(was.id, false);
     });
     on('[data-sync]', el => C().setSync(el.dataset.sync, el.type === 'checkbox' ? (el.checked ? el.dataset.acc : null) : (el.value || null)));
-    on('[data-resolve]', b => { box.querySelectorAll(`[data-resolve][data-id="${CSS.escape(b.dataset.id)}"]`).forEach(x => { x.disabled = true; }); C().resolve(b.dataset.id, b.dataset.resolve); });
+    on('[data-resolve]', b => {
+      const id = b.dataset.id;
+      if (resolving[id]) return;
+      resolving[id] = true; // (a redraw while it runs keeps them disabled; the DOM's own are for right now)
+      box.querySelectorAll(`[data-resolve][data-id="${CSS.escape(id)}"]`).forEach(x => { x.disabled = true; });
+      const done = () => { delete resolving[id]; renderSoon(); };
+      Promise.resolve(C().resolve(id, b.dataset.resolve)).then(done, done); // settled either way: the row says what came of it
+    });
     on('[data-act="syncnow"]', b => { b.disabled = true; b.classList.add('spin'); C().syncNow().finally(() => { U.render(); loadAll(); }); });
     on('[data-reload]', b => loadRemote(b.dataset.reload));
     on('[data-act="dismiss"]', () => { C().lastError = ''; U.render(); });

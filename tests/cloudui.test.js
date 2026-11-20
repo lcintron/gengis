@@ -12,12 +12,13 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const tick = ms => new Promise(r => setTimeout(r, ms || 0));
 
 // A stand-in for the elements the dialog makes: it keeps the HTML it is given, and hands out the one box the
-// dialog draws into. Nothing is parsed: the tests read the HTML.
+// dialog draws into. Nothing is parsed: the tests read the HTML. _els answers querySelectorAll, so a test that
+// needs a button wired (the conflict choices) can put one there for the selector the dialog binds.
 function fakeEl(tag) {
   const classes = new Set();
   const self = {
     tagName: String(tag || 'div').toUpperCase(), type: '', id: '', dataset: {}, style: {}, scrollTop: 0, hidden: false, textContent: '', title: '',
-    _html: '', _box: null,
+    _html: '', _box: null, _els: {},
     classList: {
       add: c => classes.add(c), remove: c => classes.delete(c), contains: c => classes.has(c),
       toggle: (c, on) => { if (on === undefined ? classes.has(c) : !on) classes.delete(c); else classes.add(c); }
@@ -29,10 +30,19 @@ function fakeEl(tag) {
     setAttribute(k, v) { self.dataset['attr_' + k] = v; },
     appendChild: c => c, insertAdjacentElement: () => {}, addEventListener: () => {}, removeEventListener: () => {},
     focus: () => {}, contains: () => false, remove: () => {},
-    querySelector: sel => (sel === '.modal-box' ? (self._box = self._box || fakeEl('div')) : null),
-    querySelectorAll: () => []
+    querySelector: sel => (sel === '.modal-box' ? (self._box = self._box || fakeEl('div')) : (self._els[sel] || [])[0] || null),
+    querySelectorAll: sel => self._els[sel] || []
   };
   return self;
+}
+
+// A button in the drawn HTML, for the one selector the dialog binds it by: it keeps the handler it is given.
+function fakeBtn(data) {
+  const b = fakeEl('button');
+  b.dataset = data;
+  b.disabled = false;
+  b.addEventListener = (type, fn) => { b._click = type === 'click' ? fn : b._click; };
+  return b;
 }
 
 // isDraft as the project store has it (js/projectstore.js): still "Untitled map" and never saved to a file.
@@ -43,8 +53,9 @@ function load(o) {
   const log = [];
   const records = o.records || [{ id: 'p1', name: 'Untitled map', objects: 2, savedAt: 1, fileBacked: false }];
   const listeners = {};
-  let flushResolve = null;
+  let flushResolve = null, resolveDone = null, resolveFailed = null;
   const flushed = new Promise(res => { flushResolve = res; });
+  const resolved = new Promise((res, rej) => { resolveDone = res; resolveFailed = rej; });
   const projects = {
     fileBacked: !!o.fileBacked,
     isDraft,
@@ -58,8 +69,9 @@ function load(o) {
     ready: true, links: {}, progress: {}, lastError: '',
     accounts: o.accounts || [{ id: 'a1', provider: 'onedrive', name: 'Tester', email: 't@example.com', kind: 'personal', state: 'ok', auto: false }],
     offered: () => ['onedrive'],
-    status: () => null,
+    status: id => (o.status || {})[id] || null,
     accountOf: () => null,
+    resolve: () => { log.push('resolve'); return o.resolveNow === false ? resolved : Promise.resolve(); },
     pull() {}, syncNow: async () => {}, listCloud: async () => []
   };
   const MB = {
@@ -88,7 +100,7 @@ function load(o) {
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/cloudui.js'), 'utf8'), ctx, { filename: 'js/cloudui.js' });
   MB.cloudUI.init();
-  return { MB, U: MB.cloudUI, log, records, document, flushResolve };
+  return { MB, U: MB.cloudUI, log, records, document, flushResolve, resolveDone, resolveFailed };
 }
 
 // The HTML the dialog last drew into its box.
@@ -177,6 +189,46 @@ test('a tab that only shows the project (another has it open) leaves every row a
   const row = rowOf(boxHtml(ld.U), 'p1');
   assert.match(row, /<b>Untitled map<\/b>/, 'the record, not this tab\'s name');
   assert.match(row, /Name it to sync/);
+});
+
+// A conflict row with its three choices wired, the resolve left hanging: what the click starts.
+async function conflictStarted(o) {
+  const ld = open(Object.assign({ status: { p1: 'conflict' }, resolveNow: false }, o));
+  await tick(20);
+  assert.match(rowOf(boxHtml(ld.U), 'p1'), /data-resolve="both"(?![^>]*disabled)/, 'the choices are there to be made');
+  const btns = ['both', 'cloud', 'mine'].map(k => fakeBtn({ resolve: k, id: 'p1' }));
+  const box = ld.U._testDlg.querySelector('.modal-box');
+  box._els['[data-resolve]'] = btns;
+  box._els['[data-resolve][data-id="p1"]'] = btns;
+  await ld.U.render();
+  btns[0]._click();
+  return { ld, btns };
+}
+
+test('a choice being carried out keeps the three conflict buttons disabled through every redraw', async () => {
+  const { ld, btns } = await conflictStarted();
+  assert.ok(btns.every(b => b.disabled), 'the buttons on screen go quiet at once');
+  assert.ok(ld.log.includes('resolve'), 'the resolve was started');
+  // the resolve flushes the project: the save emits 'saved', which draws the rows again
+  ld.MB.emit('saved', 'p1');
+  await tick(200);
+  const row = rowOf(boxHtml(ld.U), 'p1');
+  for (const k of ['both', 'cloud', 'mine']) assert.match(row, new RegExp(`data-resolve="${k}"[^>]*disabled`), k + ' stays disabled while it runs');
+  // a second click while it runs starts nothing more
+  const before = ld.log.filter(x => x === 'resolve').length;
+  btns[1]._click();
+  assert.equal(ld.log.filter(x => x === 'resolve').length, before);
+  // it went through: the choices are live again (for as long as the row is still a conflict)
+  ld.resolveDone();
+  await tick(200);
+  assert.match(rowOf(boxHtml(ld.U), 'p1'), /data-resolve="both"(?![^>]*disabled)/);
+});
+
+test('a resolve that fails gives the choices back, it does not leave the row stuck', async () => {
+  const { ld } = await conflictStarted();
+  ld.resolveFailed(new Error('offline'));
+  await tick(200);
+  assert.match(rowOf(boxHtml(ld.U), 'p1'), /data-resolve="mine"(?![^>]*disabled)/);
 });
 
 test('a name with a quote or a tag in it is escaped in the row it is put into', async () => {

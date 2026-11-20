@@ -123,9 +123,12 @@ window.MB = window.MB || {};
   // The name in the top bar becomes the project's: on leaving the box or pressing Enter, and whenever something
   // else needs the name as typed before the box is left (the cloud sync dialog opening). An empty name is
   // "Untitled map"; a name that did not change is not committed, so it is no undo step and no save.
+  // The box untouched is nothing to commit, whatever the project's name looks like: a name loaded with spaces
+  // around it, or one that is only spaces, must not be tidied (and turned into a draft) behind the user's back.
   MB.ui.commitName = function () {
     const nameInput = $('#projectName');
     if (!nameInput) return;
+    if (nameInput.value === String(MB.state.projectName)) return;
     const name = nameInput.value.trim() || 'Untitled map';
     nameInput.value = name;
     if (name === MB.state.projectName) return;

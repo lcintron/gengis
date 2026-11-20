@@ -224,6 +224,11 @@ test('the name typed in the top bar can be taken as the project\'s there and the
   assert.deepEqual(run('  Harbor survey  ', 'Untitled map'), { name: 'Harbor survey', value: 'Harbor survey', title: 'Harbor survey - GenGIS', commits: 1 }, 'trimmed, taken, one undo step');
   assert.deepEqual(run('   ', 'Alpha'), { name: 'Untitled map', value: 'Untitled map', title: 'Untitled map - GenGIS', commits: 1 }, 'an emptied name is Untitled map');
   assert.deepEqual(run('Alpha', 'Alpha'), { name: 'Alpha', value: 'Alpha', title: 'x', commits: 0 }, 'unchanged: nothing committed, no undo step');
+  // A project opened keeps the name its file has, untidied, and the box shows it as it is. Opening the cloud
+  // dialog then calls this: an untouched box must not rename the project (an undo step, a save, a cloud rename).
+  assert.deepEqual(run('  Harbor ', '  Harbor '), { name: '  Harbor ', value: '  Harbor ', title: 'x', commits: 0 }, 'untouched, spaces and all: left alone');
+  assert.deepEqual(run('   ', '   '), { name: '   ', value: '   ', title: 'x', commits: 0 }, 'a name of spaces only is not turned into "Untitled map" (that would make it a draft)');
+  assert.deepEqual(run('42', 42), { name: 42, value: '42', title: 'x', commits: 0 }, 'a name that is not a text: compared as the box shows it');
   // no box yet (a panel that opens before the top bar is set up): nothing happens
   const MBy = { ui: {}, state: { projectName: 'Alpha' }, commit() { throw new Error('committed'); } };
   assert.doesNotThrow(() => make(MBy, () => null, { title: '' })());
