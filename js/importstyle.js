@@ -285,7 +285,7 @@ window.MB = window.MB || {};
       </div>`).join('');
     return `<div class="row"><label for="lookTitle">Title</label><select id="lookTitle" data-l="title">${fieldOpts(look, look.title, 'Automatic (a name field)')}</select></div>
       <p class="note">The title heads the popup and names the feature. Below: the fields shown in the popup, in this order, each under the name you give it (empty: its own).</p>
-      ${look.fields.length ? `<div class="look-fields">${rows}</div><div class="btn-row"><button type="button" class="btn small" data-l="all">Show all</button><button type="button" class="btn small" data-l="none">Hide all</button></div>` : '<p class="note">This layer has no fields: add some in its attribute table.</p>'}`;
+      ${look.fields.length ? `<div class="look-fields">${rows}</div><div class="btn-row"><button type="button" class="btn small with-icon" data-l="all">${MB.ICON.eye}Show all</button><button type="button" class="btn small with-icon" data-l="none">${MB.ICON.eyeOff}Hide all</button></div>` : '<p class="note">This layer has no fields: add some in its attribute table.</p>'}`;
   }
 
   function labelsTab(look) {

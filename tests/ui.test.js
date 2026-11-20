@@ -158,6 +158,84 @@ test('every data source section has its dot, and the buttons their icons', () =>
   assert.match(html, /id="addLayerBtn" class="btn small with-icon"><svg/);
 });
 
+test('every button in a side panel leads with an icon, each action drawn one way', () => {
+  // The icon comes before the words, from MB.ICON (or the drawing the object toolbar already has for that action).
+  // Banner and dialog buttons are a change of their own: what is left here is listed, so nothing new slips in.
+  const LATER = ['Reload to update']; // the update banner (js/ui.js)
+  const bare = [];
+  for (const f of ['ui.js', 'settings.js', 'importstyle.js', 'adsb.js', 'datalayers.js']) {
+    for (const m of js[f].matchAll(/<button[^>]*\bclass="btn[ "][^>]*>([\s\S]*?)<\/button>/g)) {
+      const inner = m[1].trim();
+      if (/<svg|MB\.ICON|ACT\.|icons\.|iconGlyph|iconPreview/.test(inner) || LATER.includes(inner)) continue;
+      bare.push(f + ': ' + inner.replace(/\s+/g, ' ').slice(0, 60));
+    }
+  }
+  assert.deepEqual(bare, [], 'buttons showing words only');
+  // the ones this change was about, by name (a label that moves must bring its icon along)
+  assert.match(js['ui.js'], /MB\.ICON\.reset\}Reset to defaults/, 'Layers → new-shape defaults');
+  assert.match(js['settings.js'], /MB\.ICON\.reset\}Reset to defaults/, 'Settings → search services');
+  for (const [f, re] of [
+    ['ui.js', /MB\.ICON\.eye\}Show layer/], ['ui.js', /MB\.ICON\.unlock\}Unlock/], ['ui.js', /MB\.ICON\.ungroup\}Ungroup/],
+    ['ui.js', /MB\.ICON\.joinLines\}Join lines/], ['ui.js', /MB\.ICON\.polyFromLines\}Polygon from lines/],
+    ['ui.js', /MB\.ICON\.joinShapes\}Join shapes/], ['ui.js', /\$\{ACT\.pasteStyle\}Paste style/],
+    ['ui.js', /MB\.ICON\.search\}Search in current view/], ['ui.js', /MB\.ICON\.sweep\}Clear/],
+    ['ui.js', /MB\.ICON\.pinAdd\}Add all/], ['ui.js', /MB\.iconBtn\('pinAdd', 'Add as marker/],
+    ['settings.js', /MB\.ICON\.upload\}Import map sources/], ['settings.js', /MB\.ICON\.check\}Use/],
+    ['settings.js', /MB\.ICON\.save\}Save/], ['settings.js', /MB\.ICON\.save \+ 'Save changes'/], ['settings.js', /MB\.ICON\.close\}Cancel/],
+    ['importstyle.js', /MB\.ICON\.eye\}Show all/], ['importstyle.js', /MB\.ICON\.eyeOff\}Hide all/],
+    ['adsb.js', /MB\.ICON\.search\}Look up aircraft details/], ['datalayers.js', /MB\.ICON\.pointer\}Select/]
+  ]) assert.match(js[f], re, f);
+  // the list's eye and lock are the same drawings, not copies of them
+  for (const k of ['eye', 'eyeOff', 'lock', 'unlock']) assert.match(js['ui.js'], new RegExp('\\n\\s+' + k + ': MB\\.ICON\\.' + k + ','), 'ui.js icons.' + k);
+  // one picture per action: a new icon that repeats an older one (Reset as Refresh) would say the wrong thing
+  const seen = new Map();
+  for (const m of js['util.js'].matchAll(/^\s+(\w+): ic\('(.*?)'\)/gm)) {
+    assert.equal(seen.get(m[2]), undefined, `MB.ICON.${m[1]} is MB.ICON.${seen.get(m[2])} drawn again`);
+    seen.set(m[2], m[1]);
+  }
+  const names = [...seen.values()];
+  for (const k of ['reset', 'save', 'check', 'eye', 'eyeOff', 'lock', 'unlock', 'pointer', 'ungroup', 'joinLines', 'polyFromLines', 'joinShapes']) assert.ok(names.includes(k), 'MB.ICON.' + k);
+  // a long label wraps at a phone's width; its icon keeps its size
+  assert.match(css, /\.btn\.with-icon > svg, \.btn\.with-icon > \.mbi \{ flex: none; \}/);
+  assert.match(css, /\.btn\.wrap \{ white-space: normal;/);
+  for (const [f, re] of [['ui.js', /class="btn small with-icon wrap" type="button">\$\{MB\.ICON\.pinAdd\}Add all/], ['settings.js', /class="btn small with-icon wrap"[^>]*>\$\{MB\.ICON\.upload\}Import/]]) assert.match(js[f], re, f);
+});
+
+test('a button whose icon sits inside it is still the click: no handler asks for a BUTTON target', () => {
+  // e.target is the svg when the icon is clicked: a tagName test would drop the click
+  for (const f of ['ui.js', 'settings.js', 'importstyle.js', 'adsb.js', 'datalayers.js']) {
+    assert.doesNotMatch(js[f], /e\.target\.tagName === 'BUTTON'/, f);
+  }
+  assert.match(js['ui.js'], /if \(e\.target\.closest\('button'\)\) \{ addPoi\(p\); return; \}/, 'a point of interest: its row pans, its button adds');
+});
+
+test('the name typed in the top bar can be taken as the project\'s there and then (MB.ui.commitName)', () => {
+  const src = js['ui.js'];
+  const body = src.slice(src.indexOf('MB.ui.commitName = function'), src.indexOf('function initTopbar'));
+  assert.ok(/MB\.commit\('rename project'\)/.test(body), 'MB.ui.commitName found');
+  const make = new Function('MB', '$', 'document', body + '\nreturn MB.ui.commitName;');
+  const run = (typed, was) => {
+    const input = { value: typed };
+    const MBx = { ui: {}, state: { projectName: was }, commits: 0, commit() { this.commits++; } };
+    const doc = { title: 'x' };
+    make(MBx, () => input, doc)();
+    return { name: MBx.state.projectName, value: input.value, title: doc.title, commits: MBx.commits };
+  };
+  assert.deepEqual(run('  Harbor survey  ', 'Untitled map'), { name: 'Harbor survey', value: 'Harbor survey', title: 'Harbor survey - GenGIS', commits: 1 }, 'trimmed, taken, one undo step');
+  assert.deepEqual(run('   ', 'Alpha'), { name: 'Untitled map', value: 'Untitled map', title: 'Untitled map - GenGIS', commits: 1 }, 'an emptied name is Untitled map');
+  assert.deepEqual(run('Alpha', 'Alpha'), { name: 'Alpha', value: 'Alpha', title: 'x', commits: 0 }, 'unchanged: nothing committed, no undo step');
+  // A project opened keeps the name its file has, untidied, and the box shows it as it is. Opening the cloud
+  // dialog then calls this: an untouched box must not rename the project (an undo step, a save, a cloud rename).
+  assert.deepEqual(run('  Harbor ', '  Harbor '), { name: '  Harbor ', value: '  Harbor ', title: 'x', commits: 0 }, 'untouched, spaces and all: left alone');
+  assert.deepEqual(run('   ', '   '), { name: '   ', value: '   ', title: 'x', commits: 0 }, 'a name of spaces only is not turned into "Untitled map" (that would make it a draft)');
+  assert.deepEqual(run('42', 42), { name: 42, value: '42', title: 'x', commits: 0 }, 'a name that is not a text: compared as the box shows it');
+  // no box yet (a panel that opens before the top bar is set up): nothing happens
+  const MBy = { ui: {}, state: { projectName: 'Alpha' }, commit() { throw new Error('committed'); } };
+  assert.doesNotThrow(() => make(MBy, () => null, { title: '' })());
+  // the cloud dialog takes it before it reads the projects, so a row never offers to name a named project
+  assert.match(js['cloudui.js'], /U\.open = function \(\) \{\r?\n\s*if \(MB\.ui\.commitName\) MB\.ui\.commitName\(\);/);
+});
+
 test('a status line changing (empty, plain, with a zoom icon) patches the Data panel, not rebuilds it', () => {
   // a rebuild would throw keyboard focus off a layer's switch as it is toggled
   assert.match(js['datalayers.js'], /const leaf = el => el\.nodeType === 1 && el\.classList\.contains\('dstatus'\);/);

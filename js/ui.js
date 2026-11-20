@@ -120,14 +120,26 @@ window.MB = window.MB || {};
   // In the desktop app the top bar is also the window's title bar (css: html[data-titlebar]).
   if (window.gengisDesktop && window.gengisDesktop.titleBar) document.documentElement.dataset.titlebar = window.gengisDesktop.titleBar;
 
+  // The name in the top bar becomes the project's: on leaving the box or pressing Enter, and whenever something
+  // else needs the name as typed before the box is left (the cloud sync dialog opening). An empty name is
+  // "Untitled map"; a name that did not change is not committed, so it is no undo step and no save.
+  // The box untouched is nothing to commit, whatever the project's name looks like: a name loaded with spaces
+  // around it, or one that is only spaces, must not be tidied (and turned into a draft) behind the user's back.
+  MB.ui.commitName = function () {
+    const nameInput = $('#projectName');
+    if (!nameInput) return;
+    if (nameInput.value === String(MB.state.projectName)) return;
+    const name = nameInput.value.trim() || 'Untitled map';
+    nameInput.value = name;
+    if (name === MB.state.projectName) return;
+    MB.state.projectName = name;
+    document.title = name + ' - GenGIS';
+    MB.commit('rename project');
+  };
+
   function initTopbar() {
     const nameInput = $('#projectName');
-    nameInput.addEventListener('change', () => {
-      MB.state.projectName = nameInput.value.trim() || 'Untitled map';
-      nameInput.value = MB.state.projectName;
-      document.title = MB.state.projectName + ' - GenGIS';
-      MB.commit('rename project');
-    });
+    nameInput.addEventListener('change', () => MB.ui.commitName());
     const showName = () => { nameInput.value = MB.state.projectName; document.title = MB.state.projectName + ' - GenGIS'; };
     MB.on('project', showName);
     showName(); // the autosaved project was loaded before this bar was set up: its 'project' event came too early
@@ -650,7 +662,7 @@ window.MB = window.MB || {};
         hint.appendChild(warn);
       }
       warn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <span>Layer “${esc(layer.name)}” is hidden: what you add won't show.</span><button type="button" class="btn small" data-act="show-layer">Show layer</button>`;
+          <span>Layer “${esc(layer.name)}” is hidden: what you add won't show.</span><button type="button" class="btn small with-icon" data-act="show-layer">${MB.ICON.eye}Show layer</button>`;
     } else if (warn) warn.remove();
     hint.classList.toggle('hidden', !text && !hidden);
     if (MB.circleRadius) MB.circleRadius.redock(); // the radius box docks under the hint: its height just changed
@@ -798,10 +810,10 @@ window.MB = window.MB || {};
   /* ================= layers panel ================= */
 
   const icons = {
-    eye: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
-    eyeOff: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 3l18 18M10 10a3 3 0 0 0 4 4M6.5 6.7C3.8 8.4 2 12 2 12s3.5 6 10 6c1.6 0 3-.3 4.2-.9M9.5 6.2C10.3 6.1 11.1 6 12 6c6.5 0 10 6 10 6s-.9 1.5-2.5 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-    lock: '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
-    unlock: '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 7.5-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    eye: MB.ICON.eye,
+    eyeOff: MB.ICON.eyeOff,
+    lock: MB.ICON.lock,
+    unlock: MB.ICON.unlock,
     up: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 14l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     down: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 10l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     trash: MB.ICON.trash,
@@ -1161,19 +1173,19 @@ window.MB = window.MB || {};
     const gid = MB.selectedGroup(), grp = gid && MB.getLayer(gid);
     panel.innerHTML = `<div class="panel-head"><h3>${grp ? `Group · ${list.length} objects` : `${list.length} objects selected`}</h3>${MB.iconBtn('close', 'Clear selection', 'data-act="clear"')}</div>
       ${grp ? `<div class="group-note"><span>${icons.group}</span><span class="grow">Layer “${esc(grp.name)}” is grouped: Move drags it, Scale resizes it, as one.</span></div>
-      <div class="btn-row"><button class="btn small" data-act="ungroup">Ungroup</button>${MB.iconBtn('copy', 'Duplicate layer', 'data-act="dup-layer"')}</div>` : ''}
+      <div class="btn-row"><button class="btn small with-icon" data-act="ungroup">${MB.ICON.ungroup}Ungroup</button>${MB.iconBtn('copy', 'Duplicate layer', 'data-act="dup-layer"')}</div>` : ''}
       <div class="feature-list" style="max-height:180px">${list.map(l => `<div class="feature-item"><span class="swatch" style="background:${l.mb.type === 'svg' ? 'transparent' : l.mb.style.color}"></span><span class="fname">${esc(l.mb.name || MB.typeLabels[l.mb.type])}</span><span class="ftype">${MB.typeLabels[l.mb.type]}</span></div>`).join('')}</div>
       <div class="section" style="margin-top:12px"><h3>Lines (${lines.length})</h3>
-        <div class="btn-row"><button class="btn small primary" data-act="join"${lines.length < 1 ? ' disabled' : ''}>Join lines</button><button class="btn small" data-act="poly"${lines.length < 1 ? ' disabled' : ''}>Polygon from lines (keep lines)</button></div>
+        <div class="btn-row"><button class="btn small primary with-icon" data-act="join"${lines.length < 1 ? ' disabled' : ''}>${MB.ICON.joinLines}Join lines</button><button class="btn small with-icon wrap" data-act="poly"${lines.length < 1 ? ' disabled' : ''}>${MB.ICON.polyFromLines}Polygon from lines (keep lines)</button></div>
         <p class="note">Ends must touch. A closed chain becomes a polygon.</p>
       </div>
       ${union.shapes.length >= 2 ? `<div class="section"><h3>Shapes (${union.shapes.length})</h3>
-        <div class="btn-row"><button class="btn small primary" data-act="join-shapes"${union.polygon ? '' : ' disabled'}>Join shapes</button></div>
+        <div class="btn-row"><button class="btn small primary with-icon" data-act="join-shapes"${union.polygon ? '' : ' disabled'}>${MB.ICON.joinShapes}Join shapes</button></div>
         <p class="note">${union.polygon ? 'Overlapping shapes become one polygon (its style from the first one picked).' : esc(union.error)}</p>
       </div>` : ''}
       <div class="section"><h3>All selected</h3>
         <div class="row"><label>Move to layer</label><select id="multiLayer"><option value="">— choose —</option>${MB.state.layers.slice().reverse().map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div>
-        <div class="btn-row">${MB.styleClipboard ? `<button class="btn small" data-act="paste-style"${list.some(MB.canPasteStyle) ? '' : ' disabled'} title="The copied style on the selected objects it fits">Paste style (${list.filter(MB.canPasteStyle).length})</button>` : ''}${MB.iconBtn('trash', 'Delete ' + list.length + ' objects', 'data-act="delete"', 'danger')}</div>
+        <div class="btn-row">${MB.styleClipboard ? `<button class="btn small with-icon" data-act="paste-style"${list.some(MB.canPasteStyle) ? '' : ' disabled'} title="The copied style on the selected objects it fits">${ACT.pasteStyle}Paste style (${list.filter(MB.canPasteStyle).length})</button>` : ''}${MB.iconBtn('trash', 'Delete ' + list.length + ' objects', 'data-act="delete"', 'danger')}</div>
       </div>`;
     $$('[data-act]', panel).forEach(btn => btn.addEventListener('click', () => {
       const act = btn.dataset.act;
@@ -1310,7 +1322,7 @@ window.MB = window.MB || {};
       }));
       const reset = document.createElement('div');
       reset.className = 'btn-row';
-      reset.innerHTML = '<button class="btn small ghost">Reset to defaults</button>';
+      reset.innerHTML = `<button class="btn small ghost with-icon" type="button">${MB.ICON.reset}Reset to defaults</button>`;
       reset.querySelector('button').addEventListener('click', () => { MB.currentStyle = MB.deepClone(MB.defaultStyle); MB.measureStyle = MB.deepClone(MB.defaultMeasureStyle); MB.state.autoColor = true; previews(); MB.ui.renderProps(); MB.autosave(); });
       panel.appendChild(reset);
       return;
@@ -1460,7 +1472,7 @@ window.MB = window.MB || {};
     });
     const note = document.createElement('div');
     note.className = 'lock-note';
-    note.innerHTML = `<span>${icons.lock}</span><span class="grow">${byLayer ? `Layer “${esc(lay ? lay.name : '')}” is locked` : 'This object is locked'}: its properties can't be changed.</span><button type="button" class="btn small">Unlock${byLayer ? ' layer' : ''}</button>`;
+    note.innerHTML = `<span>${icons.lock}</span><span class="grow">${byLayer ? `Layer “${esc(lay ? lay.name : '')}” is locked` : 'This object is locked'}: its properties can't be changed.</span><button type="button" class="btn small with-icon">${MB.ICON.unlock}Unlock${byLayer ? ' layer' : ''}</button>`;
     note.querySelector('button').addEventListener('click', () => {
       if (byLayer) { MB.setLayerLocked(f.mb.layerId, false); MB.commit('layer lock'); } else MB.setFeatureLocked(f.mb.id, false);
     });
@@ -1830,7 +1842,7 @@ window.MB = window.MB || {};
       <div class="row"><label>Category</label><select id="poiCat"><option value="">— choose —</option>${MB.poiCategories.map((c, i) => `<option value="${i}">${c[0]}</option>`).join('')}</select></div>
       <div class="row"><label>OSM tag</label><input type="text" id="poiTag" placeholder="amenity=cafe, shop=*"></div>
       <div class="row"><label>Name contains</label><input type="text" id="poiName" placeholder="optional"></div>
-      <div class="btn-row"><button class="btn primary" id="poiSearch">Search in current view</button><button class="btn ghost" id="poiClear">Clear</button></div>
+      <div class="btn-row"><button class="btn primary with-icon" type="button" id="poiSearch">${MB.ICON.search}Search in current view</button><button class="btn ghost with-icon" type="button" id="poiClear">${MB.ICON.sweep}Clear</button></div>
       <div id="poiStatus" class="note" style="margin-top:10px"></div>
       <div id="poiResults"></div>`;
     $('#poiSearch', panel).addEventListener('click', () => MB.ui.runPoiSearch());
@@ -1883,9 +1895,9 @@ window.MB = window.MB || {};
       const item = document.createElement('div');
       item.className = 'poi-item';
       item.innerHTML = `<span class="pname">${esc(p.name)}<div class="pkind">${esc(p.kind)}${p.tags['addr:street'] ? ' · ' + esc((p.tags['addr:housenumber'] || '') + ' ' + p.tags['addr:street']) : ''}</div></span>
-        <span class="pdist">${MB.formatDistance(p.latlng.distanceTo(center))}</span><button class="btn small" title="Add as marker to the active layer">+</button>`;
+        <span class="pdist">${MB.formatDistance(p.latlng.distanceTo(center))}</span>${MB.iconBtn('pinAdd', 'Add as marker to the active layer', '', '', 'Add "' + p.name + '" as a marker to the active layer')}`;
       item.addEventListener('click', e => {
-        if (e.target.tagName === 'BUTTON') { addPoi(p); return; }
+        if (e.target.closest('button')) { addPoi(p); return; } // (the icon inside it is not the click's target)
         MB.map.panTo(p.latlng); cm.openTooltip();
       });
       list.appendChild(item);
@@ -1894,7 +1906,7 @@ window.MB = window.MB || {};
     if (pois.length) {
       const all = document.createElement('div');
       all.className = 'btn-row';
-      all.innerHTML = `<button class="btn small">Add all ${pois.length} as markers to "${esc(MB.activeLayer().name)}"</button>`;
+      all.innerHTML = `<button class="btn small with-icon wrap" type="button">${MB.ICON.pinAdd}Add all ${pois.length} as markers to "${esc(MB.activeLayer().name)}"</button>`;
       all.querySelector('button').addEventListener('click', () => {
         const added = MB.batch(() => pois.map(p => addPoi(p, true)).filter(Boolean));
         MB.commit('add pois'); MB.ui.clearPoiResults();
