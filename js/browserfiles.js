@@ -24,6 +24,7 @@ window.MB = window.MB || {};
   let entry = null;          // { id, handle, name, lastWritten } of the open project
   let timer = null, lastText = null, lastId = null, failed = false;
   let gen = 0;               // bumped when the open project's link changes: an older lookup then gives way
+  let links = 0;             // bumped when a project is linked to a file or unlinked from it (not when one is opened)
   const P = () => MB.projects;
   const isDraft = () => /^\s*untitled( map)?\s*$/i.test(MB.state.projectName || '') && !P().fileBacked;
   const emit = () => MB.emit('browserfiles', F);
@@ -99,6 +100,19 @@ window.MB = window.MB || {};
     // wait forever for a stalled file), and the link follows it only a moment later (refresh reads the database):
     // so it is the open project's id that is checked, before it is serialized and on what was serialized.
     const mine = () => entry === e && MB.state.projectId === e.id;
+    // Once the write is under way, what it finds out is for the open project when that is still e's project with
+    // the same file. Not "entry === e": an undo or a redo opens the project again, and the link is then read from
+    // the database again, a copy of it. open(): that link as it is now, or null (another project, another file).
+    const linked = links, open = () => (entry && entry.id === e.id && links === linked ? entry : null);
+    // The file now holds this write (text, of project p), last modified as e says: noted on the open project's link.
+    // (late: by a close that had been given up on; the status is then only cleared of that, never of a conflict)
+    const landed = late => {
+      const now = open();
+      if (!now) return;
+      now.lastWritten = e.lastWritten;
+      lastId = p.id; lastText = text; failed = false;
+      if (!late || F.state === 'saving') show('saving');
+    };
     if (!mine()) return false;
     const ok = await allowed(false);
     if (!mine()) return false; // another project opened meanwhile: its own write follows
@@ -113,8 +127,8 @@ window.MB = window.MB || {};
       if (!force && e.lastWritten && before.lastModified > e.lastWritten + 1000) {
         // (said either way, it names the file; the status beside "Saved" is the open project's, and only its own
         // file's write changes it: by now another project may be open)
-        if (entry !== e || F.state !== 'conflict') MB.toast('"' + e.name + '" was changed outside GenGIS, so it is no longer saved automatically. Use the button beside "Saved" to choose.', 7000);
-        if (entry === e) show('conflict');
+        if (!open() || F.state !== 'conflict') MB.toast('"' + e.name + '" was changed outside GenGIS, so it is no longer saved automatically. Use the button beside "Saved" to choose.', 7000);
+        if (open()) show('conflict');
         return false;
       }
       opening = e.handle.createWritable(); // written beside the file, swapped in on close
@@ -124,23 +138,26 @@ window.MB = window.MB || {};
       await bound(closing, 'saving the file');
       e.lastWritten = (await bound(e.handle.getFile(), 'reading the file')).lastModified;
       await bound(putEntry(e), 'noting the save');
-      if (entry === e) { lastId = p.id; lastText = text; failed = false; show('saving'); }
+      landed();
       return true;
     } catch (err) {
       // nothing half-written is left beside the file: the copy being written is dropped (one that only opens after
       // the wait gave up, too). A close still under way may yet complete: the file is then GenGIS's own writing,
-      // not a change made elsewhere, but it holds what was current then, and may have landed over a later write.
-      // So it is written again with the project as it is now.
+      // not a change made elsewhere, and what it holds is this write: noted as such, like a write that answered in
+      // time (a close that is only slow is a save, and nothing is written again for it). It may also have landed
+      // over a later write: the write scheduled here finds the project as it is now differs, and writes it again.
       if (closing) closing.then(async () => {
         e.lastWritten = (await e.handle.getFile()).lastModified;
         await putEntry(e);
-        if (entry === e) { lastText = null; lastId = null; F.schedule(); }
+        if (!open()) return;
+        landed(true);
+        F.schedule();
       }).catch(() => {});
       else if (opening) opening.then(x => x && x.abort && x.abort()).catch(() => {});
       const msg = err && err.message ? err.message : String(err);
       // (the status and the "said once" are the open project's: an earlier project's write leaves them alone)
-      if (entry !== e || !failed) MB.toast('Could not save to "' + e.name + '" (' + msg + '). The project is still saved in this browser.', 6000);
-      if (entry === e) { failed = true; show(F.state === 'saving' ? 'saving' : F.state, msg); }
+      if (!open() || !failed) MB.toast('Could not save to "' + e.name + '" (' + msg + '). The project is still saved in this browser.', 6000);
+      if (open()) { failed = true; show(F.state === 'saving' ? 'saving' : F.state, msg); }
       return false;
     }
   }
@@ -158,7 +175,7 @@ window.MB = window.MB || {};
 
   // Link the open project to a file handle (after Save as or Open).
   async function adopt(handle) {
-    gen++;
+    gen++; links++;
     entry = { id: MB.state.projectId, handle, name: handle.name, lastWritten: 0 };
     F.name = handle.name;
     lastText = null; lastId = null;
@@ -238,7 +255,7 @@ window.MB = window.MB || {};
     clearTimeout(timer); timer = null;
     const name = entry.name;
     await delEntry(entry.id);
-    entry = null; F.name = null;
+    entry = null; F.name = null; links++;
     show('none');
     MB.toast('No longer saving to "' + name + '"', 3000);
   };

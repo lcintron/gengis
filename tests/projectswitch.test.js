@@ -40,6 +40,7 @@ function fakeClock() {
 
 // IndexedDB, as much of it as the two modules use: stores keyed by a key path, requests answered a moment later, a
 // transaction complete once its requests are answered and nothing more was asked.
+const copy = v => (v && typeof v === 'object' ? Object.assign({}, v) : v);
 function fakeIndexedDB(seed) {
   const dbs = {};
   const request = (tx, compute) => {
@@ -49,9 +50,10 @@ function fakeIndexedDB(seed) {
     return q;
   };
   const store = (tx, s) => ({
-    get: k => request(tx, () => s.rows.get(k)),
-    getAll: () => request(tx, () => [...s.rows.values()]),
-    put: v => request(tx, () => { s.rows.set(v[s.keyPath], v); }),
+    // (a copy out and a copy in, as the real one: what is read is never the object that was stored)
+    get: k => request(tx, () => copy(s.rows.get(k))),
+    getAll: () => request(tx, () => [...s.rows.values()].map(copy)),
+    put: v => request(tx, () => { s.rows.set(v[s.keyPath], copy(v)); }),
     delete: k => request(tx, () => { s.rows.delete(k); }),
     index: () => ({ getAll: () => request(tx, () => []) })
   });
@@ -97,7 +99,8 @@ function sandbox(opts) {
     emit: (ev, v) => { (events[ev] || []).forEach(fn => fn(v)); },
     serializeProject: () => ({ id: MB.state.projectId, name: MB.state.projectName, features: [], savedAt: 'now' }),
     isProject: () => true,
-    loadProject: p => { MB.state.projectId = p.id; MB.state.projectName = p.name; MB.emit('project'); },
+    // (opts.keepHistory: a step of undo or redo; anything else is a project opened, and says so)
+    loadProject: (p, o) => { MB.state.projectId = p.id; MB.state.projectName = p.name; MB.emit('project'); if (!(o && o.keepHistory)) MB.emit('project-opened'); },
     storedItem: () => null,
     PROJECT_EXT: '.gengis'
   };
@@ -482,6 +485,116 @@ test('a close given up on that completes late: the file is written again with th
   assert.equal(s.F.state, 'saving', 'and no conflict was made of GenGIS\'s own writing');
 });
 
+// A file on a slow disk: each writable has its own text, in the file (and its time moved on) once closed. close(k)
+// says how the k-th writable's close answers: nothing (at once), a number (after that many ms), or 'held' (when
+// f.release() is called).
+function slowFile(s, close) {
+  const f = { text: s.handle.writable.written, mtime: 1000, writes: 0, release: null };
+  s.handle.getFile = async () => ({ lastModified: f.mtime });
+  s.handle.createWritable = async () => {
+    const mine = { text: null }, k = ++f.writes;
+    const land = () => { f.text = mine.text; f.mtime += 5000; };
+    return {
+      write: async t => { mine.text = t; }, abort: async () => {},
+      close: () => {
+        const how = close(k);
+        if (how === 'held') return new Promise(r => { f.release = () => { land(); r(); }; });
+        if (how) return new Promise(r => { s.clock.setTimeout(() => { land(); r(); }, how); });
+        land();
+        return Promise.resolve();
+      }
+    };
+  };
+  f.name = () => JSON.parse(f.text).name;
+  return f;
+}
+const edit = (s, name) => { s.MB.state.projectName = name; s.MB.emit('saved'); };
+
+test('a file that is only slow to close (longer than the wait) is saved once, not written again and again', async () => {
+  const s = await linked();
+  const f = slowFile(s, () => 9000);
+  edit(s, 'Edit one');
+  await s.clock.advance(2000);  // the write starts
+  await s.clock.advance(8000);  // given up on, and said
+  assert.equal(s.F.error, 'saving the file timed out');
+  await s.clock.advance(1000);  // the close answers after all
+  assert.equal(f.name(), 'Edit one');
+  assert.equal(s.F.error, '', 'it was saved: no longer a failure');
+  assert.equal(s.F.state, 'saving');
+  await s.clock.advance(300000);
+  assert.equal(f.writes, 1, 'one edit, one write');
+  assert.equal(s.clock.pending(), 0, 'and nothing scheduled');
+  // the next edit is written as usual, and is no "changed outside GenGIS"
+  edit(s, 'Edit two');
+  await s.clock.advance(2000 + 9000 + 2000);
+  assert.equal(f.name(), 'Edit two');
+  assert.equal(f.writes, 2);
+  assert.equal(s.F.state, 'saving');
+  assert.ok(!s.toasts.some(t => /changed outside GenGIS/.test(t.msg)));
+});
+
+test('an undo while a close is stalled: the late close does not leave the file with what was undone, nor make a conflict of it', async () => {
+  const s = await linked();
+  const f = slowFile(s, k => (k === 1 ? 'held' : 0));
+  edit(s, 'Edit one');
+  await s.clock.advance(2000); // the write of the edit: its close stalls
+  assert.equal(f.writes, 1);
+  // Ctrl+Z: the project is opened again as it was (and its link read again from the database: a copy of it)
+  s.MB.loadProject({ id: 'A', name: 'Alpha' }, { keepHistory: true });
+  await settle();
+  await s.clock.advance(2000); // the write of the undone project waits its turn
+  await s.clock.advance(8000); // the first is given up on; the second completes
+  assert.equal(f.name(), 'Alpha');
+  f.release();                 // the first close lands after all, over it
+  await settle();
+  assert.equal(f.name(), 'Edit one', '(the file went back to what was undone)');
+  await s.clock.advance(2000);
+  assert.equal(f.name(), 'Alpha', 'written again with the project as it is');
+  assert.equal(s.F.state, 'saving');
+  // and the next edit is saved: the late close was GenGIS's own writing, not a change made elsewhere
+  edit(s, 'Edit three');
+  await s.clock.advance(2000);
+  assert.equal(f.name(), 'Edit three');
+  assert.equal(s.F.state, 'saving');
+  assert.ok(!s.toasts.some(t => /changed outside GenGIS/.test(t.msg)), 'no false conflict');
+});
+
+test('a half-open project stays unsaved through an undo on it, and any project opened whole ends that', async () => {
+  const half = async () => {
+    const s = sandbox({ seed: both() });
+    s.MB.newProject = () => s.MB.loadProject({ id: 'N', name: 'Untitled map' });
+    await s.P.start();
+    await settle();
+    const real = s.MB.loadProject;
+    s.MB.loadProject = p => { s.MB.loadProject = real; s.MB.state.projectId = p.id; throw new Error('bad layer'); };
+    assert.equal(await s.P.open('B'), false);
+    assert.equal(s.P.readOnly, true);
+    return s;
+  };
+  // edits on the half, then Ctrl+Z: the half is "opened" again under the other project's id, and this tab gets to
+  // edit that project. Still nothing is saved from it.
+  const s = await half();
+  s.MB.loadProject({ id: 'B', name: 'Half of Bravo' }, { keepHistory: true });
+  await settle();
+  assert.equal(s.P.readOnly, true, 'still read-only');
+  assert.equal(s.P.owns(), false);
+  assert.match(s.banner(), /A project did not open completely/);
+  s.P.schedule();
+  await s.clock.advance(5000);
+  assert.equal(await s.P.save(), false, 'a save asked for is refused too');
+  assert.equal((await s.P.get('B')).name, 'Bravo', 'what is saved for it is untouched');
+
+  // each way a project is opened whole ends it: a new map, a file or a cloud copy (they call MB.loadProject)
+  for (const [how, act] of [['new map', x => x.P.startFresh()], ['file or cloud', x => x.MB.loadProject({ id: 'C', name: 'Charlie' })], ['Recent projects', x => x.P.open('A')]]) {
+    const x = await half();
+    await act(x);
+    await settle();
+    assert.equal(x.P.readOnly, false, how + ': editable again');
+    assert.equal(x.P.owns(), true, how + ': and saved from');
+    assert.equal(x.banner(), '', how + ': the banner is gone');
+  }
+});
+
 /* ---------- the source: what the behavior above rests on ---------- */
 
 test('source: every wait for a project file on the way to another project is bounded', () => {
@@ -510,14 +623,19 @@ test('source: the browser\'s file calls in a background write all carry a time l
   const awaits = write.split('} catch (err) {')[0].match(/await [^;]*/g) || [];
   awaits.forEach(a => assert.match(a, /^await (allowed\(false\)|bound\()/, a));
   // the file takes its own project only: checked on the open project's id, before serializing and on what was serialized
-  assert.match(write, /const mine = \(\) => entry === e && MB\.state\.projectId === e\.id;\s*if \(!mine\(\)\) return false;\s*const ok = await allowed\(false\);\s*if \(!mine\(\)\) return false;/);
+  assert.match(write, /const mine = \(\) => entry === e && MB\.state\.projectId === e\.id;[\s\S]*?\n    if \(!mine\(\)\) return false;\s*const ok = await allowed\(false\);\s*if \(!mine\(\)\) return false;/);
   assert.match(write, /const \{ p, text, unchanged \} = current\(\);\s*if \(p\.id !== e\.id\) return false;/);
   // a write of a project no longer open changes nothing of the open one's status
-  assert.match(write, /if \(entry === e\) show\('conflict'\);/);
-  assert.match(write, /if \(entry === e\) \{ failed = true; show\(F\.state === 'saving' \? 'saving' : F\.state, msg\); \}/);
-  assert.doesNotMatch(write, /^\s*(show\(|failed = )/m, 'no status change outside an entry === e check');
-  // a close that lands late: written again
-  assert.match(write, /closing\.then\(async \(\) => \{\s*e\.lastWritten = [^\n]*\n\s*await putEntry\(e\);\s*if \(entry === e\) \{ lastText = null; lastId = null; F\.schedule\(\); \}/);
+  // (the open project's link by its id and its file, not by the object: an undo reads the link again, a copy)
+  assert.match(write, /open = \(\) => \(entry && entry\.id === e\.id && links === linked \? entry : null\);/);
+  assert.match(write, /if \(open\(\)\) show\('conflict'\);/);
+  assert.match(write, /if \(open\(\)\) \{ failed = true; show\(F\.state === 'saving' \? 'saving' : F\.state, msg\); \}/);
+  assert.doesNotMatch(write, /^ {4,8}(show\(|failed = )/m, 'no status change outside a check of the open project');
+  // a close that lands late: noted as the save it is (not written again for nothing), and a write scheduled that
+  // only writes if the project differs from it
+  assert.match(write, /closing\.then\(async \(\) => \{\s*e\.lastWritten = [^\n]*\n\s*await putEntry\(e\);\s*if \(!open\(\)\) return;\s*landed\(true\);\s*F\.schedule\(\);/);
+  assert.match(write, /now\.lastWritten = e\.lastWritten;\s*lastId = p\.id; lastText = text; failed = false;/);
+  assert.doesNotMatch(write, /lastText = null/, 'never forgotten: that made a slow file write itself forever');
   const allowed = bf.split('async function allowed(ask) {')[1].split('\n  }')[0];
   assert.match(allowed, /await withTimeout\(e\.handle\.queryPermission\(RW\), WRITE_TIMEOUT, [^)]*\)\.catch\(\(\) => 'prompt'\)/, 'the question is bounded');
   assert.match(allowed, /if \(s !== 'granted' && ask\) s = await e\.handle\.requestPermission\(RW\);/, 'asking the user is not: it waits for them');
@@ -529,7 +647,7 @@ test('source: Recent projects closes once the project is open, not before, and a
   const handler = ps.split("box.querySelectorAll('[data-open]')")[1].split('\n    }));')[0];
   const open = handler.indexOf('ok = await P.open(b.dataset.open);'), hide = handler.indexOf("dlg.classList.add('hidden')");
   assert.ok(open > 0 && hide > open, 'opened first, hidden after');
-  assert.match(handler, /if \(ok\) dlg\.classList\.add\('hidden'\); else held\.forEach\(x => \{ x\.disabled = false; \}\);/);
+  assert.match(handler, /if \(ok\) dlg\.classList\.add\('hidden'\);\s*else \{ held\.forEach\(x => \{ x\.disabled = false; \}\);/);
   // one open at a time: every button of the lists (the other rows' Open, Delete, Restore) is off meanwhile
   assert.match(handler, /if \(b\.disabled\) return;\s*const held = Array\.from\(box\.querySelectorAll\('\.recent-list button'\)\)\.filter\(x => !x\.disabled\);\s*held\.forEach\(x => \{ x\.disabled = true; \}\);/);
   assert.ok(handler.indexOf('x.disabled = true') < open, 'before the open starts');
@@ -544,9 +662,17 @@ test('source: Recent projects closes once the project is open, not before, and a
   const take = ps.split('async function takeOverNow() {')[1].split('\n  };')[0];
   assert.match(take, /try \{ MB\.loadProject\(saved\.data\); \}\s*catch \(e\) \{[\s\S]*?MB\.toast\([\s\S]*?owned = false;\s*loadFailed\(\);\s*return;/, 'nothing half-opened is saved from here');
   // a load that failed may have left half a project: read-only, in the open and the restore too
-  assert.match(p, /if \(rec\) loadFailed\(\);[^\n]*\n\s*return false;\s*\}\s*loadedWhole\(\);/);
-  assert.match(restore, /loadFailed\(\);\s*return false;\s*\}\s*loadedWhole\(\);/);
+  assert.match(p, /if \(rec\) loadFailed\(\);[^\n]*\n\s*return false;\s*\}/);
+  assert.match(restore, /loadFailed\(\);\s*return false;\s*\}/);
   assert.match(ps, /function loadFailed\(\) \{ broken = true; setReadOnly\(true, 'failed'\); \}/);
+  // and it stays read-only, whoever asks, until a project opens whole (any way one is opened: project.js says so)
+  assert.match(ps, /const canWrite = \(\) => P\.ready && !P\.readOnly && !broken && /);
+  assert.match(ps, /function setReadOnly\(on, why\) \{\s*if \(broken\) \{ on = true; why = 'failed'; \}/);
+  assert.match(ps, /MB\.on\('project-opened', loadedWhole\);/);
+  assert.equal((ps.match(/^ +broken = false;/gm) || []).length, 1, 'ended in one place only: loadedWhole');
+  assert.match(src('project.js'), /if \(!opts\.keepHistory\) \{ MB\.resetHistory\(\); MB\.emit\('project-opened'\); \}/);
+  for (const f of ['storage.js', 'cloudsync.js']) assert.doesNotMatch(src(f), /loadProject\([^)]*keepHistory: true/, f + ' opens projects whole (so they end it too)');
+  assert.match(handler, /else \{ held\.forEach\(x => \{ x\.disabled = false; \}\); b\.focus\(\); \}/, 'the focus back on the button pressed');
 });
 
 test('source: a project\'s extras (base map, opacity, live sources, view) cannot stop it being announced', () => {
@@ -564,5 +690,5 @@ test('source: a project\'s extras (base map, opacity, live sources, view) cannot
     assert.ok(at > 0 && at < tail.indexOf("MB.emit('units'"), call + ' is before the events');
   }
   assert.match(tail, /Number\.isFinite\(v\.lat\) && Number\.isFinite\(v\.lng\) && Number\.isFinite\(v\.zoom\)\) MB\.map\.setView\(\[v\.lat, v\.lng\], v\.zoom\);/);
-  assert.match(tail, /MB\.emit\('units', MB\.state\.units\);\s*MB\.emit\('layers'\);\s*MB\.emit\('features'\);\s*MB\.emit\('project'\);\s*if \(!opts\.keepHistory\) MB\.resetHistory\(\);\s*\}$/);
+  assert.match(tail, /MB\.emit\('units', MB\.state\.units\);\s*MB\.emit\('layers'\);\s*MB\.emit\('features'\);\s*MB\.emit\('project'\);\s*\/\/[^\n]*\n\s*if \(!opts\.keepHistory\) \{ MB\.resetHistory\(\); MB\.emit\('project-opened'\); \}\s*\}$/);
 });

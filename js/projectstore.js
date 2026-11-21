@@ -74,9 +74,10 @@ window.MB = window.MB || {};
   let rev = 0, dbRev = -1, mirrorRev = -1, inflight = null;
   let heldId = null, release = null, owned = false, claiming = false, claimToken = 0, claimWait = Promise.resolve();
   let startEdits = -1; // while start-up reads the database: changes made meanwhile (-1: not counting)
+  let broken = false;  // the project on the map failed while opening and may be half of it: nothing is saved from it
 
   // Only the tab that holds the open project's lock writes it, and never while that is being settled.
-  const canWrite = () => P.ready && !P.readOnly && owned && !claiming && MB.state.projectId === heldId;
+  const canWrite = () => P.ready && !P.readOnly && !broken && owned && !claiming && MB.state.projectId === heldId;
 
   function setStatus(status, error) {
     P.status = status;
@@ -201,8 +202,9 @@ window.MB = window.MB || {};
 
   // A project that failed while opening may be half-open (the map was already cleared for it): nothing is saved
   // from this tab until a project opens whole again, so the half never replaces what is saved. The banner says so,
-  // and its "Edit here" opens what was last saved.
-  let broken = false;
+  // and its "Edit here" opens what was last saved. Nothing else ends it: not this tab getting to edit the half's
+  // project (an undo on the half-open map opens "it" again), only a project opened whole, however it is opened
+  // (from Recent projects, a file, the cloud, a new map: project.js says so with 'project-opened').
   function loadFailed() { broken = true; setReadOnly(true, 'failed'); }
   function loadedWhole() {
     if (!broken) return;
@@ -312,6 +314,7 @@ window.MB = window.MB || {};
     startEdits = -1;
     P.ready = true;
     MB.on('project', () => { if (MB.state.projectId !== heldId) claim(MB.state.projectId); });
+    MB.on('project-opened', loadedWhole);
     await claim(MB.state.projectId);
     if (canWrite()) P.save();
     // Closing with changes the database does not hold yet: a project that fits is written to localStorage at once;
@@ -368,7 +371,6 @@ window.MB = window.MB || {};
       if (rec) loadFailed(); // (read, but it did not load: what is on the map now may be half of it)
       return false;
     }
-    loadedWhole();
     P.fileBacked = !!rec.fileBacked;
     return true;
   };
@@ -389,7 +391,6 @@ window.MB = window.MB || {};
       loadFailed();
       return false;
     }
-    loadedWhole();
     P.fileBacked = !!(own && own.fileBacked); // the restored project's, not the one being left
     MB.toast('Restored the copy from ' + new Date(snap.savedAt).toLocaleString());
     return true;
@@ -518,13 +519,13 @@ window.MB = window.MB || {};
         return;
       }
     }
-    broken = false;
     P.fileBacked = saved.fileBacked;
     setReadOnly(false);
     P.save();
   };
 
   function setReadOnly(on, why) {
+    if (broken) { on = true; why = 'failed'; } // (whoever asks, and whatever for: until a project opens whole)
     const was = P.readOnly;
     P.readOnly = !!on;
     if (on) { clearTimeout(timer); setStatus('readonly'); }
@@ -626,7 +627,8 @@ window.MB = window.MB || {};
       try { ok = await P.open(b.dataset.open); }
       catch (e) { console.warn('Could not open the project', e); MB.toast('Could not open it: ' + (e && e.message ? e.message : e), 6000); }
       b.classList.remove('spin');
-      if (ok) dlg.classList.add('hidden'); else held.forEach(x => { x.disabled = false; });
+      if (ok) dlg.classList.add('hidden');
+      else { held.forEach(x => { x.disabled = false; }); b.focus(); } // (the focus back where it was: a disabled button loses it)
     }));
     // Confirm inside the row: some embedded browsers (and in-app previews) suppress confirm() and read it as Cancel,
     // which made these buttons look dead.

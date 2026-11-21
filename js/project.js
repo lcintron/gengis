@@ -367,7 +367,8 @@ window.MB = window.MB || {};
     MB.emit('layers');
     MB.emit('features');
     MB.emit('project');
-    if (!opts.keepHistory) MB.resetHistory();
+    // (a project opened, whole: not a step of undo or redo, which opens the project it already is)
+    if (!opts.keepHistory) { MB.resetHistory(); MB.emit('project-opened'); }
   }
 
   MB.newProject = function () {
