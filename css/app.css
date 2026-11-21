@@ -1540,6 +1540,8 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
   background: var(--bg); border: 1px dashed var(--border); border-radius: 12px; color: var(--text); font: inherit; }
 .cloud-connect:hover, .cloud-connect:focus-visible { border-color: var(--accent); border-style: solid; outline: none; }
 .cloud-connect svg { width: 28px; height: 28px; color: var(--accent); }
+/* a provider's own mark keeps its own colors: no outline from the dialog's line icons */
+.cloud-box svg.cloud-logo { stroke: none; }
 .cloud-connect span, .cloud-acc-main, .cloud-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .cloud-connect small, .cloud-acc-main small, .cloud-main small { color: var(--text-dim); font-size: 12px; }
 .cloud-acc { display: flex; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 10px 10px 12px; }
@@ -1548,8 +1550,11 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 .cloud-acc + .cloud-acc { margin-top: -1px; border-top-left-radius: 0; border-top-right-radius: 0; }
 .cloud-acc:has(+ .cloud-acc) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .cloud-acc.out { position: relative; } /* (its red edge above its neighbour's) */
-.cloud-avatar { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+.cloud-avatar { position: relative; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
   background: rgba(29,179,169,.18); color: var(--accent); font-weight: 700; }
+/* which cloud this account is in, as a badge on the initial */
+.cloud-avatar .cloud-logo { position: absolute; right: -5px; bottom: -4px; width: 18px; height: 18px; padding: 2px; box-sizing: border-box;
+  border-radius: 50%; background: var(--bg); }
 .cloud-acc-main { flex: 1 1 auto; }
 .cloud-acc-main b, .cloud-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cloud-acc .icon-btn.mini svg { width: 16px; height: 16px; }
