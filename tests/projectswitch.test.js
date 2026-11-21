@@ -685,6 +685,73 @@ test('a half-open project stays unsaved through an undo on it, and any project o
   }
 });
 
+/* ---------- a file or a cloud copy that does not load ---------- */
+
+test('a project file that fails while loading: said, read-only, nothing saved from the half, until a project opens whole', async () => {
+  const s = sandbox({ seed: both(), modules: ['projectstore.js', 'storage.js'] });
+  await s.P.start();
+  await settle();
+  assert.equal(s.P.owns(), true);
+  const real = s.MB.loadProject;
+  // (the map already cleared and the file's id in place when it fails, as a load that breaks half-way leaves it)
+  s.MB.loadProject = p => { s.MB.loadProject = real; s.MB.state.projectId = p.id; s.MB.state.projectName = 'Half of it'; throw new Error('layers is not a list'); };
+  const marked = [];
+  const mark = s.P.markFileBacked;
+  s.P.markFileBacked = () => { marked.push(s.MB.state.projectId); mark(); };
+  assert.equal(await s.MB.openText(JSON.stringify({ id: 'B', name: 'Bravo from a file', layers: 5 }), 'bravo.gengis'), null, 'not opened');
+  assert.deepEqual(s.toasts.map(t => t.msg), ['Could not open file: layers is not a list']);
+  assert.deepEqual(marked, [], 'and not a file-backed project');
+  assert.equal(s.P.readOnly, true);
+  assert.equal(s.P.owns(), false);
+  assert.match(s.banner(), /A project did not open completely/);
+  // an edit on the half, an undo of it (the half "opened" again, under the file's id): still nothing is saved
+  s.P.schedule();
+  s.MB.loadProject({ id: 'B', name: 'Half of it' }, { keepHistory: true });
+  await settle();
+  await s.clock.advance(5000);
+  assert.equal(await s.P.save(), false);
+  assert.equal(s.P.readOnly, true);
+  assert.equal((await s.P.get('B')).name, 'Bravo', 'what is saved for that project is untouched');
+  // a file that loads ends it
+  assert.equal(await s.MB.openText(JSON.stringify({ id: 'C', name: 'Charlie' }), 'charlie.gengis'), 'project');
+  await settle();
+  assert.equal(s.P.readOnly, false);
+  assert.equal(s.P.owns(), true);
+  assert.equal(s.banner(), '');
+  assert.deepEqual(marked, ['C']);
+
+  // a file that cannot even be read as one never got as far as the map: said, and the open project stays editable
+  const t = sandbox({ seed: both(), modules: ['projectstore.js', 'storage.js'] });
+  await t.P.start();
+  await settle();
+  assert.equal(await t.MB.openText('{ not json', 'x.gengis'), null);
+  assert.equal(t.toasts.length, 1);
+  assert.equal(t.P.readOnly, false);
+  assert.equal(t.P.owns(), true);
+});
+
+test('source: a project opened from a file or from the cloud that fails while loading is not saved from either', () => {
+  const st = src('storage.js'), cs = src('cloudsync.js');
+  const guarded = /try \{ MB\.loadProject\((p|data|data, \{ keepView: true, keepHistory: false \})\); \}\s*catch \(e\) \{ MB\.projects\.loadFailed\(\); throw e; \}/g;
+  assert.equal((st.match(guarded) || []).length, 1, 'the file open');
+  assert.equal((cs.match(guarded) || []).length, 2, 'the cloud open, and a cloud copy taken into the open project');
+  // no other way in: every MB.loadProject outside project.js is guarded, or is undo and redo (store.js), which open
+  // the project the map already holds
+  for (const f of fs.readdirSync(path.join(ROOT, 'js')).filter(x => x.endsWith('.js') && x !== 'project.js')) {
+    const calls = src(f).split('\n').filter(l => /MB\.loadProject\(/.test(l) && !/^\s*\/\//.test(l));
+    calls.forEach(l => assert.ok(/try \{|keepHistory: true|^\s*MB\.loadProject\(rec\.data\);$|if \(rec && \(!mirrorOpened|^\s*MB\.loadProject\(p\);$/.test(l), f + ': ' + l.trim()));
+  }
+  // on the failure nothing goes on as if it had opened: no file-backed mark, no cloud link saved
+  const open = st.split('MB.openText = async function (txt, name) {')[1].split('\n  };')[0];
+  assert.ok(open.indexOf('MB.projects.loadFailed(); throw e;') < open.indexOf('MB.projects.markFileBacked();'));
+  assert.match(open, /\} catch \(e\) \{ MB\.toast\('Could not open file: ' \+ e\.message\); return null; \}/, 'said');
+  const remote = cs.split('C.openRemote = async function (accId, fileId) {')[1].split('\n  };')[0];
+  const fail = remote.lastIndexOf('MB.projects.loadFailed(); throw e;');
+  assert.ok(fail > 0 && fail < remote.lastIndexOf('MB.projects.markFileBacked();') && fail < remote.lastIndexOf('saveLink(l)'));
+  assert.match(src('projectstore.js'), /P\.loadFailed = loadFailed;/);
+  assert.match(src('cloudui.js'), /try \{ ok = await C\(\)\.openRemote\(accId, fileId\); \}\s*catch \(e\) \{[^\n]*MB\.toast\('Could not open it: '/, 'the cloud dialog says why');
+});
+
 /* ---------- the source: what the behavior above rests on ---------- */
 
 test('source: every wait for a project file on the way to another project is bounded', () => {

@@ -34,7 +34,16 @@ window.MB = window.MB || {};
   MB.openText = async function (txt, name) {
     try {
       const p = JSON.parse(txt);
-      if (MB.isProject(p)) { if (!(await MB.projects.beforeOpen(p))) return null; MB.loadProject(p); MB.projects.markFileBacked(); MB.toast('Project loaded'); return 'project'; }
+      if (MB.isProject(p)) {
+        if (!(await MB.projects.beforeOpen(p))) return null;
+        // A project that fails while loading may be half-open (the map was already cleared for it): nothing is saved
+        // from it (projectstore.js), it is not a file-backed project, and the failure is said below like any other.
+        try { MB.loadProject(p); }
+        catch (e) { MB.projects.loadFailed(); throw e; }
+        MB.projects.markFileBacked();
+        MB.toast('Project loaded');
+        return 'project';
+      }
       if (p && (p.type === 'FeatureCollection' || p.type === 'Feature')) { MB.importGeoJSON(p, name); return 'geojson'; }
       throw new Error('Unrecognized file');
     } catch (e) { MB.toast('Could not open file: ' + e.message); return null; }

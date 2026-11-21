@@ -412,6 +412,9 @@ window.MB = window.MB || {};
   /* ---------- for cloud sync (cloudsync.js) ---------- */
 
   P.keepCopy = keepCopy;
+  // A project opened elsewhere (a file: storage.js; a cloud copy: cloudsync.js) failed while loading: as in P.open,
+  // nothing is saved from what is on the map until a project opens whole.
+  P.loadFailed = loadFailed;
   P.isDraft = isDraft;
   P.owns = () => canWrite();
   // Changes the database does not hold yet (still to be saved, or being saved).
