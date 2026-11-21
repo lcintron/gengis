@@ -1577,7 +1577,7 @@ window.MB = window.MB || {};
     search.addEventListener('input', () => { ui.q = search.value; clearTimeout(this._searchTimer); this._searchTimer = setTimeout(() => { if (document.activeElement === search) { const pos = search.selectionStart; search.blur(); this.renderPanel().then(() => { const el = document.getElementById('dsSearch'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }); } else this.renderPanel(); }, 350); });
     panel.querySelector('#dsFilter').addEventListener('change', e => { ui.filter = e.target.value; this.renderPanel(); });
     panel.querySelector('[data-act="check"]').addEventListener('click', async () => { if (!this.catalog().some(ds => ds.enabled)) { /* checked now: the panel may have been patched since it was built */ MB.toast('Enable a dataset first'); return; } MB.toast('Checking data services…'); await this.checkAll(true); MB.toast('Update check finished'); });
-    panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (confirm('Delete all cached data-layer content on this device? It is downloaded again as needed.')) { await this.clearCache(); MB.toast('Cache cleared'); } });
+    panel.querySelector('[data-act="clear"]').addEventListener('click', async () => { if (await MB.ask('Delete all cached data-layer content on this device? It is downloaded again as needed.', 'Clear cache', 'Cancel', { danger: true, yesIcon: 'sweep' })) { await this.clearCache(); MB.toast('Cache cleared'); } });
     if (MB.imports) MB.imports.bindPanel(panel);
     if (MB.adsb) MB.adsb.bindPanel(panel);
     if (MB.ais) MB.ais.bindPanel(panel);

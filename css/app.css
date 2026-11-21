@@ -1048,6 +1048,12 @@ button.link:hover { text-decoration: underline; }
 .mb-ask .ask-text { white-space: pre-line; margin: 0 0 14px; overflow-wrap: anywhere; }
 /* two answers with an icon each: on a narrow phone one goes under the other rather than out of the box */
 .mb-ask .row.right { flex-wrap: wrap; }
+/* a name or a text to copy, typed on its own line under the question (MB.askText) */
+.mb-ask .ask-input { display: block; width: 100%; margin: 0 0 14px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px; }
+.mb-ask .ask-input:focus { outline: none; border-color: var(--accent); }
+/* touch: finger-sized (16px: a phone does not zoom the page on focus). After the rule above, which it overrides. */
+@media (hover: none) and (pointer: coarse) { .mb-ask .ask-input { height: 38px; font-size: 16px; } }
 .desktop-files { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 /* Settings: a line of text or a file with its actions as icons, and an "i" whose explanation opens below the line */
 .info-line { position: relative; display: flex; align-items: center; gap: 6px; min-height: 26px; margin: 6px 0; }

@@ -70,8 +70,11 @@ window.MB = window.MB || {};
   function fallbackCopy(txt) {
     const ta = document.createElement('textarea');
     ta.value = txt; document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); MB.toast('Copied ' + txt); } catch (e) { prompt('Copy:', txt); }
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { /* ignore */ } // (it answers false rather than throwing where it is not allowed)
     document.body.removeChild(ta);
+    if (ok) MB.toast('Copied ' + txt);
+    else MB.askText('Copy this text:', txt, { readOnly: true }); // nothing copies here: the text to select by hand
   }
   MB.copyText = copyText;
 
@@ -99,19 +102,23 @@ window.MB = window.MB || {};
         items.push({ label: 'Edit text', disabled: locked, action: () => { MB.tools.set('select'); MB.selectFeature(layer); try { layer.pm.focus(); } catch (e) { /* ignore */ } } });
       }
       items.push(
-        { label: 'Rename…', disabled: locked, action: () => {
-          const v = prompt('Object name', m.name || '');
+        { label: 'Rename…', disabled: locked, action: async () => {
+          const v = await MB.askText('Object name', m.name || '', { yes: 'Rename', yesIcon: 'edit' });
           if (v === null) return;
-          m.name = v.trim();
+          if (MB.featureLayers[m.id] !== layer || MB.isFeatureLocked(layer)) return; // (gone or locked while the question was open)
+          const name = v.trim();
+          if (name === (m.name || '')) return; // the same name: nothing to undo
+          m.name = name;
           MB.ui.bindNameTip(layer);
           MB.commit('rename');
           MB.emit('selection', MB.selected);
         } },
-        ...(MB.labelTypes.includes(m.type) ? [{ label: MB.getLabel(layer).show ? 'Hide name label' : 'Show name label', disabled: locked, action: () => {
+        ...(MB.labelTypes.includes(m.type) ? [{ label: MB.getLabel(layer).show ? 'Hide name label' : 'Show name label', disabled: locked, action: async () => {
           const show = !MB.getLabel(layer).show;
           if (show && !m.name) {
-            const v = prompt('Object name (shown as the label)', '');
+            const v = await MB.askText('Object name (shown as the label)', '', { yes: 'Show label', yesIcon: 'eye' });
             if (!v || !v.trim()) return;
+            if (MB.featureLayers[m.id] !== layer || MB.isFeatureLocked(layer)) return;
             m.name = v.trim();
           }
           MB.setLabel(layer, { show });

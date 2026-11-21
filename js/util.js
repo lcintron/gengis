@@ -724,8 +724,9 @@ window.MB = window.MB || {};
   };
 
   // A stored item, carrying over what an earlier version saved under its old key.
-  // A yes/no question in the app's own dialog; resolves true for yes. (confirm() is suppressed by some embedded
-  // browsers and in-app previews, which read it as "no" without showing anything.)
+  // The app's own questions: MB.ask (yes or no, resolves true for yes) and MB.askText (a line of text, resolves what
+  // was typed). (confirm() and prompt() are suppressed by some embedded browsers and in-app previews, which read them
+  // as "no" or a cancel without showing anything.)
   // Every dialog's close button: an ✕ in the box's top-right corner (css .modal-x). It is the box's first child and
   // carries data-act="close", so a dialog that closes on [data-act="close"] clicks needs nothing more.
   MB.modalCloseHtml = '<button type="button" class="modal-x" data-act="close" aria-label="Close" title="Close">✕</button>';
@@ -795,24 +796,20 @@ window.MB = window.MB || {};
   MB.zoomText = t => MB.escapeHtml(t).replace(/\bzoom (?=\d)/gi, MB.zoomIcon);
   MB.setZoomText = (el, t) => { if (el.textContent.toLowerCase() !== String(t).toLowerCase()) el.innerHTML = MB.zoomText(t); };
 
-  // opts.danger: the yes button is a delete's red one, and Cancel has the focus (Enter does not delete).
-  // opts.dismiss: closing the question without answering it (the ✕, Escape, the backdrop, Android's back) resolves
-  // null, not false: for questions where "no" is a choice of its own and not the way out.
-  // opts.yesIcon / opts.noIcon: which MB.ICON leads each button, when what it does is not "use this one" or
-  // "cancel" (a name that is no icon falls back to those; the yes button of a danger question is a bin).
-  MB.ask = function (message, yes, no, opts) {
+  // The dialog both questions below are built in: the box with its ✕, the message, o.midHtml (a question's own
+  // middle, as the text box of MB.askText) and a row of answers (o.buttonsHtml). o.away is what closing it without
+  // answering (the ✕, Escape, Android's back) resolves. wire(dlg, finish) sets up the answers and tells the dialog
+  // how it is used: { order } what Tab walks through, { first } what has the focus on open, { enter } what Enter
+  // does when it is not a button's own press.
+  function askDialog(o, wire) {
     return new Promise(resolve => {
-      const o = opts || {};
-      const yesIcon = hasIcon(o.yesIcon) ? o.yesIcon : (o.danger ? 'trash' : 'check'), noIcon = hasIcon(o.noIcon) ? o.noIcon : 'close';
       const back = document.activeElement;
       const dlg = document.createElement('div');
       dlg.className = 'modal mb-ask';
-      dlg.innerHTML = '<div class="modal-box" role="alertdialog" aria-modal="true">' + MB.modalCloseHtml + '<p class="ask-text"></p><div class="row right">' +
-        '<button type="button" class="btn with-icon wrap" data-no>' + MB.btnInner(noIcon, no || 'Cancel') + '</button>' +
-        '<button type="button" class="btn primary with-icon wrap" data-yes>' + MB.btnInner(yesIcon, yes || 'OK') + '</button></div></div>';
-      dlg.querySelector('.ask-text').textContent = message;
-      const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]'), xBtn = dlg.querySelector('.modal-x');
-      if (opts && opts.danger) yesBtn.classList.replace('primary', 'danger');
+      dlg.innerHTML = '<div class="modal-box" role="' + o.role + '" aria-modal="true">' + MB.modalCloseHtml +
+        '<p class="ask-text"></p>' + (o.midHtml || '') + '<div class="row right">' + o.buttonsHtml + '</div></div>';
+      dlg.querySelector('.ask-text').textContent = o.message;
+      const xBtn = dlg.querySelector('.modal-x');
       const finish = v => {
         window.removeEventListener('keydown', onKey, true);
         dlg.remove();
@@ -820,28 +817,81 @@ window.MB = window.MB || {};
         else { const open = Array.from(document.querySelectorAll('.modal:not(.hidden) .modal-x')).pop(); if (open) open.focus(); }
         resolve(v);
       };
+      const ui = wire(dlg, finish);
       // While it is open no key reaches the app (Delete must not delete the selection behind it). Enter and Space
-      // still press the focused button; Tab stays on the dialog's buttons; Escape, like the ✕, answers no (null with
-      // opts.dismiss: nothing was answered).
-      const away = opts && opts.dismiss ? null : false;
-      const order = [xBtn, noBtn, yesBtn];
+      // still press the focused button; Tab stays inside the dialog; Escape, like the ✕, closes it unanswered.
       const onKey = e => {
         e.stopPropagation();
-        if (e.key === 'Escape') { e.preventDefault(); finish(away); }
+        if (e.key === 'Escape') { e.preventDefault(); finish(o.away); }
         else if (e.key === 'Tab') {
           e.preventDefault();
-          const i = order.indexOf(document.activeElement);
-          order[(i < 0 ? order.length - 1 : i + (e.shiftKey ? order.length - 1 : 1)) % order.length].focus();
+          const i = ui.order.indexOf(document.activeElement);
+          ui.order[(i < 0 ? ui.order.length - 1 : i + (e.shiftKey ? ui.order.length - 1 : 1)) % ui.order.length].focus();
         }
+        else if (e.key === 'Enter' && ui.enter && ui.enter(e)) e.preventDefault();
         else if (!dlg.contains(e.target)) e.preventDefault();
       };
-      yesBtn.addEventListener('click', () => finish(true));
-      noBtn.addEventListener('click', () => finish(false));
-      xBtn.addEventListener('click', () => finish(away));
-      if (opts && opts.dismiss) dlg.addEventListener('click', e => { if (e.target === dlg) finish(null); }); // the backdrop
+      xBtn.addEventListener('click', () => finish(o.away));
       window.addEventListener('keydown', onKey, true);
       document.body.appendChild(dlg);
-      (opts && opts.danger ? noBtn : yesBtn).focus();
+      ui.first.focus();
+      if (ui.first.select) ui.first.select(); // a text box: what is in it is replaced by typing
+    });
+  }
+
+  // A yes/no question; resolves true for yes.
+  // opts.danger: the yes button is a delete's red one, and Cancel has the focus (Enter does not delete).
+  // opts.dismiss: closing the question without answering it (the ✕, Escape, the backdrop, Android's back) resolves
+  // null, not false: for questions where "no" is a choice of its own and not the way out.
+  // opts.yesIcon / opts.noIcon: which MB.ICON leads each button, when what it does is not "use this one" or
+  // "cancel" (a name that is no icon falls back to those; the yes button of a danger question is a bin).
+  MB.ask = function (message, yes, no, opts) {
+    const o = opts || {};
+    const yesIcon = hasIcon(o.yesIcon) ? o.yesIcon : (o.danger ? 'trash' : 'check'), noIcon = hasIcon(o.noIcon) ? o.noIcon : 'close';
+    return askDialog({
+      message, role: 'alertdialog', midHtml: '', away: o.dismiss ? null : false,
+      buttonsHtml: '<button type="button" class="btn with-icon wrap" data-no>' + MB.btnInner(noIcon, no || 'Cancel') + '</button>' +
+        '<button type="button" class="btn primary with-icon wrap" data-yes>' + MB.btnInner(yesIcon, yes || 'OK') + '</button>'
+    }, (dlg, finish) => {
+      const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]'), xBtn = dlg.querySelector('.modal-x');
+      if (o.danger) yesBtn.classList.replace('primary', 'danger');
+      yesBtn.addEventListener('click', () => finish(true));
+      noBtn.addEventListener('click', () => finish(false));
+      if (o.dismiss) dlg.addEventListener('click', e => { if (e.target === dlg) finish(null); }); // the backdrop
+      return { order: [xBtn, noBtn, yesBtn], first: o.danger ? noBtn : yesBtn };
+    });
+  };
+
+  // A line of text typed in the app's own dialog (a name, a text to copy); resolves it exactly as typed, so the
+  // caller trims it, or null when the question is closed without an answer (the Cancel button, the ✕, Escape,
+  // Android's back; no backdrop click, which would lose what was typed). Enter in the box answers.
+  // opts.yes / opts.no and opts.yesIcon / opts.noIcon: the answers' words and drawings, as MB.ask.
+  // opts.placeholder: what the empty box says. opts.readOnly: a text to read and copy, with only a Close button (an
+  // ✕: it keeps nothing).
+  MB.askText = function (message, value, opts) {
+    const o = opts || {};
+    const yesIcon = hasIcon(o.yesIcon) ? o.yesIcon : (o.readOnly ? 'close' : 'check'), noIcon = hasIcon(o.noIcon) ? o.noIcon : 'close';
+    return askDialog({
+      message, role: 'dialog', away: null,
+      midHtml: '<input type="text" class="ask-input" autocomplete="off" spellcheck="false" enterkeyhint="done">',
+      buttonsHtml: (o.readOnly ? '' : '<button type="button" class="btn with-icon wrap" data-no>' + MB.btnInner(noIcon, o.no || 'Cancel') + '</button>') +
+        '<button type="button" class="btn primary with-icon wrap" data-yes>' + MB.btnInner(yesIcon, o.yes || (o.readOnly ? 'Close' : 'OK')) + '</button>'
+    }, (dlg, finish) => {
+      const input = dlg.querySelector('.ask-input'), yesBtn = dlg.querySelector('[data-yes]'), xBtn = dlg.querySelector('.modal-x');
+      const noBtn = o.readOnly ? null : dlg.querySelector('[data-no]');
+      input.value = value == null ? '' : String(value); // the text as a property, never in the HTML
+      input.setAttribute('aria-label', message);
+      if (o.placeholder) input.setAttribute('placeholder', o.placeholder);
+      if (o.readOnly) input.readOnly = true;
+      yesBtn.addEventListener('click', () => finish(input.value));
+      if (noBtn) noBtn.addEventListener('click', () => finish(null));
+      return {
+        order: noBtn ? [xBtn, input, noBtn, yesBtn] : [xBtn, input, yesBtn], first: input,
+        // Enter in the box answers; on a focused button it stays that button's own press (and nothing while a
+        // phone's keyboard is still composing a word: keyCode 229 is Safari, which ends the composition before this
+        // Enter and so reports isComposing false)
+        enter: e => { if (e.target !== input || e.isComposing || e.keyCode === 229) return false; finish(input.value); return true; }
+      };
     });
   };
 
