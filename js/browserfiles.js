@@ -18,6 +18,7 @@ window.MB = window.MB || {};
   if (!available) return;
 
   const DELAY = 2000;
+  const WRITE_TIMEOUT = 8000; // ms: a file operation that takes longer has stalled (a file in a cloud-synced folder can)
   const RW = { mode: 'readwrite' };
   const TYPES = [{ description: 'GenGIS project', accept: { 'application/json': ['.gengis', '.json'] } }]; // (.json: older .gengis.json files)
   let entry = null;          // { id, handle, name, lastWritten } of the open project
@@ -63,15 +64,27 @@ window.MB = window.MB || {};
   }
   function show(state, error) { F.state = state; F.error = error || ''; emit(); }
 
+  // The promise, or a rejection once it has taken longer than ms: the browser's file calls have no time limit of
+  // their own, and one that never answers must not hold up everything queued behind it.
+  function withTimeout(promise, ms, label) {
+    let t;
+    return Promise.race([promise, new Promise((res, rej) => { t = setTimeout(() => rej(new Error((label || 'file operation') + ' timed out')), ms); })])
+      .finally(() => clearTimeout(t));
+  }
+
+  // May the file be written? The question is bounded (no answer, or a failure: not allowed); asking the user for
+  // leave is not, it waits for them.
   async function allowed(ask) {
-    if (!entry) return false;
-    let s = await entry.handle.queryPermission(RW);
-    if (s !== 'granted' && ask) s = await entry.handle.requestPermission(RW);
+    const e = entry;
+    if (!e) return false;
+    let s = await withTimeout(e.handle.queryPermission(RW), WRITE_TIMEOUT, 'checking the file').catch(() => 'prompt');
+    if (s !== 'granted' && ask) s = await e.handle.requestPermission(RW);
     return s === 'granted';
   }
 
   // Write the open project to its file. force: overwrite even if the file changed elsewhere. Writes run one at a
-  // time; `writing` is the last one (for whoever must wait until the file holds the latest).
+  // time; `writing` is the last one (for whoever must wait until the file holds the latest). Every wait in write()
+  // is bounded, so `writing` always settles: a stalled file never blocks the writes (or the project switch) after it.
   let writing = Promise.resolve(false);
   function writeNow(force) {
     clearTimeout(timer); timer = null;
@@ -81,29 +94,53 @@ window.MB = window.MB || {};
   }
   async function write(force) {
     if (!entry || P().readOnly || isDraft()) return false;
-    if (!(await allowed(false))) { if (F.state !== 'conflict') show('paused'); return false; }
-    const { p, text, unchanged } = current();
-    if (unchanged && !force) return true;
     const e = entry;
+    // The file is e's project's and takes nothing else. Another project may open while this waits (a switch does not
+    // wait forever for a stalled file), and the link follows it only a moment later (refresh reads the database):
+    // so it is the open project's id that is checked, before it is serialized and on what was serialized.
+    const mine = () => entry === e && MB.state.projectId === e.id;
+    if (!mine()) return false;
+    const ok = await allowed(false);
+    if (!mine()) return false; // another project opened meanwhile: its own write follows
+    if (!ok) { if (F.state !== 'conflict') show('paused'); return false; }
+    const { p, text, unchanged } = current();
+    if (p.id !== e.id) return false;
+    if (unchanged && !force) return true;
+    const bound = (promise, label) => withTimeout(promise, WRITE_TIMEOUT, label);
+    let opening = null, closing = null;
     try {
-      const before = await e.handle.getFile();
+      const before = await bound(e.handle.getFile(), 'reading the file');
       if (!force && e.lastWritten && before.lastModified > e.lastWritten + 1000) {
-        if (F.state !== 'conflict') MB.toast('"' + e.name + '" was changed outside GenGIS, so it is no longer saved automatically. Use the button beside "Saved" to choose.', 7000);
-        show('conflict');
+        // (said either way, it names the file; the status beside "Saved" is the open project's, and only its own
+        // file's write changes it: by now another project may be open)
+        if (entry !== e || F.state !== 'conflict') MB.toast('"' + e.name + '" was changed outside GenGIS, so it is no longer saved automatically. Use the button beside "Saved" to choose.', 7000);
+        if (entry === e) show('conflict');
         return false;
       }
-      const w = await e.handle.createWritable(); // written beside the file, swapped in on close
-      await w.write(JSON.stringify(p, null, 1));
-      await w.close();
-      e.lastWritten = (await e.handle.getFile()).lastModified;
-      await putEntry(e);
+      opening = e.handle.createWritable(); // written beside the file, swapped in on close
+      const w = await bound(opening, 'opening the file for writing');
+      await bound(w.write(JSON.stringify(p, null, 1)), 'writing the file');
+      closing = w.close();
+      await bound(closing, 'saving the file');
+      e.lastWritten = (await bound(e.handle.getFile(), 'reading the file')).lastModified;
+      await bound(putEntry(e), 'noting the save');
       if (entry === e) { lastId = p.id; lastText = text; failed = false; show('saving'); }
       return true;
     } catch (err) {
+      // nothing half-written is left beside the file: the copy being written is dropped (one that only opens after
+      // the wait gave up, too). A close still under way may yet complete: the file is then GenGIS's own writing,
+      // not a change made elsewhere, but it holds what was current then, and may have landed over a later write.
+      // So it is written again with the project as it is now.
+      if (closing) closing.then(async () => {
+        e.lastWritten = (await e.handle.getFile()).lastModified;
+        await putEntry(e);
+        if (entry === e) { lastText = null; lastId = null; F.schedule(); }
+      }).catch(() => {});
+      else if (opening) opening.then(x => x && x.abort && x.abort()).catch(() => {});
       const msg = err && err.message ? err.message : String(err);
-      if (!failed) MB.toast('Could not save to "' + e.name + '" (' + msg + '). The project is still saved in this browser.', 6000);
-      failed = true;
-      show(F.state === 'saving' ? 'saving' : F.state, msg);
+      // (the status and the "said once" are the open project's: an earlier project's write leaves them alone)
+      if (entry !== e || !failed) MB.toast('Could not save to "' + e.name + '" (' + msg + '). The project is still saved in this browser.', 6000);
+      if (entry === e) { failed = true; show(F.state === 'saving' ? 'saving' : F.state, msg); }
       return false;
     }
   }

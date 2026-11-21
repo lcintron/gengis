@@ -26,3 +26,7 @@ tests/.tmp-*/
 
 # Google desktop client secret (the release build writes it from a GitHub secret)
 electron/cloud-secrets.json
+
+# Playwright (npm run e2e): traces and reports
+test-results/
+playwright-report/

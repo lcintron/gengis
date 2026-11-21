@@ -339,20 +339,30 @@ window.MB = window.MB || {};
     MB.state.activeLayerId = MB.getLayer(p.activeLayer) ? p.activeLayer : MB.state.layers[MB.state.layers.length - 1].id;
     (p.features || []).forEach(f => { try { MB.restoreFeature(f); } catch (e) { console.warn('Could not restore feature', f, e); } });
     MB.applyZOrder();
-    const key = basemapKey(p.basemap);
-    if (key && MB.map && (rebuild || key !== MB.state.basemap)) MB.setBasemap(key);
-    if (MB.data && typeof p.dataOpacity === 'number' && isFinite(p.dataOpacity)) {
+    // What comes with the project besides its objects (base map, data opacity, live sources, the view). Each on its
+    // own: one that fails is warned about and the others still apply, and the project is announced either way (the
+    // events below are what the rest of the app, the save and the title follow).
+    const extra = (what, fn) => { try { fn(); } catch (e) { console.warn('Could not apply the project: ' + what, e); } };
+    extra('base map', () => {
+      const key = basemapKey(p.basemap);
+      if (key && MB.map && (rebuild || key !== MB.state.basemap)) MB.setBasemap(key);
+    });
+    extra('data opacity', () => {
+      if (!(MB.data && typeof p.dataOpacity === 'number' && isFinite(p.dataOpacity))) return;
       // only the opacity: the other data settings are device preferences, and before start-up the module holds defaults
       const opacity = Math.min(1, Math.max(0.1, p.dataOpacity));
       MB.data.settings.opacity = opacity;
       MB.settings.data = Object.assign({}, MB.settings.data, { opacity });
       MB.saveSettings();
       MB.data.applyOpacity();
-    }
-    if (p.liveTraffic) applyTraffic(p.liveTraffic);
-    if (p.vesselTraffic) applyVessels(p.vesselTraffic);
-    if (p.drones) applyDrones(p.drones);
-    if (!opts.keepView && p.view && MB.map) MB.map.setView([p.view.lat, p.view.lng], p.view.zoom);
+    });
+    extra('live traffic', () => { if (p.liveTraffic) applyTraffic(p.liveTraffic); });
+    extra('vessel traffic', () => { if (p.vesselTraffic) applyVessels(p.vesselTraffic); });
+    extra('drones', () => { if (p.drones) applyDrones(p.drones); });
+    extra('view', () => { // (a view that is not numbers is no view: the map stays where it is)
+      const v = p.view;
+      if (!opts.keepView && v && MB.map && Number.isFinite(v.lat) && Number.isFinite(v.lng) && Number.isFinite(v.zoom)) MB.map.setView([v.lat, v.lng], v.zoom);
+    });
     MB.emit('units', MB.state.units);
     MB.emit('layers');
     MB.emit('features');

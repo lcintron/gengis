@@ -14,6 +14,7 @@
     "dist:mac": "electron-builder --mac --publish never --config scripts/mac-adhoc.js",
     "dist:linux": "electron-builder --linux --publish never",
     "test": "node --expose-gc --test --test-timeout=300000 \"tests/*.test.js\"",
+    "e2e": "playwright test",
     "android:web": "node scripts/build-web.js",
     "android:sync": "node scripts/build-web.js && npx cap sync android && node scripts/android-prepare.js",
     "release": "node scripts/release.js",
@@ -48,6 +49,7 @@
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/share": "^8.0.3",
+    "@playwright/test": "1.65.1",
     "electron": "^33.0.0",
     "electron-builder": "^26.15.3"
   }
