@@ -182,7 +182,7 @@ window.MB = window.MB || {};
         item.addEventListener('click', async e => {
           const btn = e.target.closest('[data-act]'), act = btn && btn.dataset.act; // (the click may land on its icon)
           if (act === 'goto') MB.map.fitBounds(a.bounds);
-          else if (act === 'delete') { if (confirm('Delete offline area "' + a.name + '" and its cached tiles?')) { await this.remove(a.id); MB.toast('Offline area deleted'); } }
+          else if (act === 'delete') { if (await MB.ask('Delete offline area "' + a.name + '" and its cached tiles?', 'Delete', 'Cancel', { danger: true })) { await this.remove(a.id); MB.toast('Offline area deleted'); } }
           else if (act === 'refresh') { if (MB.state.basemap !== a.basemap) MB.setBasemap(a.basemap); MB.map.fitBounds(a.bounds); setTimeout(() => this.openDialog(a), 400); }
         });
       });

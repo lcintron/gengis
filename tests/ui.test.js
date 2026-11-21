@@ -303,6 +303,137 @@ test('a question shows what each answer does: a check and an ✕, a bin for a de
   assert.equal(MB.btnInner('nope', 'A'), '<span class="btn-label">A</span>', 'no icon rather than "undefined"');
 });
 
+test('a name or a text to copy is typed in the app\'s own dialog (MB.askText)', async () => {
+  const vm = require('vm');
+  const label = s => '<span class="btn-label">' + s + '</span>';
+  // the dialog as it is built: a stub element per selector, each remembering its handlers, its focus and its
+  // selection; the keydown listener the dialog puts on the window is kept to be fired at it
+  function open(message, value, opts) {
+    const keys = [], gone = [];
+    const ctx = { window: { addEventListener: (t, fn) => { if (t === 'keydown') keys.push(fn); }, removeEventListener: (t, fn) => gone.push(fn) }, console };
+    vm.createContext(ctx);
+    vm.runInContext(js['util.js'], ctx, { filename: 'js/util.js' });
+    const MB = ctx.window.MB;
+    const els = {};
+    let removed = 0;
+    const make = () => {
+      const e = {
+        textContent: '', value: '', readOnly: false, attrs: {}, focused: 0, selected: 0, on: {},
+        classList: { replace() {} },
+        addEventListener(t, fn) { (e.on[t] = e.on[t] || []).push(fn); },
+        setAttribute(k, v) { e.attrs[k] = v; },
+        focus() { doc.activeElement = e; e.focused++; },
+        select() { e.selected++; },
+        click() { (e.on.click || []).forEach(fn => fn({ target: e })); }
+      };
+      return e;
+    };
+    const dlg = {
+      className: '', innerHTML: '', remove() { removed++; }, addEventListener() {}, contains: () => true,
+      querySelector: sel => (els[sel] = els[sel] || make())
+    };
+    const doc = { activeElement: null, body: { appendChild() {} }, createElement: () => dlg, querySelectorAll: () => [] };
+    ctx.document = doc;
+    const h = { MB, dlg, doc, els, keys, gone, settled: false, value: undefined, removed: () => removed };
+    h.answer = MB.askText(message, value, opts);
+    h.answer.then(v => { h.settled = true; h.value = v; });
+    h.key = (k, target, extra) => keys.forEach(fn => fn(Object.assign({ key: k, target, preventDefault() {}, stopPropagation() {} }, extra)));
+    return h;
+  }
+  const tick = () => new Promise(r => setTimeout(r, 0));
+
+  const a = open('Object name', 'Alpha');
+  assert.match(a.dlg.innerHTML, /role="dialog"/, 'a question with an answer to type, not an alert');
+  assert.ok(a.dlg.innerHTML.includes(a.MB.ICON.check + label('OK')), 'the answer: use this one');
+  assert.ok(a.dlg.innerHTML.includes(a.MB.ICON.close + label('Cancel')), 'the way out: an ✕');
+  assert.match(a.dlg.innerHTML, /class="btn with-icon wrap" data-no/, 'both answers put their icon beside their words');
+  assert.match(a.dlg.innerHTML, /class="btn primary with-icon wrap" data-yes/);
+  assert.equal(a.els['.ask-text'].textContent, 'Object name', 'the question as text');
+  assert.equal(a.els['.ask-input'].value, 'Alpha', 'the name it has now, ready to be edited');
+  assert.equal(a.els['.ask-input'].attrs['aria-label'], 'Object name', 'a screen reader says which box this is');
+  assert.equal(a.doc.activeElement, a.els['.ask-input'], 'the box has the focus on open');
+  assert.equal(a.els['.ask-input'].selected, 1, 'with its text selected: typing replaces it');
+  a.els['.ask-input'].value = '  Bravo  ';
+  a.els['[data-yes]'].click();
+  assert.equal(await a.answer, '  Bravo  ', 'answered as typed (the caller trims)');
+  assert.equal(a.removed(), 1, 'the dialog is taken down');
+  assert.equal(a.gone.length, 1, 'and stops listening for keys');
+
+  // Tab walks the dialog rather than the page behind it
+  const t = open('Object name', 'Alpha');
+  t.key('Tab', t.els['.ask-input']);
+  assert.equal(t.doc.activeElement, t.els['[data-no]'], 'the box, then Cancel');
+
+  // the words and the drawings the caller chose, and a name that is no drawing falling back
+  const r = open('Object name', '', { yes: 'Rename', yesIcon: 'edit' });
+  assert.ok(r.dlg.innerHTML.includes(r.MB.ICON.edit + label('Rename')), 'a rename: the pencil');
+  const bad = open('Object name', '', { yesIcon: 'nope', noIcon: 'constructor' });
+  assert.ok(bad.dlg.innerHTML.includes(bad.MB.ICON.check + label('OK')) && bad.dlg.innerHTML.includes(bad.MB.ICON.close + label('Cancel')), 'back to the defaults');
+  assert.doesNotMatch(bad.dlg.innerHTML, /function|\[object/, 'nothing but an icon is drawn');
+  const esc = open('Object name', '', { yes: 'Show <b>label</b>' });
+  assert.ok(esc.dlg.innerHTML.includes(label('Show &lt;b&gt;label&lt;/b&gt;')), 'the words are escaped');
+
+  // an object's name is never written into the dialog's HTML: it is put in the box as a property
+  const x = open('Object name', '"><img src=x onerror=alert(1)>');
+  assert.ok(!x.dlg.innerHTML.includes('img'), 'the name is not in the HTML');
+  assert.equal(x.els['.ask-input'].value, '"><img src=x onerror=alert(1)>', 'it is the box\'s value');
+
+  // closed without an answer: nothing is renamed
+  for (const [how, shut] of [['Cancel', h => h.els['[data-no]'].click()], ['the ✕ (which Android\'s back clicks)', h => h.els['.modal-x'].click()],
+    ['Escape', h => h.key('Escape', h.els['.ask-input'])]]) {
+    const h = open('Object name', 'Alpha');
+    h.els['.ask-input'].value = 'Bravo';
+    shut(h);
+    assert.equal(await h.answer, null, how);
+  }
+
+  // Enter in the box answers; on a focused button it stays that button's own press, and not while a word is being composed
+  const e1 = open('Object name', 'Alpha');
+  e1.els['.ask-input'].value = 'Charlie';
+  e1.key('Enter', e1.els['.ask-input']);
+  assert.equal(await e1.answer, 'Charlie');
+  const e2 = open('Object name', 'Alpha');
+  e2.key('Enter', e2.els['[data-yes]']);
+  e2.key('Enter', e2.els['.ask-input'], { isComposing: true });
+  await tick();
+  assert.equal(e2.settled, false, 'nothing answered');
+  assert.equal(e2.removed(), 0, 'the dialog is still up');
+
+  // a text to read and copy: one way out, and nothing to type over it
+  const ro = open('Copy this text:', '12 34.5', { readOnly: true });
+  assert.ok(!ro.dlg.innerHTML.includes('data-no'), 'no Cancel: there is nothing to cancel');
+  assert.ok(ro.dlg.innerHTML.includes(ro.MB.ICON.check + label('Close')), 'only Close');
+  assert.equal(ro.els['.ask-input'].readOnly, true);
+});
+
+test('the app never asks through the browser\'s own confirm(), prompt() or alert() (some embedded browsers show none)', () => {
+  const bare = /(^|[^.\w])(confirm|prompt|alert)\s*\(/, win = /window\.(confirm|prompt|alert)\s*\(/;
+  for (const [f, src] of Object.entries(js)) {
+    src.split('\n').forEach((line, i) => {
+      const t = line.trim();
+      if (t.startsWith('//') || t.startsWith('*')) return; // (a comment naming them: the reason the app has its own)
+      const where = 'js/' + f + ':' + (i + 1) + ' ' + t;
+      assert.doesNotMatch(line, bare, where);
+      assert.doesNotMatch(line, win, where);
+    });
+  }
+  // the app's own dialogs in their place, each of them a question the user can see
+  assert.match(js['util.js'], /MB\.askText = function \(message, value, opts\)/);
+  assert.match(js['util.js'], /class="btn with-icon wrap" data-no>' \+ MB\.btnInner\(noIcon, o\.no \|\| 'Cancel'\)/, 'askText: Cancel with its icon');
+  assert.match(js['util.js'], /class="btn primary with-icon wrap" data-yes>' \+ MB\.btnInner\(yesIcon, o\.yes \|\| \(o\.readOnly \? 'Close' : 'OK'\)\)/);
+  assert.match(js['contextmenu.js'], /await MB\.askText\('Object name'/, 'Rename…');
+  assert.match(js['contextmenu.js'], /await MB\.askText\('Object name \(shown as the label\)'/, 'Show name label');
+  assert.match(js['contextmenu.js'], /MB\.askText\('Copy this text:', txt, \{ readOnly: true \}\)/, 'nothing copies here: the text to select by hand');
+  assert.match(js['storage.js'], /MB\.removeSvg = async function/, 'removing an image placed on the map asks first');
+  assert.equal((js['ui.js'].match(/deleteLayerAsked\(id\)/g) || []).length, 3, 'the layer menu and the row\'s bin ask through one function (named once, called twice)');
+  for (const [f, re] of [['offline.js', /'Delete', 'Cancel', \{ danger: true \}/], ['datalayers.js', /'Clear cache', 'Cancel', \{ danger: true, yesIcon: 'sweep' \}/],
+    ['settings.js', /'Remove', 'Cancel', \{ danger: true \}/], ['storage.js', /'Remove', 'Cancel', \{ danger: true \}/],
+    ['ui.js', /'Delete project', 'Cancel', \{ danger: true \}/], ['ui.js', /'Delete layer', 'Cancel', \{ danger: true \}/]]) assert.match(js[f], re, f);
+  // the box the answer is typed in, finger-sized on a phone (16px: it does not zoom the page on focus)
+  assert.match(css, /\.mb-ask \.ask-input \{/);
+  assert.match(css, /\.mb-ask \.ask-input \{ height: 38px; font-size: 16px; \}/);
+});
+
 test('the name typed in the top bar can be taken as the project\'s there and then (MB.ui.commitName)', () => {
   const src = js['ui.js'];
   const body = src.slice(src.indexOf('MB.ui.commitName = function'), src.indexOf('function initTopbar'));
@@ -507,8 +638,8 @@ test('the cloud dialog deletes a project from the cloud only after a red confirm
   assert.ok(del.indexOf('await MB.ask(') >= 0 && del.indexOf('await MB.ask(') < del.indexOf('C().deleteRemote('), 'asked first');
   assert.match(del, /MB\.ask\([^;]*\{ danger: true \}\)/, 'the confirm is a delete\'s');
   assert.match(js['util.js'], /MB\.ask = function \(message, yes, no, opts\)/);
-  assert.match(js['util.js'], /if \(opts && opts\.danger\) yesBtn\.classList\.replace\('primary', 'danger'\);/);
-  assert.match(js['util.js'], /\(opts && opts\.danger \? noBtn : yesBtn\)\.focus\(\);/, 'Cancel has the focus');
+  assert.match(js['util.js'], /if \(o\.danger\) yesBtn\.classList\.replace\('primary', 'danger'\);/);
+  assert.match(js['util.js'], /first: o\.danger \? noBtn : yesBtn/, 'Cancel has the focus');
   assert.match(css, /\.cloud-row \.icon-btn\.mini, \.cloud-h-row \.icon-btn\.mini \{ width: 36px; height: 36px; \}/);
   // one question per click, the focus kept in the list after a delete, no spinner left by a failed open
   assert.ok(del.indexOf("busy[fileId] = 'delete'") < del.indexOf('await MB.ask('), 'busy before the question');
@@ -589,10 +720,10 @@ test('Recent projects reads the link again when the delete is confirmed, and nev
 
 test('a question can be closed without answering it: the ✕, Escape, the backdrop and back then answer neither', () => {
   const u = js['util.js'];
-  assert.match(u, /const away = opts && opts\.dismiss \? null : false;/);
-  assert.match(u, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); finish\(away\); \}/, 'Escape');
-  assert.ok(u.includes("xBtn.addEventListener('click', () => finish(away));"), 'the ✕ (which Android\'s back clicks)');
-  assert.ok(u.includes("if (opts && opts.dismiss) dlg.addEventListener('click', e => { if (e.target === dlg) finish(null); });"), 'the backdrop');
+  assert.match(u, /away: o\.dismiss \? null : false,/);
+  assert.match(u, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); finish\(o\.away\); \}/, 'Escape');
+  assert.ok(u.includes("xBtn.addEventListener('click', () => finish(o.away));"), 'the ✕ (which Android\'s back clicks)');
+  assert.ok(u.includes("if (o.dismiss) dlg.addEventListener('click', e => { if (e.target === dlg) finish(null); });"), 'the backdrop');
   assert.ok(u.includes("noBtn.addEventListener('click', () => finish(false));"), 'Cancel still answers no');
   // the question that needs it: opening a cloud project that is on this device too (either answer opens something)
   const cs = js['cloudsync.js'];

@@ -199,10 +199,12 @@ window.MB = window.MB || {};
     });
   };
 
-  MB.removeSvg = function (id) {
-    const used = Object.keys(MB.featureLayers).filter(fid => { const m = MB.featureLayers[fid].mb; return m.type === 'svg' && m.svg.svgId === id; });
-    if (used.length && !confirm('This image is placed ' + used.length + ' time(s) on the map. Remove it and those placements?')) return;
-    used.forEach(fid => MB.removeFeature(fid, { silent: true }));
+  MB.removeSvg = async function (id) {
+    const placed = () => Object.keys(MB.featureLayers).filter(fid => { const m = MB.featureLayers[fid].mb; return m.type === 'svg' && m.svg.svgId === id; });
+    const n = placed().length;
+    if (n && !(await MB.ask('This image is placed ' + n + ' time(s) on the map. Remove it and those placements?', 'Remove', 'Cancel', { danger: true }))) return;
+    if (!MB.state.svgLibrary[id]) return; // (a sync or an autosave may have replaced the project while the question was open)
+    placed().forEach(fid => MB.removeFeature(fid, { silent: true })); // the placements as they are now
     delete MB.state.svgLibrary[id];
     MB.emit('svglibrary'); MB.emit('features');
     MB.commit('remove svg');

@@ -175,14 +175,14 @@ window.MB = window.MB || {};
       });
       const cancel = $('[data-cancel]', form);
       if (cancel) cancel.addEventListener('click', () => { this.editingId = null; this.render(); });
-      panel.addEventListener('click', e => {
+      panel.addEventListener('click', async e => {
         const b = e.target.closest('button');
         if (!b) return;
         if (b.dataset.import) { MB.mapSources.pick(); }
         else if (b.dataset.edit) { this.editingId = b.dataset.edit; this.render(); }
         else if (b.dataset.del) {
           const x = MB.getProvider(b.dataset.del);
-          if (x && confirm('Remove provider "' + x.name + '"?')) {
+          if (x && await MB.ask('Remove provider "' + x.name + '"?', 'Remove', 'Cancel', { danger: true }) && MB.getProvider(x.id)) {
             MB.settings.providers = MB.settings.providers.filter(y => y.id !== x.id);
             if (MB.state.basemap === 'custom:' + x.id) MB.setBasemap('esriSat');
             MB.saveSettings(); this.render();

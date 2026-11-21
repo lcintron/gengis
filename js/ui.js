@@ -927,8 +927,20 @@ window.MB = window.MB || {};
       { label: 'Zoom to layer', disabled: !n || !g || !g.getBounds().isValid(), action: () => MB.map.fitBounds(g.getBounds().pad(0.15), { maxZoom: 18 }) },
       { sep: true },
       { label: l.locked ? 'Unlock layer' : 'Lock layer', action: () => { MB.setLayerLocked(id, !l.locked); MB.commit('layer lock'); } },
-      { label: 'Delete layer', danger: true, action: () => { if (!n || confirm(`Delete layer "${l.name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); } } }
+      { label: 'Delete layer', danger: true, action: () => deleteLayerAsked(id) }
     ]);
+  }
+
+  // Delete a layer, asking first when it is not empty (the layer is looked up again: the question takes a moment, in
+  // which a sync or an autosave may have replaced the project).
+  async function deleteLayerAsked(id) {
+    const l = MB.getLayer(id);
+    if (!l) return;
+    const n = MB.layerFeatureCount(id);
+    if (n && !(await MB.ask(`Delete layer "${l.name}" and its ${n} object(s)?`, 'Delete layer', 'Cancel', { danger: true }))) return;
+    if (!MB.getLayer(id)) return;
+    MB.removeLayer(id);
+    MB.commit('delete layer');
   }
 
   // The list's clicks: one listener for all its rows, set up once.
@@ -966,10 +978,7 @@ window.MB = window.MB || {};
     else if (act === 'lock') { MB.setLayerLocked(id, !MB.getLayer(id).locked); MB.commit('layer lock'); }
     else if (act === 'up') { MB.moveLayer(id, +1); MB.commit('reorder layers'); }
     else if (act === 'down') { MB.moveLayer(id, -1); MB.commit('reorder layers'); }
-    else if (act === 'del') {
-      const n = MB.layerFeatureCount(id);
-      if (!n || confirm(`Delete layer "${MB.getLayer(id).name}" and its ${n} object(s)?`)) { MB.removeLayer(id); MB.commit('delete layer'); }
-    }
+    else if (act === 'del') deleteLayerAsked(id);
     else {
       MB.setActiveLayer(id); MB.tools.refreshDraw();
       const l = MB.getLayer(id);
@@ -2010,7 +2019,7 @@ window.MB = window.MB || {};
     $('#setContinue', panel).addEventListener('change', e => { s.continueDrawing = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setSnap', panel).addEventListener('change', e => { s.snapping = e.target.checked; MB.autosave(); MB.tools.refreshDraw(); });
     $('#setReset', panel).addEventListener('click', async () => {
-      if (!confirm('Delete this project (its layers, objects and image library) and its saved copies on this device? Other projects stay.')) return;
+      if (!(await MB.ask('Delete this project (its layers, objects and image library) and its saved copies on this device? Other projects stay.', 'Delete project', 'Cancel', { danger: true }))) return;
       await MB.projects.flush();
       await MB.clearAutosave();
       MB.projects.startFresh();
