@@ -164,11 +164,11 @@ window.MB = window.MB || {};
       // ask for leave to write while the click that chose the file still counts as one (this first read only says
       // whether it is a project)
       const canWrite = project && (await handle.requestPermission(RW).catch(() => 'denied')) === 'granted';
-      if (!(await P().confirmReplace('Open the file'))) return;
+      if (!(await P().confirmReplace('Open the file', 'open'))) return;
       // the open project's own file, without its latest changes (writing them failed or is paused): opening it would
       // go back to what the file holds
       if (entry && (await entry.handle.isSameEntry(handle).catch(() => false)) && !(await holdsCurrent(handle)) &&
-          !(await MB.ask('The latest changes to "' + entry.name + '" are not in the file yet, so opening it shows the file without them. Open it anyway?', 'Open the file', 'Cancel'))) return;
+          !(await MB.ask('The latest changes to "' + entry.name + '" are not in the file yet, so opening it shows the file without them. Open it anyway?', 'Open the file', 'Cancel', { yesIcon: 'open' }))) return;
       // read it again: replacing the open project first saved it, maybe to this very file
       file = await handle.getFile();
       if ((await MB.openText(await file.text(), file.name)) !== 'project') return;
@@ -214,7 +214,7 @@ window.MB = window.MB || {};
       show('denied');
       // the browser said no (or showed nothing to say yes to): said so, and an end to asking offered
       const synced = MB.cloud && MB.cloud.ready && MB.cloud.status(MB.state.projectId);
-      if (await MB.ask('The browser did not allow saving to "' + entry.name + '". This map is still saved in this browser' + (synced ? ' and in the cloud' : '') + '.\n\nStop saving it to that file? The file stays as it is.', 'Stop saving to the file', 'Keep the file')) await F.unlink();
+      if (await MB.ask('The browser did not allow saving to "' + entry.name + '". This map is still saved in this browser' + (synced ? ' and in the cloud' : '') + '.\n\nStop saving it to that file? The file stays as it is.', 'Stop saving to the file', 'Keep the file', { yesIcon: 'unlink', noIcon: 'check' })) await F.unlink();
       return;
     }
     show('saving');
@@ -222,7 +222,7 @@ window.MB = window.MB || {};
     await writeNow(false);
   };
   F.resolve = async function () {
-    const keep = await MB.ask('"' + entry.name + '" was changed outside GenGIS since it was last saved here. Replace it with the map open here, or stop saving to it (the file stays as it is)?', 'Replace the file', 'Stop saving to it');
+    const keep = await MB.ask('"' + entry.name + '" was changed outside GenGIS since it was last saved here. Replace it with the map open here, or stop saving to it (the file stays as it is)?', 'Replace the file', 'Stop saving to it', { yesIcon: 'save', noIcon: 'unlink' });
     if (keep) { if (await allowed(true)) { await P().flush(); if (await writeNow(true)) MB.toast('Saved to "' + entry.name + '"', 3000); } }
     else await F.unlink();
   };

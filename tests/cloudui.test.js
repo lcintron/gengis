@@ -77,7 +77,7 @@ function load(o) {
   const MB = {
     escapeHtml: esc,
     modalCloseHtml: '<button type="button" class="modal-x" data-act="close"></button>',
-    ICON: { close: '<svg data-i="close"></svg>', refresh: '<svg data-i="refresh"></svg>' },
+    ICON: Object.fromEntries(['close', 'refresh', 'signin', 'logout', 'warn', 'copy', 'cloudDown', 'cloudUp'].map(k => [k, `<svg data-i="${k}"></svg>`])),
     iconBtn: (icon, title, attrs) => `<button type="button" class="icon-btn mini" title="${esc(title)}"${attrs ? ' ' + attrs : ''}><svg data-i="${esc(icon)}"></svg></button>`,
     state: { projectId: o.projectId || 'p1', projectName: o.projectName || 'Harbor survey' },
     projects, cloud,
@@ -90,9 +90,11 @@ function load(o) {
     on: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
     emit: (type, arg) => (listeners[type] || []).forEach(fn => fn(arg))
   };
+  MB.btnInner = (icon, label) => (MB.ICON[icon] || '') + '<span class="btn-label">' + esc(label) + '</span>';
+  const made = []; // every element the module makes: the dialog, and the two buttons beside the save status
   const document = {
     activeElement: null, body: fakeEl('body'),
-    createElement: tag => fakeEl(tag),
+    createElement: tag => { const el = fakeEl(tag); made.push(el); return el; },
     getElementById: id => (id === 'saveStatus' ? fakeEl('span') : null),
     querySelectorAll: () => []
   };
@@ -100,7 +102,7 @@ function load(o) {
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/cloudui.js'), 'utf8'), ctx, { filename: 'js/cloudui.js' });
   MB.cloudUI.init();
-  return { MB, U: MB.cloudUI, log, records, document, flushResolve, resolveDone, resolveFailed };
+  return { MB, U: MB.cloudUI, log, records, document, made, flushResolve, resolveDone, resolveFailed };
 }
 
 // The HTML the dialog last drew into its box.
@@ -117,11 +119,8 @@ function rowOf(html, id) {
 // The module keeps its dialog to itself: the fake document notes the elements it makes, so the tests can read it.
 function open(o) {
   const ld = load(o);
-  const made = [];
-  const create = ld.document.createElement;
-  ld.document.createElement = tag => { const el = create(tag); made.push(el); return el; };
   ld.U.open();
-  ld.U._testDlg = made.find(el => el.id === 'cloudDialog');
+  ld.U._testDlg = ld.made.find(el => el.id === 'cloudDialog');
   return ld;
 }
 
@@ -229,6 +228,36 @@ test('a resolve that fails gives the choices back, it does not leave the row stu
   ld.resolveFailed(new Error('offline'));
   await tick(200);
   assert.match(rowOf(boxHtml(ld.U), 'p1'), /data-resolve="mine"(?![^>]*disabled)/);
+});
+
+test('each of the three conflict choices leads with its own drawing', async () => {
+  const ld = open({ status: { p1: 'conflict' } });
+  await tick(20);
+  const row = rowOf(boxHtml(ld.U), 'p1');
+  assert.match(row, /<svg data-i="copy"><\/svg>Keep both/);
+  assert.match(row, /<svg data-i="cloudDown"><\/svg>Use cloud/, 'the cloud\'s version comes down');
+  assert.match(row, /<svg data-i="cloudUp"><\/svg>Use mine/, 'this version goes up');
+  for (const k of ['both', 'cloud', 'mine']) assert.match(row, new RegExp(`data-resolve="${k}"[^>]*>\\s*<svg`), k + ': the icon is inside the button');
+});
+
+test('the button beside the save status keeps its icon: its words are written only when what it asks for changes', () => {
+  const status = { p1: 'signin' };
+  const ld = load({ status });
+  const act = ld.made.find(el => el.id === 'cloudAction');
+  assert.ok(act, '#cloudAction was made');
+  assert.equal(act.innerHTML, '<svg data-i="signin"></svg><span class="btn-label">Sign in</span>', 'signed out: the door');
+  assert.equal(act.textContent, '', 'the words are in the button\'s HTML, not written over its icon');
+  assert.ok(act.className.split(' ').includes('with-icon'), 'the class that puts the icon beside the words');
+  assert.equal(act.hidden, false);
+  // the same state again: nothing is rebuilt (the icon would flicker on every sync message)
+  act.innerHTML = 'kept';
+  ld.MB.emit('cloudsync');
+  assert.equal(act.innerHTML, 'kept');
+  // a conflict instead: the warning triangle and Resolve
+  status.p1 = 'conflict';
+  ld.MB.emit('cloudsync');
+  assert.equal(act.innerHTML, '<svg data-i="warn"></svg><span class="btn-label">Resolve</span>');
+  assert.match(act.title, /^Edited here and in the cloud/);
 });
 
 test('a name with a quote or a tag in it is escaped in the row it is put into', async () => {

@@ -169,7 +169,7 @@ window.MB = window.MB || {};
         <h2 id="exportTitle">Export the map</h2>
         <p class="note">The map, its layers and the GenGIS logo, without the map's controls.</p>
         <div class="export-fields"></div>
-        <div class="export-actions"><span class="export-status" role="status" aria-live="polite"></span><button type="button" class="btn" data-act="close">Cancel</button><button type="button" class="btn primary" data-act="export">Export</button></div>
+        <div class="export-actions"><span class="export-status" role="status" aria-live="polite"></span><button type="button" class="btn with-icon" data-act="close">${MB.ICON.close}Cancel</button><button type="button" class="btn primary with-icon" data-act="export">${MB.ICON.download}Export</button></div>
       </div>`;
       document.body.appendChild(dlg);
       MB.ui.wireDialog(dlg, { canClose: () => !this.busy }); // ✕, Cancel, Esc, the backdrop: not while exporting

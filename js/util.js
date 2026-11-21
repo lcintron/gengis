@@ -762,6 +762,18 @@ window.MB = window.MB || {};
     joinLines: ic('<path d="M3 19l4.5-4.5"/><path d="M16.5 9.5L21 5"/><circle cx="12" cy="12" r="2.5"/>'), // two lines, one end
     polyFromLines: ic('<path d="M4 20L9 4l11 16"/><path d="M20 20H4" stroke-dasharray="3 2.5"/>'), // a chain of lines closed into a polygon
     joinShapes: ic('<path d="M3 3h11v7h7v11H10v-7H3z"/>'), // two shapes as one outline
+    update: ic('<circle cx="12" cy="12" r="9"/><path d="M12 16V8M8.5 11.5L12 8l3.5 3.5"/>'), // a newer version is ready: reload into it
+    newFile: ic('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>'), // start a new map (Project → New project's drawing)
+    history: ic('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>'), // an earlier copy (Recent projects' drawing)
+    key: ic('<circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>'), // Map & search APIs
+    present: ic('<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M10 8.5v4l3.5-2z" fill="currentColor"/><path d="M8 21h8"/>'), // presenter mode
+    signin: ic('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M4 12h11M10 7l5 5-5 5"/>'), // in through the door: sign in to an account
+    logout: ic('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>'), // out through the door: disconnect an account
+    cloudDown: ic('<path d="M4 16.76A4.25 4.25 0 0 1 6.3 9.5 6 6 0 0 1 18.1 9.04 4.5 4.5 0 0 1 20.5 16.85"/><path d="M12 12v9M8.5 17.5L12 21l3.5-3.5"/>'), // take the version the cloud has
+    cloudUp: ic('<path d="M4 16.76A4.25 4.25 0 0 1 6.3 9.5 6 6 0 0 1 18.1 9.04 4.5 4.5 0 0 1 20.5 16.85"/><path d="M12 21v-9M8.5 15.5L12 12l3.5 3.5"/>'), // put this version in the cloud
+    warn: ic('<path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17.5v.5"/>'), // something needs a decision
+    external: ic('<path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/>'), // opens a web page
+    unlink: ic('<path d="M9 15l-2 2a3 3 0 0 1-4-4l3-3a3 3 0 0 1 4 0M15 9l2-2a3 3 0 0 1 4 4l-3 3a3 3 0 0 1-4 0M4 4l16 16"/>'), // stop saving to the file
     clock: ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'), // the time on the map (clock.js)
     table: ic('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>'), // an attribute table
     sliders: ic('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'), // a layer's settings
@@ -772,6 +784,11 @@ window.MB = window.MB || {};
   // An icon-only button. attrs: its other attributes as HTML (data-…, disabled); cls: more classes; label: what a
   // screen reader says when the short tooltip is not enough (in a list: which row, as 'Delete Alpha').
   MB.iconBtn = (icon, title, attrs, cls, label) => `<button type="button" class="icon-btn mini${cls ? ' ' + cls : ''}" title="${MB.escapeHtml(title)}" aria-label="${MB.escapeHtml(label || title)}"${attrs ? ' ' + attrs : ''}>${MB.ICON[icon]}</button>`;
+  // One of the drawings above? (hasOwnProperty: 'constructor' and the like are not icons.)
+  const hasIcon = k => typeof k === 'string' && Object.prototype.hasOwnProperty.call(MB.ICON, k);
+  // A text button's inside: its icon, then its words in a span, so the words can change and the icon stays. The
+  // label is escaped here. (The button itself carries class="btn with-icon".)
+  MB.btnInner = (icon, label) => (hasIcon(icon) ? MB.ICON[icon] : '') + '<span class="btn-label">' + MB.escapeHtml(label) + '</span>';
   // A zoom level as the app writes it: the magnifying glass and the number, as in the status bar. zoomText: a text with
   // its "zoom 8" that way, the rest escaped; setZoomText: the same into an element, when it changed.
   MB.zoomIcon = MB.ICON.search.replace('<svg ', '<svg class="zi" ') + '<span class="sr-only">Zoom </span>';
@@ -781,15 +798,19 @@ window.MB = window.MB || {};
   // opts.danger: the yes button is a delete's red one, and Cancel has the focus (Enter does not delete).
   // opts.dismiss: closing the question without answering it (the ✕, Escape, the backdrop, Android's back) resolves
   // null, not false: for questions where "no" is a choice of its own and not the way out.
+  // opts.yesIcon / opts.noIcon: which MB.ICON leads each button, when what it does is not "use this one" or
+  // "cancel" (a name that is no icon falls back to those; the yes button of a danger question is a bin).
   MB.ask = function (message, yes, no, opts) {
     return new Promise(resolve => {
+      const o = opts || {};
+      const yesIcon = hasIcon(o.yesIcon) ? o.yesIcon : (o.danger ? 'trash' : 'check'), noIcon = hasIcon(o.noIcon) ? o.noIcon : 'close';
       const back = document.activeElement;
       const dlg = document.createElement('div');
       dlg.className = 'modal mb-ask';
-      dlg.innerHTML = '<div class="modal-box" role="alertdialog" aria-modal="true">' + MB.modalCloseHtml + '<p class="ask-text"></p><div class="row right"><button type="button" class="btn" data-no></button><button type="button" class="btn primary" data-yes></button></div></div>';
+      dlg.innerHTML = '<div class="modal-box" role="alertdialog" aria-modal="true">' + MB.modalCloseHtml + '<p class="ask-text"></p><div class="row right">' +
+        '<button type="button" class="btn with-icon wrap" data-no>' + MB.btnInner(noIcon, no || 'Cancel') + '</button>' +
+        '<button type="button" class="btn primary with-icon wrap" data-yes>' + MB.btnInner(yesIcon, yes || 'OK') + '</button></div></div>';
       dlg.querySelector('.ask-text').textContent = message;
-      dlg.querySelector('[data-yes]').textContent = yes || 'OK';
-      dlg.querySelector('[data-no]').textContent = no || 'Cancel';
       const yesBtn = dlg.querySelector('[data-yes]'), noBtn = dlg.querySelector('[data-no]'), xBtn = dlg.querySelector('.modal-x');
       if (opts && opts.danger) yesBtn.classList.replace('primary', 'danger');
       const finish = v => {

@@ -63,7 +63,7 @@ window.MB = window.MB || {};
       dlg.innerHTML = `<div class="modal-box cast-box" role="dialog" aria-modal="true" aria-labelledby="castTitle">
         ${MB.modalCloseHtml}<h2 id="castTitle">Cast to a screen</h2>
         <p class="note">Mirror this screen on a TV or projector, then start presenter mode so only the map, its layers and the GenGIS logo show.</p>
-        <div class="cast-actions"><button type="button" class="btn primary" data-act="present">Start presenter mode</button></div>
+        <div class="cast-actions"><button type="button" class="btn primary with-icon" data-act="present">${MB.ICON.present}Start presenter mode</button></div>
         <div class="field"><label class="field-label" for="castWhich">Your device</label>
           <select id="castWhich">${ORDER.map(k => `<option value="${k}">${esc(STEPS[k].name)}</option>`).join('')}</select></div>
         <div class="cast-steps"></div>

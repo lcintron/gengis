@@ -669,6 +669,8 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
 .export-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
 .export-status { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--text-dim); }
 .export-status.err { color: var(--danger); }
+/* a dialog's buttons are stretched to fill their row: icon and words together in the middle of each */
+.cast-actions .btn, .export-actions .btn, .cloud-conflict .btn { justify-content: center; }
 
 @media (max-width: 860px) {
   :root { --sidebar-w: 280px; }
@@ -1022,7 +1024,7 @@ button.link:hover { text-decoration: underline; }
 .about-head p { margin: 0; }
 .about-update { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 10px; }
 .about-update .note:empty { display: none; }
-.about-update .note .btn { display: block; margin: 8px auto 0; } /* "Reload to update" on its own row, under the version */
+.about-update .note .btn { display: flex; width: fit-content; margin: 8px auto 0; } /* "Reload to update" on its own row, under the version (flex: its icon beside its words) */
 
 /* ---------- saving: status, recent projects, a map open in another tab ---------- */
 /* the save status is a dot in .topbar-right, before undo: its words are in its tooltip and read by screen readers */
@@ -1044,6 +1046,8 @@ button.link:hover { text-decoration: underline; }
 .mb-ask .modal-box { max-width: 440px; }
 /* a project name, a file name or a provider's message in the question: wrapped anywhere rather than pushing the box wide */
 .mb-ask .ask-text { white-space: pre-line; margin: 0 0 14px; overflow-wrap: anywhere; }
+/* two answers with an icon each: on a narrow phone one goes under the other rather than out of the box */
+.mb-ask .row.right { flex-wrap: wrap; }
 .desktop-files { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 /* Settings: a line of text or a file with its actions as icons, and an "i" whose explanation opens below the line */
 .info-line { position: relative; display: flex; align-items: center; gap: 6px; min-height: 26px; margin: 6px 0; }
@@ -1576,6 +1580,8 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 .cloud-row select { flex: 0 0 auto; max-width: 48%; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); height: 30px; padding: 0 6px; }
 .cloud-conflict { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .cloud-conflict .btn { flex: 1 1 auto; min-width: 0; white-space: nowrap; }
+/* a button's icon keeps a button's size here: every other svg in the dialog is 18 px */
+.cloud-box .btn.with-icon > svg { width: 14px; height: 14px; }
 .cloud-ic { display: inline-flex; }
 .cloud-ic svg { width: 14px; height: 14px; }
 .cloud-line-set .file-name { flex: 1 1 auto; }

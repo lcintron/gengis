@@ -27,7 +27,6 @@ window.MB = window.MB || {};
     error: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.5"/>'),
     signin: svg('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>'),
     off: svg('<path d="M7 18h10.5a4.5 4.5 0 0 0 .6-8.96A6 6 0 0 0 6.3 9.5 4.25 4.25 0 0 0 7 18z" stroke-dasharray="2.5 2.5"/>'),
-    logout: svg('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>'),
     file: svg('<path d="M6 3h8l4 4v14H6z M14 3v4h4"/>')
   };
   const when = ts => { if (!ts) return ''; const m = Math.round((Date.now() - ts) / 60000); return m < 1 ? 'now' : (m < 60 ? m + ' min' : (m < 1440 ? Math.round(m / 60) + ' h' : new Date(ts).toLocaleDateString())); };
@@ -113,8 +112,8 @@ window.MB = window.MB || {};
         html += `<div class="cloud-acc${a.state === 'signin' ? ' out' : ''}">
           <span class="cloud-avatar" aria-hidden="true">${esc(initial)}</span>
           <div class="cloud-acc-main"><b>${esc(a.name || a.email)}</b><small>${esc(p.name)} · ${a.kind === 'personal' ? 'Personal' : 'Work or school'}</small>${a.pullError && a.state !== 'signin' ? `<small class="cloud-warn" title="${esc(a.pullError)}">${I.error} Can't check for changes</small>` : ''}</div>
-          ${a.state === 'signin' ? `<button type="button" class="btn small primary" data-signin="${esc(a.id)}" data-key="s-${esc(a.id)}" title="${esc(a.error || 'Signed out')}">Sign in</button>` : iconBtn('data-act="syncnow" data-key="sync"', MB.ICON.refresh, 'Sync now')}
-          ${iconBtn(`data-disconnect="${esc(a.id)}" data-key="d-${esc(a.id)}"`, I.logout, 'Disconnect')}
+          ${a.state === 'signin' ? `<button type="button" class="btn small primary with-icon" data-signin="${esc(a.id)}" data-key="s-${esc(a.id)}" title="${esc(a.error || 'Signed out')}">${MB.ICON.signin}Sign in</button>` : iconBtn('data-act="syncnow" data-key="sync"', MB.ICON.refresh, 'Sync now')}
+          ${iconBtn(`data-disconnect="${esc(a.id)}" data-key="d-${esc(a.id)}"`, MB.ICON.logout, 'Disconnect')}
         </div>${accs.length === 1 ? `
         <div class="cloud-auto"><span>Sync all projects</span>${tip('Named projects sync automatically. Switch one off below to keep it on this device only.')}${toggle(`data-auto="${esc(a.id)}" data-key="a-${esc(a.id)}"`, a.auto, 'Sync all projects')}</div>` : ''}`;
       });
@@ -185,9 +184,9 @@ window.MB = window.MB || {};
       : toggle(`data-sync="${esc(r.id)}" data-acc="${esc(accs[0].id)}" data-key="p-${esc(r.id)}"`, on, 'Sync ' + r.name, draft);
     const off = resolving[r.id] ? ' disabled' : ''; // the choice is being carried out: not a second time
     const conflict = state === 'conflict' ? `<div class="cloud-conflict" role="group" aria-label="Choose which version to keep">
-        <button type="button" class="btn small primary" data-resolve="both" data-id="${esc(r.id)}" title="Keep this version, and save the cloud version as a separate project"${off}>Keep both</button>
-        <button type="button" class="btn small" data-resolve="cloud" data-id="${esc(r.id)}" title="Replace this version with the cloud version (this one is kept in Recent projects → earlier copies)"${off}>Use cloud</button>
-        <button type="button" class="btn small" data-resolve="mine" data-id="${esc(r.id)}" title="Replace the cloud version with this one (the cloud keeps the old one in its version history)"${off}>Use mine</button></div>` : '';
+        <button type="button" class="btn small primary with-icon" data-resolve="both" data-id="${esc(r.id)}" title="Keep this version, and save the cloud version as a separate project"${off}>${MB.ICON.copy}Keep both</button>
+        <button type="button" class="btn small with-icon" data-resolve="cloud" data-id="${esc(r.id)}" title="Replace this version with the cloud version (this one is kept in Recent projects → earlier copies)"${off}>${MB.ICON.cloudDown}Use cloud</button>
+        <button type="button" class="btn small with-icon" data-resolve="mine" data-id="${esc(r.id)}" title="Replace the cloud version with this one (the cloud keeps the old one in its version history)"${off}>${MB.ICON.cloudUp}Use mine</button></div>` : '';
     const why = l && l.error && state === 'error' ? l.error : label;
     return `<div class="cloud-row${r.id === MB.state.projectId ? ' current' : ''}${on ? '' : ' off'}" data-name="${esc(String(r.name || '').toLowerCase())}">
         <span class="cloud-st ${esc(state)}" role="img" aria-label="${esc(why)}" title="${esc(why)}">${I[state] || I.off}</span>
@@ -281,7 +280,7 @@ window.MB = window.MB || {};
     on('[data-signin]', b => { const a = C().accounts.find(x => x.id === b.dataset.signin); connect(a.provider, a); });
     on('[data-disconnect]', async b => {
       const a = C().accounts.find(x => x.id === b.dataset.disconnect);
-      if (await MB.ask('Disconnect ' + accLabel(a) + '?\n\nNothing is deleted: files stay in ' + provName(a.provider) + ', projects stay here.', 'Disconnect', 'Cancel')) C().disconnect(a.id);
+      if (await MB.ask('Disconnect ' + accLabel(a) + '?\n\nNothing is deleted: files stay in ' + provName(a.provider) + ', projects stay here.', 'Disconnect', 'Cancel', { yesIcon: 'logout' })) C().disconnect(a.id);
     });
     on('[data-auto]', cb => C().setAuto(cb.dataset.auto, cb.checked));
     on('[data-autoto]', sel => {
@@ -321,7 +320,7 @@ window.MB = window.MB || {};
     btn.type = 'button'; btn.id = 'cloudStatus'; btn.className = 'cloud-status'; btn.hidden = true;
     btn.innerHTML = ICON;
     const act = document.createElement('button');
-    act.type = 'button'; act.id = 'cloudAction'; act.className = 'btn small file-resume'; act.hidden = true;
+    act.type = 'button'; act.id = 'cloudAction'; act.className = 'btn small file-resume with-icon'; act.hidden = true;
     save.insertAdjacentElement('afterend', btn);
     btn.insertAdjacentElement('afterend', act);
     btn.addEventListener('click', U.open);
@@ -341,8 +340,9 @@ window.MB = window.MB || {};
       }
       const need = st === 'conflict' ? 'conflict' : (st === 'signin' ? 'signin' : '');
       act.hidden = !need;
+      // (its words and its icon are written only when what it is for changes: the icon is not rebuilt on every paint)
+      if (act.dataset.do !== need || !act.innerHTML) act.innerHTML = MB.btnInner(need === 'conflict' ? 'warn' : 'signin', need === 'conflict' ? 'Resolve' : 'Sign in');
       act.dataset.do = need;
-      act.textContent = need === 'conflict' ? 'Resolve' : 'Sign in';
       act.title = need === 'conflict' ? 'Edited here and in the cloud: choose which to keep' : 'Signed out of the cloud: sign in to sync';
       renderSettings();
       preload([...new Set(c.accounts.map(x => x.provider))]); // (a connected account's "Sign in" button beside the save status)

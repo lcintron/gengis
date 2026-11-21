@@ -207,7 +207,7 @@ window.MB = window.MB || {};
         ${anyData ? '<label class="check"><input type="checkbox" id="oaData" checked> Include enabled data layers</label>' : ''}
         <div class="measure-box" id="oaEstimate"></div>
         <div id="oaProgress" class="hidden"><div class="progress"><div class="bar" id="oaBar"></div></div><div class="note" id="oaStatus"></div></div>
-        <div class="row right"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" id="oaStart">Download</button></div>
+        <div class="row right"><button class="btn ghost with-icon" data-act="close">${MB.ICON.close}Cancel</button><button class="btn primary with-icon" id="oaStart">${MB.ICON.download}Download</button></div>
       </div>`;
       document.body.appendChild(el);
       const $ = s => el.querySelector(s);

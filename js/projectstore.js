@@ -183,14 +183,15 @@ window.MB = window.MB || {};
     return dbRev === rev;
   };
 
-  // Ask before replacing a project that is not in the database (it would not be in Recent projects).
-  P.confirmReplace = async function (what) {
+  // Ask before replacing a project that is not in the database (it would not be in Recent projects). icon: the
+  // MB.ICON the "what" button leads with (what it is about to do: open a file, start a new map, restore a copy).
+  P.confirmReplace = async function (what, icon) {
     const safe = await P.flush();
     if (MB.desktopFiles && MB.desktopFiles.available) await MB.desktopFiles.writePending(); // its file too
     if (MB.browserFiles && MB.browserFiles.available) await MB.browserFiles.writePending();
     if (safe) return true;
     return MB.ask('"' + MB.state.projectName + '" could not be saved in this browser\'s project storage' + (P.error ? ' (' + P.error + ')' : '') +
-      ', so it will not be in Recent projects. ' + what + ' anyway?\n\nTo keep it, cancel and use Project \u2192 Save project.', what, 'Cancel');
+      ', so it will not be in Recent projects. ' + what + ' anyway?\n\nTo keep it, cancel and use Project \u2192 Save project.', what, 'Cancel', { yesIcon: icon });
   };
 
   // Which projects other tabs have open (their lock is held).
@@ -209,14 +210,14 @@ window.MB = window.MB || {};
   // Project -> New project. A draft is not kept twice: an empty one is replaced quietly; one with objects is
   // shown, and the user is asked whether a new map should take its place.
   P.newMap = async function () {
-    if (!(await P.confirmReplace('Start a new project'))) return;
+    if (!(await P.confirmReplace('Start a new project', 'newFile'))) return;
     // a map this tab only shows (another tab edits it) is that tab's: leave it, and start a map of our own
     if (P.readOnly) { P.startFresh(); MB.toast('New map'); return; }
     const cur = MB.state.projectId;
     const question = 'This untitled map has not been saved or named. Start a new map in its place?';
     if (isUntitled(MB.state.projectName) && !P.fileBacked) {
       if (!Object.keys(MB.featureLayers).length) { MB.toast('This map is already new.'); return; }
-      if (!(await MB.ask(question, 'Start new', 'Keep it'))) return;
+      if (!(await MB.ask(question, 'Start new', 'Keep it', { yesIcon: 'newFile', noIcon: 'check' }))) return;
       P.startFresh();
       await P.remove(cur);
       MB.toast('New map');
@@ -230,7 +231,7 @@ window.MB = window.MB || {};
     if (kept) {
       await P.open(kept.id); // show it first
       if (MB.state.projectId !== kept.id) return;
-      if (!(await MB.ask(question, 'Start new', 'Keep it'))) return;
+      if (!(await MB.ask(question, 'Start new', 'Keep it', { yesIcon: 'newFile', noIcon: 'check' }))) return;
       P.startFresh();
       await P.remove(kept.id);
       MB.toast('New map');
@@ -318,16 +319,16 @@ window.MB = window.MB || {};
   // A project file is being opened: if it is a project saved here, what is saved here is kept as a recovery copy.
   // Resolves false when the user would rather not replace the open project.
   P.beforeOpen = async function (p) {
-    if (!(await P.confirmReplace('Open the file'))) return false;
+    if (!(await P.confirmReplace('Open the file', 'open'))) return false;
     if (p && p.id && (await keepCopy(p.id, 'before opening a file')) === false &&
-      !(await MB.ask('The copy of this project saved here could not be kept before the file replaces it. Open the file anyway?', 'Open the file', 'Cancel'))) return false;
+      !(await MB.ask('The copy of this project saved here could not be kept before the file replaces it. Open the file anyway?', 'Open the file', 'Cancel', { yesIcon: 'open' }))) return false;
     return true;
   };
 
   // Open a project saved here. Resolves whether it was opened: the user may call it off (what is open now cannot be
   // kept), and then whoever asked stays as it was (cloudui.js keeps its dialog up).
   P.open = async function (id) {
-    if (!(await P.confirmReplace('Open the other project'))) return false;
+    if (!(await P.confirmReplace('Open the other project', 'open'))) return false;
     const rec = await run('projects', 'readonly', s => done(s.get(id)));
     if (!rec) { MB.toast('That project is no longer saved here.'); return false; }
     MB.loadProject(rec.data);
@@ -339,9 +340,9 @@ window.MB = window.MB || {};
     const snap = await run('snapshots', 'readonly', s => done(s.get(key)));
     if (!snap) return;
     // the open project must be safely kept before an earlier copy replaces it
-    if (!(await P.confirmReplace('Restore the earlier copy'))) return;
+    if (!(await P.confirmReplace('Restore the earlier copy', 'history'))) return;
     if ((await keepCopy(snap.id, 'before restoring an earlier copy')) !== true &&
-      !(await MB.ask('What is open now could not be kept as a copy. Restore the earlier copy anyway?', 'Restore', 'Cancel'))) return;
+      !(await MB.ask('What is open now could not be kept as a copy. Restore the earlier copy anyway?', 'Restore', 'Cancel', { yesIcon: 'history' }))) return;
     const own = await run('projects', 'readonly', st => done(st.get(snap.id))).catch(() => null);
     MB.loadProject(snap.data);
     P.fileBacked = !!(own && own.fileBacked); // the restored project's, not the one being left
@@ -485,7 +486,7 @@ window.MB = window.MB || {};
       document.body.appendChild(el);
     }
     el.innerHTML = `<span>${why === 'taken' ? 'This map is now being edited in another tab or window.' : 'This map is open in another tab or window.'} Changes made here are not saved.</span>
-      <button type="button" class="btn small primary" data-act="here">Edit here</button><button type="button" class="btn small" data-act="new">New map</button>`;
+      <button type="button" class="btn small primary with-icon" data-act="here">${MB.ICON.edit}Edit here</button><button type="button" class="btn small with-icon" data-act="new">${MB.ICON.newFile}New map</button>`;
     el.querySelector('[data-act="here"]').addEventListener('click', () => P.takeOver());
     el.querySelector('[data-act="new"]').addEventListener('click', () => P.newMap());
   }
@@ -540,7 +541,7 @@ window.MB = window.MB || {};
       <h3>Earlier copies of “${esc(MB.state.projectName)}”</h3>
       <div class="recent-list">${snaps.length ? snaps.map(s => `<div class="recent-item">
           <div class="recent-main"><span>${esc(new Date(s.savedAt).toLocaleString())}</span><span class="dim">${objects(s.objects)}${reason(s.reason) ? ' · ' + reason(s.reason) : ''}</span></div>
-          <button class="btn small" data-restore="${esc(s.key)}"${P.readOnly ? ' disabled' : ''}>Restore</button>
+          <button class="btn small with-icon" data-restore="${esc(s.key)}"${P.readOnly ? ' disabled' : ''}>${MB.ICON.history}Restore</button>
         </div>`).join('') : '<p class="note">A copy is kept every 10 minutes while you edit (the last 10), and before a file or a restore replaces the project.</p>'}</div>
       ${DF.available ? `<h3>Files on this computer</h3>
       <div class="recent-list">${files.length ? files.map(f => `<div class="recent-item">
@@ -557,13 +558,13 @@ window.MB = window.MB || {};
     box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await P.open(b.dataset.open); }));
     // Confirm inside the row: some embedded browsers (and in-app previews) suppress confirm() and read it as Cancel,
     // which made these buttons look dead.
-    const ask = (btn, question, yes, act, wide) => {
+    const ask = (btn, question, yes, act, wide, icon) => {
       const row = btn.closest('.recent-item');
       const actions = Array.from(row.children).filter(el => !el.classList.contains('recent-main'));
       actions.forEach(el => { el.style.display = 'none'; });
       const q = document.createElement('div');
       q.className = 'recent-ask' + (wide ? ' wide' : ''); // (wide: a longer question, on a line of its own below the name)
-      q.innerHTML = `<span>${esc(question)}</span><button class="btn small danger" data-yes>${esc(yes)}</button><button class="btn small" data-no>Cancel</button>`;
+      q.innerHTML = `<span>${esc(question)}</span><button class="btn small danger with-icon" data-yes>${MB.ICON[icon] || MB.ICON.trash}${esc(yes)}</button><button class="btn small with-icon" data-no>${MB.ICON.close}Cancel</button>`;
       row.appendChild(q);
       q.querySelector('[data-no]').addEventListener('click', () => { q.remove(); actions.forEach(el => { el.style.display = ''; }); btn.focus(); });
       q.querySelector('[data-yes]').addEventListener('click', act);
@@ -618,6 +619,6 @@ window.MB = window.MB || {};
     box.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', () => ask(b, 'Replace the open project with this copy?', 'Restore', async () => {
       dlg.classList.add('hidden');
       await P.restore(b.dataset.restore);
-    })));
+    }, false, 'history')));
   };
 })(window.MB);
