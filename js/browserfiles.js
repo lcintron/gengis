@@ -104,13 +104,24 @@ window.MB = window.MB || {};
     // the same file. Not "entry === e": an undo or a redo opens the project again, and the link is then read from
     // the database again, a copy of it. open(): that link as it is now, or null (another project, another file).
     const linked = links, open = () => (entry && entry.id === e.id && links === linked ? entry : null);
-    // The file now holds this write (text, of project p), last modified as e says: noted on the open project's link.
-    // (late: by a close that had been given up on; the status is then only cleared of that, never of a conflict)
+    // The file was written, last modified as e says: noted in the database on the project's link as it is NOW, never
+    // by putting e back. Since this write began the project may have been saved as another file, or unlinked from
+    // this one: e is then no longer its link, and stored again it would silently bring the old file back at the
+    // next undo or reload. (Another project open, and no link changed anywhere meanwhile: e is still its project's
+    // row, and takes the time, so that this is not taken for a change made elsewhere when it is opened again.)
+    const note = () => {
+      const row = open() || (links === linked ? e : null);
+      if (!row) return null;
+      row.lastWritten = e.lastWritten;
+      return putEntry(row);
+    };
+    // The file now holds this write (text, of project p): what the open project's file holds, if it is still that.
+    // late: by a close that had been given up on. The status is then only cleared of that, never of a conflict;
+    // and the failure stays "said": a file that is always this slow says so once, not at every edit.
     const landed = late => {
-      const now = open();
-      if (!now) return;
-      now.lastWritten = e.lastWritten;
-      lastId = p.id; lastText = text; failed = false;
+      if (!open()) return;
+      lastId = p.id; lastText = text;
+      if (!late) failed = false;
       if (!late || F.state === 'saving') show('saving');
     };
     if (!mine()) return false;
@@ -137,7 +148,7 @@ window.MB = window.MB || {};
       closing = w.close();
       await bound(closing, 'saving the file');
       e.lastWritten = (await bound(e.handle.getFile(), 'reading the file')).lastModified;
-      await bound(putEntry(e), 'noting the save');
+      await bound(note(), 'noting the save');
       landed();
       return true;
     } catch (err) {
@@ -148,7 +159,7 @@ window.MB = window.MB || {};
       // over a later write: the write scheduled here finds the project as it is now differs, and writes it again.
       if (closing) closing.then(async () => {
         e.lastWritten = (await e.handle.getFile()).lastModified;
-        await putEntry(e);
+        await note();
         if (!open()) return;
         landed(true);
         F.schedule();

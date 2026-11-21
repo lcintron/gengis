@@ -304,14 +304,15 @@ test('a project that failed while opening is not saved from: read-only until a p
 // A project linked to a file through Save as (the picker hands back the handle).
 async function linked(handleOpts) {
   const handle = fakeHandle('alpha.gengis', handleOpts);
-  const s = sandbox({ modules: ['projectstore.js', 'browserfiles.js'], files: { handle } });
+  const files = { handle }; // (files.handle: what the file picker answers with, for a later Save as)
+  const s = sandbox({ modules: ['projectstore.js', 'browserfiles.js'], files });
   s.P.flush = async () => true;
   s.P.markFileBacked = () => { s.P.fileBacked = true; };
   await settle();
   assert.equal(s.F.available, true, 'the module is live');
   const saved = watch(s.F.saveAs());
   await settle();
-  return Object.assign(s, { handle, saved });
+  return Object.assign(s, { handle, saved, files });
 }
 
 test('a project file is written and the wait for it settles', async () => {
@@ -497,7 +498,7 @@ function slowFile(s, close) {
     return {
       write: async t => { mine.text = t; }, abort: async () => {},
       close: () => {
-        const how = close(k);
+        const how = f.fast ? 0 : close(k);
         if (how === 'held') return new Promise(r => { f.release = () => { land(); r(); }; });
         if (how) return new Promise(r => { s.clock.setTimeout(() => { land(); r(); }, how); });
         land();
@@ -530,6 +531,95 @@ test('a file that is only slow to close (longer than the wait) is saved once, no
   assert.equal(f.name(), 'Edit two');
   assert.equal(f.writes, 2);
   assert.equal(s.F.state, 'saving');
+  assert.ok(!s.toasts.some(t => /changed outside GenGIS/.test(t.msg)));
+  // a file that is always this slow says so once, not at every edit (each of them is saved, after all)
+  edit(s, 'Edit three');
+  await s.clock.advance(2000 + 9000 + 2000);
+  assert.equal(f.name(), 'Edit three');
+  assert.equal(f.writes, 3);
+  const timeouts = () => s.toasts.filter(t => /timed out/.test(t.msg)).map(t => t.msg);
+  assert.deepEqual(timeouts(), ['Could not save to "alpha.gengis" (saving the file timed out). The project is still saved in this browser.'], 'said once');
+  assert.equal(s.F.error, '');
+  // and a save that answers in time ends that: a later failure is said again
+  f.fast = true;
+  edit(s, 'Edit four');
+  await s.clock.advance(2000);
+  assert.equal(f.name(), 'Edit four');
+  f.fast = false;
+  edit(s, 'Edit five');
+  await s.clock.advance(2000 + 9000 + 2000);
+  assert.equal(timeouts().length, 2, 'said again after a save that went well');
+});
+
+// A project linked to one.gengis whose edit's close stalls and is given up on (said). s.f.release() lands it.
+async function heldClose() {
+  const s = await linked();
+  s.f = slowFile(s, k => (k === 1 ? 'held' : 0));
+  edit(s, 'Edit one');
+  await s.clock.advance(2000);
+  await s.clock.advance(8000);
+  assert.equal(s.toasts.filter(t => /timed out/.test(t.msg)).length, 1, 'the write was given up on, and said');
+  s.undo = async () => { s.MB.loadProject({ id: 'A', name: s.MB.state.projectName }, { keepHistory: true }); await settle(); };
+  return s;
+}
+
+test('Save as while a close of the old file is stalled: the late close never brings the old file back as the project\'s', async () => {
+  const s = await heldClose();
+  const two = s.files.handle = fakeHandle('two.gengis');
+  const saved = watch(s.F.saveAs());
+  await settle();
+  assert.equal(saved.done, true);
+  assert.equal(s.F.name, 'two.gengis');
+  assert.equal(JSON.parse(two.writable.written).name, 'Edit one');
+  s.f.release(); // the stalled close of the old file lands
+  await settle();
+  await s.clock.advance(2000);
+  assert.deepEqual((await s.F.recent()).map(r => r.name), ['two.gengis'], 'the database still says two.gengis');
+  assert.equal((await s.F.recent())[0].handle, two);
+  // an undo reads the link again: still the new file, and it is the one written from now on
+  await s.undo();
+  assert.equal(s.F.name, 'two.gengis');
+  assert.equal(s.F.state, 'saving');
+  edit(s, 'Edit two');
+  await s.clock.advance(2000);
+  assert.equal(JSON.parse(two.writable.written).name, 'Edit two');
+  assert.equal(s.f.writes, 1, 'the old file is not written again');
+  assert.equal(s.f.name(), 'Edit one');
+});
+
+test('Stop saving to the file while a close of it is stalled: the late close does not link it again', async () => {
+  const s = await heldClose();
+  const off = watch(s.F.unlink());
+  await settle();
+  assert.equal(off.done, true);
+  assert.equal(s.F.state, 'none');
+  s.f.release();
+  await settle();
+  await s.clock.advance(2000);
+  assert.deepEqual(await s.F.recent(), [], 'no link in the database');
+  await s.undo();
+  assert.equal(s.F.name, null, 'and none after an undo');
+  assert.equal(s.F.state, 'none');
+  edit(s, 'Edit two');
+  await s.clock.advance(2000);
+  assert.equal(s.f.writes, 1, 'the file is left as it is');
+});
+
+test('a close that lands after another project opened is still noted as GenGIS\'s own writing of that file', async () => {
+  const s = await heldClose();
+  s.MB.loadProject({ id: 'B', name: 'Bravo' });
+  await settle();
+  s.f.release();
+  await settle();
+  const rows = await s.F.recent();
+  assert.deepEqual(rows.map(r => [r.id, r.name, r.lastWritten]), [['A', 'alpha.gengis', s.f.mtime]], 'its time is kept: no "changed outside GenGIS" when it is opened again');
+  assert.equal(s.F.state, 'none', 'and nothing of it on the project now open');
+  // opened again: its file is caught up without a conflict
+  s.MB.loadProject({ id: 'A', name: 'Edit one' });
+  await settle();
+  edit(s, 'Edit two');
+  await s.clock.advance(2000);
+  assert.equal(s.f.name(), 'Edit two');
   assert.ok(!s.toasts.some(t => /changed outside GenGIS/.test(t.msg)));
 });
 
@@ -616,7 +706,7 @@ test('source: the browser\'s file calls in a background write all carry a time l
   assert.match(bf, /const WRITE_TIMEOUT = 8000;/);
   assert.match(bf, /function withTimeout\(promise, ms, label\) \{[\s\S]*?Promise\.race\(\[promise, [\s\S]*?new Error\(\(label \|\| 'file operation'\) \+ ' timed out'\)[\s\S]*?\.finally\(\(\) => clearTimeout\(t\)\);/);
   const write = bf.split('async function write(force) {')[1].split('\n  }')[0];
-  for (const call of ['e.handle.getFile()', 'opening', 'w.write(JSON.stringify(p, null, 1))', 'closing', 'putEntry(e)']) {
+  for (const call of ['e.handle.getFile()', 'opening', 'w.write(JSON.stringify(p, null, 1))', 'closing', 'note()']) {
     assert.ok(write.includes('bound(' + call + ','), call + ' is bounded');
   }
   // every await in the write is one of: the permission check (bounded itself) or a bounded call
@@ -633,8 +723,11 @@ test('source: the browser\'s file calls in a background write all carry a time l
   assert.doesNotMatch(write, /^ {4,8}(show\(|failed = )/m, 'no status change outside a check of the open project');
   // a close that lands late: noted as the save it is (not written again for nothing), and a write scheduled that
   // only writes if the project differs from it
-  assert.match(write, /closing\.then\(async \(\) => \{\s*e\.lastWritten = [^\n]*\n\s*await putEntry\(e\);\s*if \(!open\(\)\) return;\s*landed\(true\);\s*F\.schedule\(\);/);
-  assert.match(write, /now\.lastWritten = e\.lastWritten;\s*lastId = p\.id; lastText = text; failed = false;/);
+  assert.match(write, /closing\.then\(async \(\) => \{\s*e\.lastWritten = [^\n]*\n\s*await note\(\);\s*if \(!open\(\)\) return;\s*landed\(true\);\s*F\.schedule\(\);/);
+  assert.match(write, /lastId = p\.id; lastText = text;\s*if \(!late\) failed = false;/, 'a late save keeps the failure said (once, for a file that is always slow)');
+  // the database row is the project's link as it is now, never the write's own (maybe replaced or removed since)
+  assert.match(write, /const row = open\(\) \|\| \(links === linked \? e : null\);\s*if \(!row\) return null;\s*row\.lastWritten = e\.lastWritten;\s*return putEntry\(row\);/);
+  assert.equal((write.match(/putEntry\(/g) || []).length, 1, 'the only write of the link from a file write');
   assert.doesNotMatch(write, /lastText = null/, 'never forgotten: that made a slow file write itself forever');
   const allowed = bf.split('async function allowed(ask) {')[1].split('\n  }')[0];
   assert.match(allowed, /await withTimeout\(e\.handle\.queryPermission\(RW\), WRITE_TIMEOUT, [^)]*\)\.catch\(\(\) => 'prompt'\)/, 'the question is bounded');
