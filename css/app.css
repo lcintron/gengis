@@ -754,7 +754,6 @@ body.panel-resizing #mapwrap { pointer-events: none; } /* the map does not take 
   .ink-color { width: 30px; height: 30px; }
   .mode-flyout button { min-height: 40px; } /* the rectangle's modes and the circle's radius: finger-sized */
   #radiusInput, #radiusUnit { height: 36px; font-size: 16px; } /* 16px: a phone does not zoom the page on focus */
-  .mb-ask .ask-input { height: 38px; font-size: 16px; } /* 16px: a phone does not zoom the page on focus */
   .radius-clear { width: 36px; height: 36px; }
 }
 
@@ -1053,6 +1052,8 @@ button.link:hover { text-decoration: underline; }
 .mb-ask .ask-input { display: block; width: 100%; margin: 0 0 14px; background: var(--bg);
   border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); height: 32px; }
 .mb-ask .ask-input:focus { outline: none; border-color: var(--accent); }
+/* touch: finger-sized (16px: a phone does not zoom the page on focus). After the rule above, which it overrides. */
+@media (hover: none) and (pointer: coarse) { .mb-ask .ask-input { height: 38px; font-size: 16px; } }
 .desktop-files { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 /* Settings: a line of text or a file with its actions as icons, and an "i" whose explanation opens below the line */
 .info-line { position: relative; display: flex; align-items: center; gap: 6px; min-height: 26px; margin: 6px 0; }

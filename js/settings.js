@@ -88,6 +88,22 @@ window.MB = window.MB || {};
         const tb = e.target.closest('.tabs button[data-t]');
         if (tb) { this.tab = tb.dataset.t; this.render(); }
       });
+      // The providers panel keeps its element and only its contents are drawn anew: its buttons are listened to here,
+      // once, so one click on a bin asks one question (a listener per render would stack up a question per render).
+      $('[data-panel="providers"]', el).addEventListener('click', async e => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.dataset.import) { MB.mapSources.pick(); }
+        else if (b.dataset.edit) { this.editingId = b.dataset.edit; this.render(); }
+        else if (b.dataset.del) {
+          const x = MB.getProvider(b.dataset.del);
+          if (x && await MB.ask('Remove provider "' + x.name + '"?', 'Remove', 'Cancel', { danger: true }) && MB.getProvider(x.id)) {
+            MB.settings.providers = MB.settings.providers.filter(y => y.id !== x.id);
+            if (MB.state.basemap === 'custom:' + x.id) MB.setBasemap('esriSat');
+            MB.saveSettings(); this.render();
+          }
+        } else if (b.dataset.use) { MB.setBasemap('custom:' + b.dataset.use); MB.toast('Base map changed'); }
+      });
       document.body.appendChild(el);
       this.el = el;
     },
@@ -175,20 +191,7 @@ window.MB = window.MB || {};
       });
       const cancel = $('[data-cancel]', form);
       if (cancel) cancel.addEventListener('click', () => { this.editingId = null; this.render(); });
-      panel.addEventListener('click', async e => {
-        const b = e.target.closest('button');
-        if (!b) return;
-        if (b.dataset.import) { MB.mapSources.pick(); }
-        else if (b.dataset.edit) { this.editingId = b.dataset.edit; this.render(); }
-        else if (b.dataset.del) {
-          const x = MB.getProvider(b.dataset.del);
-          if (x && await MB.ask('Remove provider "' + x.name + '"?', 'Remove', 'Cancel', { danger: true }) && MB.getProvider(x.id)) {
-            MB.settings.providers = MB.settings.providers.filter(y => y.id !== x.id);
-            if (MB.state.basemap === 'custom:' + x.id) MB.setBasemap('esriSat');
-            MB.saveSettings(); this.render();
-          }
-        } else if (b.dataset.use) { MB.setBasemap('custom:' + b.dataset.use); MB.toast('Base map changed'); }
-      });
+      // (the panel's own buttons — import, use, edit, remove — are listened to in build(), once)
     },
 
     renderSearch() {

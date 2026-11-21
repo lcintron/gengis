@@ -866,10 +866,11 @@ window.MB = window.MB || {};
   // caller trims it, or null when the question is closed without an answer (the Cancel button, the ✕, Escape,
   // Android's back; no backdrop click, which would lose what was typed). Enter in the box answers.
   // opts.yes / opts.no and opts.yesIcon / opts.noIcon: the answers' words and drawings, as MB.ask.
-  // opts.placeholder: what the empty box says. opts.readOnly: a text to read and copy, with only a Close button.
+  // opts.placeholder: what the empty box says. opts.readOnly: a text to read and copy, with only a Close button (an
+  // ✕: it keeps nothing).
   MB.askText = function (message, value, opts) {
     const o = opts || {};
-    const yesIcon = hasIcon(o.yesIcon) ? o.yesIcon : 'check', noIcon = hasIcon(o.noIcon) ? o.noIcon : 'close';
+    const yesIcon = hasIcon(o.yesIcon) ? o.yesIcon : (o.readOnly ? 'close' : 'check'), noIcon = hasIcon(o.noIcon) ? o.noIcon : 'close';
     return askDialog({
       message, role: 'dialog', away: null,
       midHtml: '<input type="text" class="ask-input" autocomplete="off" spellcheck="false" enterkeyhint="done">',
@@ -887,8 +888,9 @@ window.MB = window.MB || {};
       return {
         order: noBtn ? [xBtn, input, noBtn, yesBtn] : [xBtn, input, yesBtn], first: input,
         // Enter in the box answers; on a focused button it stays that button's own press (and nothing while a
-        // phone's keyboard is still composing a word)
-        enter: e => { if (e.target !== input || e.isComposing) return false; finish(input.value); return true; }
+        // phone's keyboard is still composing a word: keyCode 229 is Safari, which ends the composition before this
+        // Enter and so reports isComposing false)
+        enter: e => { if (e.target !== input || e.isComposing || e.keyCode === 229) return false; finish(input.value); return true; }
       };
     });
   };

@@ -395,6 +395,8 @@ test('a name or a text to copy is typed in the app\'s own dialog (MB.askText)', 
   const e2 = open('Object name', 'Alpha');
   e2.key('Enter', e2.els['[data-yes]']);
   e2.key('Enter', e2.els['.ask-input'], { isComposing: true });
+  // Safari ends the composition before this Enter, which then says isComposing false and keyCode 229
+  e2.key('Enter', e2.els['.ask-input'], { keyCode: 229 });
   await tick();
   assert.equal(e2.settled, false, 'nothing answered');
   assert.equal(e2.removed(), 0, 'the dialog is still up');
@@ -402,8 +404,10 @@ test('a name or a text to copy is typed in the app\'s own dialog (MB.askText)', 
   // a text to read and copy: one way out, and nothing to type over it
   const ro = open('Copy this text:', '12 34.5', { readOnly: true });
   assert.ok(!ro.dlg.innerHTML.includes('data-no'), 'no Cancel: there is nothing to cancel');
-  assert.ok(ro.dlg.innerHTML.includes(ro.MB.ICON.check + label('Close')), 'only Close');
+  assert.ok(ro.dlg.innerHTML.includes(ro.MB.ICON.close + label('Close')), 'only Close, with the ✕ of a way out');
   assert.equal(ro.els['.ask-input'].readOnly, true);
+  const roIcon = open('Copy this text:', '12 34.5', { readOnly: true, yes: 'Done', yesIcon: 'check' });
+  assert.ok(roIcon.dlg.innerHTML.includes(roIcon.MB.ICON.check + label('Done')), 'unless the caller chose another');
 });
 
 test('the app never asks through the browser\'s own confirm(), prompt() or alert() (some embedded browsers show none)', () => {
@@ -429,9 +433,56 @@ test('the app never asks through the browser\'s own confirm(), prompt() or alert
   for (const [f, re] of [['offline.js', /'Delete', 'Cancel', \{ danger: true \}/], ['datalayers.js', /'Clear cache', 'Cancel', \{ danger: true, yesIcon: 'sweep' \}/],
     ['settings.js', /'Remove', 'Cancel', \{ danger: true \}/], ['storage.js', /'Remove', 'Cancel', \{ danger: true \}/],
     ['ui.js', /'Delete project', 'Cancel', \{ danger: true \}/], ['ui.js', /'Delete layer', 'Cancel', \{ danger: true \}/]]) assert.match(js[f], re, f);
-  // the box the answer is typed in, finger-sized on a phone (16px: it does not zoom the page on focus)
-  assert.match(css, /\.mb-ask \.ask-input \{/);
+  // the box the answer is typed in, finger-sized on a phone (16px: it does not zoom the page on focus); the touch
+  // rule weighs the same as the base one, so it only wins by coming after it in the file
+  assert.match(css, /\.mb-ask \.ask-input \{ display: block;/);
   assert.match(css, /\.mb-ask \.ask-input \{ height: 38px; font-size: 16px; \}/);
+  const base = css.search(/\.mb-ask \.ask-input \{ display: block;/);
+  const touch = css.search(/@media \(hover: none\) and \(pointer: coarse\) \{ \.mb-ask \.ask-input \{ height: 38px; font-size: 16px; \} \}/);
+  assert.ok(touch > base, 'css/app.css: the phone height of .mb-ask .ask-input comes after the base rule, not before it');
+  // Enter answers, but not while a word is being composed (keyCode 229: Safari's Enter after a composition)
+  assert.match(js['util.js'], /e\.isComposing \|\| e\.keyCode === 229/);
+});
+
+test('a question asked from a panel drawn anew is asked once: its clicks are listened to once (settings providers)', () => {
+  const vm = require('vm');
+  // enough of a page for MB.settingsDialog: one element per selector, each remembering its click handlers
+  const made = [];
+  const make = () => {
+    const e = {
+      className: '', id: '', innerHTML: '', dataset: {}, on: {}, els: {},
+      classList: { add() {}, remove() {}, toggle() {} },
+      addEventListener(t, fn) { (e.on[t] = e.on[t] || []).push(fn); },
+      querySelector: sel => (e.els[sel] = e.els[sel] || make()),
+      querySelectorAll: () => [],
+      click(target) { (e.on.click || []).forEach(fn => fn({ target: target || e })); }
+    };
+    made.push(e);
+    return e;
+  };
+  const ctx = { window: { addEventListener() {}, removeEventListener() {} }, console, localStorage: { getItem: () => null, setItem() {}, removeItem() {} } };
+  ctx.document = { activeElement: null, body: { appendChild() {} }, createElement: make, querySelectorAll: () => [] };
+  vm.createContext(ctx);
+  for (const f of ['util.js', 'settings.js']) vm.runInContext(js[f], ctx, { filename: 'js/' + f });
+  const MB = ctx.window.MB;
+  // the parts settings.js reads from the rest of the app (js/store.js, js/basemaps.js)
+  Object.assign(MB, {
+    builtinKeyGroups: {}, builtinKey: () => '', builtinOption: (k, d) => d, basemaps: {}, state: { basemap: 'esriSat' },
+    setBasemap() {}, emit() {}, toast() {}, saveSettings() {}, mapSources: { pick() {} }
+  });
+  MB.settings = { providers: [{ id: 'p1', name: 'Alpha', type: 'xyz', url: 'https://t.test/{z}/{x}/{y}.png' }], search: {}, keys: {} };
+  const asked = [];
+  MB.ask = (message) => { asked.push(message); return Promise.resolve(false); };
+
+  const sd = MB.settingsDialog;
+  sd.open();
+  sd.render(); sd.render(); // the panel is drawn anew (a provider saved, a tab switched back, an import)
+  const panel = sd.el.els['[data-panel="providers"]'];
+  assert.equal((panel.on.click || []).length, 1, 'the providers panel is listened to once, not once per render');
+  panel.click({ dataset: { del: 'p1' }, closest: () => ({ dataset: { del: 'p1' } }) });
+  assert.deepEqual(asked, ['Remove provider "Alpha"?'], 'one bin click, one question');
+  assert.doesNotMatch(js['settings.js'].slice(js['settings.js'].indexOf('renderProviders()')), /panel\.addEventListener/,
+    'js/settings.js: renderProviders adds no listener to the panel it keeps');
 });
 
 test('the name typed in the top bar can be taken as the project\'s there and then (MB.ui.commitName)', () => {
