@@ -354,7 +354,7 @@ window.MB = window.MB || {};
       out.textContent = `Version ${latest} is available. Downloading…`;
       const got = await fetchNewVersion(latest);
       if (got === 'ready') {
-        out.innerHTML = `Version ${esc(latest)} is ready. <button type="button" class="btn small primary" data-act="reload-update">Reload to update</button>`;
+        out.innerHTML = `Version ${esc(latest)} is ready. <button type="button" class="btn small primary with-icon" data-act="reload-update">${MB.ICON.update}Reload to update</button>`;
         out.querySelector('[data-act="reload-update"]').addEventListener('click', () => { MB.projects.flush().finally(() => location.reload()); }); // saved first
       } else out.textContent = {
         failed: `Version ${latest} is available, but downloading it failed. Check again later.`,
@@ -1594,7 +1594,7 @@ window.MB = window.MB || {};
     $$('[data-adel]', wrap).forEach(b => b.addEventListener('click', async () => {
       const k = keyOf(b), i = +b.closest('tr').dataset.i, lay = MB.getLayer(m.layerId);
       const others = MB.layerFeatures(m.layerId).filter(o => o !== f && val(o.mb, k) != null && val(o.mb, k) !== '').length;
-      if (others && !(await MB.ask(`Remove the field "${k}" from every object of "${lay ? lay.name : 'this layer'}"? ${others} other object${others === 1 ? ' has a value' : 's have values'} in it.`, 'Remove field', 'Cancel'))) return;
+      if (others && !(await MB.ask(`Remove the field "${k}" from every object of "${lay ? lay.name : 'this layer'}"? ${others} other object${others === 1 ? ' has a value' : 's have values'} in it.`, 'Remove field', 'Cancel', { yesIcon: 'trash' }))) return;
       table().deleteField(k); // (Properties drawn anew by the table's commit)
       // the keyboard: on the field that took its place (or the one before it, or the new field's box)
       const rows = $$('#propsBody .attr-edit tbody tr'), row = rows[Math.min(i, rows.length - 1)];
@@ -2134,7 +2134,7 @@ window.MB = window.MB || {};
     choose: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 11v6M9 14h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
     reveal: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     resume: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg>',
-    unlink: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 15l-2 2a3 3 0 0 1-4-4l3-3a3 3 0 0 1 4 0M15 9l2-2a3 3 0 0 1 4 4l-3 3a3 3 0 0 1-4 0M4 4l16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    unlink: MB.ICON.unlink, // the same drawing the question about a file uses
     ok: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 12l5 5 9-10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     pause: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
     warn: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'

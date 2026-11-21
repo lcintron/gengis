@@ -746,7 +746,7 @@ window.MB = window.MB || {};
       const ml = await store().get('links', mine.id), syncing = !!(ml && !ml.excluded && ml.fileId);
       const hash = await hashOf(data), same = (await hashOf(mine.data)) === hash;
       const cloud = same ? false : await MB.ask('"' + (mine.name || data.name) + '" is also on this device' + (syncing ? '' : ', with sync off') + '. Open the version from ' +
-        providerOf(acc).name + ' instead? The copy on this device is kept in its earlier copies.', 'Open the cloud version', 'Keep this device\'s copy', { dismiss: true });
+        providerOf(acc).name + ' instead? The copy on this device is kept in its earlier copies.', 'Open the cloud version', 'Keep this device\'s copy', { dismiss: true, yesIcon: 'cloudDown', noIcon: 'open' });
       if (cloud === null) return false; // the question was dismissed (✕, Escape, back): neither copy opens
       if (!cloud) {
         await MB.projects.open(mine.id);

@@ -68,7 +68,7 @@ function load(o) {
   const cloud = {
     ready: true, links: {}, progress: {}, lastError: '',
     accounts: o.accounts || [{ id: 'a1', provider: 'onedrive', name: 'Tester', email: 't@example.com', kind: 'personal', state: 'ok', auto: false }],
-    offered: () => ['onedrive'],
+    offered: () => o.offered || ['onedrive'],
     status: id => (o.status || {})[id] || null,
     accountOf: () => null,
     resolve: () => { log.push('resolve'); return o.resolveNow === false ? resolved : Promise.resolve(); },
@@ -77,11 +77,11 @@ function load(o) {
   const MB = {
     escapeHtml: esc,
     modalCloseHtml: '<button type="button" class="modal-x" data-act="close"></button>',
-    ICON: { close: '<svg data-i="close"></svg>', refresh: '<svg data-i="refresh"></svg>' },
+    ICON: Object.fromEntries(['close', 'refresh', 'signin', 'logout', 'warn', 'copy', 'cloudDown', 'cloudUp'].map(k => [k, `<svg data-i="${k}"></svg>`])),
     iconBtn: (icon, title, attrs) => `<button type="button" class="icon-btn mini" title="${esc(title)}"${attrs ? ' ' + attrs : ''}><svg data-i="${esc(icon)}"></svg></button>`,
     state: { projectId: o.projectId || 'p1', projectName: o.projectName || 'Harbor survey' },
     projects, cloud,
-    cloudProviders: { onedrive: { name: 'OneDrive', bin: 'It goes to the recycle bin.', preload() {} } },
+    cloudProviders: o.providers || { onedrive: { name: 'OneDrive', bin: 'It goes to the recycle bin.', preload() {} } },
     ui: {
       wireDialog() {}, openDialog(d) { d.classList.remove('hidden'); }, closeDialog(d) { d.classList.add('hidden'); },
       commitName() { log.push('commit'); if (o.onCommit) o.onCommit(MB); }
@@ -90,9 +90,11 @@ function load(o) {
     on: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
     emit: (type, arg) => (listeners[type] || []).forEach(fn => fn(arg))
   };
+  MB.btnInner = (icon, label) => (MB.ICON[icon] || '') + '<span class="btn-label">' + esc(label) + '</span>';
+  const made = []; // every element the module makes: the dialog, and the two buttons beside the save status
   const document = {
     activeElement: null, body: fakeEl('body'),
-    createElement: tag => fakeEl(tag),
+    createElement: tag => { const el = fakeEl(tag); made.push(el); return el; },
     getElementById: id => (id === 'saveStatus' ? fakeEl('span') : null),
     querySelectorAll: () => []
   };
@@ -100,7 +102,7 @@ function load(o) {
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/cloudui.js'), 'utf8'), ctx, { filename: 'js/cloudui.js' });
   MB.cloudUI.init();
-  return { MB, U: MB.cloudUI, log, records, document, flushResolve, resolveDone, resolveFailed };
+  return { MB, U: MB.cloudUI, log, records, document, made, flushResolve, resolveDone, resolveFailed };
 }
 
 // The HTML the dialog last drew into its box.
@@ -113,15 +115,18 @@ function rowOf(html, id) {
   const hit = html.split('<div class="cloud-row').find(p => p.includes(`data-sync="${id}"`));
   return hit ? '<div class="cloud-row' + hit : '';
 }
+// One provider's Connect button in that HTML.
+function connectOf(html, pid) {
+  const hit = html.split('<button type="button" class="cloud-connect"').find(p => p.includes(`data-connect="${pid}"`));
+  return hit ? hit.split('</button>')[0] : '';
+}
+const CLOUD = 'M7 18h10.5a4.5 4.5 0 0 0 .6-8.96'; // the start of the app's own cloud (js/cloudui.js ICON)
 
 // The module keeps its dialog to itself: the fake document notes the elements it makes, so the tests can read it.
 function open(o) {
   const ld = load(o);
-  const made = [];
-  const create = ld.document.createElement;
-  ld.document.createElement = tag => { const el = create(tag); made.push(el); return el; };
   ld.U.open();
-  ld.U._testDlg = made.find(el => el.id === 'cloudDialog');
+  ld.U._testDlg = ld.made.find(el => el.id === 'cloudDialog');
   return ld;
 }
 
@@ -229,6 +234,109 @@ test('a resolve that fails gives the choices back, it does not leave the row stu
   ld.resolveFailed(new Error('offline'));
   await tick(200);
   assert.match(rowOf(boxHtml(ld.U), 'p1'), /data-resolve="mine"(?![^>]*disabled)/);
+});
+
+test('each of the three conflict choices leads with its own drawing', async () => {
+  const ld = open({ status: { p1: 'conflict' } });
+  await tick(20);
+  const row = rowOf(boxHtml(ld.U), 'p1');
+  assert.match(row, /<svg data-i="copy"><\/svg>Keep both/);
+  assert.match(row, /<svg data-i="cloudDown"><\/svg>Use cloud/, 'the cloud\'s version comes down');
+  assert.match(row, /<svg data-i="cloudUp"><\/svg>Use mine/, 'this version goes up');
+  for (const k of ['both', 'cloud', 'mine']) assert.match(row, new RegExp(`data-resolve="${k}"[^>]*>\\s*<svg`), k + ': the icon is inside the button');
+});
+
+test('the button beside the save status keeps its icon: its words are written only when what it asks for changes', () => {
+  const status = { p1: 'signin' };
+  const ld = load({ status });
+  const act = ld.made.find(el => el.id === 'cloudAction');
+  assert.ok(act, '#cloudAction was made');
+  assert.equal(act.innerHTML, '<svg data-i="signin"></svg><span class="btn-label">Sign in</span>', 'signed out: the door');
+  assert.equal(act.textContent, '', 'the words are in the button\'s HTML, not written over its icon');
+  assert.ok(act.className.split(' ').includes('with-icon'), 'the class that puts the icon beside the words');
+  assert.equal(act.hidden, false);
+  // the same state again: nothing is rebuilt (the icon would flicker on every sync message)
+  act.innerHTML = 'kept';
+  ld.MB.emit('cloudsync');
+  assert.equal(act.innerHTML, 'kept');
+  // a conflict instead: the warning triangle and Resolve
+  status.p1 = 'conflict';
+  ld.MB.emit('cloudsync');
+  assert.equal(act.innerHTML, '<svg data-i="warn"></svg><span class="btn-label">Resolve</span>');
+  assert.match(act.title, /^Edited here and in the cloud/);
+});
+
+test('each Connect button shows its provider\'s own mark, not the app\'s cloud', async () => {
+  const ld = open({
+    accounts: [], offered: ['onedrive', 'gdrive'],
+    providers: { onedrive: { name: 'OneDrive' }, gdrive: { name: 'Google Drive' } }
+  });
+  await tick(20);
+  const html = boxHtml(ld.U);
+  const one = connectOf(html, 'onedrive');
+  assert.match(one, /^[^>]*><svg class="cloud-logo" viewBox="0 0 32 32" aria-hidden="true">/, 'the logo leads the button');
+  for (const c of ['#0364b8', '#0078d4', '#1490df', '#28a8ea']) assert.ok(one.includes(c), 'OneDrive keeps its own blue ' + c);
+  assert.ok(!one.includes('#00ac47'), 'not the other provider\'s colors');
+  assert.ok(!one.includes(CLOUD), 'the app\'s own cloud is gone from it');
+  assert.equal(one.split('<svg').length - 1, 1, 'one drawing only');
+  assert.ok(one.includes('</svg><span><b>Connect OneDrive</b>'), 'the words still follow it');
+  const g = connectOf(html, 'gdrive');
+  assert.match(g, /^[^>]*><svg class="cloud-logo" viewBox="0 0 87\.3 78" aria-hidden="true">/);
+  for (const c of ['#0066da', '#00ac47', '#ea4335', '#00832d', '#2684fc', '#ffba00']) assert.ok(g.includes(c), 'Google Drive keeps ' + c);
+  assert.ok(!g.includes('#0078d4'), 'not the other provider\'s colors');
+  assert.ok(!g.includes(CLOUD));
+  assert.equal(g.split('<svg').length - 1, 1, 'one drawing only');
+  assert.ok(g.includes('</svg><span><b>Connect Google Drive</b>'));
+});
+
+test('a provider without a mark of its own keeps the app\'s cloud', async () => {
+  const ld = open({
+    accounts: [], offered: ['boxy', 'constructor'],
+    providers: { boxy: { name: 'Boxy <b>' }, constructor: { name: 'Odd' } }
+  });
+  await tick(20);
+  const html = boxHtml(ld.U);
+  for (const pid of ['boxy', 'constructor']) {
+    const b = connectOf(html, pid);
+    assert.ok(b.includes(CLOUD), pid + ': the app\'s cloud');
+    assert.ok(!b.includes('cloud-logo'), pid + ': no provider mark');
+  }
+  assert.doesNotMatch(html, /function|\[object|undefined/, 'nothing from Object.prototype leaks in');
+  assert.ok(html.includes('<b>Connect Boxy &lt;b&gt;</b>'), 'the provider name is escaped');
+});
+
+test('the provider marks are plain colored paths: nothing is loaded, drawn from data, or restyled', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'js/cloudui.js'), 'utf8');
+  const block = src.slice(src.indexOf('const LOGO = {'), src.indexOf('const logo = id'));
+  assert.ok(block.length > 500, 'the logo block was found');
+  for (const bad of ['${', '<script', 'href', 'url(', ' id=', 'style=', 'currentColor', 'stroke']) {
+    assert.ok(!block.includes(bad), 'no ' + bad + ' in the marks');
+  }
+  assert.doesNotMatch(block, /\son\w+=/, 'no event attribute');
+  const fills = block.match(/fill="[^"]*"/g) || [];
+  assert.equal(fills.length, 10, 'four OneDrive paths and six Google Drive ones');
+  for (const f of fills) assert.match(f.slice(6, -1), /^#[0-9a-f]{6}$/, f + ': a plain hex color');
+  assert.equal((block.match(/<path /g) || []).length, 10, 'every path carries its fill');
+  assert.ok(src.includes('Object.prototype.hasOwnProperty.call(LOGO, id)'), 'own keys only');
+  assert.ok(src.includes('${logo(pid) || ICON}'), 'the Connect button falls back to the app\'s cloud');
+  const css = fs.readFileSync(path.join(ROOT, 'css/app.css'), 'utf8');
+  assert.match(css, /\.cloud-box svg\.cloud-logo \{ stroke: none; \}/, 'the dialog\'s line style is taken off the marks');
+  (css.match(/^[^\n{]*\.cloud-logo[^\n{]*\{[^}]*\}/gm) || []).forEach(r => assert.ok(!/fill/.test(r), 'no rule recolors a mark: ' + r));
+});
+
+test('a connected account\'s avatar carries its provider\'s mark beside the initial', async () => {
+  const ld = open({});
+  await tick(20);
+  assert.match(boxHtml(ld.U), /<span class="cloud-avatar" aria-hidden="true">T<svg class="cloud-logo" viewBox="0 0 32 32"/, 'the initial, then the badge');
+  const css = fs.readFileSync(path.join(ROOT, 'css/app.css'), 'utf8');
+  assert.ok(css.includes('.cloud-avatar .cloud-logo { position: absolute;'), 'the badge sits on the avatar');
+  // a provider with no mark: the initial alone, nothing empty appended
+  const other = open({
+    offered: ['boxy'], providers: { boxy: { name: 'Boxy', bin: '' } },
+    accounts: [{ id: 'a1', provider: 'boxy', name: 'Tester', email: 't@example.com', kind: 'personal', state: 'ok', auto: false }]
+  });
+  await tick(20);
+  assert.match(boxHtml(other.U), /<span class="cloud-avatar" aria-hidden="true">T<\/span>/);
 });
 
 test('a name with a quote or a tag in it is escaped in the row it is put into', async () => {

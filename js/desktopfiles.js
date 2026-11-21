@@ -83,7 +83,7 @@ window.MB = window.MB || {};
   // the id it ended up with (an older file gets a new one).
   async function openFrom(read) {
     try {
-      if (!(await P().confirmReplace('Open the file'))) return;
+      if (!(await P().confirmReplace('Open the file', 'open'))) return;
       const r = await read();
       if (!r) return;
       if ((await MB.openText(r.text, r.name)) !== 'project') return;
@@ -99,7 +99,7 @@ window.MB = window.MB || {};
   // named (asked first: any web page can open a link).
   F.openPath = async function (file, fromLink) {
     const name = String(file).split(/[\\/]/).pop();
-    if (fromLink && !(await MB.ask('A link asks GenGIS to open the project "' + name + '":\n\n' + file, 'Open', 'Cancel'))) return;
+    if (fromLink && !(await MB.ask('A link asks GenGIS to open the project "' + name + '":\n\n' + file, 'Open', 'Cancel', { yesIcon: 'open' }))) return;
     return openFrom(() => D.openPath(file));
   };
 
@@ -108,9 +108,9 @@ window.MB = window.MB || {};
   F.openUrl = async function (url) {
     let host = url;
     try { host = new URL(url).host; } catch (e) { /* shown whole */ }
-    if (!(await MB.ask('A link asks GenGIS to open a project from ' + host + ':\n\n' + url, 'Open', 'Cancel'))) return;
+    if (!(await MB.ask('A link asks GenGIS to open a project from ' + host + ':\n\n' + url, 'Open', 'Cancel', { yesIcon: 'open' }))) return;
     try {
-      if (!(await P().confirmReplace('Open the project'))) return;
+      if (!(await P().confirmReplace('Open the project', 'open'))) return;
       MB.toast('Opening the project from ' + host + '…', 3000);
       const r = await D.fetchUrl(url);
       await MB.openText(r.text, r.name);

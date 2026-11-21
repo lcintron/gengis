@@ -271,7 +271,7 @@ window.MB = window.MB || {};
       { sep: true },
       { label: 'Rename field', disabled: f.fixed, action: () => { T.renaming = key; paint(); const inp = T.dlg.querySelector('input[data-rename]'); if (inp) { inp.focus(); inp.select(); } } },
       { label: 'Delete field', danger: true, disabled: f.fixed, action: async () => {
-        if (!(await MB.ask(`Delete the field "${key}" and its values from every row?`, 'Delete field', 'Cancel'))) return;
+        if (!(await MB.ask(`Delete the field "${key}" and its values from every row?`, 'Delete field', 'Cancel', { yesIcon: 'trash' }))) return;
         T.ad.deleteField(key); if (T.sort === key) T.sort = null; build();
       } }
     ]);

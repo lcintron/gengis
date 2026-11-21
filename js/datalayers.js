@@ -1371,7 +1371,7 @@ window.MB = window.MB || {};
 
     return `<div class="panel-head"><h3>${esc(def.name)}</h3><span class="badge">data</span>${MB.iconBtn('close', 'Close', 'data-act="close-data"')}</div>
       ${label ? `<div class="data-pick-label">${esc(label)}</div>` : ''}
-      <div class="section"><h3>Source</h3><table class="mb-datatable">${src}</table>${/^https?:\/\//i.test(def.url || '') ? `<div class="btn-row"><a class="btn small" href="${esc(def.url)}" target="_blank" rel="noopener" title="The service's description, fields and extent">Service page</a></div>` : ''}</div>
+      <div class="section"><h3>Source</h3><table class="mb-datatable">${src}</table>${/^https?:\/\//i.test(def.url || '') ? `<div class="btn-row"><a class="btn small with-icon" href="${esc(def.url)}" target="_blank" rel="noopener" title="The service's description, fields and extent">${MB.ICON.external}Service page</a></div>` : ''}</div>
       <div class="section"><h3>Geometry</h3><table class="mb-datatable">${geom}</table>${generalized ? '<p class="note">Measured on the outline loaded at this zoom, simplified for display: zoom in for full detail.</p>' : ''}</div>
       ${def.attrsHtml ? def.attrsHtml(p) : `<div class="section"><h3>Attributes</h3>${attrs ? `<table class="mb-datatable">${attrs}</table>` : '<p class="note">No attributes.</p>'}</div>`}`;
   }

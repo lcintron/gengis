@@ -1442,7 +1442,7 @@ window.MB = window.MB || {};
     async toProject(id) {
       const rec = layers.get(id);
       if (!rec || !MB.restoreFeature) return;
-      if (rec.meta.count > COPY_WARN && MB.ask && !(await MB.ask(`Copy ${rec.meta.count.toLocaleString()} features into the project? Projects this large are slower to edit and save.`, 'Copy', 'Cancel'))) return;
+      if (rec.meta.count > COPY_WARN && MB.ask && !(await MB.ask(`Copy ${rec.meta.count.toLocaleString()} features into the project? Projects this large are slower to edit and save.`, 'Copy', 'Cancel', { yesIcon: 'copy' }))) return;
       if (!(await this.load(rec))) return;
       const look = rec.meta.look, lb = look.label, size = look.symbol.size || 24;
       if (usesIcons(look) && MB.icons) await MB.icons.load().catch(() => {});
@@ -1548,7 +1548,7 @@ window.MB = window.MB || {};
             { label: 'Export as GeoJSON', action: () => this.exportFile(id, 'geojson') },
             { label: 'Export as KML', action: () => this.exportFile(id, 'kml') },
             { sep: true },
-            { label: 'Remove', danger: true, action: async () => { if (await MB.ask(`Remove ${rec.meta.name} from this device? Open the file again to bring it back.`, 'Remove', 'Cancel')) this.remove(id); } }
+            { label: 'Remove', danger: true, action: async () => { if (await MB.ask(`Remove ${rec.meta.name} from this device? Open the file again to bring it back.`, 'Remove', 'Cancel', { yesIcon: 'trash' })) this.remove(id); } }
           ]);
         }
       });

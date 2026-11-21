@@ -158,15 +158,14 @@ test('every data source section has its dot, and the buttons their icons', () =>
   assert.match(html, /id="addLayerBtn" class="btn small with-icon"><svg/);
 });
 
-test('every button in a side panel leads with an icon, each action drawn one way', () => {
+test('every button in a panel, a dialog or a banner leads with an icon, each action drawn one way', () => {
   // The icon comes before the words, from MB.ICON (or the drawing the object toolbar already has for that action).
-  // Banner and dialog buttons are a change of their own: what is left here is listed, so nothing new slips in.
-  const LATER = ['Reload to update']; // the update banner (js/ui.js)
+  const ALLOWED = ['Project ▾']; // the menu's own button: the user keeps it as it is
   const bare = [];
-  for (const f of ['ui.js', 'settings.js', 'importstyle.js', 'adsb.js', 'datalayers.js']) {
-    for (const m of js[f].matchAll(/<button[^>]*\bclass="btn[ "][^>]*>([\s\S]*?)<\/button>/g)) {
-      const inner = m[1].trim();
-      if (/<svg|MB\.ICON|ACT\.|icons\.|iconGlyph|iconPreview/.test(inner) || LATER.includes(inner)) continue;
+  for (const [f, src] of Object.entries(Object.assign({}, js, { 'index.html': html }))) {
+    for (const m of src.matchAll(/<(button|a)\b[^>]*\bclass="(?:[^"]*\s)?btn[ "][^>]*>([\s\S]*?)<\/\1>/g)) {
+      const inner = m[2].trim();
+      if (/<svg|MB\.ICON|MB\.btnInner|ACT\.|icons\.|iconGlyph|iconPreview|\$\{[A-Z_]*ICON\}/.test(inner) || ALLOWED.includes(inner)) continue;
       bare.push(f + ': ' + inner.replace(/\s+/g, ' ').slice(0, 60));
     }
   }
@@ -194,7 +193,8 @@ test('every button in a side panel leads with an icon, each action drawn one way
     seen.set(m[2], m[1]);
   }
   const names = [...seen.values()];
-  for (const k of ['reset', 'save', 'check', 'eye', 'eyeOff', 'lock', 'unlock', 'pointer', 'ungroup', 'joinLines', 'polyFromLines', 'joinShapes']) assert.ok(names.includes(k), 'MB.ICON.' + k);
+  for (const k of ['reset', 'save', 'check', 'eye', 'eyeOff', 'lock', 'unlock', 'pointer', 'ungroup', 'joinLines', 'polyFromLines', 'joinShapes',
+    'update', 'newFile', 'history', 'key', 'present', 'signin', 'logout', 'cloudDown', 'cloudUp', 'warn', 'external', 'unlink']) assert.ok(names.includes(k), 'MB.ICON.' + k);
   // a long label wraps at a phone's width; its icon keeps its size
   assert.match(css, /\.btn\.with-icon > svg, \.btn\.with-icon > \.mbi \{ flex: none; \}/);
   assert.match(css, /\.btn\.wrap \{ white-space: normal;/);
@@ -203,10 +203,104 @@ test('every button in a side panel leads with an icon, each action drawn one way
 
 test('a button whose icon sits inside it is still the click: no handler asks for a BUTTON target', () => {
   // e.target is the svg when the icon is clicked: a tagName test would drop the click
-  for (const f of ['ui.js', 'settings.js', 'importstyle.js', 'adsb.js', 'datalayers.js']) {
-    assert.doesNotMatch(js[f], /e\.target\.tagName === 'BUTTON'/, f);
-  }
+  for (const f of Object.keys(js)) assert.doesNotMatch(js[f], /e\.target\.tagName === 'BUTTON'/, f);
   assert.match(js['ui.js'], /if \(e\.target\.closest\('button'\)\) \{ addPoi\(p\); return; \}/, 'a point of interest: its row pans, its button adds');
+});
+
+test('every dialog and banner button says what it does with an icon too', () => {
+  // each row of the change: the label with the drawing that belongs to it (a label that moves brings its icon along)
+  for (const [f, re, what] of [
+    ['app.js', /MB\.ICON\.update \+ 'Reload</, 'the new-version banner'],
+    ['ui.js', /MB\.ICON\.update\}Reload to update/, 'About → a version downloaded'],
+    ['cast.js', /MB\.ICON\.present\}Start presenter mode/, 'Cast to a screen'],
+    ['cloudui.js', /MB\.ICON\.signin\}Sign in/, 'a signed-out account'],
+    ['cloudui.js', /MB\.ICON\.copy\}Keep both/, 'a conflict'],
+    ['cloudui.js', /MB\.ICON\.cloudDown\}Use cloud/, 'a conflict'],
+    ['cloudui.js', /MB\.ICON\.cloudUp\}Use mine/, 'a conflict'],
+    ['cloudui.js', /MB\.btnInner\(need === 'conflict' \? 'warn' : 'signin',/, 'the button beside the save status'],
+    ['export.js', /MB\.ICON\.close\}Cancel/, 'Export the map'],
+    ['export.js', /MB\.ICON\.download\}Export/, 'Export the map'],
+    ['offline.js', /MB\.ICON\.close\}Cancel/, 'Download area'],
+    ['offline.js', /MB\.ICON\.download\}Download</, 'Download area'],
+    ['mapsources.js', /MB\.ICON\.key\}Map &amp; search APIs/, 'Map sources imported'],
+    ['mapsources.js', /MB\.ICON\.check\}Done/, 'Map sources imported'],
+    ['projectstore.js', /MB\.ICON\.edit\}Edit here/, 'the read-only banner'],
+    ['projectstore.js', /MB\.ICON\.newFile\}New map/, 'the read-only banner'],
+    ['projectstore.js', /MB\.ICON\.history\}Restore/, 'an earlier copy'],
+    ['projectstore.js', /MB\.ICON\[icon\] \|\| MB\.ICON\.trash\}\$\{esc\(yes\)\}/, 'the confirm inside a Recent projects row'],
+    ['projectstore.js', /MB\.ICON\.close\}Cancel/, 'the confirm inside a Recent projects row'],
+    ['projectstore.js', /\}, false, 'history'\)\)\);/, 'that row\'s Restore keeps the clock, not the bin'],
+    ['datalayers.js', /MB\.ICON\.external\}Service page/, 'a data source\'s page']
+  ]) assert.match(js[f], re, f + ': ' + what);
+  assert.match(html, /id="checkUpdate"><svg/, 'About → Check for updates');
+  assert.match(html, /class="btn small with-icon" id="checkUpdate"/);
+  // a button built in a script carries the class that puts its icon beside its words
+  for (const [f, src] of Object.entries(js)) {
+    for (const m of src.matchAll(/\.className = '([^']*)'/g)) {
+      const cls = m[1].split(/\s+/);
+      if (!cls.includes('btn')) continue;
+      assert.ok(cls.includes('with-icon') || cls.includes('file-resume-ic'), f + ": className '" + m[1] + "' has no icon");
+    }
+  }
+  // the words beside that icon are written without wiping it out
+  assert.doesNotMatch(js['cloudui.js'], /act\.textContent =/, 'js/cloudui.js: #cloudAction keeps its icon');
+  // the question dialog's own two buttons
+  assert.match(js['util.js'], /class="btn with-icon wrap" data-no>' \+ MB\.btnInner\(noIcon, no \|\| 'Cancel'\)/);
+  assert.match(js['util.js'], /class="btn primary with-icon wrap" data-yes>' \+ MB\.btnInner\(yesIcon, yes \|\| 'OK'\)/);
+  // every icon name a script asks for by name is one of the drawings (a typo would show nothing at all)
+  const names = new Set();
+  for (const m of js['util.js'].matchAll(/^\s+(\w+): ic\('.*?'\)/gm)) names.add(m[1]);
+  for (const m of js['ui.js'].matchAll(/^\s+(\w+): MB\.ICON\.(\w+),/gm)) assert.ok(names.has(m[2]), 'MB.ICON.' + m[2]);
+  const used = new Set();
+  for (const src of [...Object.values(js), html]) {
+    for (const m of src.matchAll(/MB\.ICON\.(\w+)/g)) used.add(m[1]);
+    for (const m of src.matchAll(/\b(?:yes|no)Icon: '([^']*)'/g)) used.add(m[1]);
+    for (const m of src.matchAll(/confirmReplace\('[^']*', '([^']*)'\)/g)) used.add(m[1]);
+  }
+  for (const k of used) assert.ok(names.has(k), 'MB.ICON.' + k + ' is no drawing');
+  // the room the icons need: the answers wrap, a banner's button is a row of its own, the cloud dialog's are 14 px
+  assert.match(css, /\.mb-ask \.row\.right \{ flex-wrap: wrap; \}/);
+  assert.match(css, /\.about-update \.note \.btn \{ display: flex; width: fit-content; margin: 8px auto 0; \}/);
+  assert.match(css, /\.cast-actions \.btn, \.export-actions \.btn, \.cloud-conflict \.btn \{ justify-content: center; \}/);
+  assert.match(css, /\.cloud-box \.btn\.with-icon > svg \{ width: 14px; height: 14px; \}/);
+});
+
+test('a question shows what each answer does: a check and an ✕, a bin for a delete, or the icons it was given', () => {
+  const vm = require('vm');
+  const ctx = { window: { addEventListener() {}, removeEventListener() {} }, console }; // (no document yet: util.js only hooks one it finds)
+  vm.createContext(ctx);
+  vm.runInContext(js['util.js'], ctx, { filename: 'js/util.js' });
+  const MB = ctx.window.MB;
+  // the dialog as it is built: one element keeping its HTML, and a stub button per selector
+  const ask = (yes, no, opts) => {
+    const q = {};
+    const dlg = {
+      className: '', innerHTML: '', remove() {}, addEventListener() {},
+      querySelector: sel => (q[sel] = q[sel] || { textContent: '', classList: { replace() {} }, addEventListener() {}, focus() {} })
+    };
+    ctx.document = { activeElement: null, body: { appendChild() {} }, createElement: () => dlg, querySelectorAll: () => [] };
+    MB.ask('Replace it?', yes, no, opts);
+    return dlg.innerHTML;
+  };
+  const label = s => '<span class="btn-label">' + s + '</span>';
+  const plain = ask('Replace', 'Cancel');
+  assert.ok(plain.includes(MB.ICON.check + label('Replace')), 'yes: use this one');
+  assert.ok(plain.includes(MB.ICON.close + label('Cancel')), 'no: an ✕');
+  assert.ok(ask().includes(MB.ICON.check + label('OK')), 'the default words keep the default icons');
+  assert.ok(ask('Delete', 'Cancel', { danger: true }).includes(MB.ICON.trash + label('Delete')), 'a delete: the bin');
+  const given = ask('Open the file', 'Keep it', { yesIcon: 'open', noIcon: 'check' });
+  assert.ok(given.includes(MB.ICON.open + label('Open the file')) && given.includes(MB.ICON.check + label('Keep it')), 'the icons the caller chose');
+  assert.ok(ask('Delete', 'Cancel', { danger: true, yesIcon: 'unlink' }).includes(MB.ICON.unlink + label('Delete')), 'a danger question can still say what it does');
+  // a name that is no drawing (a typo, or a property every object has) falls back rather than writing nonsense
+  for (const bad of ['nope', 'constructor', 'toString']) {
+    const out = ask('Yes', 'No', { yesIcon: bad, noIcon: bad });
+    assert.ok(out.includes(MB.ICON.check + label('Yes')) && out.includes(MB.ICON.close + label('No')), bad);
+    assert.doesNotMatch(out, /function|\[object/, bad + ': nothing but an icon is drawn');
+  }
+  // a project or file name in a button's words is escaped where it is put in
+  assert.ok(ask('Open <b>a&"b</b>', 'Cancel').includes(label('Open &lt;b&gt;a&amp;&quot;b&lt;/b&gt;')), 'the label is escaped');
+  assert.equal(MB.btnInner('check', 'A<b'), MB.ICON.check + '<span class="btn-label">A&lt;b</span>');
+  assert.equal(MB.btnInner('nope', 'A'), '<span class="btn-label">A</span>', 'no icon rather than "undefined"');
 });
 
 test('the name typed in the top bar can be taken as the project\'s there and then (MB.ui.commitName)', () => {
@@ -437,7 +531,7 @@ test('a cloud project already on this device: the dialog closes once it is open,
   // which means MB.projects.open says whether it opened: the user may keep what is open now instead
   const p = (js['projectstore.js'].split('P.open = async function (id) {')[1] || '').split('};')[0];
   assert.ok(p, 'P.open found');
-  assert.match(p, /confirmReplace\('Open the other project'\)\)\) return false;/, 'called off: false');
+  assert.match(p, /confirmReplace\('Open the other project', 'open'\)\)\) return false;/, 'called off: false');
   assert.match(p, /if \(!rec\) \{ MB\.toast\([^)]*\); return false; \}/, 'no longer saved here: false');
   assert.match(p, /return true;\s*$/, 'true once the project is loaded');
 });
@@ -502,7 +596,7 @@ test('a question can be closed without answering it: the ✕, Escape, the backdr
   assert.ok(u.includes("noBtn.addEventListener('click', () => finish(false));"), 'Cancel still answers no');
   // the question that needs it: opening a cloud project that is on this device too (either answer opens something)
   const cs = js['cloudsync.js'];
-  assert.ok(cs.includes("'Keep this device\\'s copy', { dismiss: true });"));
+  assert.ok(cs.includes("'Keep this device\\'s copy', { dismiss: true, yesIcon: 'cloudDown', noIcon: 'open' });"));
   assert.match(cs, /if \(cloud === null\) return false;/, 'closed: nothing opens');
   assert.match(cs, /if \(await MB\.projects\.openElsewhere\(mine\.id\)\) \{ MB\.toast\('This map is open in another tab\. Open it there\.', 5000\); return false; \}/,
     'nor over a copy another tab is editing');

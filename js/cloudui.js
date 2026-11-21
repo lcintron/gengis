@@ -27,9 +27,27 @@ window.MB = window.MB || {};
     error: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.5"/>'),
     signin: svg('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>'),
     off: svg('<path d="M7 18h10.5a4.5 4.5 0 0 0 .6-8.96A6 6 0 0 0 6.3 9.5 4.25 4.25 0 0 0 7 18z" stroke-dasharray="2.5 2.5"/>'),
-    logout: svg('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>'),
     file: svg('<path d="M6 3h8l4 4v14H6z M14 3v4h4"/>')
   };
+  // A provider's own mark, in its own colors (never restyled: css .cloud-logo takes the dialog's line style off it).
+  // No ids in them: one can be drawn several times in the dialog.
+  const logoSvg = (box, d) => `<svg class="cloud-logo" viewBox="${box}" aria-hidden="true">${d}</svg>`;
+  const LOGO = {
+    onedrive: logoSvg('0 0 32 32',
+      '<path fill="#0364b8" d="M12.20245,11.19292l.00031-.0011,6.71765,4.02379,4.00293-1.68451.00018.00068A6.4768,6.4768,0,0,1,25.5,13c.14764,0,.29358.0067.43878.01639a10.00075,10.00075,0,0,0-18.041-3.01381C7.932,10.00215,7.9657,10,8,10A7.96073,7.96073,0,0,1,12.20245,11.19292Z"/>' +
+      '<path fill="#0078d4" d="M12.20276,11.19182l-.00031.0011A7.96073,7.96073,0,0,0,8,10c-.0343,0-.06805.00215-.10223.00258A7.99676,7.99676,0,0,0,1.43732,22.57277l5.924-2.49292,2.63342-1.10819,5.86353-2.46746,3.06213-1.28859Z"/>' +
+      '<path fill="#1490df" d="M25.93878,13.01639C25.79358,13.0067,25.64764,13,25.5,13a6.4768,6.4768,0,0,0-2.57648.53178l-.00018-.00068-4.00293,1.68451,1.16077.69528L23.88611,18.19l1.66009.99438,5.67633,3.40007a6.5002,6.5002,0,0,0-5.28375-9.56805Z"/>' +
+      '<path fill="#28a8ea" d="M25.5462,19.18437l-1.66009-.99438-3.80505-2.2791-1.16077-.69528L15.85828,16.5042,9.99475,18.97166,7.36133,20.07985l-5.924,2.49292A7.98889,7.98889,0,0,0,8,26H25.5a6.49837,6.49837,0,0,0,5.72253-3.41556Z"/>'),
+    gdrive: logoSvg('0 0 87.3 78',
+      '<path fill="#0066da" d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z"/>' +
+      '<path fill="#00ac47" d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z"/>' +
+      '<path fill="#ea4335" d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z"/>' +
+      '<path fill="#00832d" d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z"/>' +
+      '<path fill="#2684fc" d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z"/>' +
+      '<path fill="#ffba00" d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z"/>')
+  };
+  // (an own key only: a provider id is never a name on Object.prototype's side)
+  const logo = id => (Object.prototype.hasOwnProperty.call(LOGO, id) ? LOGO[id] : '');
   const when = ts => { if (!ts) return ''; const m = Math.round((Date.now() - ts) / 60000); return m < 1 ? 'now' : (m < 60 ? m + ' min' : (m < 1440 ? Math.round(m / 60) + ' h' : new Date(ts).toLocaleDateString())); };
   const size = n => (!n ? '' : (n < 1024 ? n + ' B' : (n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB')));
   const provName = id => ((MB.cloudProviders || {})[id] || {}).name || id;
@@ -105,16 +123,16 @@ window.MB = window.MB || {};
     offered.forEach(pid => {
       const p = MB.cloudProviders[pid], mine = accs.filter(a => a.provider === pid);
       if (!mine.length) {
-        html += `<button type="button" class="cloud-connect" data-connect="${esc(pid)}" data-key="c-${esc(pid)}">${ICON}<span><b>Connect ${esc(p.name)}</b><small>Personal or work account</small></span></button>`;
+        html += `<button type="button" class="cloud-connect" data-connect="${esc(pid)}" data-key="c-${esc(pid)}">${logo(pid) || ICON}<span><b>Connect ${esc(p.name)}</b><small>Personal or work account</small></span></button>`;
         return;
       }
       mine.forEach(a => {
         const initial = (a.name || a.email || '?').trim().charAt(0).toUpperCase();
         html += `<div class="cloud-acc${a.state === 'signin' ? ' out' : ''}">
-          <span class="cloud-avatar" aria-hidden="true">${esc(initial)}</span>
+          <span class="cloud-avatar" aria-hidden="true">${esc(initial)}${logo(a.provider)}</span>
           <div class="cloud-acc-main"><b>${esc(a.name || a.email)}</b><small>${esc(p.name)} · ${a.kind === 'personal' ? 'Personal' : 'Work or school'}</small>${a.pullError && a.state !== 'signin' ? `<small class="cloud-warn" title="${esc(a.pullError)}">${I.error} Can't check for changes</small>` : ''}</div>
-          ${a.state === 'signin' ? `<button type="button" class="btn small primary" data-signin="${esc(a.id)}" data-key="s-${esc(a.id)}" title="${esc(a.error || 'Signed out')}">Sign in</button>` : iconBtn('data-act="syncnow" data-key="sync"', MB.ICON.refresh, 'Sync now')}
-          ${iconBtn(`data-disconnect="${esc(a.id)}" data-key="d-${esc(a.id)}"`, I.logout, 'Disconnect')}
+          ${a.state === 'signin' ? `<button type="button" class="btn small primary with-icon" data-signin="${esc(a.id)}" data-key="s-${esc(a.id)}" title="${esc(a.error || 'Signed out')}">${MB.ICON.signin}Sign in</button>` : iconBtn('data-act="syncnow" data-key="sync"', MB.ICON.refresh, 'Sync now')}
+          ${iconBtn(`data-disconnect="${esc(a.id)}" data-key="d-${esc(a.id)}"`, MB.ICON.logout, 'Disconnect')}
         </div>${accs.length === 1 ? `
         <div class="cloud-auto"><span>Sync all projects</span>${tip('Named projects sync automatically. Switch one off below to keep it on this device only.')}${toggle(`data-auto="${esc(a.id)}" data-key="a-${esc(a.id)}"`, a.auto, 'Sync all projects')}</div>` : ''}`;
       });
@@ -185,9 +203,9 @@ window.MB = window.MB || {};
       : toggle(`data-sync="${esc(r.id)}" data-acc="${esc(accs[0].id)}" data-key="p-${esc(r.id)}"`, on, 'Sync ' + r.name, draft);
     const off = resolving[r.id] ? ' disabled' : ''; // the choice is being carried out: not a second time
     const conflict = state === 'conflict' ? `<div class="cloud-conflict" role="group" aria-label="Choose which version to keep">
-        <button type="button" class="btn small primary" data-resolve="both" data-id="${esc(r.id)}" title="Keep this version, and save the cloud version as a separate project"${off}>Keep both</button>
-        <button type="button" class="btn small" data-resolve="cloud" data-id="${esc(r.id)}" title="Replace this version with the cloud version (this one is kept in Recent projects → earlier copies)"${off}>Use cloud</button>
-        <button type="button" class="btn small" data-resolve="mine" data-id="${esc(r.id)}" title="Replace the cloud version with this one (the cloud keeps the old one in its version history)"${off}>Use mine</button></div>` : '';
+        <button type="button" class="btn small primary with-icon" data-resolve="both" data-id="${esc(r.id)}" title="Keep this version, and save the cloud version as a separate project"${off}>${MB.ICON.copy}Keep both</button>
+        <button type="button" class="btn small with-icon" data-resolve="cloud" data-id="${esc(r.id)}" title="Replace this version with the cloud version (this one is kept in Recent projects → earlier copies)"${off}>${MB.ICON.cloudDown}Use cloud</button>
+        <button type="button" class="btn small with-icon" data-resolve="mine" data-id="${esc(r.id)}" title="Replace the cloud version with this one (the cloud keeps the old one in its version history)"${off}>${MB.ICON.cloudUp}Use mine</button></div>` : '';
     const why = l && l.error && state === 'error' ? l.error : label;
     return `<div class="cloud-row${r.id === MB.state.projectId ? ' current' : ''}${on ? '' : ' off'}" data-name="${esc(String(r.name || '').toLowerCase())}">
         <span class="cloud-st ${esc(state)}" role="img" aria-label="${esc(why)}" title="${esc(why)}">${I[state] || I.off}</span>
@@ -281,7 +299,7 @@ window.MB = window.MB || {};
     on('[data-signin]', b => { const a = C().accounts.find(x => x.id === b.dataset.signin); connect(a.provider, a); });
     on('[data-disconnect]', async b => {
       const a = C().accounts.find(x => x.id === b.dataset.disconnect);
-      if (await MB.ask('Disconnect ' + accLabel(a) + '?\n\nNothing is deleted: files stay in ' + provName(a.provider) + ', projects stay here.', 'Disconnect', 'Cancel')) C().disconnect(a.id);
+      if (await MB.ask('Disconnect ' + accLabel(a) + '?\n\nNothing is deleted: files stay in ' + provName(a.provider) + ', projects stay here.', 'Disconnect', 'Cancel', { yesIcon: 'logout' })) C().disconnect(a.id);
     });
     on('[data-auto]', cb => C().setAuto(cb.dataset.auto, cb.checked));
     on('[data-autoto]', sel => {
@@ -321,7 +339,7 @@ window.MB = window.MB || {};
     btn.type = 'button'; btn.id = 'cloudStatus'; btn.className = 'cloud-status'; btn.hidden = true;
     btn.innerHTML = ICON;
     const act = document.createElement('button');
-    act.type = 'button'; act.id = 'cloudAction'; act.className = 'btn small file-resume'; act.hidden = true;
+    act.type = 'button'; act.id = 'cloudAction'; act.className = 'btn small file-resume with-icon'; act.hidden = true;
     save.insertAdjacentElement('afterend', btn);
     btn.insertAdjacentElement('afterend', act);
     btn.addEventListener('click', U.open);
@@ -341,8 +359,9 @@ window.MB = window.MB || {};
       }
       const need = st === 'conflict' ? 'conflict' : (st === 'signin' ? 'signin' : '');
       act.hidden = !need;
+      // (its words and its icon are written only when what it is for changes: the icon is not rebuilt on every paint)
+      if (act.dataset.do !== need || !act.innerHTML) act.innerHTML = MB.btnInner(need === 'conflict' ? 'warn' : 'signin', need === 'conflict' ? 'Resolve' : 'Sign in');
       act.dataset.do = need;
-      act.textContent = need === 'conflict' ? 'Resolve' : 'Sign in';
       act.title = need === 'conflict' ? 'Edited here and in the cloud: choose which to keep' : 'Signed out of the cloud: sign in to sync';
       renderSettings();
       preload([...new Set(c.accounts.map(x => x.provider))]); // (a connected account's "Sign in" button beside the save status)
