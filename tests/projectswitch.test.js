@@ -605,6 +605,80 @@ test('Stop saving to the file while a close of it is stalled: the late close doe
   assert.equal(s.f.writes, 1, 'the file is left as it is');
 });
 
+test('another project linked to a file meanwhile does not stop a late close being noted for its own project', async () => {
+  const conflict = s => s.toasts.some(t => /changed outside GenGIS/.test(t.msg));
+  const rowOf = async (s, id) => (await s.F.recent()).find(r => r.id === id);
+  // each: what happens to the other project (B) while the first one's close is stalled
+  const other = {
+    'Save as': async s => { s.files.handle = fakeHandle('bravo.gengis'); const w = watch(s.F.saveAs()); await settle(); assert.equal(w.done, true); assert.equal(s.F.name, 'bravo.gengis'); },
+    'Save as, then Stop saving': async s => { await other['Save as'](s); const w = watch(s.F.unlink()); await settle(); assert.equal(w.done, true); }
+  };
+  for (const how of Object.keys(other)) {
+    // the close lands while the other project is open
+    const s = await heldClose();
+    s.MB.loadProject({ id: 'B', name: 'Bravo' });
+    await settle();
+    await other[how](s);
+    s.f.release();
+    await settle();
+    assert.equal((await rowOf(s, 'A')).lastWritten, s.f.mtime, how + ': the first project\'s row takes the time of its own late close');
+    assert.equal((await rowOf(s, 'A')).name, 'alpha.gengis');
+    s.MB.loadProject({ id: 'A', name: 'Edit one' });
+    await settle();
+    await s.clock.advance(2000);
+    edit(s, 'Edit two');
+    await s.clock.advance(2000);
+    assert.equal(s.F.state, 'saving', how + ': still saved to its file');
+    assert.equal(s.f.name(), 'Edit two');
+    assert.equal(conflict(s), false, how + ': no false conflict');
+
+    // the close lands after the first project was opened again
+    const t = await heldClose();
+    t.MB.loadProject({ id: 'B', name: 'Bravo' });
+    await settle();
+    await other[how](t);
+    t.MB.loadProject({ id: 'A', name: 'Edit one' });
+    await settle();
+    t.f.release();
+    await settle();
+    await t.clock.advance(2000);
+    assert.equal((await rowOf(t, 'A')).lastWritten, t.f.mtime, how + ' (opened again first): noted');
+    edit(t, 'Edit two');
+    await t.clock.advance(2000);
+    assert.equal(t.F.state, 'saving', how + ' (opened again first): still saved to its file');
+    assert.equal(t.f.name(), 'Edit two');
+    assert.equal(conflict(t), false, how + ' (opened again first): no false conflict');
+  }
+});
+
+test('an undo in the same moment a late close lands: the link in memory takes the time, and the next edit is no conflict', async () => {
+  const s = await heldClose();
+  s.f.release(); // the close lands...
+  s.MB.loadProject({ id: 'A', name: 'Edit one' }, { keepHistory: true }); // ...as Ctrl+Z reads the link again
+  await settle();
+  await s.clock.advance(2000);
+  edit(s, 'Edit two');
+  await s.clock.advance(2000);
+  assert.equal(s.F.state, 'saving');
+  assert.equal(s.f.name(), 'Edit two');
+  assert.ok(!s.toasts.some(t => /changed outside GenGIS/.test(t.msg)), 'no false conflict');
+  assert.equal((await s.F.recent())[0].lastWritten, s.f.mtime);
+
+  // the same for a write that answers in time, with an undo as it finishes
+  const q = await linked();
+  const f = slowFile(q, () => 0);
+  edit(q, 'Edit one');
+  await q.clock.advance(1999);
+  q.clock.setTimeout(() => q.MB.loadProject({ id: 'A', name: 'Edit one' }, { keepHistory: true }), 1); // (with the write's start)
+  await q.clock.advance(1);
+  await q.clock.advance(2000);
+  edit(q, 'Edit two');
+  await q.clock.advance(2000);
+  assert.equal(q.F.state, 'saving');
+  assert.equal(f.name(), 'Edit two');
+  assert.ok(!q.toasts.some(t => /changed outside GenGIS/.test(t.msg)));
+});
+
 test('a close that lands after another project opened is still noted as GenGIS\'s own writing of that file', async () => {
   const s = await heldClose();
   s.MB.loadProject({ id: 'B', name: 'Bravo' });
@@ -784,7 +858,11 @@ test('source: the browser\'s file calls in a background write all carry a time l
   assert.match(write, /const \{ p, text, unchanged \} = current\(\);\s*if \(p\.id !== e\.id\) return false;/);
   // a write of a project no longer open changes nothing of the open one's status
   // (the open project's link by its id and its file, not by the object: an undo reads the link again, a copy)
-  assert.match(write, /open = \(\) => \(entry && entry\.id === e\.id && links === linked \? entry : null\);/);
+  assert.match(write, /const linked = linkCount\(e\.id\), same = \(\) => linkCount\(e\.id\) === linked;/, 'its own project\'s link changes, no other project\'s');
+  assert.match(write, /open = \(\) => \(entry && entry\.id === e\.id && same\(\) \? entry : null\);/);
+  assert.match(bf, /const links = new Map\(\);/);
+  assert.match(bf, /relinked\(entry\.id\);[\s\S]*relinked\(entry\.id\);\s*entry = null;/, 'counted on a link made (adopt) and on one removed (unlink), for that project');
+  assert.match(write, /const now = open\(\);\s*if \(!now\) return;[\s\S]*?now\.lastWritten = e\.lastWritten;\s*lastId = p\.id; lastText = text;/, 'the link in memory takes the time too');
   assert.match(write, /if \(open\(\)\) show\('conflict'\);/);
   assert.match(write, /if \(open\(\)\) \{ failed = true; show\(F\.state === 'saving' \? 'saving' : F\.state, msg\); \}/);
   assert.doesNotMatch(write, /^ {4,8}(show\(|failed = )/m, 'no status change outside a check of the open project');
@@ -793,7 +871,7 @@ test('source: the browser\'s file calls in a background write all carry a time l
   assert.match(write, /closing\.then\(async \(\) => \{\s*e\.lastWritten = [^\n]*\n\s*await note\(\);\s*if \(!open\(\)\) return;\s*landed\(true\);\s*F\.schedule\(\);/);
   assert.match(write, /lastId = p\.id; lastText = text;\s*if \(!late\) failed = false;/, 'a late save keeps the failure said (once, for a file that is always slow)');
   // the database row is the project's link as it is now, never the write's own (maybe replaced or removed since)
-  assert.match(write, /const row = open\(\) \|\| \(links === linked \? e : null\);\s*if \(!row\) return null;\s*row\.lastWritten = e\.lastWritten;\s*return putEntry\(row\);/);
+  assert.match(write, /const row = open\(\) \|\| \(same\(\) \? e : null\);\s*if \(!row\) return null;\s*row\.lastWritten = e\.lastWritten;\s*return putEntry\(row\);/);
   assert.equal((write.match(/putEntry\(/g) || []).length, 1, 'the only write of the link from a file write');
   assert.doesNotMatch(write, /lastText = null/, 'never forgotten: that made a slow file write itself forever');
   const allowed = bf.split('async function allowed(ask) {')[1].split('\n  }')[0];

@@ -24,7 +24,11 @@ window.MB = window.MB || {};
   let entry = null;          // { id, handle, name, lastWritten } of the open project
   let timer = null, lastText = null, lastId = null, failed = false;
   let gen = 0;               // bumped when the open project's link changes: an older lookup then gives way
-  let links = 0;             // bumped when a project is linked to a file or unlinked from it (not when one is opened)
+  // How many times each project was linked to a file or unlinked from one in this page (not: opened). A write under
+  // way knows by it whether its project's link is still the one it began with, whatever happened to other projects'.
+  const links = new Map();   // project id -> count (a Map: an id may be any text, "__proto__" too)
+  const linkCount = id => links.get(id) || 0;
+  const relinked = id => { links.set(id, linkCount(id) + 1); };
   const P = () => MB.projects;
   const isDraft = () => /^\s*untitled( map)?\s*$/i.test(MB.state.projectName || '') && !P().fileBacked;
   const emit = () => MB.emit('browserfiles', F);
@@ -103,14 +107,15 @@ window.MB = window.MB || {};
     // Once the write is under way, what it finds out is for the open project when that is still e's project with
     // the same file. Not "entry === e": an undo or a redo opens the project again, and the link is then read from
     // the database again, a copy of it. open(): that link as it is now, or null (another project, another file).
-    const linked = links, open = () => (entry && entry.id === e.id && links === linked ? entry : null);
+    const linked = linkCount(e.id), same = () => linkCount(e.id) === linked; // (its own project's link, no other's)
+    const open = () => (entry && entry.id === e.id && same() ? entry : null);
     // The file was written, last modified as e says: noted in the database on the project's link as it is NOW, never
     // by putting e back. Since this write began the project may have been saved as another file, or unlinked from
     // this one: e is then no longer its link, and stored again it would silently bring the old file back at the
-    // next undo or reload. (Another project open, and no link changed anywhere meanwhile: e is still its project's
-    // row, and takes the time, so that this is not taken for a change made elsewhere when it is opened again.)
+    // next undo or reload. (Another project open, and this one's link not changed meanwhile: e is still its row, and
+    // takes the time, so that this is not taken for a change made elsewhere when the project is opened again.)
     const note = () => {
-      const row = open() || (links === linked ? e : null);
+      const row = open() || (same() ? e : null);
       if (!row) return null;
       row.lastWritten = e.lastWritten;
       return putEntry(row);
@@ -119,7 +124,11 @@ window.MB = window.MB || {};
     // late: by a close that had been given up on. The status is then only cleared of that, never of a conflict;
     // and the failure stays "said": a file that is always this slow says so once, not at every edit.
     const landed = late => {
-      if (!open()) return;
+      const now = open();
+      if (!now) return;
+      // (the link in memory too, as it is by now: an undo meanwhile read it again, maybe from before the time was
+      // noted in the database, and the file would then look changed elsewhere at the next write)
+      now.lastWritten = e.lastWritten;
       lastId = p.id; lastText = text;
       if (!late) failed = false;
       if (!late || F.state === 'saving') show('saving');
@@ -186,8 +195,9 @@ window.MB = window.MB || {};
 
   // Link the open project to a file handle (after Save as or Open).
   async function adopt(handle) {
-    gen++; links++;
+    gen++;
     entry = { id: MB.state.projectId, handle, name: handle.name, lastWritten: 0 };
+    relinked(entry.id);
     F.name = handle.name;
     lastText = null; lastId = null;
     await putEntry(entry);
@@ -266,7 +276,8 @@ window.MB = window.MB || {};
     clearTimeout(timer); timer = null;
     const name = entry.name;
     await delEntry(entry.id);
-    entry = null; F.name = null; links++;
+    relinked(entry.id);
+    entry = null; F.name = null;
     show('none');
     MB.toast('No longer saving to "' + name + '"', 3000);
   };
