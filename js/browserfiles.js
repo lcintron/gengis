@@ -275,8 +275,10 @@ window.MB = window.MB || {};
     if (!entry) return;
     clearTimeout(timer); timer = null;
     const name = entry.name;
-    await delEntry(entry.id);
+    // (counted before the wait, as adopt does: a write of it that lands while the row is being deleted must find its
+    // link changed already, or it would note itself on the row and put it back)
     relinked(entry.id);
+    await delEntry(entry.id);
     entry = null; F.name = null;
     show('none');
     MB.toast('No longer saving to "' + name + '"', 3000);

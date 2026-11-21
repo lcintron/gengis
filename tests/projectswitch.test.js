@@ -606,6 +606,27 @@ test('Stop saving to the file while a close of it is stalled: the late close doe
   assert.equal(s.f.writes, 1, 'the file is left as it is');
 });
 
+test('Stop saving to the file as a stalled close of it lands: the link being deleted is not put back', async () => {
+  const s = await heldClose();
+  const off = watch(s.F.unlink()); // (not waited for: its row is being deleted...)
+  s.f.release();                   // ...when the close lands
+  await settle();
+  assert.equal(off.done, true);
+  assert.equal(s.F.state, 'none');
+  assert.equal(s.F.name, null);
+  assert.ok(s.toasts.some(t => t.msg === 'No longer saving to "alpha.gengis"'));
+  await s.clock.advance(2000);
+  assert.deepEqual(await s.F.recent(), [], 'no link in the database: what the app said is so');
+  // an undo reads the link again: there is none, and the file is left as it is
+  await s.undo();
+  assert.equal(s.F.name, null);
+  assert.equal(s.F.state, 'none');
+  edit(s, 'Edit two');
+  await s.clock.advance(2000);
+  assert.equal(s.f.writes, 1);
+  assert.deepEqual(await s.F.recent(), []);
+});
+
 test('another project linked to a file meanwhile does not stop a late close being noted for its own project', async () => {
   const conflict = s => s.toasts.some(t => /changed outside GenGIS/.test(t.msg));
   const rowOf = async (s, id) => (await s.F.recent()).find(r => r.id === id);
@@ -913,7 +934,12 @@ test('source: the browser\'s file calls in a background write all carry a time l
   assert.match(write, /const linked = linkCount\(e\.id\), same = \(\) => linkCount\(e\.id\) === linked;/, 'its own project\'s link changes, no other project\'s');
   assert.match(write, /open = \(\) => \(entry && entry\.id === e\.id && same\(\) \? entry : null\);/);
   assert.match(bf, /const links = new Map\(\);/);
-  assert.match(bf, /relinked\(entry\.id\);[\s\S]*relinked\(entry\.id\);\s*entry = null;/, 'counted on a link made (adopt) and on one removed (unlink), for that project');
+  // counted on a link made (adopt) and on one removed (unlink), for that project, and each time BEFORE the wait for
+  // the database: a write landing during that wait already finds the link changed
+  const adopt = bf.split('async function adopt(handle) {')[1].split('\n  }')[0], unlink = bf.split('F.unlink = async function () {')[1].split('\n  };')[0];
+  assert.match(adopt, /relinked\(entry\.id\);[\s\S]*await putEntry\(entry\);/);
+  assert.match(unlink, /relinked\(entry\.id\);\s*await delEntry\(entry\.id\);\s*entry = null;/);
+  assert.equal((bf.match(/relinked\(/g) || []).length, 2);
   assert.match(write, /const now = open\(\);\s*if \(!now\) return;[\s\S]*?now\.lastWritten = e\.lastWritten;\s*lastId = p\.id; lastText = text;/, 'the link in memory takes the time too');
   assert.match(write, /if \(open\(\)\) show\('conflict'\);/);
   assert.match(write, /if \(open\(\)\) \{ failed = true; show\(F\.state === 'saving' \? 'saving' : F\.state, msg\); \}/);
