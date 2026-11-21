@@ -122,7 +122,8 @@ function sandbox(opts) {
   const ctx = vm.createContext({
     window, indexedDB: window.indexedDB,
     document,
-    navigator: { userAgent: 'test' },
+    // (opts.locks: Web Locks, always granted: what "Edit here" takes the project over with)
+    navigator: Object.assign({ userAgent: 'test' }, opts.locks ? { locks: { request: async (name, o, held) => held({ name }), query: async () => ({ held: [] }) } } : {}),
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     console: { warn: (...a) => { warnings.push(a); }, log() {}, error: (...a) => { warnings.push(a); } },
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
@@ -802,6 +803,57 @@ test('a project file that fails while loading: said, read-only, nothing saved fr
   assert.equal(t.toasts.length, 1);
   assert.equal(t.P.readOnly, false);
   assert.equal(t.P.owns(), true);
+});
+
+test('"Edit here" on a half-open project that was never saved here says there is nothing to open, and stays read-only', async () => {
+  const NOTHING = 'Nothing is saved on this device for this project, so it cannot be opened from here. Start a new map or open another project.';
+  const page = async () => {
+    const s = sandbox({ seed: both(), modules: ['projectstore.js', 'storage.js'], locks: true });
+    s.MB.newProject = () => s.MB.loadProject({ id: 'N', name: 'Untitled map' });
+    await s.P.start();
+    await settle();
+    assert.equal(s.P.owns(), true);
+    const real = s.MB.loadProject;
+    s.MB.loadProject = p => { s.MB.loadProject = real; s.MB.state.projectId = p.id; throw new Error('layers is not a list'); };
+    return s;
+  };
+  // a file of a project this device never held, which fails while loading
+  const s = await page();
+  assert.equal(await s.MB.openText(JSON.stringify({ id: 'Z', name: 'Zulu', layers: 5 }), 'zulu.gengis'), null);
+  assert.equal(s.P.readOnly, true);
+  assert.equal(await s.P.get('Z'), null, 'nothing saved here for it');
+  await s.P.takeOver(); // the banner's "Edit here"
+  await settle();
+  assert.deepEqual(s.toasts[s.toasts.length - 1], { msg: NOTHING, ms: 7000 }, 'said');
+  assert.equal(s.P.readOnly, true, 'still read-only');
+  assert.equal(s.P.owns(), false);
+  assert.match(s.banner(), /A project did not open completely/);
+  s.P.schedule();
+  await s.clock.advance(5000);
+  assert.equal(await s.P.save(), false, 'and still nothing is saved from the half');
+  assert.equal(await s.P.get('Z'), null);
+  // pressed again: said again, nothing else
+  await s.P.takeOver();
+  await settle();
+  assert.equal(s.toasts.filter(t => t.msg === NOTHING).length, 2);
+  assert.equal(s.P.readOnly, true);
+  // what the toast points to works: a new map
+  s.P.startFresh();
+  await settle();
+  assert.equal(s.P.readOnly, false);
+  assert.equal(s.P.owns(), true);
+  assert.equal(s.banner(), '');
+
+  // a project that IS saved here: "Edit here" opens what was last saved, as before
+  const k = await page();
+  assert.equal(await k.P.open('B'), false);
+  assert.equal(k.P.readOnly, true);
+  await k.P.takeOver();
+  await settle();
+  assert.equal(k.MB.state.projectName, 'Bravo');
+  assert.equal(k.P.readOnly, false);
+  assert.equal(k.P.owns(), true);
+  assert.ok(!k.toasts.some(t => t.msg === NOTHING));
 });
 
 test('source: a project opened from a file or from the cloud that fails while loading is not saved from either', () => {

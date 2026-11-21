@@ -510,6 +510,13 @@ window.MB = window.MB || {};
     const saved = await latestSaved(id); // the last wait: ownership is checked after it, and nothing waits after that
     if (token !== claimToken) return; // another claim started while reading: it decides
     if (lost) { claiming = false; return; } // taken back while reading: read-only, as the steal left it
+    // "Edit here" on a project that did not open completely and was never saved on this device (a file or a cloud
+    // copy that failed while loading): there is nothing to go back to. Said, with what does work; still read-only.
+    if (broken && !saved.data) {
+      owned = true; claiming = false; // (this tab holds it; nothing is saved from the half all the same)
+      MB.toast('Nothing is saved on this device for this project, so it cannot be opened from here. Start a new map or open another project.', 7000);
+      return;
+    }
     owned = true; claiming = false; P.readOnly = false;
     if (saved.data) {
       try { MB.loadProject(saved.data); }
