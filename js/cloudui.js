@@ -231,7 +231,7 @@ window.MB = window.MB || {};
     const ids = `data-acc="${esc(a.id)}" data-file="${esc(f.fileId)}"`;
     return `<div class="cloud-row${current ? ' current' : ''}" data-name="${esc(name.toLowerCase())}">
         <span class="cloud-st">${I.file}</span><div class="cloud-main"><b title="${esc(name)}">${esc(name)}</b><small>${esc(info)}</small></div>
-        ${current ? '<span class="badge">open</span>' : MB.iconBtn('open', 'Open', `data-openremote ${ids} data-key="o-${esc(f.fileId)}"${off}`, b === 'open' ? 'spin' : '', 'Open ' + name)}
+        ${current ? '<span class="badge">open</span>' : MB.iconBtn('open', 'Open', `data-openremote ${ids} data-key="o-${esc(f.fileId)}"${off}`, b === 'open' ? 'loading' : '', 'Open ' + name)}
         ${MB.iconBtn('trash', 'Delete from ' + p, `data-delremote ${ids} data-key="x-${esc(f.fileId)}"${off}`, 'danger', 'Delete ' + name + ' from ' + p)}</div>`;
   }
 
