@@ -1530,7 +1530,22 @@ html[data-titlebar] #topbar .cloud-status { -webkit-app-region: no-drag; }
 [data-state="pending"].cloud-status svg { animation: mb-cloud-pulse 1.4s ease-in-out infinite; }
 @keyframes mb-cloud-spin { to { transform: rotate(360deg); } }
 @keyframes mb-cloud-pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { :is(.cloud-status, .cloud-st, .icon-btn.spin) svg { animation: none !important; } }
+/* an icon button waiting on what it started (opening a cloud project): a turning ring in place of the icon, which is
+   hidden meanwhile (the button keeps its own size, so nothing moves) */
+.icon-btn.loading { position: relative; }
+.icon-btn.loading:disabled { opacity: 1; } /* quiet to the click, but the ring stays plain to see */
+.icon-btn.loading svg { display: none; }
+/* the ring is the size of the icon it stands in for, border and all (box-sizing: border-box: the reset at the top of
+   this file does not reach a pseudo-element), and inset 0 with an auto margin centers it whatever that size is */
+.icon-btn.loading::after {
+  content: ''; position: absolute; inset: 0; margin: auto; box-sizing: border-box; width: 16px; height: 16px; pointer-events: none;
+  border: 2px solid rgba(29,179,169,.25); border-top-color: var(--accent); border-radius: 50%; animation: mb-spin .8s linear infinite;
+}
+.cloud-box .icon-btn.loading::after { width: 18px; height: 18px; } /* the dialog draws its icons at 18px */
+@media (prefers-reduced-motion: reduce) {
+  :is(.cloud-status, .cloud-st, .icon-btn.spin) svg { animation: none !important; }
+  .icon-btn.loading::after { animation: none !important; } /* the ring stays, still */
+}
 
 /* the dialog */
 .cloud-box { max-width: 460px; }

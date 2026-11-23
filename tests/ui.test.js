@@ -718,6 +718,43 @@ test('a cloud project already on this device: the dialog closes once it is open,
   assert.match(p, /return true;\s*$/, 'true once the project is loaded');
 });
 
+test('a cloud project being opened: a turning ring takes the folder icon\'s place, and the icon does not spin', () => {
+  const ui = js['cloudui.js'];
+  // the Open button under way carries its own class, not the one that turns an icon (Check again, Sync now, the cloud)
+  assert.match(ui, /MB\.iconBtn\('open', 'Open',[\s\S]{0,200}?b === 'open' \? 'loading' : ''/, 'the open in progress is "loading"');
+  assert.doesNotMatch(ui, /data-openremote[\s\S]{0,160}?'spin'/, 'the Open button never takes the icon-turning class');
+  const plain = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = sel => [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m => m[1].split(',').some(s => s.trim() === sel)).map(m => m[2]);
+  const one = sel => { const r = rules(sel); assert.ok(r.length, sel + ' found'); return r; };
+  assert.ok(one('.icon-btn.loading').some(b => /position: relative;/.test(b)), 'the ring is placed on the button');
+  assert.ok(one('.icon-btn.loading:disabled').some(b => /opacity: 1;/.test(b)), 'the disabled fade does not dim the ring');
+  const icon = one('.icon-btn.loading svg');
+  assert.ok(icon.some(b => /display: none;/.test(b)), 'the folder is out of sight while it loads');
+  assert.ok(icon.every(b => !/animation|transform/.test(b)), 'the folder itself is never turned');
+  const ring = one('.icon-btn.loading::after');
+  assert.ok(ring.some(b => /animation: mb-spin \.8s linear infinite;/.test(b) && /border-radius: 50%;/.test(b)
+    && /border: 2px solid rgba\(29,179,169,\.25\);/.test(b) && /border-top-color: var\(--accent\);/.test(b)), 'the same ring the busy indicator uses');
+  // the ring is as wide as the icon it stands in for, border and all: a pseudo-element is not reached by the
+  // box-sizing reset at the top of the file, so it says border-box itself or the 2px border makes it 4px wider
+  assert.ok(ring.every(b => /box-sizing: border-box;/.test(b) || !/\bwidth:/.test(b)), 'the border counts inside the ring\'s width');
+  assert.ok(ring.some(b => /width: 16px; height: 16px;/.test(b)), 'the plain icon\'s 16px by default');
+  // centered by the box itself, not by half-the-size margins that go wrong the moment the size changes
+  assert.ok(ring.some(b => /inset: 0;/.test(b) && /margin: auto;/.test(b)), 'centered with inset 0 and an auto margin');
+  assert.ok(ring.every(b => !/margin: -/.test(b) && !/top: 50%/.test(b)), 'no half-the-size offsets');
+  assert.ok(one('.cloud-box .icon-btn.loading::after').some(b => /width: 18px; height: 18px;/.test(b)),
+    'in the cloud dialog, the 18px its icons are drawn at');
+  assert.match(css, /:is\(\.cloud-status, \.cloud-st, \.cloud-box, \.cloud-ic\) svg \{ width: 18px; height: 18px;/, 'which is where that 18px comes from');
+  assert.ok(ring.some(b => /pointer-events: none;/.test(b)), 'a click on the ring is the button\'s');
+  assert.match(css, /@keyframes mb-spin \{ to \{ transform: rotate\(360deg\); \} \}/);
+  // the shared icon-turning rule stays as it is, for Check again, Sync now and the cloud beside the save status
+  assert.match(css, /:is\(\[data-state="syncing"\]\.cloud-status, \.cloud-st\.syncing\) svg, \.icon-btn\.spin svg \{ animation: mb-cloud-spin 1s linear infinite; \}/);
+  assert.match(ui, /MB\.iconBtn\('refresh', 'Check again',[\s\S]{0,200}?rm\.loading \? 'spin' : ''/, 'Check again keeps turning its own icon');
+  // reduced motion: nothing turns, the ring only sits there
+  const quiet = (plain.split('@media (prefers-reduced-motion: reduce) {')[1] || '').split('\n}')[0];
+  assert.match(quiet, /:is\(\.cloud-status, \.cloud-st, \.icon-btn\.spin\) svg \{ animation: none !important; \}/);
+  assert.match(quiet, /\.icon-btn\.loading::after \{ animation: none !important; \}/);
+});
+
 test('the cloud dialog\'s search: gone with its box, and a cloud section saying why it is empty stays shown', () => {
   const ui = js['cloudui.js'];
   assert.match(ui, /if \(!searchable\) query = '';/);
