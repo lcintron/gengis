@@ -15,6 +15,7 @@ window.MB = window.MB || {};
   const MIRROR = 'gengis.project', OLD_MIRROR = 'map-builder.project.v1', CURRENT = 'gengis.currentProject';
   const MIRROR_MAX = 2 * 1024 * 1024;   // characters: larger projects live in the database only (localStorage is ~5 MB in all)
   const DELAY = 800;                    // ms after the last change
+  const FILE_WAIT = 8000;               // ms a project switch waits for the project's file to take the last changes
   const SNAP_EVERY = 10 * 60 * 1000;    // a recovery copy at most every 10 minutes of editing...
   const SNAP_KEEP = 10;                 // ...and the last 10 of them per project
   const esc = s => MB.escapeHtml(String(s == null ? '' : s));
@@ -73,9 +74,10 @@ window.MB = window.MB || {};
   let rev = 0, dbRev = -1, mirrorRev = -1, inflight = null;
   let heldId = null, release = null, owned = false, claiming = false, claimToken = 0, claimWait = Promise.resolve();
   let startEdits = -1; // while start-up reads the database: changes made meanwhile (-1: not counting)
+  let broken = false;  // the project on the map failed while opening and may be half of it: nothing is saved from it
 
   // Only the tab that holds the open project's lock writes it, and never while that is being settled.
-  const canWrite = () => P.ready && !P.readOnly && owned && !claiming && MB.state.projectId === heldId;
+  const canWrite = () => P.ready && !P.readOnly && !broken && owned && !claiming && MB.state.projectId === heldId;
 
   function setStatus(status, error) {
     P.status = status;
@@ -183,12 +185,39 @@ window.MB = window.MB || {};
     return dbRev === rev;
   };
 
+  // The open project's file (the desktop app's, or the browser's) takes the last changes before another project
+  // replaces it, but never holds the switch up: a write that stalls (a file in a cloud-synced folder can) or fails
+  // is given up on after FILE_WAIT and said. The project is in the database either way, and its file is caught up
+  // the next time it is open.
+  async function fileCaughtUp(files) {
+    if (!files || !files.available) return;
+    let t;
+    try {
+      await Promise.race([files.writePending(), new Promise((res, rej) => { t = setTimeout(() => rej(new Error('saving the project file timed out')), FILE_WAIT); })]);
+    } catch (e) {
+      console.warn('The project file was not saved before the switch', e);
+      MB.toast('Could not finish saving the project file first; it is still saved in the app.', 5000);
+    } finally { clearTimeout(t); }
+  }
+
+  // A project that failed while opening may be half-open (the map was already cleared for it): nothing is saved
+  // from this tab until a project opens whole again, so the half never replaces what is saved. The banner says so,
+  // and its "Edit here" opens what was last saved. Nothing else ends it: not this tab getting to edit the half's
+  // project (an undo on the half-open map opens "it" again), only a project opened whole, however it is opened
+  // (from Recent projects, a file, the cloud, a new map: project.js says so with 'project-opened').
+  function loadFailed() { broken = true; setReadOnly(true, 'failed'); }
+  function loadedWhole() {
+    if (!broken) return;
+    broken = false;
+    if (owned && !claiming && MB.state.projectId === heldId) setReadOnly(false); // (another project: its claim decides)
+  }
+
   // Ask before replacing a project that is not in the database (it would not be in Recent projects). icon: the
   // MB.ICON the "what" button leads with (what it is about to do: open a file, start a new map, restore a copy).
   P.confirmReplace = async function (what, icon) {
     const safe = await P.flush();
-    if (MB.desktopFiles && MB.desktopFiles.available) await MB.desktopFiles.writePending(); // its file too
-    if (MB.browserFiles && MB.browserFiles.available) await MB.browserFiles.writePending();
+    await fileCaughtUp(MB.desktopFiles); // its file too
+    await fileCaughtUp(MB.browserFiles);
     if (safe) return true;
     return MB.ask('"' + MB.state.projectName + '" could not be saved in this browser\'s project storage' + (P.error ? ' (' + P.error + ')' : '') +
       ', so it will not be in Recent projects. ' + what + ' anyway?\n\nTo keep it, cancel and use Project \u2192 Save project.', what, 'Cancel', { yesIcon: icon });
@@ -285,6 +314,7 @@ window.MB = window.MB || {};
     startEdits = -1;
     P.ready = true;
     MB.on('project', () => { if (MB.state.projectId !== heldId) claim(MB.state.projectId); });
+    MB.on('project-opened', loadedWhole);
     await claim(MB.state.projectId);
     if (canWrite()) P.save();
     // Closing with changes the database does not hold yet: a project that fits is written to localStorage at once;
@@ -326,27 +356,44 @@ window.MB = window.MB || {};
   };
 
   // Open a project saved here. Resolves whether it was opened: the user may call it off (what is open now cannot be
-  // kept), and then whoever asked stays as it was (cloudui.js keeps its dialog up).
+  // kept), or it may fail to open (said, never thrown), and then whoever asked stays as it was (Recent projects and
+  // cloudui.js keep their dialog up).
   P.open = async function (id) {
     if (!(await P.confirmReplace('Open the other project', 'open'))) return false;
-    const rec = await run('projects', 'readonly', s => done(s.get(id)));
-    if (!rec) { MB.toast('That project is no longer saved here.'); return false; }
-    MB.loadProject(rec.data);
+    let rec = null;
+    try {
+      rec = await run('projects', 'readonly', s => done(s.get(id)));
+      if (!rec) { MB.toast('That project is no longer saved here.'); return false; }
+      MB.loadProject(rec.data);
+    } catch (e) {
+      console.warn('Could not open the project', e);
+      MB.toast('Could not open "' + ((rec && rec.name) || 'the project') + '": ' + (e && e.message ? e.message : e), 6000);
+      if (rec) loadFailed(); // (read, but it did not load: what is on the map now may be half of it)
+      return false;
+    }
     P.fileBacked = !!rec.fileBacked;
     return true;
   };
 
+  // Resolves whether the copy was restored (a failure is said, never thrown).
   P.restore = async function (key) {
-    const snap = await run('snapshots', 'readonly', s => done(s.get(key)));
-    if (!snap) return;
+    const snap = await run('snapshots', 'readonly', s => done(s.get(key))).catch(e => { console.warn('Could not read the earlier copy', e); return null; });
+    if (!snap) { MB.toast('That earlier copy could not be read.', 5000); return false; }
     // the open project must be safely kept before an earlier copy replaces it
-    if (!(await P.confirmReplace('Restore the earlier copy', 'history'))) return;
+    if (!(await P.confirmReplace('Restore the earlier copy', 'history'))) return false;
     if ((await keepCopy(snap.id, 'before restoring an earlier copy')) !== true &&
-      !(await MB.ask('What is open now could not be kept as a copy. Restore the earlier copy anyway?', 'Restore', 'Cancel', { yesIcon: 'history' }))) return;
+      !(await MB.ask('What is open now could not be kept as a copy. Restore the earlier copy anyway?', 'Restore', 'Cancel', { yesIcon: 'history' }))) return false;
     const own = await run('projects', 'readonly', st => done(st.get(snap.id))).catch(() => null);
-    MB.loadProject(snap.data);
+    try { MB.loadProject(snap.data); }
+    catch (e) {
+      console.warn('Could not restore the earlier copy', e);
+      MB.toast('Could not restore the copy of "' + (snap.name || 'the project') + '": ' + (e && e.message ? e.message : e), 6000);
+      loadFailed();
+      return false;
+    }
     P.fileBacked = !!(own && own.fileBacked); // the restored project's, not the one being left
     MB.toast('Restored the copy from ' + new Date(snap.savedAt).toLocaleString());
+    return true;
   };
 
   P.remove = function (id) {
@@ -365,6 +412,9 @@ window.MB = window.MB || {};
   /* ---------- for cloud sync (cloudsync.js) ---------- */
 
   P.keepCopy = keepCopy;
+  // A project opened elsewhere (a file: storage.js; a cloud copy: cloudsync.js) failed while loading: as in P.open,
+  // nothing is saved from what is on the map until a project opens whole.
+  P.loadFailed = loadFailed;
   P.isDraft = isDraft;
   P.owns = () => canWrite();
   // Changes the database does not hold yet (still to be saved, or being saved).
@@ -460,14 +510,32 @@ window.MB = window.MB || {};
     const saved = await latestSaved(id); // the last wait: ownership is checked after it, and nothing waits after that
     if (token !== claimToken) return; // another claim started while reading: it decides
     if (lost) { claiming = false; return; } // taken back while reading: read-only, as the steal left it
+    // "Edit here" on a project that did not open completely and was never saved on this device (a file or a cloud
+    // copy that failed while loading): there is nothing to go back to. Said, with what does work; still read-only.
+    if (broken && !saved.data) {
+      owned = true; claiming = false; // (this tab holds it; nothing is saved from the half all the same)
+      MB.toast('Nothing is saved on this device for this project, so it cannot be opened from here. Start a new map or open another project.', 7000);
+      return;
+    }
     owned = true; claiming = false; P.readOnly = false;
-    if (saved.data) MB.loadProject(saved.data);
+    if (saved.data) {
+      try { MB.loadProject(saved.data); }
+      catch (e) {
+        // what the other tab saved does not open: said, and nothing half-opened is saved over it from here
+        console.warn('Could not open what the other tab saved', e);
+        MB.toast('Could not open "' + (saved.data.name || 'the project') + '" here: ' + (e && e.message ? e.message : e), 6000);
+        owned = false;
+        loadFailed();
+        return;
+      }
+    }
     P.fileBacked = saved.fileBacked;
     setReadOnly(false);
     P.save();
   };
 
   function setReadOnly(on, why) {
+    if (broken) { on = true; why = 'failed'; } // (whoever asks, and whatever for: until a project opens whole)
     const was = P.readOnly;
     P.readOnly = !!on;
     if (on) { clearTimeout(timer); setStatus('readonly'); }
@@ -485,7 +553,9 @@ window.MB = window.MB || {};
       el.setAttribute('role', 'alert');
       document.body.appendChild(el);
     }
-    el.innerHTML = `<span>${why === 'taken' ? 'This map is now being edited in another tab or window.' : 'This map is open in another tab or window.'} Changes made here are not saved.</span>
+    const said = why === 'failed' ? 'A project did not open completely, so what is shown may be part of it.'
+      : (why === 'taken' ? 'This map is now being edited in another tab or window.' : 'This map is open in another tab or window.');
+    el.innerHTML = `<span>${said} Changes made here are not saved.</span>
       <button type="button" class="btn small primary with-icon" data-act="here">${MB.ICON.edit}Edit here</button><button type="button" class="btn small with-icon" data-act="new">${MB.ICON.newFile}New map</button>`;
     el.querySelector('[data-act="here"]').addEventListener('click', () => P.takeOver());
     el.querySelector('[data-act="new"]').addEventListener('click', () => P.newMap());
@@ -555,7 +625,21 @@ window.MB = window.MB || {};
         </div>`).join('') : '<p class="note">Project files you open or save from this browser appear here.</p>'}</div>` : ''}`;
     box.querySelectorAll('[data-file]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await DF.openRecent(b.dataset.file); }));
     box.querySelectorAll('[data-linked]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await BF.openRecent(b.dataset.linked); }));
-    box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => { dlg.classList.add('hidden'); await P.open(b.dataset.open); }));
+    // The dialog closes once the project is open, never before: an open called off, or one that failed (said by
+    // P.open), leaves it up with the row to press again. Meanwhile (the wait for the open project's file can take
+    // seconds) every button of the lists is off: one open at a time, and nothing deleted or restored under it.
+    box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => {
+      if (b.disabled) return;
+      const held = Array.from(box.querySelectorAll('.recent-list button')).filter(x => !x.disabled);
+      held.forEach(x => { x.disabled = true; });
+      b.classList.add('spin');
+      let ok = false;
+      try { ok = await P.open(b.dataset.open); }
+      catch (e) { console.warn('Could not open the project', e); MB.toast('Could not open it: ' + (e && e.message ? e.message : e), 6000); }
+      b.classList.remove('spin');
+      if (ok) dlg.classList.add('hidden');
+      else { held.forEach(x => { x.disabled = false; }); b.focus(); } // (the focus back where it was: a disabled button loses it)
+    }));
     // Confirm inside the row: some embedded browsers (and in-app previews) suppress confirm() and read it as Cancel,
     // which made these buttons look dead.
     const ask = (btn, question, yes, act, wide, icon) => {

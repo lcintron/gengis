@@ -585,6 +585,37 @@ test('deleted from the cloud on one device: another device that has it keeps its
   assert.equal(server.live().length, 0, 'and it does not upload it again');
 });
 
+test('a cloud project that fails while loading: nothing is saved from the half, no link is made, and the failure reaches whoever asked', async () => {
+  const { server, app } = await connected();
+  const accId = app.C.accounts[0].id;
+  const x = server.create('Broken.gengis.json', JSON.stringify(project('px', 'Broken', 4)));
+  let failed = 0, marked = 0;
+  app.MB.projects.loadFailed = () => { failed++; };
+  const mark = app.MB.projects.markFileBacked;
+  app.MB.projects.markFileBacked = () => { marked++; mark(); };
+  const load = app.MB.loadProject;
+  app.MB.loadProject = () => { throw new Error('layers is not a list'); };
+  await assert.rejects(app.C.openRemote(accId, x.id), /layers is not a list/);
+  assert.equal(failed, 1, 'the session is told: read-only until a project opens whole');
+  assert.equal(marked, 0, 'not a file-backed project');
+  assert.equal(linkOf(app, 'px'), undefined, 'and not linked to the cloud file');
+  // the same file then loads: opened and linked as usual
+  app.MB.loadProject = load;
+  app.device.locksHeld.set('px', app.tabId);
+  assert.equal(await app.C.openRemote(accId, x.id), true);
+  assert.equal(linkOf(app, 'px').fileId, x.id);
+  assert.equal(failed, 1);
+
+  // a newer cloud copy taken into the open project that fails while loading: the same
+  app.open('p1'); // (open here, and this tab the one that edits it)
+  await app.settle();
+  app.MB.loadProject = () => { throw new Error('layers is not a list'); };
+  server.writeRemote(fileOf(server, 'Alpha.gengis.json').id, JSON.stringify(project('p1', 'Alpha', 9)));
+  await app.C.pull(true).catch(() => {});
+  await app.settle();
+  assert.equal(failed, 2);
+});
+
 test('opening from the cloud resolves whether it opened; a project already here opens without a download', async () => {
   const { server, app } = await connected();
   const accId = app.C.accounts[0].id;

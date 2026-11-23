@@ -525,7 +525,10 @@ window.MB = window.MB || {};
     let hash = remoteHash || await hashOf(data), cleared = false;
     if (MB.state.projectId === l.projectId && MB.projects.owns()) {
       cleared = !!((MB.canUndo && MB.canUndo()) || (MB.canRedo && MB.canRedo()));
-      MB.loadProject(data, { keepView: true, keepHistory: false });
+      // (a cloud copy that fails while loading leaves the map half of it: nothing is saved from that, and so
+      // nothing of it uploaded; the failure is the sync's, said like its others)
+      try { MB.loadProject(data, { keepView: true, keepHistory: false }); }
+      catch (e) { MB.projects.loadFailed(); throw e; }
       // what this device will save of it from now on (its own normalization included): not a change to upload
       if (MB.serializeProject) hash = await hashOf(MB.serializeProject());
     }
@@ -762,7 +765,10 @@ window.MB = window.MB || {};
     }
     if (!(await MB.projects.beforeOpen(data))) return false; // (a project saved here is kept in its earlier copies first)
     const id = data.id;
-    MB.loadProject(data);
+    // A cloud copy that fails while loading may be half-open: nothing is saved from it (projectstore.js), it is not
+    // linked to its cloud file, and whoever asked says why it did not open (cloudui.js).
+    try { MB.loadProject(data); }
+    catch (e) { MB.projects.loadFailed(); throw e; }
     MB.projects.markFileBacked();
     const l = { projectId: MB.state.projectId, accountId: accId, fileId, name: remote.name, nameFor: MB.state.projectName, etag: remote.etag, hash: await hashOf(data), syncedAt: env.now(), state: 'synced' };
     if (id && id !== l.projectId) l.hash = null; // an id-less (older) file got a new id: synced again as is

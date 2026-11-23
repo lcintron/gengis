@@ -18,11 +18,17 @@ window.MB = window.MB || {};
   if (!available) return;
 
   const DELAY = 2000;
+  const WRITE_TIMEOUT = 8000; // ms: a file operation that takes longer has stalled (a file in a cloud-synced folder can)
   const RW = { mode: 'readwrite' };
   const TYPES = [{ description: 'GenGIS project', accept: { 'application/json': ['.gengis', '.json'] } }]; // (.json: older .gengis.json files)
   let entry = null;          // { id, handle, name, lastWritten } of the open project
   let timer = null, lastText = null, lastId = null, failed = false;
   let gen = 0;               // bumped when the open project's link changes: an older lookup then gives way
+  // How many times each project was linked to a file or unlinked from one in this page (not: opened). A write under
+  // way knows by it whether its project's link is still the one it began with, whatever happened to other projects'.
+  const links = new Map();   // project id -> count (a Map: an id may be any text, "__proto__" too)
+  const linkCount = id => links.get(id) || 0;
+  const relinked = id => { links.set(id, linkCount(id) + 1); };
   const P = () => MB.projects;
   const isDraft = () => /^\s*untitled( map)?\s*$/i.test(MB.state.projectName || '') && !P().fileBacked;
   const emit = () => MB.emit('browserfiles', F);
@@ -63,15 +69,27 @@ window.MB = window.MB || {};
   }
   function show(state, error) { F.state = state; F.error = error || ''; emit(); }
 
+  // The promise, or a rejection once it has taken longer than ms: the browser's file calls have no time limit of
+  // their own, and one that never answers must not hold up everything queued behind it.
+  function withTimeout(promise, ms, label) {
+    let t;
+    return Promise.race([promise, new Promise((res, rej) => { t = setTimeout(() => rej(new Error((label || 'file operation') + ' timed out')), ms); })])
+      .finally(() => clearTimeout(t));
+  }
+
+  // May the file be written? The question is bounded (no answer, or a failure: not allowed); asking the user for
+  // leave is not, it waits for them.
   async function allowed(ask) {
-    if (!entry) return false;
-    let s = await entry.handle.queryPermission(RW);
-    if (s !== 'granted' && ask) s = await entry.handle.requestPermission(RW);
+    const e = entry;
+    if (!e) return false;
+    let s = await withTimeout(e.handle.queryPermission(RW), WRITE_TIMEOUT, 'checking the file').catch(() => 'prompt');
+    if (s !== 'granted' && ask) s = await e.handle.requestPermission(RW);
     return s === 'granted';
   }
 
   // Write the open project to its file. force: overwrite even if the file changed elsewhere. Writes run one at a
-  // time; `writing` is the last one (for whoever must wait until the file holds the latest).
+  // time; `writing` is the last one (for whoever must wait until the file holds the latest). Every wait in write()
+  // is bounded, so `writing` always settles: a stalled file never blocks the writes (or the project switch) after it.
   let writing = Promise.resolve(false);
   function writeNow(force) {
     clearTimeout(timer); timer = null;
@@ -81,29 +99,85 @@ window.MB = window.MB || {};
   }
   async function write(force) {
     if (!entry || P().readOnly || isDraft()) return false;
-    if (!(await allowed(false))) { if (F.state !== 'conflict') show('paused'); return false; }
-    const { p, text, unchanged } = current();
-    if (unchanged && !force) return true;
     const e = entry;
+    // The file is e's project's and takes nothing else. Another project may open while this waits (a switch does not
+    // wait forever for a stalled file), and the link follows it only a moment later (refresh reads the database):
+    // so it is the open project's id that is checked, before it is serialized and on what was serialized.
+    const mine = () => entry === e && MB.state.projectId === e.id;
+    // Once the write is under way, what it finds out is for the open project when that is still e's project with
+    // the same file. Not "entry === e": an undo or a redo opens the project again, and the link is then read from
+    // the database again, a copy of it. open(): that link as it is now, or null (another project, another file).
+    const linked = linkCount(e.id), same = () => linkCount(e.id) === linked; // (its own project's link, no other's)
+    const open = () => (entry && entry.id === e.id && same() ? entry : null);
+    // The file was written, last modified as e says: noted in the database on the project's link as it is NOW, never
+    // by putting e back. Since this write began the project may have been saved as another file, or unlinked from
+    // this one: e is then no longer its link, and stored again it would silently bring the old file back at the
+    // next undo or reload. (Another project open, and this one's link not changed meanwhile: e is still its row, and
+    // takes the time, so that this is not taken for a change made elsewhere when the project is opened again.)
+    const note = () => {
+      const row = open() || (same() ? e : null);
+      if (!row) return null;
+      row.lastWritten = e.lastWritten;
+      return putEntry(row);
+    };
+    // The file now holds this write (text, of project p): what the open project's file holds, if it is still that.
+    // late: by a close that had been given up on. The status is then only cleared of that, never of a conflict;
+    // and the failure stays "said": a file that is always this slow says so once, not at every edit.
+    const landed = late => {
+      const now = open();
+      if (!now) return;
+      // (the link in memory too, as it is by now: an undo meanwhile read it again, maybe from before the time was
+      // noted in the database, and the file would then look changed elsewhere at the next write)
+      now.lastWritten = e.lastWritten;
+      lastId = p.id; lastText = text;
+      if (!late) failed = false;
+      if (!late || F.state === 'saving') show('saving');
+    };
+    if (!mine()) return false;
+    const ok = await allowed(false);
+    if (!mine()) return false; // another project opened meanwhile: its own write follows
+    if (!ok) { if (F.state !== 'conflict') show('paused'); return false; }
+    const { p, text, unchanged } = current();
+    if (p.id !== e.id) return false;
+    if (unchanged && !force) return true;
+    const bound = (promise, label) => withTimeout(promise, WRITE_TIMEOUT, label);
+    let opening = null, closing = null;
     try {
-      const before = await e.handle.getFile();
+      const before = await bound(e.handle.getFile(), 'reading the file');
       if (!force && e.lastWritten && before.lastModified > e.lastWritten + 1000) {
-        if (F.state !== 'conflict') MB.toast('"' + e.name + '" was changed outside GenGIS, so it is no longer saved automatically. Use the button beside "Saved" to choose.', 7000);
-        show('conflict');
+        // (said either way, it names the file; the status beside "Saved" is the open project's, and only its own
+        // file's write changes it: by now another project may be open)
+        if (!open() || F.state !== 'conflict') MB.toast('"' + e.name + '" was changed outside GenGIS, so it is no longer saved automatically. Use the button beside "Saved" to choose.', 7000);
+        if (open()) show('conflict');
         return false;
       }
-      const w = await e.handle.createWritable(); // written beside the file, swapped in on close
-      await w.write(JSON.stringify(p, null, 1));
-      await w.close();
-      e.lastWritten = (await e.handle.getFile()).lastModified;
-      await putEntry(e);
-      if (entry === e) { lastId = p.id; lastText = text; failed = false; show('saving'); }
+      opening = e.handle.createWritable(); // written beside the file, swapped in on close
+      const w = await bound(opening, 'opening the file for writing');
+      await bound(w.write(JSON.stringify(p, null, 1)), 'writing the file');
+      closing = w.close();
+      await bound(closing, 'saving the file');
+      e.lastWritten = (await bound(e.handle.getFile(), 'reading the file')).lastModified;
+      await bound(note(), 'noting the save');
+      landed();
       return true;
     } catch (err) {
+      // nothing half-written is left beside the file: the copy being written is dropped (one that only opens after
+      // the wait gave up, too). A close still under way may yet complete: the file is then GenGIS's own writing,
+      // not a change made elsewhere, and what it holds is this write: noted as such, like a write that answered in
+      // time (a close that is only slow is a save, and nothing is written again for it). It may also have landed
+      // over a later write: the write scheduled here finds the project as it is now differs, and writes it again.
+      if (closing) closing.then(async () => {
+        e.lastWritten = (await e.handle.getFile()).lastModified;
+        await note();
+        if (!open()) return;
+        landed(true);
+        F.schedule();
+      }).catch(() => {});
+      else if (opening) opening.then(x => x && x.abort && x.abort()).catch(() => {});
       const msg = err && err.message ? err.message : String(err);
-      if (!failed) MB.toast('Could not save to "' + e.name + '" (' + msg + '). The project is still saved in this browser.', 6000);
-      failed = true;
-      show(F.state === 'saving' ? 'saving' : F.state, msg);
+      // (the status and the "said once" are the open project's: an earlier project's write leaves them alone)
+      if (!open() || !failed) MB.toast('Could not save to "' + e.name + '" (' + msg + '). The project is still saved in this browser.', 6000);
+      if (open()) { failed = true; show(F.state === 'saving' ? 'saving' : F.state, msg); }
       return false;
     }
   }
@@ -123,6 +197,7 @@ window.MB = window.MB || {};
   async function adopt(handle) {
     gen++;
     entry = { id: MB.state.projectId, handle, name: handle.name, lastWritten: 0 };
+    relinked(entry.id);
     F.name = handle.name;
     lastText = null; lastId = null;
     await putEntry(entry);
@@ -200,6 +275,9 @@ window.MB = window.MB || {};
     if (!entry) return;
     clearTimeout(timer); timer = null;
     const name = entry.name;
+    // (counted before the wait, as adopt does: a write of it that lands while the row is being deleted must find its
+    // link changed already, or it would note itself on the row and put it back)
+    relinked(entry.id);
     await delEntry(entry.id);
     entry = null; F.name = null;
     show('none');
